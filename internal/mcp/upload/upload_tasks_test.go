@@ -130,13 +130,12 @@ func TestAsyncUploadToolsRegistered(t *testing.T) {
 		return map[string]any{"cid": "QmB"}, nil
 	}, 0)
 	descs := NewAsyncUploadTools(mgr)
-	require.Len(t, descs, 4)
+	require.Len(t, descs, 3)
 
 	names := map[string]bool{}
 	for _, d := range descs {
 		names[d.Name] = true
 	}
-	require.True(t, names["upload_file_async"])
 	require.True(t, names["upload_status"])
 	require.True(t, names["upload_cancel"])
 	require.True(t, names["upload_list"])
@@ -159,9 +158,9 @@ func TestAsyncUploadStatusToolMissingHandle(t *testing.T) {
 }
 
 func TestAsyncUploadToolsTextCarriesData(t *testing.T) {
-	// Text-only MCP clients read only the Text channel. upload_file_async,
-	// upload_status, upload_cancel, and upload_list must put their actionable
-	// data there (not a bare stub) so such clients can use the handle.
+	// Text-only MCP clients read only the Text channel. upload_status,
+	// upload_cancel, and upload_list must put their actionable data there
+	// (not a bare stub) so such clients can use the handle.
 	release := make(chan struct{})
 	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		select {

@@ -165,17 +165,9 @@ func OpenChatGPTFileInput(ctx context.Context, in ChatGPTFileInput, timeout time
 	return ref, body, size, nil
 }
 
-// OpenChatGPTInput validates a file input and opens its download
-// stream, returning the resolved reference, an owned reader, and byte size.
-// It centralizes the input→reference→validate→open sequence shared by the
-// upload, vault, and async handlers. maxBytes, relayHosts, and the HTTP client
-// are left to the package defaults to preserve the established async behavior.
-func OpenChatGPTInput(ctx context.Context, in ChatGPTFileInput, timeout time.Duration) (ieo.ChatGPTFileReference, io.ReadCloser, int64, error) {
-	return OpenChatGPTFileInput(ctx, in, timeout, 0, nil, nil)
-}
-
 // The standalone ChatGPTUploadDescriptor and chatGPTUploadTool were superseded
 // by the unified, transport-aware upload_file (NewUploadFileDescriptor), which
-// routes the OpenAI-tunnel url/data sources through the shared UploadHandler
-// executor. The shared helpers above (UploadHandler, ChatGPTFileMeta,
-// chatgptRelayOptions, OpenChatGPTInput) remain for the vault and async paths.
+// routes the OpenAI-tunnel url/data sources and the host-provided `file`
+// reference through the shared UploadHandler executor. The shared helpers
+// above (UploadHandler, ChatGPTFileMeta, chatgptRelayOptions,
+// OpenChatGPTFileInput) remain for upload_file and the vault path.

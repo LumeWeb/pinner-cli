@@ -482,8 +482,9 @@ func buildIPFSUploadSharedServer(t *testing.T) (*mcp.Server, *transfer.Upload, *
 	if err := RegisterOfficialDescriptor(srv, uploadFileDesc); err != nil {
 		t.Fatalf("RegisterOfficialDescriptor(upload_file): %v", err)
 	}
-	// The model-facing upload_status/list tools (mirrors custom_tools.go's
-	// NewAsyncUploadTools registration) share the same manager.
+	// The model-facing upload_status/cancel/list tools (mirrors
+	// custom_tools.go's NewAsyncUploadTools registration) share the same
+	// manager.
 	for _, desc := range upload.NewAsyncUploadTools(mgr) {
 		if err := RegisterOfficialDescriptor(srv, desc); err != nil {
 			t.Fatalf("RegisterOfficialDescriptor(%s): %v", desc.Name, err)

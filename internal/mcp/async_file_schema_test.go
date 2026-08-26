@@ -1,9 +1,7 @@
 package mcp
 
 import (
-	"context"
 	"encoding/json"
-	"io"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -11,7 +9,6 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
-	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 )
 
 // listToolsFor registers the given descriptors and returns tools/list by name.
@@ -20,40 +17,6 @@ func listToolsFor(t *testing.T, descs ...model.ToolDescriptor) map[string]*mcp.T
 	// Reuse the official registration pipeline exactly like production.
 	tools := listToolsOn(t, descs...)
 	return tools
-}
-
-// TestAsyncUploadFileIsObjectNotString guards concern #2: upload_file_async's
-// `file` argument must surface as a structured OpenAI file object (download_url
-// + file_id), NOT a bare string that a host/model cannot turn into a real file
-// handoff. It must also carry the openai/fileParams annotation.
-func TestAsyncUploadFileIsObjectNotString(t *testing.T) {
-	mgr := transfer.NewUploadTaskManager(func(_ context.Context, r io.Reader, _ int64, _ string, _ bool, _ string, _ bool) (any, error) {
-		return map[string]any{"handle": "h"}, nil
-	}, 0)
-	tools := listToolsFor(t, upload.NewAsyncUploadTools(mgr)...)
-	tool, ok := tools["upload_file_async"]
-	require.True(t, ok, "upload_file_async must be present in tools/list")
-
-	b, _ := json.Marshal(tool.Meta["openai/fileParams"])
-	require.JSONEq(t, `["file"]`, string(b), "upload_file_async must annotate file via openai/fileParams")
-
-	schemaBytes, err := json.Marshal(tool.InputSchema)
-	require.NoError(t, err)
-	var schema map[string]any
-	require.NoError(t, json.Unmarshal(schemaBytes, &schema))
-	props := schema["properties"].(map[string]any)
-	fileField, ok := props["file"].(map[string]any)
-	require.True(t, ok, "upload_file_async must declare a top-level file object")
-	require.Equal(t, "object", fileField["type"], "upload_file_async.file must be an object, not a string")
-	fileProps, ok := fileField["properties"].(map[string]any)
-	require.True(t, ok)
-	for _, n := range []string{"download_url", "file_id", "mime_type", "file_name"} {
-		_, ok := fileProps[n].(map[string]any)
-		require.True(t, ok, "upload_file_async.file must declare %q", n)
-	}
-	req, ok := fileField["required"].([]any)
-	require.True(t, ok)
-	require.ElementsMatch(t, []any{"download_url", "file_id"}, req)
 }
 
 // TestServedUploadFileAcceptMintOnHTTP is the exact regression assertion the

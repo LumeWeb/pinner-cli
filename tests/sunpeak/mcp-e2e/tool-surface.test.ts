@@ -67,7 +67,6 @@ const EXPECTED_TOOLS = [
   'upload_cancel',
   'upload_data',
   'upload_file',
-  'upload_file_async',
   'upload_list',
   'upload_status',
   'upload_url',
