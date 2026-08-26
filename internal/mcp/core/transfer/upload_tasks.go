@@ -128,9 +128,13 @@ type UploadTaskManager struct {
 	mu         sync.Mutex
 	tasks      map[string]*trackedTask
 	tombstones map[string]*UploadTask
-	exec       UploadExecutor
-	ttl        time.Duration
-	MaxActive  int
+	// tombstoneOrder is the FIFO of tombstoned ids in the order they were
+	// recorded (see tombstoneLocked), so pruneLocked can retire expired
+	// tombstones from the front without scanning the whole map.
+	tombstoneOrder []string
+	exec           UploadExecutor
+	ttl            time.Duration
+	MaxActive      int
 	// PreparedTTL is the fallback how-long an unfulfilled Prepared
 	// (minted-but-never-supplied) canonical operation is retained before prune
 	// when a task is created without its own endpoint TTL. It is intentionally
@@ -523,12 +527,16 @@ func (m *UploadTaskManager) Get(id string) (*UploadTask, error) {
 // retires the handle.
 func (m *UploadTaskManager) Cancel(id string) error {
 	m.mu.Lock()
-	if tomb, ok := m.tombstones[id]; ok {
-		m.mu.Unlock()
-		return fmt.Errorf("upload %q already finished (state %s)", id, tomb.State)
-	}
+	// A live task always wins over a tombstone: a fulfilled handle that was
+	// briefly tombstoned by pruneLocked (as Expired, before the same Fulfill
+	// re-registered it as running) must still be cancellable. Only fall back to
+	// the tombstone when no live task exists under the id.
 	t, ok := m.tasks[id]
 	if !ok {
+		if tomb, ok := m.tombstones[id]; ok {
+			m.mu.Unlock()
+			return fmt.Errorf("upload %q already finished (state %s)", id, tomb.State)
+		}
 		m.mu.Unlock()
 		return fmt.Errorf("unknown upload handle %q", id)
 	}
@@ -666,17 +674,37 @@ func (m *UploadTaskManager) pruneLocked() {
 	}
 	// Retire tombstones that are themselves past the retention window so the
 	// tombstone map cannot grow without bound; after this point a handle is
-	// genuinely unknown (never existed within retention).
-	for id, tomb := range m.tombstones {
-		if tomb.FinishedAt != nil && tomb.FinishedAt.Before(now.Add(-m.ttl)) {
-			delete(m.tombstones, id)
+	// genuinely unknown (never existed within retention). Tombstones are kept
+	// in insertion order (see tombstoneLocked), so only the front of the queue
+	// is ever eligible: once the head is young enough, every successor is too
+	// (they were tombstoned later), so we stop scanning and truncate the
+	// already-retired prefix. O(tombstones) worst case, but the common hot
+	// path (nothing expired) is O(1).
+	cutoff := now.Add(-m.ttl)
+	retired := 0
+	for _, id := range m.tombstoneOrder {
+		tomb, ok := m.tombstones[id]
+		if !ok || tomb.FinishedAt == nil || !tomb.FinishedAt.Before(cutoff) {
+			break
 		}
+		delete(m.tombstones, id)
+		retired++
+	}
+	if retired > 0 {
+		// Drop the retired prefix from the FIFO so those ids cannot block the
+		// head of the queue on later prunes.
+		m.tombstoneOrder = append([]string(nil), m.tombstoneOrder[retired:]...)
 	}
 }
 
 // tombstoneLocked records a pruned handle's final task snapshot so a later
 // status/cancel/fulfill poll on the old handle reports "expired"/"finished"
 // instead of the misleading "unknown upload handle". Caller must hold m.mu.
+// The id is appended to the FIFO only when it is new (an id re-registered and
+// re-pruned keeps its original position so the ordering stays monotonic).
 func (m *UploadTaskManager) tombstoneLocked(id string, task *UploadTask) {
+	if _, exists := m.tombstones[id]; !exists {
+		m.tombstoneOrder = append(m.tombstoneOrder, id)
+	}
 	m.tombstones[id] = cloneTask(task)
 }
