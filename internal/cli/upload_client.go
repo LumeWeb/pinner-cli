@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/avast/retry-go/v5"
+	"github.com/ipfs/boxo/pinning/remote/client"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	coreerrors "go.lumeweb.com/pinner-cli/internal/core/errors"
@@ -407,7 +408,7 @@ func (s *UploadServiceDefault) waitForPin(ctx context.Context, rootCID string, a
 				}
 				return err
 			}
-			if status.Status != "pinned" {
+			if go_pinning_service_http_client.Status(status.Status) != go_pinning_service_http_client.StatusPinned {
 				return fmt.Errorf("pin status is %s, expected pinned", status.Status)
 			}
 			return nil
