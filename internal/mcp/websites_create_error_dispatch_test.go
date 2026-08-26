@@ -16,14 +16,18 @@ import (
 )
 
 // mcpErrWebsitesService is a websites.Service fake whose CreateWithOptions
-// returns the configured error; every other method is a no-op stub satisfied
-// by embedding the real interface.
+// returns the configured error. ListPlatformDomains returns an empty response
+// so the create-with-custom-domain path does not hit the embedded nil
+// interface; CreateWithOptions carries the translated error under test.
 type mcpErrWebsitesService struct {
 	websites.Service
 	err error
 }
 
 func (f *mcpErrWebsitesService) RequireAuthenticated() error { return nil }
+func (f *mcpErrWebsitesService) ListPlatformDomains(context.Context) (*ipfs.PlatformDomainListResponse, error) {
+	return nil, nil
+}
 func (f *mcpErrWebsitesService) CreateWithOptions(_ context.Context, _ ipfs.WebsiteRequest) (*ipfs.WebsiteItem, error) {
 	return nil, f.err
 }
