@@ -2,6 +2,7 @@ package transfer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -58,6 +59,28 @@ func (in ChatGPTFileInput) Reference() ieo.ChatGPTFileReference {
 		MIMEType:    in.MIMEType,
 		FileName:    in.FileName,
 	}
+}
+
+// UnmarshalJSON enforces that `file` is the host-provided file OBJECT. A host
+// that does not perform the OpenAI file-parameter rewrite (e.g. xAI Grok
+// passing a bare local path) sends a plain string here. The server cannot read
+// an arbitrary host path, so reject it with a clear, model-actionable message
+// instead of a generic "cannot unmarshal string into Go struct field ... of
+// type transfer.ChatGPTFileInput" error, and let the model route through an
+// in-contract source. The string-form error surfaces through DecodeToolArgs so
+// every consumer of ChatGPTFileInput shares one rejection path.
+func (in *ChatGPTFileInput) UnmarshalJSON(b []byte) error {
+	var s string
+	if json.Unmarshal(b, &s) == nil {
+		return errors.New("the \"file\" parameter must be a host-provided file object ({download_url, file_id}), not a bare path string; a raw host path cannot be read by this tool. Use \"source\" with a mode valid for the running transport (path for co-located, mint for HTTP/tunnel, url or data for a relay), or ensure the host performs file-parameter handoff")
+	}
+	type plain ChatGPTFileInput
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	*in = ChatGPTFileInput(p)
+	return nil
 }
 
 // ChatGPTOpenTimeout is the per-tool timeout for fetching OpenAI file objects.
