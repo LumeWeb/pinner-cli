@@ -123,6 +123,42 @@ func TestAgentGuideModesMatchProfile(t *testing.T) {
 	}
 }
 
+// TestAgentGuideFileHandoffMutuallyExclusive guards against doubled,
+// contradictory guidance for host-file-input platforms (Regression from Kody
+// review on the DescBuilder refactor): the host-file clause and the
+// convert-source clause were both feature-gated and both fired for
+// FileHostInput hosts, producing e.g. "with the host file argument ... with a
+// convert source ...". They are mutually exclusive — exactly one must appear.
+func TestAgentGuideFileHandoffMutuallyExclusive(t *testing.T) {
+	handoff := "with the host file argument"
+	convert := "with a convert source (source.mode="
+
+	for _, p := range []hostenv.PlatformProfile{
+		hostenv.ProfileOpenAITunnel,
+		hostenv.ProfileOpenAIHTTP,
+	} {
+		// FileHostInput hosts show the host-file branch and must NOT also emit
+		// the convert-source alternative. Note the host-file clause itself
+		// mentions "(or a convert source)", so assert on the full branch marker.
+		guide := buildAgentGuide(&p)
+		upload := guideFlowByName(t, guide, "upload").Detail
+		require.Contains(t, upload, handoff, "FileHostInput profile must lead with the host-file clause")
+		require.NotContains(t, upload, convert, "FileHostInput profile must not also emit the convert-source clause")
+	}
+
+	for _, p := range []hostenv.PlatformProfile{
+		hostenv.ProfileStdioGeneric,
+		hostenv.ProfileGrokHTTP,
+	} {
+		// Non-FileHostInput hosts show the convert-source branch and must not
+		// mention a host file argument.
+		guide := buildAgentGuide(&p)
+		upload := guideFlowByName(t, guide, "upload").Detail
+		require.Contains(t, upload, convert, "non-FileHostInput profile must emit the convert-source clause")
+		require.NotContains(t, upload, handoff, "non-FileHostInput profile must not mention a host file argument")
+	}
+}
+
 func guideFlowByName(t *testing.T, guide AgentGuide, name string) GuideFlow {
 	t.Helper()
 	for _, f := range guide.Flows {

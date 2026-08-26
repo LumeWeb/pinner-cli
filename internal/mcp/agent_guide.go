@@ -90,7 +90,7 @@ var uploadDetailDesc = toolforge.Static(
 	When(hostenv.FeatFileHostInput,
 		"If capabilities' file_input_policy is host_file_first (only when your client can hand Pinner a {download_url, file_id} file object), pass a host-provided file reference directly. Otherwise use a transport-scoped source: {{SOURCES}}.",
 	).
-	WhenAny([]hostenv.Feature{hostenv.FeatSourceMint, hostenv.FeatSourcePath, hostenv.FeatSourceURL},
+	Unless(hostenv.FeatFileHostInput,
 		"Use a transport-scoped source: {{SOURCES}}.",
 	).
 	Static("The returned CID is already pinned — use it directly in websites_create/update; do NOT call pins_add after an upload").
@@ -101,7 +101,7 @@ var uploadDetailDesc = toolforge.Static(
 	When(hostenv.FeatFileHostInput,
 		"with the host file argument (or a convert source) and archive_mode=convert",
 	).
-	WhenAny([]hostenv.Feature{hostenv.FeatSourceMint, hostenv.FeatSourcePath, hostenv.FeatSourceURL},
+	Unless(hostenv.FeatFileHostInput,
 		"with a convert source ({{SOURCES}}) and archive_mode=convert",
 	).
 	StaticList("not individual assets.")
@@ -113,7 +113,7 @@ var vaultUploadDetailDesc = toolforge.Static(
 	When(hostenv.FeatFileHostInput,
 		"If capabilities' file_input_policy is host_file_first (only when your client can hand Pinner a {download_url, file_id} file object), pass a host-provided file reference directly. Otherwise use a transport-scoped source ({{SOURCES}}) plus the destination vault_path.",
 	).
-	WhenAny([]hostenv.Feature{hostenv.FeatSourceMint, hostenv.FeatSourcePath, hostenv.FeatSourceURL},
+	Unless(hostenv.FeatFileHostInput,
 		"Use a transport-scoped source ({{SOURCES}}) plus the destination vault_path.",
 	).
 	When(hostenv.FeatSourceMint,
@@ -171,7 +171,7 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 		When(hostenv.FeatFileHostInput,
 			"with a host file argument IF capabilities' file_input_policy is host_file_first (your client can hand Pinner a {download_url, file_id} object), otherwise a convert-capable transport source",
 		).
-		WhenAny([]hostenv.Feature{hostenv.FeatSourceMint, hostenv.FeatSourcePath, hostenv.FeatSourceURL},
+		Unless(hostenv.FeatFileHostInput,
 			"with a convert-capable transport source ({{SOURCES}})",
 		).
 		StaticList("then publish the resulting directory CID. Do NOT mint a presigned curl URL for a file your host already holds unless capabilities directs you to a transport-scoped source. For guided, interactive website onboarding (human-in-the-loop, step-by-step DNS setup), use the website-onboarding prompt and the websites_wizard tools instead of the publish_website flow.")
