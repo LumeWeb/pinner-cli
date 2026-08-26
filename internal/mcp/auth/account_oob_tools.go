@@ -12,6 +12,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 
 // This file exposes the out-of-band account credential tools: changing the
@@ -51,6 +52,7 @@ func NewAccountPasswordUpdateDescriptor(oob *OOBAccountChange, svc AuthService, 
 		Name:        "account_password_update",
 		Title:       "Change Password (Out-of-Band)",
 		Description: "Start an out-of-band (OOB) password change. Returns a short-lived page URL the human opens in a browser to enter their current and new password; the password never reaches this channel. The account must be signed in first. Start here to change your password.",
+		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback("Start an out-of-band (OOB) password change. Returns a short-lived page URL the human opens in a browser to enter their current and new password; the password never reaches this channel. The account must be signed in first. Start here to change your password.")),
 		Category:    model.CategoryAccount,
 		Destructive: true,
 		InputSchema: toolargs.ToolSchemaFor[accountPasswordUpdateArgs](),
@@ -101,6 +103,7 @@ func NewAccountEmailChangeDescriptor(oob *OOBAccountChange, svc AuthService) mod
 		Name:        "account_email_change",
 		Title:       "Change Email (Out-of-Band)",
 		Description: "Start an out-of-band (OOB) email change. Returns a short-lived page URL the human opens in a browser to enter the new email and their current password; the password never reaches this channel. The account must be signed in first. Start here to change your email.",
+		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback("Start an out-of-band (OOB) email change. Returns a short-lived page URL the human opens in a browser to enter the new email and their current password; the password never reaches this channel. The account must be signed in first. Start here to change your email.")),
 		Category:    model.CategoryAccount,
 		Destructive: true,
 		InputSchema: toolargs.ToolSchemaFor[accountPasswordUpdateArgs](),
@@ -149,6 +152,7 @@ func NewAccountPasswordResetDescriptor(svc AuthService, webAppURL string) model.
 		Name:        "account_password_reset",
 		Title:       "Reset Password (Email Link)",
 		Description: "Send a password reset link to the account's email and hand the human off to the webapp to complete it. Used when the password is forgotten; no password transits this channel.",
+		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback("Send a password reset link to the account's email and hand the human off to the webapp to complete it. Used when the password is forgotten; no password transits this channel.")),
 		Category:    model.CategoryAccount,
 		InputSchema: toolargs.ToolSchemaFor[accountPasswordResetArgs](),
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {

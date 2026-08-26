@@ -9,6 +9,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 
 // DataURIUploadInput is the typed argument shape for upload_data.
@@ -29,11 +30,16 @@ type DataURIUploadInput struct {
 // materialized in memory.
 func DataURIUploadDescriptor(handler DataURIUploadHandler, maxBytes int64) model.ToolDescriptor {
 	maxBytes = ieo.EffectiveRelayMaxBytes(maxBytes)
+	// dataURIUploadDescription is shared between the static Description
+	// (tools/list) and the Fallback MCPTarget so the profile-aware catalog seam
+	// (describe_tool/search_tools) reports the same last-resort guidance.
+	dataURIUploadDescription := "Upload bytes from an RFC 2397 data: URI and pin the resulting CID. The returned CID is already pinned: do NOT call pins_add afterward. The wait flag waits for this upload's own pin operation. Do not call this tool when capabilities.host_file_input == true and the requested content exists as a host file (user-uploaded or assistant-generated files in the assistant's sandbox); use upload_file(file=...) instead. Last resort only — never use for a host-provided or assistant-generated file that can be passed to upload_file."
 	return model.ToolDescriptor{
 		Name:        "upload_data",
 		Title:       "Upload a file from a data URI",
-		Description: "Upload bytes from an RFC 2397 data: URI and pin the resulting CID. The returned CID is already pinned: do NOT call pins_add afterward. The wait flag waits for this upload's own pin operation. Do not call this tool when capabilities.host_file_input == true and the requested content exists as a host file (user-uploaded or assistant-generated files in the assistant's sandbox); use upload_file(file=...) instead. Last resort only — never use for a host-provided or assistant-generated file that can be passed to upload_file.",
+		Description: dataURIUploadDescription,
 		Category:    model.CategoryCore,
+		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback(dataURIUploadDescription)),
 		InputSchema: toolargs.ToolSchemaFor[DataURIUploadInput](),
 		// x-mcp-file marks the "file" property as a file-valued input per the
 		// draft spec; the SDK's Meta map carries it without a typed field.

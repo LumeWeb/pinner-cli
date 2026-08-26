@@ -86,3 +86,43 @@ var VaultPutFileTargets = []model.ToolTarget{{
 	Visible:  true,
 	DescFunc: vaultPutFileDesc.Resolve,
 }}
+
+// downloadFileDesc composes the download_file description: sink=local is
+// available on every transport, while the drop filedrop sink is only
+// advertised when the resolved profile has a reachable HTTP mux
+// (FeatSinkDrop). The two clauses mirror downloadFileDescription's previous
+// if/else so the startup and per-request surfaces cannot diverge.
+var downloadFileDesc = Static(
+	"Download IPFS content (CID or CID/path) as a file. Set sink=local to write the bytes to a host-side output_path on the MCP server's own disk (available on every transport)",
+).
+	WhenSep(SepSpace, hostenv.FeatSinkDrop,
+		"or sink=drop to get a one-time HTTP GET filedrop link to pull from out of band (curl -o <url> or a browser link).",
+	).
+	UnlessSep(SepSentence, hostenv.FeatSinkDrop,
+		"The filedrop GET sink is unavailable on this transport.",
+	)
+
+// DownloadFileTargets are the per-profile description targets for download_file.
+var DownloadFileTargets = []model.ToolTarget{{
+	Visible:  true,
+	DescFunc: downloadFileDesc.Resolve,
+}}
+
+// vaultGetFileDesc mirrors downloadFileDesc for vault_get_file, keeping the
+// encrypted-vault preamble fixed and gating the drop sink clause on
+// FeatSinkDrop.
+var vaultGetFileDesc = Static(
+	"Download a file from your encrypted Pinner vault by vault_path (e.g. vault:/docs/f.pdf). Set sink=local to write the decrypted bytes to a host-side output_path on the MCP server's own disk (available on every transport)",
+).
+	WhenSep(SepSpace, hostenv.FeatSinkDrop,
+		"or sink=drop to get a one-time HTTP GET filedrop link to pull from out of band.",
+	).
+	UnlessSep(SepSentence, hostenv.FeatSinkDrop,
+		"The filedrop GET sink is unavailable on this tunnel transport.",
+	)
+
+// VaultGetFileTargets are the per-profile description targets for vault_get_file.
+var VaultGetFileTargets = []model.ToolTarget{{
+	Visible:  true,
+	DescFunc: vaultGetFileDesc.Resolve,
+}}

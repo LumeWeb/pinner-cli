@@ -39,6 +39,13 @@ func Fallback(desc string) model.ToolTarget {
 	}
 }
 
+// MCPTargets wraps a variadic list of ToolTargets into a slice, mirroring
+// catalog.MCPTargets for the model-level target type. Use it when declaring a
+// descriptor's MCPTargets for readability:
+//
+//	MCPTargets: toolforge.MCPTargets(toolforge.Fallback("Upload a file..."))
+func MCPTargets(targets ...model.ToolTarget) []model.ToolTarget { return targets }
+
 // Hidden creates an invisible model.ToolTarget that suppresses the tool entirely
 // for platforms matching the given features. Useful when a tool should not
 // be advertised to certain hosts.

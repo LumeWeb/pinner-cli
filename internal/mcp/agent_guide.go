@@ -246,12 +246,18 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 // does not have to discover the flows by probing tool descriptions. The guide
 // content is adapted based on the calling client's platform profile so that
 // file-input and download-sink guidance matches the transport's capabilities.
+// agentGuideDescription is shared between the static Description (tools/list)
+// and the Fallback MCPTarget so the tool carries a target list for uniformity
+// (it is a direct-only tool and does not enter the catalog).
+const agentGuideDescription = "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, download, vault_download, pins, publish_website) as ordered tool chains or decision trees, plus operational rules. Call this first to learn how to drive Pinner before probing individual tools."
+
 func NewAgentGuideDescriptor() model.ToolDescriptor {
 	return model.ToolDescriptor{
 		Name:        "agent_guide",
 		Title:       "Pinner agent guide",
-		Description: "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, download, vault_download, pins, publish_website) as ordered tool chains or decision trees, plus operational rules. Call this first to learn how to drive Pinner before probing individual tools.",
+		Description: agentGuideDescription,
 		Category:    model.CategoryCore,
+		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback(agentGuideDescription)),
 		InputSchema: toolargs.ToolSchemaFor[wizard.NoInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			guide := buildAgentGuide(profileFromRequest(request))

@@ -8,6 +8,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 
 // This file implements the --dev-tools feature: a small set of read-only
@@ -192,6 +193,7 @@ func devToolDescriptors() []model.ToolDescriptor {
 			ReadOnly:      true,
 			DirectVisible: true,
 			InputSchema:   json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
+			MCPTargets:    toolforge.MCPTargets(toolforge.Fallback(description)),
 			Handler:       handler,
 		}
 	}

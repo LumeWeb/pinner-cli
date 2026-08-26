@@ -9,6 +9,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 
 // OpenVaultManagerURI is the ui:// resource URI served by the Upload to Vault
@@ -19,6 +20,12 @@ const OpenVaultManagerURI = VaultUploadAppURI
 // to Vault app. It is the ONLY tool carrying ui.resourceUri for this view; the
 // headless vault_put_file primitive never advertises a card.
 const OpenVaultManagerToolName = "open_vault_manager"
+
+// openVaultManagerDescription is shared between the static Description and the
+// Fallback MCPTarget so the launcher descriptor carries a target list.
+const openVaultManagerDescription = "Open the interactive Upload to Vault file picker. This is a UI launcher: it renders an HTML iframe so the user can pick a file. It is not a headless primitive. " +
+	"It returns a presigned PUT URL plus the vault_path; the iframe's Uppy uploader POSTs file bytes to that URL directly, and the vault write is synchronous (the PUT response is the result). " +
+	"Prefer vault_put_file (headless) for autonomous workflows; call this only when a human file picker is actually desired."
 
 // OpenVaultManagerInput is the typed argument shape for the model-facing
 // Vault upload launcher. Vault uploads are synchronous: bytes land in the
@@ -42,11 +49,10 @@ func NewOpenVaultManagerDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescr
 		Visibility:  []model.ToolVisibility{model.ToolVisibilityModel, model.ToolVisibilityApp},
 	})
 	return model.ToolDescriptor{
-		Name:  "open_vault_manager",
-		Title: "Open Upload to Vault App",
-		Description: "Open the interactive Upload to Vault file picker. This is a UI launcher: it renders an HTML iframe so the user can pick a file. It is not a headless primitive. " +
-			"It returns a presigned PUT URL plus the vault_path; the iframe's Uppy uploader POSTs file bytes to that URL directly, and the vault write is synchronous (the PUT response is the result). " +
-			"Prefer vault_put_file (headless) for autonomous workflows; call this only when a human file picker is actually desired.",
+		Name:        "open_vault_manager",
+		Title:       "Open Upload to Vault App",
+		Description: openVaultManagerDescription,
+		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback(openVaultManagerDescription)),
 		InputSchema: toolargs.ToolSchemaFor[OpenVaultManagerInput](),
 		Meta:        appMeta,
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
@@ -73,8 +79,8 @@ func NewOpenVaultManagerDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescr
 			}
 			sc := map[string]any{
 				"presigned_url": url,
-				"vault_path":     in.VaultPath,
-				"ttl":            ttl.String(),
+				"vault_path":    in.VaultPath,
+				"ttl":           ttl.String(),
 			}
 			return model.ToolResult{
 				StructuredContent: sc,

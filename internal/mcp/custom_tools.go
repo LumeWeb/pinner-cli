@@ -124,73 +124,85 @@ type customToolDeps struct {
 // cognitively isolated from the server pump:
 //
 //   - wizard tools (wizard.RegisterWizardTools) — sessions + step handlers
-//   - the "Create a Pin" MCP App (ui:// view + app-only status helper)
 //   - the agent-facing out-of-band sign-in tools, which join the catalog as
 //     DirectVisible tools instead of a separate RegisterOfficialDescriptor path
-//   - markCurated + RegisterOfficialCuratedTools, the direct tools/list surface
-//   - pinner:// resources and templates
-//   - the upload-backend tools (relay URL, data URI, async)
-//   - the capability-detection tool and (optionally) the prompt templates
+//   - the markCurated + curated tools/list surface
+//   - the MCP App launchers (open_*) and their ui:// views
+//   - the upload/download/vault transport tools (upload_file, upload_url,
+//     upload_data, upload_status/cancel/list, download_file, vault_get_file,
+//     vault_put_file) and the capability-detection tool + agent guide
+//   - the pinner:// resources and (optionally) the prompt templates
+//
+// The wiring itself is delegated to a fixed, phase-based customToolRegistry
+// (see custom_tools_register.go): specs are declared here, then the pipeline
+// indexes the catalog, installs app views, stamps the curated surface, and
+// projects the direct tools/list — in that order — so ordering dependencies
+// (an app view attaching _meta.ui to a launcher that must be catalog-indexed
+// first) resolve regardless of declaration order.
 func registerCustomTools(deps customToolDeps) error {
+	// Wizard tools and dev-introspection tools register directly into the
+	// catalog (wizard via its own toolAdder, dev tools as DirectVisible
+	// entries). Both must already be present when the pipeline stamps the
+	// curated surface, so they are registered before customToolRegistry.run().
 	if deps.hasWizard {
 		if err := wizard.RegisterWizardTools(deps.catalog, deps.store, deps.wizardW, deps.wizardS, deps.wizardD); err != nil {
 			return err
 		}
 	}
+	if deps.devTools {
+		registerDevTools(deps.catalog)
+	}
 
-	// Resolve options before registering curated tools so App wiring (which
-	// must attach _meta.ui to the pin tool in the catalog BEFORE the curated
-	// loop registers it) can read provider factories.
-	if deps.opts != nil && deps.opts.pinnerPins != nil {
-		pins, err := deps.opts.pinnerPins()
+	opts := deps.opts
+	if opts == nil {
+		opts = &mcpServerOptions{}
+	}
+
+	reg := newCustomToolRegistry(deps.srv, deps.catalog)
+
+	// "Create a Pin" MCP App: open_pin_creator is the ONLY tool that opens the
+	// Create a Pin app view. pins_add stays headless.
+	if opts.pinnerPins != nil {
+		pins, err := opts.pinnerPins()
 		if err != nil {
 			return fmt.Errorf("failed to build pinning provider: %w", err)
 		}
-		// pins_add stays headless; open_pin_creator is the ONLY tool that
-		// opens the Create a Pin app view.
-		if err := registerOpenLauncher(deps, apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 			Name:        apps.OpenPinCreatorToolName,
 			Title:       "Create a Pin",
 			Description: "Open the interactive Create a Pin app. This is a UI launcher: it renders an iframe for a human to enter a CID and pin it. It is not a headless primitive. Prefer pins_add (headless) for autonomous workflows; call this only when a human-facing pin form is desired.",
 			Category:    model.CategoryCore,
 			ResourceURI: apps.PinCreateAppURI,
-		})); err != nil {
-			return fmt.Errorf("failed to register pin creator launcher: %w", err)
-		}
-		if err := apps.RegisterPinApp(deps.srv, deps.catalog, pins); err != nil {
-			return fmt.Errorf("failed to register pin app: %w", err)
-		}
+		}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
+			return apps.RegisterPinApp(srv, catalog, pins)
+		}))
 	}
 
 	// Agent-facing out-of-band sign-in tools (start + resume) are part of the
 	// direct surface AND indexed for progressive discovery. Adding them to the
-	// catalog with DirectVisible before the curated loop means a single
-	// registration path (the DirectVisible scan in RegisterOfficialCuratedTools)
-	// exposes them on tools/list while the catalog entry supplies
-	// search/describe/invoke. When the wizard transport is absent oob is nil
-	// and both tools return a structured not-configured hand-off instead of
-	// hanging.
+	// catalog with DirectVisible means a single registration path (the
+	// DirectVisible scan in RegisterOfficialCuratedTools) exposes them on
+	// tools/list while the catalog entry supplies search/describe/invoke. When
+	// the wizard transport is absent oob is nil and both tools return a
+	// structured not-configured hand-off instead of hanging.
 	authSSO := auth.NewAuthSSODescriptor(deps.oob, deps.authHandles, deps.handoffReg)
 	authSSO.DirectVisible = true
 	authResume := auth.NewAuthResumeDescriptor(deps.handoffReg, deps.authHandles)
 	authResume.DirectVisible = true
-	deps.catalog.Add(model.ToolEntryFromDescriptor(authSSO))
-	deps.catalog.Add(model.ToolEntryFromDescriptor(authResume))
+	reg.add(customToolSpec{desc: authSSO, index: true})
+	reg.add(customToolSpec{desc: authResume, index: true})
 
 	// auth_sso stays headless (it returns a needs_human URL+handle handoff);
 	// open_sso_signin is the ONLY tool that opens the Sign In app view.
-	if err := registerOpenLauncher(deps, apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+	reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 		Name:        auth.OpenSSOSigninToolName,
 		Title:       "Sign In (App)",
 		Description: "Open the interactive Sign In app. This is a UI launcher: it renders an iframe for a human to complete SSO approval. It is not a headless primitive. Prefer auth_sso (headless) for autonomous sign-in, which returns the approval URL + resume handle without rendering a card.",
 		Category:    model.CategoryAccount,
 		ResourceURI: auth.AuthSSOAppURI,
-	})); err != nil {
-		return fmt.Errorf("failed to register SSO launcher: %w", err)
-	}
-	if err := auth.RegisterAuthSSOApp(deps.srv, deps.catalog, deps.handoffReg, deps.authHandles); err != nil {
-		return fmt.Errorf("failed to register auth SSO app: %w", err)
-	}
+	}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
+		return auth.RegisterAuthSSOApp(srv, catalog, deps.handoffReg, deps.authHandles)
+	}))
 
 	// Out-of-band account credential tools: change the password (hosted browser
 	// form -> authenticated UpdatePassword, requires an authenticated session)
@@ -203,37 +215,27 @@ func registerCustomTools(deps customToolDeps) error {
 	accountReset.DirectVisible = true
 	accountEmail := auth.NewAccountEmailChangeDescriptor(deps.accountOOB, deps.wizardS.AuthService)
 	accountEmail.DirectVisible = true
-	deps.catalog.Add(model.ToolEntryFromDescriptor(accountUpdate))
-	deps.catalog.Add(model.ToolEntryFromDescriptor(accountReset))
-	deps.catalog.Add(model.ToolEntryFromDescriptor(accountEmail))
+	reg.add(customToolSpec{desc: accountUpdate, index: true})
+	reg.add(customToolSpec{desc: accountReset, index: true})
+	reg.add(customToolSpec{desc: accountEmail, index: true})
 
 	// account_password_update / account_email_change stay headless (they return
 	// a needs_human URL handoff); open_account_password / open_account_email
 	// are the ONLY tools that open their one-shot deep-link app views.
-	if err := registerOpenLauncher(deps, apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+	reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 		Name:        auth.OpenAccountPasswordToolName,
 		Title:       "Change Password (App)",
 		Description: "Open the interactive Change Password app. This is a UI launcher: it renders an iframe for a human to change their password. It is not a headless primitive. Prefer account_password_update (headless) for autonomous flows.",
 		Category:    model.CategoryAccount,
 		ResourceURI: auth.AccountPasswordAppURI,
-	})); err != nil {
-		return fmt.Errorf("failed to register account password launcher: %w", err)
-	}
-	if err := registerOpenLauncher(deps, apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+	}), auth.RegisterAccountPasswordApp))
+	reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 		Name:        auth.OpenAccountEmailToolName,
 		Title:       "Change Email (App)",
 		Description: "Open the interactive Change Email app. This is a UI launcher: it renders an iframe for a human to change their email. It is not a headless primitive. Prefer account_email_change (headless) for autonomous flows.",
 		Category:    model.CategoryAccount,
 		ResourceURI: auth.AccountEmailAppURI,
-	})); err != nil {
-		return fmt.Errorf("failed to register account email launcher: %w", err)
-	}
-	if err := auth.RegisterAccountPasswordApp(deps.srv, deps.catalog); err != nil {
-		return fmt.Errorf("failed to register account password app: %w", err)
-	}
-	if err := auth.RegisterAccountEmailApp(deps.srv, deps.catalog); err != nil {
-		return fmt.Errorf("failed to register account email app: %w", err)
-	}
+	}), auth.RegisterAccountEmailApp))
 
 	// Vault create/restore OOB hand-offs ride the SAME generic handoff-resume
 	// framework: the invoke path (buildCatalog) mints a handle and registers a
@@ -247,113 +249,73 @@ func registerCustomTools(deps customToolDeps) error {
 	vaultCreateResume.DirectVisible = true
 	vaultRestoreResume := oob.NewVaultRestoreResumeDescriptor(deps.handoffReg, deps.authHandles)
 	vaultRestoreResume.DirectVisible = true
-	deps.catalog.Add(model.ToolEntryFromDescriptor(vaultCreateResume))
-	deps.catalog.Add(model.ToolEntryFromDescriptor(vaultRestoreResume))
+	reg.add(customToolSpec{desc: vaultCreateResume, index: true})
+	reg.add(customToolSpec{desc: vaultRestoreResume, index: true})
 
 	// vault_create / vault_restore stay headless (they return a needs_human
 	// URL+handle handoff); open_vault_create / open_vault_restore are the ONLY
 	// tools that open their app views.
-	if err := registerOpenLauncher(deps, apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+	reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 		Name:        vault.OpenVaultCreateToolName,
 		Title:       "Create Vault (App)",
 		Description: "Open the interactive Create Vault app. This is a UI launcher: it renders an iframe for a human to create a vault (Sia approval + recovery seed). It is not a headless primitive. Prefer vault_create (headless) which returns the create URL + resume handle without rendering a card.",
 		Category:    model.CategoryVault,
 		ResourceURI: vault.VaultCreateAppURI,
-	})); err != nil {
-		return fmt.Errorf("failed to register vault create launcher: %w", err)
-	}
-	if err := registerOpenLauncher(deps, apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+	}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
+		return vault.RegisterVaultCreateApp(srv, catalog, deps.handoffReg, deps.authHandles)
+	}))
+	reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 		Name:        vault.OpenVaultRestoreToolName,
 		Title:       "Restore Vault (App)",
 		Description: "Open the interactive Restore Vault app. This is a UI launcher: it renders an iframe for a human to restore a vault from its recovery seed. It is not a headless primitive. Prefer vault_restore (headless) which returns the restore URL + resume handle without rendering a card.",
 		Category:    model.CategoryVault,
 		ResourceURI: vault.VaultRestoreAppURI,
-	})); err != nil {
-		return fmt.Errorf("failed to register vault restore launcher: %w", err)
-	}
-	if err := vault.RegisterVaultCreateApp(deps.srv, deps.catalog, deps.handoffReg, deps.authHandles); err != nil {
-		return fmt.Errorf("failed to register vault create app: %w", err)
-	}
-	if err := vault.RegisterVaultRestoreApp(deps.srv, deps.catalog, deps.handoffReg, deps.authHandles); err != nil {
-		return fmt.Errorf("failed to register vault restore app: %w", err)
-	}
+	}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
+		return vault.RegisterVaultRestoreApp(srv, catalog, deps.handoffReg, deps.authHandles)
+	}))
 
 	// vault_status stays headless (returns raw JSON); open_vault_browser is the
 	// ONLY tool that opens the Vault browser app view.
-	if err := registerOpenLauncher(deps, apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+	reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 		Name:        vault.OpenVaultBrowserToolName,
 		Title:       "Vault Browser (App)",
 		Description: "Open the interactive Vault browser app. This is a UI launcher: it renders an iframe for a human to browse the vault. It is not a headless primitive. Prefer vault_status / vault_ls (headless) for autonomous access.",
 		Category:    model.CategoryVault,
 		ResourceURI: vault.VaultBrowserAppURI,
-	})); err != nil {
-		return fmt.Errorf("failed to register vault browser launcher: %w", err)
-	}
-	if err := vault.RegisterVaultBrowserApp(deps.srv, deps.catalog); err != nil {
-		return fmt.Errorf("failed to register vault browser app: %w", err)
-	}
+	}), vault.RegisterVaultBrowserApp))
 
 	// pins_list stays headless (returns raw JSON); open_pin_list is the ONLY
 	// tool that opens the Pin list app view.
-	if err := registerOpenLauncher(deps, apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+	reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 		Name:        download.OpenPinListToolName,
 		Title:       "Pin List (App)",
 		Description: "Open the interactive Pin list app. This is a UI launcher: it renders an iframe for a human to browse pins. It is not a headless primitive. Prefer pins_list (headless) for autonomous access.",
 		Category:    model.CategoryCore,
 		ResourceURI: download.PinListAppURI,
-	})); err != nil {
-		return fmt.Errorf("failed to register pin list launcher: %w", err)
-	}
-	if err := download.RegisterPinListApp(deps.srv, deps.catalog); err != nil {
-		return fmt.Errorf("failed to register pin list app: %w", err)
-	}
+	}), download.RegisterPinListApp))
 
 	// auth_status stays headless (returns raw JSON); open_account is the ONLY
 	// tool that opens the Account app view.
-	if err := registerOpenLauncher(deps, apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+	reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 		Name:        auth.OpenAccountToolName,
 		Title:       "Account (App)",
 		Description: "Open the interactive Account app. This is a UI launcher: it renders an iframe for a human to view authentication status. It is not a headless primitive. Prefer auth_status (headless) for autonomous access.",
 		Category:    model.CategoryAccount,
 		ResourceURI: auth.AuthStatusAppURI,
-	})); err != nil {
-		return fmt.Errorf("failed to register account launcher: %w", err)
-	}
-	if err := auth.RegisterAuthStatusApp(deps.srv, deps.catalog); err != nil {
-		return fmt.Errorf("failed to register auth status app: %w", err)
-	}
+	}), auth.RegisterAuthStatusApp))
 
-	// Dev introspection tools are registered only when --dev-tools is on. They
-	// are DirectVisible, so the curated loop below surfaces them on tools/list
-	// next to the other direct tools (and the catalog entry makes them
-	// discoverable via search_tools/describe_tool).
-	if deps.devTools {
-		registerDevTools(deps.catalog)
-	}
-
-	// Stamp which tools are part of the direct tools/list surface. This must
-	// run after the wizard tools and SSO tools are added to the catalog (both
-	// are created after buildCatalog returns), so the compiled curated names
-	// are all present before visibility is marked.
-	markCurated(deps.catalog)
-
-	if err := RegisterOfficialCuratedTools(deps.srv, deps.catalog); err != nil {
-		return fmt.Errorf("failed to register curated tools: %w", err)
-	}
-
+	// pinner:// resources and templates are built from the provider factory and
+	// projected after the direct tool surface.
 	if deps.resourceFactory != nil {
-		provs := deps.resourceFactory(deps.store)
-		provs.Sessions = deps.store
-		resources, templates := ResourceDescriptors(provs)
-		if err := sdk.RegisterResources(deps.srv, resources, templates); err != nil {
-			return err
-		}
+		reg.afterSurface(func() error {
+			provs := deps.resourceFactory(deps.store)
+			provs.Sessions = deps.store
+			resources, templates := ResourceDescriptors(provs)
+			return sdk.RegisterResources(deps.srv, resources, templates)
+		})
 	}
 
-	opts := deps.opts
-	if opts == nil {
-		opts = &mcpServerOptions{}
-	}
+	// --- Vault put file (unified, transport-aware) ---
 	if vaultPutFileAvailable(deps.coLocated, opts.localPathVaultPut != nil, deps.vaultUpload != nil, opts.vaultPutHandler != nil, deps.tunnelOpenAI) {
 		var pathFn vault.LocalPathVaultPutHandler
 		if deps.coLocated {
@@ -369,43 +331,32 @@ func registerCustomTools(deps customToolDeps) error {
 				vaultPutDesc.Description = d
 			}
 		}
-		// Pair vault_put_file with its "Upload to Vault" MCP App view
-		// (ui://uploads/vault.html) when the presigned vault-upload coordinator
-		// can mint a PUT endpoint for the Uppy XHR uploader. The app must be
-		// indexed in the catalog before its view attaches _meta.ui.
-		// Index vault_put_file in the catalog and register the vault upload app,
-		// but do NOT copy the app's _meta.ui onto the served descriptor.
-		// vault_put_file is a headless operational primitive: attaching a
-		// ui:// resourceUri would cause a UI-capable host to render the
-		// file-picker iframe on every invocation, which is the wrong UX for
-		// mid-workflow agent calls. The App is reachable only through the
-		// explicit open_vault_manager launcher (below).
+		// vault_put_file is a headless operational primitive: it never carries
+		// ui.resourceUri (a UI-capable host would otherwise render a card on
+		// every mid-workflow call). The App's view lives on the explicit
+		// open_vault_manager launcher, which is registered only when the
+		// presigned vault-upload coordinator (deps.vaultUpload) can mint a PUT
+		// endpoint for the Uppy XHR uploader.
+		vaultPutSpec := customToolSpec{desc: vaultPutDesc, direct: true}
 		if deps.vaultUpload != nil {
-			// open_vault_manager must be catalog-indexed BEFORE
-			// RegisterVaultUploadApp runs: the app's AttachTo resolves the
-			// launcher from the catalog to stamp _meta.ui on it. registerOpenLauncher
-			// publishes it both to the catalog (for AttachTo + curated discovery)
-			// and to the direct descriptor surface. vault_put_file itself stays
-			// headless — this launcher is the ONLY tool carrying the App's
-			// resourceUri.
-			if err := registerOpenLauncher(deps, upload.NewOpenVaultManagerDescriptor(deps.vaultUpload)); err != nil {
-				return fmt.Errorf("failed to register vault manager launcher: %w", err)
-			}
-			deps.catalog.Add(model.ToolEntryFromDescriptor(vaultPutDesc))
-			if err := upload.RegisterVaultUploadApp(deps.srv, deps.catalog, deps.vaultUpload); err != nil {
-				return err
-			}
+			vaultPutSpec.index = true
+			reg.add(launcherSpec(upload.NewOpenVaultManagerDescriptor(deps.vaultUpload), func(srv *sdk.Server, catalog apps.AppCatalog) error {
+				return upload.RegisterVaultUploadApp(srv, catalog, deps.vaultUpload)
+			}))
 		}
-		if err := RegisterOfficialDescriptor(deps.srv, vaultPutDesc); err != nil {
-			return err
-		}
+		reg.add(vaultPutSpec)
 	}
+
+	// --- upload_url: relay a caller-supplied HTTPS URL (remote HTTP fallback) ---
 	if opts.relayURLUpload != nil {
-		if err := RegisterOfficialDescriptor(deps.srv, upload.RelayURLUploadDescriptor(opts.relayURLUpload, opts.relayAllowedHosts, opts.maxRelayBytes)); err != nil {
-			return err
-		}
+		reg.add(customToolSpec{
+			desc:   upload.RelayURLUploadDescriptor(opts.relayURLUpload, opts.relayAllowedHosts, opts.maxRelayBytes),
+			index:  true,
+			direct: true,
+		})
 	}
-	// Consolidated download_file: a single sink-aware IPFS download tool.
+
+	// --- Consolidated download_file: a single sink-aware IPFS download tool. ---
 	//   - sink=local (every transport): opts.ipfsDownload streams the CID bytes
 	//     to a host-side path on the MCP server's own disk.
 	//   - sink=drop (HTTP / real tunnel): deps.downloadDrop mints a one-time
@@ -417,81 +368,56 @@ func registerCustomTools(deps customToolDeps) error {
 	if opts.ipfsDownload != nil {
 		downloadRoot := transfer.ResolveDownloadRoot(opts.downloadRoot)
 		dlDesc := transfer.NewDownloadFileDescriptor(opts.ipfsDownload, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
-		// Pair download_file with its "Download from IPFS" MCP App view
-		// (ui://downloads/ipfs.html) so a UI-capable host renders a download
-		// panel. RegisterAppView attaches _meta.ui to a catalog entry, so the
-		// tool must be indexed first. Like upload_file, the app (sink=local or
-		// sink=drop) is meaningful on every transport, so it is always paired
-		// when the tool is registered.
-		deps.catalog.Add(model.ToolEntryFromDescriptor(dlDesc))
-		// download_file is a headless primitive: it never carries
-		// ui.resourceUri on the served descriptor. The app's UI view is
-		// attached to the explicit open_download_manager launcher below, so
-		// mid-workflow download calls do not render a card.
-		if err := RegisterOfficialDescriptor(deps.srv, dlDesc); err != nil {
-			return err
-		}
-		if err := registerOpenLauncher(deps, apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+		// download_file is headless; the app's view attaches to the explicit
+		// open_download_manager launcher.
+		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 			Name:        download.OpenDownloadManagerToolName,
 			Title:       "Download from IPFS",
 			Description: "Open the interactive Download from IPFS app. This is a UI launcher: it renders an iframe for a human to initiate a download. It is not a headless primitive. Prefer download_file (headless) for autonomous workflows; call this only when a human downloader is desired.",
 			Category:    model.CategoryCore,
 			ResourceURI: download.IPFSDownloadAppURI,
-		})); err != nil {
-			return err
-		}
-		if err := download.RegisterIPFSDownloadApp(deps.srv, deps.catalog); err != nil {
-			return err
-		}
+		}), download.RegisterIPFSDownloadApp))
+		reg.add(customToolSpec{desc: dlDesc, index: true, direct: true})
 	}
-	// Consolidated vault_get_file: a single sink-aware vault download tool.
-	//   - sink=local (every transport): opts.vaultGet streams the encrypted
-	//     vault file's decrypted bytes to a host-side path.
-	//   - sink=drop (HTTP / real tunnel): deps.downloadDrop mints a filedrop.
+
+	// --- Consolidated vault_get_file: a single sink-aware vault download tool. ---
 	if opts.vaultGet != nil {
 		downloadRoot := transfer.ResolveDownloadRoot(opts.downloadRoot)
 		dlDesc := vault.NewVaultGetFileDescriptor(opts.vaultGet, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
-		deps.catalog.Add(model.ToolEntryFromDescriptor(dlDesc))
-		// vault_get_file is a headless primitive. The app's UI view is
-		// attached to the explicit open_vault_download_manager launcher.
-		if err := RegisterOfficialDescriptor(deps.srv, dlDesc); err != nil {
-			return err
-		}
-		if err := registerOpenLauncher(deps, apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+		// vault_get_file is headless; the app's view attaches to the explicit
+		// open_vault_download_manager launcher.
+		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 			Name:        download.OpenVaultDownloadManagerToolName,
 			Title:       "Download from Vault",
 			Description: "Open the interactive Download from Vault app. This is a UI launcher: it renders an iframe for a human to initiate a vault download. It is not a headless primitive. Prefer vault_get_file (headless) for autonomous workflows; call this only when a human vault downloader is desired.",
 			Category:    model.CategoryVault,
 			ResourceURI: download.VaultDownloadAppURI,
-		})); err != nil {
-			return err
-		}
-		if err := download.RegisterVaultDownloadApp(deps.srv, deps.catalog); err != nil {
-			return err
-		}
+		}), download.RegisterVaultDownloadApp))
+		reg.add(customToolSpec{desc: dlDesc, index: true, direct: true})
 	}
+
+	// --- upload_data: SEP-2356 data: URI relay (draft x-mcp-file mode) ---
 	if opts.dataURIUpload != nil {
-		if err := RegisterOfficialDescriptor(deps.srv, transfer.DataURIUploadDescriptor(opts.dataURIUpload, opts.maxRelayBytes)); err != nil {
-			return err
-		}
+		reg.add(customToolSpec{
+			desc:   transfer.DataURIUploadDescriptor(opts.dataURIUpload, opts.maxRelayBytes),
+			index:  true,
+			direct: true,
+		})
 	}
-	// Consolidated upload_file: a single transport-aware IPFS upload tool.
-	// The caller does not pick a mechanism — registration routes by transport.
+
+	// --- Consolidated upload_file: a single transport-aware IPFS upload tool. ---
+	// The caller does not pick a mechanism — registration routes by transport:
 	//   - co-located (stdio/local): source mode path via the local-path
 	//     handler (opts.localPathUpload).
 	//   - remote (HTTP/tunnel): source mode mint via the presigned Upload
 	//     coordinator (deps.curlUpload).
 	//   - openai tunnel: source mode url/data via the file-relay executor
 	//     (opts.uploadHandler), since no reachable HTTP mux exists.
-	// Register it whenever at least one upload path is available for the
-	// running transport.
 	if uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, opts.uploadHandler != nil, deps.tunnelOpenAI) {
 		var pathFn transfer.UploadFileHandler
 		if deps.coLocated {
 			pathFn = opts.localPathUpload
 		}
-		// relayFn is the authenticated file executor for the openai-tunnel
-		// url/data source modes.
 		uploadFileDesc := transfer.NewUploadFileDescriptor(deps.coLocated, deps.tunnelOpenAI, pathFn, deps.curlUpload, opts.uploadHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
 		// A dedicated per-host server re-resolves the tool description against
 		// the detected host profile (e.g. an OpenAI-over-HTTP host sees the
@@ -503,56 +429,32 @@ func registerCustomTools(deps customToolDeps) error {
 				uploadFileDesc.Description = d
 			}
 		}
-
-		// Pair upload_file with its "Upload to IPFS" MCP App view
-		// (ui://uploads/ipfs.html) so a UI-capable host renders a file-picker
-		// panel. RegisterAppView attaches _meta.ui to a catalog entry, so the
-		// tool must be indexed first. The app is only meaningfully available
-		// when a presigned Upload coordinator can mint a PUT endpoint for
-		// the Uppy XHR uploader (deps.curlUpload != nil); in co-located stdio
-		// local-path mode there is no presigned endpoint, so the app is not
-		// registered and upload_file simply serves the out-of-band local path
-		// surface. Gating on both uploadFileAvailable and curlUpload != nil
-		// keeps attachAppMeta from ever running when the tool is absent (e.g.
-		// --tunnel openai) or when no mint URL could be produced.
-		// Index upload_file in the catalog and register the companion upload app,
-		// but do NOT copy the app's _meta.ui onto the served descriptor.
-		// upload_file is a headless operational primitive: attaching a
-		// ui:// resourceUri would cause a UI-capable host to render the
-		// file-picker iframe on every invocation, which is the wrong UX for
-		// mid-workflow agent calls. The App is reachable only through the
-		// explicit open_upload_manager launcher (below).
+		// upload_file is headless; the app's view attaches to the explicit
+		// open_upload_manager launcher, which is registered only when the
+		// presigned Upload coordinator (deps.curlUpload) can mint a PUT
+		// endpoint for the Uppy XHR uploader. In co-located stdio local-path
+		// mode there is no presigned endpoint, so no app is registered.
+		uploadFileSpec := customToolSpec{desc: uploadFileDesc, direct: true}
 		if deps.curlUpload != nil {
-			// open_upload_manager must be catalog-indexed BEFORE
-			// RegisterIPFSUploadApp runs: the app's AttachTo resolves the
-			// launcher from the catalog to stamp _meta.ui on it. registerOpenLauncher
-			// publishes it both to the catalog (for AttachTo + curated discovery)
-			// and to the direct descriptor surface. upload_file itself stays
-			// headless — this launcher is the ONLY tool carrying the App's
-			// resourceUri.
-			if err := registerOpenLauncher(deps, upload.NewOpenUploadManagerDescriptor(deps.curlUpload)); err != nil {
-				return fmt.Errorf("failed to register upload manager launcher: %w", err)
-			}
-			deps.catalog.Add(model.ToolEntryFromDescriptor(uploadFileDesc))
-			if err := upload.RegisterIPFSUploadApp(deps.srv, deps.catalog, deps.curlUpload); err != nil {
-				return err
-			}
+			uploadFileSpec.index = true
+			reg.add(launcherSpec(upload.NewOpenUploadManagerDescriptor(deps.curlUpload), func(srv *sdk.Server, catalog apps.AppCatalog) error {
+				return upload.RegisterIPFSUploadApp(srv, catalog, deps.curlUpload)
+			}))
 		}
-		if err := RegisterOfficialDescriptor(deps.srv, uploadFileDesc); err != nil {
-			return err
-		}
+		reg.add(uploadFileSpec)
 	}
+
+	// --- Async upload management tools (upload_status / upload_cancel / upload_list) ---
 	if opts.uploadTasks != nil {
 		for _, desc := range upload.NewAsyncUploadTools(opts.uploadTasks) {
-			if err := RegisterOfficialDescriptor(deps.srv, desc); err != nil {
-				return err
-			}
+			reg.add(customToolSpec{desc: desc, index: true, direct: true})
 		}
 	}
+
 	// Always expose capability detection so hosts can choose a file-input mode
 	// without assuming draft MCP file support is negotiated. Each capability
 	// reflects whether its handler is actually wired.
-	if err := RegisterOfficialDescriptor(deps.srv, NewCapabilitiesDescriptor(
+	reg.add(customToolSpec{desc: NewCapabilitiesDescriptor(
 		deps.coLocated,
 		deps.tunnelOpenAI,
 		uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, opts.uploadHandler != nil, deps.tunnelOpenAI),
@@ -562,20 +464,20 @@ func registerCustomTools(deps customToolDeps) error {
 		deps.downloadDrop != nil,
 		opts.dataURIUpload != nil, // the data: URI upload tool carries the draft x-mcp-file metadata
 		opts.maxRelayBytes,
-	)); err != nil {
-		return err
-	}
+	), direct: true})
+
 	// Always expose the static agent guide so a model can orient to the
 	// primary flows without probing each tool's description.
-	if err := RegisterOfficialDescriptor(deps.srv, NewAgentGuideDescriptor()); err != nil {
-		return err
-	}
+	reg.add(customToolSpec{desc: NewAgentGuideDescriptor(), direct: true})
+
+	// Optionally expose the prompt templates.
 	if opts.prompts {
-		if err := sdk.RegisterPrompts(deps.srv, PromptDescriptors()); err != nil {
-			return err
-		}
+		reg.afterSurface(func() error {
+			return sdk.RegisterPrompts(deps.srv, PromptDescriptors())
+		})
 	}
-	return nil
+
+	return reg.run()
 }
 
 // uploadFileAvailable reports whether the consolidated upload_file tool has at
@@ -637,6 +539,10 @@ func vaultPutFileAvailable(coLocated, localPathWired, mintWired, relayWired, tun
 // registered directly on tools/list (model-visible). The app's RegisterAppView
 // later attaches its _meta.ui to this launcher's catalog entry (via AttachTo),
 // which is exactly where the UI linkage should live.
+//
+// Production registration routes launchers through the customToolRegistry
+// (launcherSpec); this helper remains for tests and callers that register a
+// single launcher immediately.
 func registerOpenLauncher(deps customToolDeps, launcher model.ToolDescriptor) error {
 	if launcher.Meta == nil {
 		return fmt.Errorf("open_* launcher %q must declare _meta.ui (resourceUri)", launcher.Name)

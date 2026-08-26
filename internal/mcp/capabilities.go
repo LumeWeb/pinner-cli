@@ -14,8 +14,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
-
 
 // FileInputCapability enumera the ways a host can hand a file to Pinner.
 type FileInputCapability string
@@ -166,12 +166,18 @@ func CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, down
 // transport and the file-input source modes / file-output sink modes available.
 // It is cheap and safe to expose directly, and is the feature-detection hook
 // for hosts that stage on draft MCP file metadata.
+// capabilitiesDescription is shared between the static Description (tools/list)
+// and the Fallback MCPTarget so the tool carries a target list for uniformity
+// (it is a direct-only tool and does not enter the catalog).
+const capabilitiesDescription = "Report the running MCP transport and which file-input source modes and file-output sink modes this Pinner MCP server accepts. The upload_file / vault_put_file tools take a single transport-scoped source: path in co-located stdio mode, mint in HTTP/tunnel mode (a one-time presigned PUT for out-of-band curl), or url/data on the OpenAI tunnel (relayed through MCP). These source_modes apply ONLY to the `source` argument — they do NOT describe the host-provided `file` argument. A host-provided file (a temporary download_url + file_id) is always preferred when available, regardless of source_modes. The download_file / vault_get_file tools take a single sink: local (write to a host-side path on the MCP server's own disk — available on every transport) or drop (a one-time HTTP GET filedrop link — only when a reachable HTTP mux exists). Read source_modes and download_sink_modes to pick the right voice without probing tool descriptions. host_file_input and host_file_input_preferred indicate the file argument is available and preferred over source modes. file_input_policy is a machine-readable invariant: when set to \"host_file_first\", an agent MUST use the file parameter for any file already supplied or created by the host (user-uploaded attachments AND assistant-generated files in the assistant's sandbox), and must NOT base64-encode, create a data URI, or mint a presigned URL when file can be used."
+
 func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, draftXFile bool, maxBytes int64) model.ToolDescriptor {
 	return model.ToolDescriptor{
 		Name:        "capabilities",
 		Title:       "Pinner file-input/output capabilities",
-		Description: "Report the running MCP transport and which file-input source modes and file-output sink modes this Pinner MCP server accepts. The upload_file / vault_put_file tools take a single transport-scoped source: path in co-located stdio mode, mint in HTTP/tunnel mode (a one-time presigned PUT for out-of-band curl), or url/data on the OpenAI tunnel (relayed through MCP). These source_modes apply ONLY to the `source` argument — they do NOT describe the host-provided `file` argument. A host-provided file (a temporary download_url + file_id) is always preferred when available, regardless of source_modes. The download_file / vault_get_file tools take a single sink: local (write to a host-side path on the MCP server's own disk — available on every transport) or drop (a one-time HTTP GET filedrop link — only when a reachable HTTP mux exists). Read source_modes and download_sink_modes to pick the right voice without probing tool descriptions. host_file_input and host_file_input_preferred indicate the file argument is available and preferred over source modes. file_input_policy is a machine-readable invariant: when set to \"host_file_first\", an agent MUST use the file parameter for any file already supplied or created by the host (user-uploaded attachments AND assistant-generated files in the assistant's sandbox), and must NOT base64-encode, create a data URI, or mint a presigned URL when file can be used.",
+		Description: capabilitiesDescription,
 		Category:    model.CategoryCore,
+		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback(capabilitiesDescription)),
 		InputSchema: toolargs.ToolSchemaFor[wizard.NoInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			report := CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, draftXFile, maxBytes)
