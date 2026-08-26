@@ -97,14 +97,19 @@ func TestIntegration_AliasEquivalence_ListAndPinsLs(t *testing.T) {
 	listFlags := getFlagNames(listCmd)
 	pinsLsFlags := getFlagNames(pinsLsCmd)
 
-	// Both must have --name, --limit, --status filters
-	for _, required := range []string{FlagName, FlagLimit, FlagStatus} {
+	// Both must have --name and --status filters.
+	for _, required := range []string{FlagName, FlagStatus} {
 		assert.Contains(t, listFlags, required, "list command should have --%s flag", required)
 		assert.Contains(t, pinsLsFlags, required, "pins ls command should have --%s flag", required)
 	}
 
-	// list adds --watch; the catalog-compiled pins ls exposes server-side
-	// --search instead.
+	// Paging differs: the legacy list command keeps --limit; the
+	// catalog-compiled pins ls exposes server-side --page/--page-size instead.
+	assert.Contains(t, listFlags, FlagLimit, "list command should have --limit flag")
+	assert.Contains(t, pinsLsFlags, FlagPage, "pins ls command should have --%s flag", FlagPage)
+	assert.Contains(t, pinsLsFlags, FlagPageSize, "pins ls command should have --%s flag", FlagPageSize)
+
+	// list adds --watch; pins ls exposes server-side --search instead.
 	assert.Contains(t, listFlags, FlagWatch, "list command should have --watch flag")
 	assert.Contains(t, pinsLsFlags, "search", "pins ls command should have --search flag")
 }

@@ -85,7 +85,8 @@ func TestNewPinsLsCommand(t *testing.T) {
 			flagNames[i] = f.Names()[0]
 		}
 		assert.Contains(t, flagNames, FlagName)
-		assert.Contains(t, flagNames, FlagLimit)
+		assert.Contains(t, flagNames, FlagPage)
+		assert.Contains(t, flagNames, FlagPageSize)
 		assert.Contains(t, flagNames, FlagStatus)
 		assert.Contains(t, flagNames, "search")
 	})

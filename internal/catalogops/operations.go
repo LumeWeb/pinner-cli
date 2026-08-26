@@ -53,16 +53,7 @@ func operationsList(d OperationsDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			page := catalog.ParseList(input)
-			// Operations is the one list that pages server-side over a
-			// potentially-large, long-running table (every historical upload,
-			// pin, etc.). To avoid an unbounded full-table fetch on a plain
-			// `operations list`, default a zero/absent --limit to one page —
-			// the same default the watch path (watchCatalogOperationsList)
-			// enforces. Callers set --limit explicitly to page or go big.
-			if page.Limit < 1 {
-				page.Limit = 10
-			}
+			page := catalog.ParseListPage(input, 10)
 			res, err := svc.List(ctx, operations.ListOptions{
 				Search:          catalog.SearchArg(input),
 				StatusFilters:   catalog.StrSliceArg(input, "status"),

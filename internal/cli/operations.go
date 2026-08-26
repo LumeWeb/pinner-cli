@@ -8,6 +8,8 @@ import (
 	"github.com/pterm/pterm"
 	"github.com/urfave/cli/v3"
 	portalsdk "go.lumeweb.com/portal-sdk"
+
+	"go.lumeweb.com/pinner-cli/internal/catalog"
 )
 
 func newOperationsCommand() *cli.Command {
@@ -31,14 +33,14 @@ func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 		return err
 	}
 
-	page := cmd.Int(FlagPage)
-	if page < 1 {
-		page = 1
-	}
-	pageSize := cmd.Int(FlagPageSize)
-	if pageSize < 1 {
-		pageSize = 10
-	}
+	// Resolve pagination through the shared list cursor so this hand-written
+	// operations command and the catalog operations_list op share the same
+	// page/page-size → start/limit mapping (page is 1-based; an absent or
+	// zero page-size falls back to the shared default).
+	list := catalog.ParseListPage(map[string]any{
+		"page":      cmd.Int(FlagPage),
+		"page-size": cmd.Int(FlagPageSize),
+	}, 10)
 
 	opts := OperationsListOptions{
 		StatusFilters:   cmd.StringSlice(FlagStatus),
@@ -47,8 +49,8 @@ func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 		ProtocolFilter:  cmd.String(FlagProtocol),
 		CIDFilter:       cmd.String(FlagCID),
 		Sort:            cmd.String(FlagSort),
-		Start:           (page - 1) * pageSize,
-		Limit:           pageSize,
+		Start:           list.Start,
+		Limit:           list.Limit,
 	}
 
 	if err := validateOperationStatuses(opts.StatusFilters); err != nil {
