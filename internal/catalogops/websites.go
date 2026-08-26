@@ -332,14 +332,23 @@ func validateWebsiteStructure(ctx context.Context, d WebsitesDeps, input map[str
 	if hasIndexHTML {
 		return nil
 	}
+	// A single directory with no root index.html is only a ZIP wrapper if that
+	// directory itself contains index.html; otherwise fall through to the
+	// generic missing-index.html error (e.g. a root holding only assets/).
 	if len(dirEntries) == 1 {
 		wrapper := dirEntries[0].Name
-		return fmt.Errorf(
-			"website CID %s has no root index.html but contains a single directory %q with it. "+
-				"The site appears to be wrapped in an extra parent directory. "+
-				"Rebuild the archive so index.html is at the root (not inside %s/), then upload and publish again.",
-			resolvedCID, wrapper, wrapper,
-		)
+		if sub, err := svc.ListDirectory(ctx, resolvedCID+"/"+wrapper); err == nil {
+			for _, se := range sub {
+				if strings.EqualFold(se.Name, "index.html") {
+					return fmt.Errorf(
+						"website CID %s has no root index.html but its single directory %q does. "+
+							"The site appears to be wrapped in an extra parent directory. "+
+							"Rebuild the archive so index.html is at the root (not inside %s/), then upload and publish again.",
+						resolvedCID, wrapper, wrapper,
+					)
+				}
+			}
+		}
 	}
 	return fmt.Errorf(
 		"website CID %s has no root index.html. A website CID must be a directory whose root contains index.html. "+
