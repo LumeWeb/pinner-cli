@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"go.lumeweb.com/pinner-cli/internal/catalog"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/ipfs-sdk/dnsname"
 	"golang.org/x/sync/errgroup"
@@ -18,16 +19,18 @@ func ResolveWebsiteID(ctx context.Context, svc Service, arg string) (string, err
 	if _, err := strconv.Atoi(arg); err == nil {
 		return arg, nil
 	}
-	list, err := svc.List(ctx, ListOptions{})
+	item, ok, err := catalog.ScanPages(ctx, svc,
+		func(w ipfs.WebsiteItem) (bool, error) {
+			return dnsname.Equal(w.Domain, arg), nil
+		},
+	)
 	if err != nil {
 		return "", fmt.Errorf("failed to look up website by domain: %w", err)
 	}
-	for _, w := range list {
-		if dnsname.Equal(w.Domain, arg) {
-			return strconv.Itoa(w.Id), nil
-		}
+	if !ok {
+		return "", fmt.Errorf("website not found for domain %q", arg)
 	}
-	return "", fmt.Errorf("website not found for domain %q", arg)
+	return strconv.Itoa(item.Id), nil
 }
 
 // ResolveDomainID resolves a domain name-or-ID argument to a numeric domain

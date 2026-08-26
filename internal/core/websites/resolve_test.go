@@ -3,6 +3,7 @@ package websites
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -76,6 +77,41 @@ func TestResolveWebsiteID_NotFound(t *testing.T) {
 	_, err := ResolveWebsiteID(context.Background(), svc, "missing.example")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), `website not found for domain "missing.example"`)
+}
+
+// pagingService is a Service fake that honors ListOptions paging so domain
+// resolution demonstrably scans beyond the first page.
+type pagingService struct {
+	Service
+	items []ipfs.WebsiteItem
+}
+
+func (p *pagingService) List(ctx context.Context, opts ListOptions) ([]ipfs.WebsiteItem, error) {
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = len(p.items)
+	}
+	if opts.Start >= len(p.items) {
+		return nil, nil
+	}
+	end := opts.Start + limit
+	if end > len(p.items) {
+		end = len(p.items)
+	}
+	return p.items[opts.Start:end], nil
+}
+
+func TestResolveWebsiteID_SiteBeyondFirstPage(t *testing.T) {
+	full := make([]ipfs.WebsiteItem, 25)
+	for i := range full {
+		full[i] = websiteItem(i+1, fmt.Sprintf("site-%d.example", i+1))
+	}
+	// Target sits far past the first page (defaultPageSize = 10).
+	full[22] = websiteItem(23, "ivory-breeze-630.pinned.site")
+	svc := &pagingService{items: full}
+	id, err := ResolveWebsiteID(context.Background(), svc, "ivory-breeze-630.pinned.site")
+	require.NoError(t, err)
+	assert.Equal(t, "23", id)
 }
 
 func TestResolveDomainID_NameMatchWins(t *testing.T) {

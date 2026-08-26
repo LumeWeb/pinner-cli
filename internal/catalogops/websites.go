@@ -144,11 +144,13 @@ func websitesList(d WebsitesDeps) catalog.Operation {
 
 			page := catalog.ParseListPage(input, 10)
 			opts := websites.ListOptions{
-				Start:      page.Start,
-				Limit:      page.Limit,
-				Domain:     catalog.StrArg(input, "domain", ""),
-				Status:     catalog.StrArg(input, "status", ""),
-				TargetType: catalog.StrArg(input, "target-type", ""),
+				Start: page.Start,
+				Limit: page.Limit,
+				Filter: websites.ListFilter{
+					Domain:     catalog.StrArg(input, "domain", ""),
+					Status:     catalog.StrArg(input, "status", ""),
+					TargetType: catalog.StrArg(input, "target-type", ""),
+				},
 			}
 			sites, err := svc.List(ctx, opts)
 			if err != nil {
