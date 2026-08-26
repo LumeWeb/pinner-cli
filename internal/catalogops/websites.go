@@ -24,6 +24,9 @@ const (
 	TargetTypeIPNS = "ipns"
 )
 
+// indexHTMLFile is the root document every website directory must serve.
+const indexHTMLFile = "index.html"
+
 // WebsitesDeps are the dependencies the websites operations need at
 // construction time. All getters are resolved per invocation (never a
 // package-init snapshot) so services always use fresh config.
@@ -322,7 +325,7 @@ func validateWebsiteStructure(ctx context.Context, d WebsitesDeps, input map[str
 	hasIndexHTML := false
 	var dirEntries []download.DirEntry
 	for _, e := range entries {
-		if strings.EqualFold(e.Name, "index.html") {
+		if strings.EqualFold(e.Name, indexHTMLFile) {
 			hasIndexHTML = true
 		}
 		if e.Type == "directory" || e.Type == "dir" {
@@ -339,7 +342,7 @@ func validateWebsiteStructure(ctx context.Context, d WebsitesDeps, input map[str
 		wrapper := dirEntries[0].Name
 		if sub, err := svc.ListDirectory(ctx, resolvedCID+"/"+wrapper); err == nil {
 			for _, se := range sub {
-				if strings.EqualFold(se.Name, "index.html") {
+				if strings.EqualFold(se.Name, indexHTMLFile) {
 					return fmt.Errorf(
 						"website CID %s has no root index.html but its single directory %q does. "+
 							"The site appears to be wrapped in an extra parent directory. "+
