@@ -13,6 +13,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/core/download"
 	"go.lumeweb.com/pinner-cli/internal/core/websites"
 )
 
@@ -62,6 +63,31 @@ func catalogWebsitesDeps() catalogops.WebsitesDeps {
 				return ""
 			}
 			return cfgMgr.Config().AuthToken
+		},
+		DownloadServiceFactory: func(cfgMgr config.Manager, secure bool, authToken string) (download.Service, error) {
+			opts := []DownloadServiceOption{
+				WithDownloadIPFSEndpoint(cfgMgr.Config().GetIPFSEndpointWithSecure(secure)),
+			}
+			if authToken != "" {
+				opts = append(opts, WithDownloadAuthToken(authToken))
+			}
+			return NewDownloadService(cfgMgr, NewOutputFormatter(false, false, true, false), opts...), nil
+		},
+		IPNSResolveFunc: func(ctx context.Context, name, authToken string) (string, error) {
+			cfgMgr, err := defaultConfigManagerFactory()
+			if err != nil {
+				return "", err
+			}
+			secure := GetSecureSetting(nil, cfgMgr)
+			svc, err := newIPNSAPI(cfgMgr, authToken, secure)
+			if err != nil {
+				return "", err
+			}
+			resp, err := svc.Resolve(ctx, name)
+			if err != nil {
+				return "", err
+			}
+			return resp.Value, nil
 		},
 	}
 }
