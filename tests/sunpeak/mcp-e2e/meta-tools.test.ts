@@ -170,11 +170,15 @@ test('agent_guide returns a coherent guide whose steps resolve to real tools', a
     expect(flow.steps !== undefined || flow.decision !== undefined).toBe(true);
   }
 
-  // Cross-surface invariant: every step tool the guide names exists on the
-  // advertised surface, so a guide edit can't reference a removed/renamed tool.
-  const tools = (await mcp.listTools()).map((t) => t.name);
+  // Cross-surface invariant: every step tool the guide names resolves to a real
+  // tool in the catalog (advertised OR behind invoke_tool). We resolve via
+  // describe_tool, which can describe the whole catalog, rather than requiring
+  // each step to be on the host-specific advertised tools/list — the guide may
+  // legitimately point at invoke-only tools. This fails only if the guide
+  // references a tool that was removed or renamed.
   for (const step of collectGuideSteps(guide)) {
-    expect(tools, `agent_guide references missing or hidden tool "${step}"`).toContain(step);
+    const desc = await describeTool(mcp, step);
+    expect(desc.isError, `agent_guide references unknown tool "${step}"`).toBeFalsy();
   }
 });
 
