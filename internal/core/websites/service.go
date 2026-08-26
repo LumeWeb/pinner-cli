@@ -8,6 +8,7 @@ import (
 	"errors"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	coreerrors "go.lumeweb.com/pinner-cli/internal/core/errors"
 	"go.lumeweb.com/pinner-cli/internal/core/ipfsbase"
@@ -54,30 +55,32 @@ type Service interface {
 	CheckPlatformDomainAvailability(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error)
 }
 
-// ListOptions filters and paginates a websites listing using the shared
-// server-side list protocol. Start is a 0-based offset and Limit is the page
-// size; Domain/Status/TargetType map to the backend's contains/eq filters.
-type ListOptions struct {
-	Start      int
-	Limit      int
+// ListFilter carries the websites-specific list filters, aliased into the
+// shared generic catalog.ListOptions.
+type ListFilter struct {
 	Domain     string
 	Status     string
 	TargetType string
 }
 
-// sdkOpts translates ListOptions into the ipfs-sdk list-filter options. Only
-// non-zero fields are emitted, so an empty ListOptions produces no query
+// ListOptions is the websites paging/filter options: it aliases the shared
+// generic catalog.ListOptions with the websites filter struct, so paging is
+// common to every service and only the filter differs.
+type ListOptions = catalog.ListOptions[ListFilter]
+
+// WebsiteSDKOpts translates ListOptions into the ipfs-sdk list-filter options.
+// Only non-zero fields are emitted, so an empty ListOptions produces no query
 // mutation at all.
-func (o ListOptions) sdkOpts() []ipfs.ListWebsitesOption {
+func WebsiteSDKOpts(o ListOptions) []ipfs.ListWebsitesOption {
 	var opts []ipfs.ListWebsitesOption
-	if o.Domain != "" {
-		opts = append(opts, ipfs.WithDomainFilter(o.Domain))
+	if o.Filter.Domain != "" {
+		opts = append(opts, ipfs.WithDomainFilter(o.Filter.Domain))
 	}
-	if o.Status != "" {
-		opts = append(opts, ipfs.WithStatusFilter(o.Status))
+	if o.Filter.Status != "" {
+		opts = append(opts, ipfs.WithStatusFilter(o.Filter.Status))
 	}
-	if o.TargetType != "" {
-		opts = append(opts, ipfs.WithTargetTypeFilter(o.TargetType))
+	if o.Filter.TargetType != "" {
+		opts = append(opts, ipfs.WithTargetTypeFilter(o.Filter.TargetType))
 	}
 	if o.Start > 0 {
 		opts = append(opts, ipfs.WithStart(o.Start))
@@ -182,7 +185,7 @@ func (s *service) List(ctx context.Context, opts ListOptions) ([]ipfs.WebsiteIte
 	if err != nil {
 		return nil, err
 	}
-	return svc.List(ctx, opts.sdkOpts()...)
+	return svc.List(ctx, WebsiteSDKOpts(opts)...)
 }
 
 // Create creates a new website.

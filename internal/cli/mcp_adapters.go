@@ -5,8 +5,9 @@ import (
 	"fmt"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/ipfs-sdk/dnsname"
+	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/websites"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 )
 
@@ -77,16 +78,18 @@ type websitesResourceAdapter struct {
 }
 
 func (w *websitesResourceAdapter) GetByDomain(ctx context.Context, domain string) (*ipfs.WebsiteItem, error) {
-	websites, err := w.ws.List(ctx, websites.ListOptions{})
+	item, ok, err := catalog.ScanPages(ctx, w.ws,
+		func(item ipfs.WebsiteItem) (bool, error) {
+			return dnsname.Equal(item.Domain, domain), nil
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("list websites: %w", err)
 	}
-	for i := range websites {
-		if websites[i].Domain == domain {
-			return &websites[i], nil
-		}
+	if !ok {
+		return nil, fmt.Errorf("website not found for domain %q", domain)
 	}
-	return nil, fmt.Errorf("website not found for domain %q", domain)
+	return &item, nil
 }
 
 func (w *websitesResourceAdapter) GetByID(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {
