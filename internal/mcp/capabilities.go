@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"strings"
 
 	"github.com/samber/lo"
 
@@ -13,6 +14,28 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
+
+// ClientCanHostFile reports whether the calling client can actually perform the
+// OpenAI file-parameter rewrite that populates an upload tool's `file` argument
+// ({download_url, file_id}). Only such a client is told "host_file_first".
+// On the OpenAI tunnel the runtime is ChatGPT by definition, so handoff is
+// guaranteed. On any other transport we trust only clients that self-identify
+// as OpenAI/ChatGPT-compatible; everyone else must use a transport-scoped
+// `source` mode (path/mint/url/data), not a `file` object they cannot build.
+// This keeps file_input_policy honest for non-OpenAI hosts (e.g. xAI Grok
+// running over an HTTP/tunnel transport, which has no file_id).
+func ClientCanHostFile(caps *model.RequestCaps, tunnelOpenAI bool) bool {
+	if tunnelOpenAI {
+		return true
+	}
+	if caps == nil || caps.ClientName == "" {
+		return false
+	}
+	name := strings.ToLower(caps.ClientName)
+	return strings.Contains(name, "openai") ||
+		strings.Contains(name, "chatgpt") ||
+		strings.Contains(name, "gpt")
+}
 
 // FileInputCapability enumera the ways a host can hand a file to Pinner.
 type FileInputCapability string
@@ -144,18 +167,18 @@ func CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, down
 		policy = "host_file_first"
 	}
 	return CapabilityReport{
-		Transport:             transport,
-		SourceModes:           sourceModes,
-		DownloadSinkModes:     sinkModes,
-		DownloadFile:          downloadFile,
-		VaultGetFile:          vaultGetFile,
-		UploadFile:            uploadFile,
-		VaultPutFile:          vaultPutFile,
-		DraftXFile:            draftXFile,
-		RelayMaxBytes:         ieo.EffectiveRelayMaxBytes(maxBytes),
-		HostFileInput:         hfi,
+		Transport:              transport,
+		SourceModes:            sourceModes,
+		DownloadSinkModes:      sinkModes,
+		DownloadFile:           downloadFile,
+		VaultGetFile:           vaultGetFile,
+		UploadFile:             uploadFile,
+		VaultPutFile:           vaultPutFile,
+		DraftXFile:             draftXFile,
+		RelayMaxBytes:          ieo.EffectiveRelayMaxBytes(maxBytes),
+		HostFileInput:          hfi,
 		HostFileInputPreferred: hfi,
-		FileInputPolicy:       policy,
+		FileInputPolicy:        policy,
 	}
 }
 
@@ -172,6 +195,15 @@ func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile
 		InputSchema: toolargs.ToolSchemaFor[wizard.NoInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			report := CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, draftXFile, maxBytes)
+			// host_file_first is only honest when the calling client can build
+			// the `file` {download_url, file_id} object (ChatGPT/OpenAI). A
+			// non-OpenAI host (e.g. Grok over HTTP/tunnel) has no file_id, so
+			// telling it to prefer `file` over a transport-scoped source is a
+			// lie; gate the preferred flag and the policy on the client.
+			report.HostFileInputPreferred = report.HostFileInput && ClientCanHostFile(request.Caps, tunnelOpenAI)
+			if !report.HostFileInputPreferred {
+				report.FileInputPolicy = ""
+			}
 			// Text carries the same canonical JSON as StructuredContent so a
 			// text-only MCP client still sees the source/sink mode data instead
 			// of an unhelpful stub ("Pinner capabilities.").

@@ -1,5 +1,11 @@
 package transfer
 
+import (
+	"encoding/json"
+
+	"github.com/samber/lo"
+)
+
 // DownloadSink enumerates where a downloaded file's bytes can land. It is the
 // mirror of UploadSource but for the OUTPUT side: upload sources describe where
 // bytes come FROM; download sinks describe where the retrieved bytes go TO.
@@ -53,4 +59,44 @@ func downloadSinksFor(dropWired, tunnelOpenAI bool) []DownloadSink {
 		sinks = append(sinks, SinkDrop)
 	}
 	return sinks
+}
+
+// SinkEnumValues returns the download sink values valid for the running server
+// (dropWired + transport), in stable order. It is the string form of
+// downloadSinksFor and the single source of truth for both the published tool
+// schema (via RewriteSinkEnum) and the advertised capabilities, so a supported
+// sink is never absent from the schema and an unsupported sink is never
+// surfaced to a model on a given transport.
+func SinkEnumValues(dropWired, tunnelOpenAI bool) []string {
+	return lo.Map(downloadSinksFor(dropWired, tunnelOpenAI), func(s DownloadSink, _ int) string {
+		return string(s)
+	})
+}
+
+// RewriteSinkEnum rewrites the top-level `sink` enum inside a tool schema that
+// embeds a DownloadSink so it advertises only the sinks valid for the running
+// server. The toolargs schema reflector (DoNotReference) inlines the sink
+// field as properties.sink, which is exactly the shape this walks.
+//
+// The static struct tag cannot express the transport-conditional drop sink
+// (invopop/jsonschema parses a comma-separated enum only to its first value, so
+// `enum=local,drop` silently publishes just ["local"]). Rewriting from the same
+// source of truth as capabilities removes that drift. If the expected shape is
+// not found the schema is returned unchanged so a structural change degrades
+// to "static", never a panic.
+func RewriteSinkEnum(schema json.RawMessage, dropWired, tunnelOpenAI bool) json.RawMessage {
+	var root map[string]any
+	if err := json.Unmarshal(schema, &root); err != nil {
+		return schema
+	}
+	sink, ok := root["properties"].(map[string]any)["sink"].(map[string]any)
+	if !ok {
+		return schema
+	}
+	sink["enum"] = SinkEnumValues(dropWired, tunnelOpenAI)
+	out, err := json.Marshal(root)
+	if err != nil {
+		return schema
+	}
+	return out
 }

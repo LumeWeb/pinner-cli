@@ -444,11 +444,11 @@ func TestExecuteDropSinkDefaultsReportedTTL(t *testing.T) {
 	require.Equal(t, transfer.DefaultHTTPDownloadTTL.String(), sc.TTL, "reported TTL must be the effective default, not 0s")
 }
 
-// A sink=drop larger than the download cap must fail with a detectable 413 at
-// the GET, NOT a clean 200 carrying a silently truncated body. The deferred
-// response writer withholds the status until the first body byte, so the
-// over-cap error (returned before any bytes are committed) maps to a 413 the
-// puller can detect.
+// A sink=drop larger than the download cap must fail up front at mint time
+// (the source is resolved into the temp file before the endpoint is minted),
+// NOT succeed and later stream a silently truncated body. The cap error is
+// surfaced by the mint call itself, so no endpoint is ever handed out for a
+// file that cannot be fully served.
 func TestDownloadFileDropSinkEnforcesSizeCap(t *testing.T) {
 	hd := transfer.NewHTTPDownload()
 	root := t.TempDir()
@@ -462,20 +462,9 @@ func TestDownloadFileDropSinkEnforcesSizeCap(t *testing.T) {
 		8, // maxDownloadBytes
 		false,
 	)
-	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
+	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"ipfs_path": "bafyabc/x.bin",
 		"sink":      "drop",
 	}})
-	require.NoError(t, err)
-	sc, ok := res.StructuredContent.(transfer.DownloadResult)
-	require.True(t, ok)
-	require.False(t, res.IsError, "mint itself succeeds; the cap is enforced at GET: %s", res.Text)
-
-	resp, err := http.Get(sc.FetchURL)
-	require.NoError(t, err)
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	require.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode,
-		"over-limit GET must return 413, not a truncated 200")
-	require.NotEqual(t, "xxxxxxxxxxxxxxxx", string(body), "no payload should be delivered for an over-limit GET")
+	require.Error(t, err, "an over-limit drop must fail at mint time, not mint a truncated endpoint")
 }

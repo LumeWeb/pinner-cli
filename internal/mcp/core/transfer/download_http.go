@@ -28,6 +28,21 @@ type downloadToken struct {
 	serve     func(ctx context.Context, w io.Writer) error
 	expiresAt time.Time
 	used      bool
+	// cleanup, when set, releases a backing resource (e.g. a pre-buffered temp
+	// file) exactly once the token is consumed, expired, or pruned. It is
+	// invoked on a best-effort basis and must be safe to call with a nil
+	// receiver's absence (i.e. nil means no-op).
+	cleanup func()
+}
+
+// release invokes the token's cleanup hook (if any). The hook is best-effort
+// and idempotent-safe (caller guarantees), so nil is a no-op. It is called on
+// every terminal path: after the GET serves the bytes, on expiry, and on
+// prune.
+func (t downloadToken) release() {
+	if t.cleanup != nil {
+		t.cleanup()
+	}
 }
 
 // Download is the one-time filedrop GET coordinator. The agent/app calls a
@@ -97,7 +112,7 @@ func (hd *Download) RegisterHandlers(mux *http.ServeMux) {
 // ensures the loopback listener is running in stdio mode so the URL is always
 // reachable. The token is single-use: the GET that claims it is the only GET
 // that will ever be served for this file.
-func (hd *Download) Mint(name string, size int64, serve func(ctx context.Context, w io.Writer) error, ttl time.Duration) (string, error) {
+func (hd *Download) Mint(name string, size int64, serve func(ctx context.Context, w io.Writer) error, ttl time.Duration, cleanup ...func()) (string, error) {
 	if serve == nil {
 		return "", errors.New("no download source configured")
 	}
@@ -110,17 +125,23 @@ func (hd *Download) Mint(name string, size int64, serve func(ctx context.Context
 	if ttl <= 0 {
 		ttl = DefaultHTTPDownloadTTL
 	}
+	var cleanupFn func()
+	if len(cleanup) > 0 {
+		cleanupFn = cleanup[0]
+	}
 	token := newDownloadToken()
 	hd.mu.Lock()
 	// Prune expired minted-but-never-used tokens so a long-lived server does
-	// not accumulate permanent map entries.
+	// not accumulate permanent map entries. An expired token's backing resource
+	// (e.g. a pre-buffered temp file) is released here.
 	now := hd.now()
 	for t, tkn := range hd.tokens {
 		if now.After(tkn.expiresAt) {
+			tkn.release()
 			delete(hd.tokens, t)
 		}
 	}
-	hd.tokens[token] = downloadToken{name: name, size: size, serve: serve, expiresAt: now.Add(ttl)}
+	hd.tokens[token] = downloadToken{name: name, size: size, serve: serve, expiresAt: now.Add(ttl), cleanup: cleanupFn}
 	hd.mu.Unlock()
 	return hd.loopback.URLFor("download", token), nil
 }
@@ -179,6 +200,7 @@ func (hd *Download) getHandler(w http.ResponseWriter, r *http.Request) {
 
 	dw := &deferredResponseWriter{ResponseWriter: w}
 	if err := tkn.serve(r.Context(), dw); err != nil {
+		tkn.release()
 		if dw.wroteHeader {
 			// Some body bytes are already committed; we cannot change the
 			// status or Content-Length now. The short body (vs any advertised
@@ -195,6 +217,7 @@ func (hd *Download) getHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), code)
 		return
 	}
+	tkn.release()
 	dw.finish()
 }
 
@@ -243,6 +266,7 @@ func (hd *Download) claim(token string) (downloadToken, bool) {
 		return downloadToken{}, false
 	}
 	if t.used || hd.now().After(t.expiresAt) {
+		t.release()
 		delete(hd.tokens, token)
 		return downloadToken{}, false
 	}

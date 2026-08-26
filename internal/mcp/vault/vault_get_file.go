@@ -22,7 +22,7 @@ type VaultGetFileInput struct {
 	// Sink tells where the bytes land: "local" writes to a host-side path
 	// (available on every transport); "drop" mints a one-time HTTP GET
 	// filedrop (only when a reachable HTTP mux exists).
-	Sink transfer.DownloadSink `json:"sink" jsonschema:"enum=local,drop,description=Where the downloaded bytes land: local writes to a host-side output_path on the MCP server's disk (available on every transport); drop mints a one-time HTTP GET filedrop link to pull from out of band."`
+	Sink transfer.DownloadSink `json:"sink" jsonschema:"enum=local,enum=drop,description=Where the downloaded bytes land: local writes to a host-side output_path on the MCP server's disk (available on every transport); drop mints a one-time HTTP GET filedrop link to pull from out of band."`
 	// Name is an optional filename override. Defaults to the vault file's base
 	// name.
 	Name string `json:"name,omitempty" jsonschema:"description=Optional filename for the downloaded file (defaults to the vault file's base name)."`
@@ -45,7 +45,10 @@ func NewVaultGetFileDescriptor(getFn transfer.VaultGetHandler, hd *transfer.Down
 		Title:       "Download a file from the Pinner vault",
 		Description: vaultGetFileDescription(hd != nil, tunnelOpenAI),
 		Category:    model.CategoryCore,
-		InputSchema: toolargs.ToolSchemaFor[VaultGetFileInput](),
+		// The input schema advertises only the sink values valid for the running
+		// server (drop only when a reachable HTTP mux exists on a non-OpenAI
+		// tunnel), matching capabilities().download_sink_modes.
+		InputSchema: transfer.RewriteSinkEnum(toolargs.ToolSchemaFor[VaultGetFileInput](), hd != nil, tunnelOpenAI),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[VaultGetFileInput](request)
 			if err != nil {

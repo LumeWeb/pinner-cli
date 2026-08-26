@@ -22,7 +22,7 @@ type DownloadFileInput struct {
 	// Sink tells where the bytes land: "local" writes to a host-side path
 	// (available on every transport); "drop" mints a one-time HTTP GET
 	// filedrop (only when a reachable HTTP mux exists).
-	Sink DownloadSink `json:"sink" jsonschema:"enum=local,drop,description=Where the downloaded bytes land: local writes to a host-side output_path on the MCP server's disk (available on every transport); drop mints a one-time HTTP GET filedrop link to pull from out of band."`
+	Sink DownloadSink `json:"sink" jsonschema:"enum=local,enum=drop,description=Where the downloaded bytes land: local writes to a host-side output_path on the MCP server's disk (available on every transport); drop mints a one-time HTTP GET filedrop link to pull from out of band."`
 	// Name is an optional filename override for the downloaded file (used for
 	// the local output name and the filedrop attachment name). Defaults to the
 	// last path segment of ipfs_path.
@@ -54,7 +54,11 @@ func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *Download, downloa
 		Title:       "Download IPFS content to a file",
 		Description: downloadFileDescription(hd != nil, tunnelOpenAI),
 		Category:    model.CategoryCore,
-		InputSchema: toolargs.ToolSchemaFor[DownloadFileInput](),
+		// The input schema advertises only the sink values valid for the running
+		// transport (drop only when a reachable HTTP mux exists on a non-OpenAI
+		// tunnel), matching capabilities().download_sink_modes so the published
+		// schema never contradicts the advertised sinks.
+		InputSchema: RewriteSinkEnum(toolargs.ToolSchemaFor[DownloadFileInput](), hd != nil, tunnelOpenAI),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[DownloadFileInput](request)
 			if err != nil {

@@ -91,6 +91,7 @@ var serverCardTools = []map[string]any{
 	{"name": "auth_status", "description": "Check authentication status"},
 	{"name": "auth_sso", "description": "Sign in via out-of-band SSO"},
 	{"name": "websites_list", "description": "List deployed websites"},
+	{"name": "websites_create", "description": "Create a new website deployment"},
 	{"name": "websites_validate", "description": "Validate a website deployment"},
 	{"name": "upload_file", "description": "Upload a file to IPFS"},
 	{"name": "search_tools", "description": "Search the tool catalog"},

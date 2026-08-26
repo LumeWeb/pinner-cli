@@ -109,7 +109,7 @@ func vaultStatus(d VaultDeps) catalog.Operation {
 		Name:        "vault_status",
 		Title:       "Vault status",
 		Summary:     "Show vault profile status",
-		Description: "Summarize identity, local session, remote health, storage usage, and cache health for the selected vault profile. Remote health is probed live against the indexer; local cache stats come from the profile's index. Note: the vault is read-only over this catalog (ls/stat/verify/sync/share/rm). Writing new files is not supported through searchable tools: to add a file, use the host's file-upload path instead.",
+		Description: "Summarize identity, local session, remote health, storage usage, and cache health for the selected vault profile. Remote health is probed live against the indexer; local cache stats come from the profile's index. Writing new files is done via vault_put_file (and the co-located/remote/mint source it accepts); tags/provenance/version operations are exposed by vault_tag_*, vault_set_provenance, and vault_version_*. The read-only operations on this catalog are ls/stat/verify/sync/share/rm.",
 		Category:    "vault",
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
