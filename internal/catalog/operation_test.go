@@ -21,7 +21,7 @@ func TestNewOperationRoundTrip(t *testing.T) {
 		Title:            "Add DNS record",
 		Summary:          "Adds a DNS record to a website zone.",
 		Description:      "Adds a new DNS record of the given type to the website's zone.",
-		AgentDescription: "Add a DNS record (type, name, content) to a website zone.",
+		MCPTargets:       MCPTargets(Fallback("Add a DNS record (type, name, content) to a website zone.")),
 		Args: []OperationArg{
 			{
 				Name:      "domain",
@@ -95,7 +95,7 @@ func TestNewOperationRoundTrip(t *testing.T) {
 		"Title":            op.Title(),
 		"Summary":          op.Summary(),
 		"Description":      op.Description(),
-		"AgentDescription": op.AgentDescription(),
+		"MCPTargets":       op.MCPTargets(),
 		"Positional":       op.Positional(),
 		"Safety":           op.Safety(),
 		"Interaction":      op.Interaction(),
@@ -107,7 +107,7 @@ func TestNewOperationRoundTrip(t *testing.T) {
 		"Title":            spec.Title,
 		"Summary":          spec.Summary,
 		"Description":      spec.Description,
-		"AgentDescription": spec.AgentDescription,
+		"MCPTargets":       spec.MCPTargets,
 		"Positional":       spec.Positional,
 		"Safety":           spec.Safety,
 		"Interaction":      spec.Interaction,

@@ -12,25 +12,17 @@ import (
 	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 )
 
-// TransportKind describes which MCP transport the server runs under. It decides
-// which file-input mechanism actually works: only one mechanism is real per
-// transport, and the caller never picks it — registration and the resolver do.
-type TransportKind string
+// TransportKind is re-exported from hostenv so both packages agree on the
+// same type. The canonical definition lives in hostenv to avoid import cycles.
+type TransportKind = hostenv.TransportKind
 
 const (
-	// TransportStdio is co-located stdio/local mode. The caller shares the host
-	// filesystem, so a host path can be read directly.
-	TransportStdio TransportKind = "stdio"
-	// TransportHTTP is remote HTTP or a real tunnel (ngrok/cloudflared) with a
-	// reachable HTTP mux. A presigned HTTP PUT can be minted and the caller
-	// curls bytes out of band.
-	TransportHTTP TransportKind = "http"
-	// TransportOpenAI is the embedded OpenAI Secure MCP Tunnel: pure MCP RPC
-	// with no reachable HTTP mux. Bytes must travel through MCP RPC (a
-	// server-fetchable URL or a data: URI).
-	TransportOpenAI TransportKind = "openai"
+	TransportStdio  TransportKind = hostenv.TransportStdio
+	TransportHTTP   TransportKind = hostenv.TransportHTTP
+	TransportOpenAI TransportKind = hostenv.TransportOpenAI
 )
 
 // FileSourceMode enumerates the uniform source dialects the upload tools

@@ -75,5 +75,12 @@ type ToolEntry struct {
 	// registration time, so the redaction vocabulary cannot drift from the
 	// CLI.
 	SensitiveFlags []string
-	Handler        PinnerToolHandler
+	// MCPTargets carries profile-keyed presentation variants for the MCP
+	// surface. When non-nil, the catalog resolves the best-matching target
+	// per request using the detected platform profile, overriding the static
+	// Description. When nil, the static Description is used. Only set on
+	// custom transport tools (upload_file, vault_put_file, download_file)
+	// whose agent-facing description varies by host environment.
+	MCPTargets []ToolTarget
+	Handler    PinnerToolHandler
 }

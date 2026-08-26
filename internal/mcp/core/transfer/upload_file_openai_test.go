@@ -160,3 +160,33 @@ func TestUploadFileDescriptorOpenAIFileThreadsArchiveMode(t *testing.T) {
 	require.False(t, res.IsError)
 	require.Equal(t, "convert", gotArchiveMode, "file branch must thread archive_mode=convert to the executor")
 }
+
+// TestUploadFileDescription_FileHostInputTiedToTransport guards against
+// advertising the OpenAI `file` host-input handoff on transports whose resolved
+// profile lacks FeatFileHostInput (generic stdio/HTTP). Kody flagged that the
+// previous gate (relayFn != nil) was always true because the relay handler is
+// wired unconditionally, so generic hosts were told to use `file` even though
+// capabilities reports host_file_input_preferred=false for them. The file
+// guidance must come from the transport profile, not relay wiring.
+func TestUploadFileDescription_FileHostInputTiedToTransport(t *testing.T) {
+	// The OpenAI tunnel resolves to ProfileOpenAITunnel, which carries
+	// FeatFileHostInput — its description must advertise the file handoff.
+	openai := uploadFileDescription(UploadFileTransport(false, true))
+	require.Contains(t, openai, "`file`", "openai tunnel description must offer the file handoff")
+
+	// Generic stdio/HTTP resolve to profiles WITHOUT FeatFileHostInput, so
+	// their descriptions must NOT tell the agent to use `file`.
+	for _, tt := range []struct {
+		name string
+		kind TransportKind
+	}{
+		{name: "stdio", kind: UploadFileTransport(true, false)},
+		{name: "http", kind: UploadFileTransport(false, false)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			desc := uploadFileDescription(tt.kind)
+			require.NotContains(t, desc, "MUST use `file`", "%s description must not demand the file handoff", tt.name)
+			require.NotContains(t, desc, "download_url", "%s description must not mention file download_url", tt.name)
+		})
+	}
+}

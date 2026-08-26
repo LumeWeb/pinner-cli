@@ -21,11 +21,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/catalog"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
@@ -38,11 +40,37 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
 )
 
+// transportFlags carries the server launch configuration that the detector
+// needs to resolve the correct platform profile. It is set once at server
+// startup from CLI flags via SetTransportFlags.
+type transportFlags struct {
+	coLocated    bool
+	tunnelOpenAI bool
+}
+
+// transportFlagsVar is the package-level transport flags read by requestCaps.
+// It is set once at server startup (SetTransportFlags) before any tools are
+// registered or requests served.
+var transportFlagsVar = transportFlags{}
+
+// SetTransportFlags sets the server launch transport configuration so that
+// requestCaps can resolve the correct platform profile for each request.
+func SetTransportFlags(coLocated, tunnelOpenAI bool) {
+	transportFlagsVar = transportFlags{coLocated: coLocated, tunnelOpenAI: tunnelOpenAI}
+}
+
+// defaultDetectorRegistry is the registry used by requestCaps to resolve
+// the connected platform from wire signals. It is package-scoped so it can
+// be overridden in tests.
+var defaultDetectorRegistry = hostenv.NewRegistry()
+
 // sdkHandlerDeps is the hub's implementation of the behaviors the sdk handler
 // adapter needs: per-request capabilities, request-state echo key, operation
 // logging, and companion-app annotation on needs_human results.
 var sdkHandlerDeps = sdk.HandlerDeps{
-	RequestCaps:             requestCaps,
+	RequestCaps: func(req *sdk.CallToolRequest) *model.RequestCaps {
+		return requestCaps(req, transportFlagsVar)
+	},
 	ReservedRequestStateKey: catalog.ReservedRequestStateKey,
 	LogStart:                func(name string, args map[string]any) { logToolCallStart(log, name, args) },
 	LogEnd: func(name string, startedAt time.Time, result model.ToolResult, err error) {
@@ -89,7 +117,17 @@ func OfficialMCPServer(root *cli.Command, stdioMode bool, seedDrop *oob.SeedDrop
 // capabilities arrive in the request _meta (with a legacy initialize-handshake
 // fallback), so this is re-derived for every invocation rather than stored on
 // a session.
-func requestCaps(req *sdk.CallToolRequest) *model.RequestCaps {
+//
+// In addition to the legacy fields (ProtocolVersion, ClientName, UI), this now
+// also reads req.GetExtra() to extract HTTP headers (User-Agent) and OAuth
+// TokenInfo — signals the go-sdk carries but Pinner previously ignored. These
+// feed the hostenv DetectorRegistry to produce a PlatformProfile.
+//
+// transportFlags carries the server launch configuration (co-located stdio
+// vs OpenAI tunnel vs HTTP), which the detector needs to resolve the correct
+// platform profile. It is threaded from the handler deps rather than captured
+// in a closure to keep requestCaps a pure function of its inputs.
+func requestCaps(req *sdk.CallToolRequest, transportFlags transportFlags) *model.RequestCaps {
 	rc := &model.RequestCaps{ProtocolVersion: req.ProtocolVersion()}
 	if ci := req.ClientInfo(); ci != nil {
 		rc.ClientName = ci.Name
@@ -98,6 +136,54 @@ func requestCaps(req *sdk.CallToolRequest) *model.RequestCaps {
 	if cc := req.ClientCapabilities(); cc != nil {
 		rc.UI = apps.GetClientUICapability(cc.Extensions)
 	}
+
+	// Extract wire signals from req.GetExtra() — the go-sdk carries HTTP
+	// headers and OAuth TokenInfo here, but only over HTTP transports.
+	// On stdio, Extra is nil.
+	var headers http.Header
+	var tokenInfo *hostenv.TokenInfo
+	if extra := req.GetExtra(); extra != nil {
+		headers = extra.Header
+		if extra.TokenInfo != nil {
+			tokenInfo = &hostenv.TokenInfo{
+				Scopes:     extra.TokenInfo.Scopes,
+				Expiration: extra.TokenInfo.Expiration,
+				UserID:     extra.TokenInfo.UserID,
+				Extra:      extra.TokenInfo.Extra,
+			}
+		}
+	}
+
+	// Build the DetectRequest from all available wire signals and resolve
+	// a PlatformProfile. The profile carries host type, transport, features,
+	// and raw signals — tools read it via request.Caps.Profile.
+	var ci *hostenv.ClientInfo
+	if req.ClientInfo() != nil {
+		wireCI := req.ClientInfo()
+		ci = &hostenv.ClientInfo{
+			Name:        wireCI.Name,
+			Version:     wireCI.Version,
+			Title:       wireCI.Title,
+			Description: wireCI.Description,
+		}
+	}
+
+	var userAgent string
+	if headers != nil {
+		userAgent = headers.Get("User-Agent")
+	}
+
+	profile := defaultDetectorRegistry.Detect(hostenv.DetectRequest{
+		ClientInfo:   ci,
+		ProtocolVersion: req.ProtocolVersion(),
+		UserAgent:    userAgent,
+		Headers:      headers,
+		TokenInfo:    tokenInfo,
+		CoLocated:    transportFlags.coLocated,
+		TunnelOpenAI: transportFlags.tunnelOpenAI,
+	})
+	rc.Profile = &profile
+
 	return rc
 }
 
@@ -259,7 +345,7 @@ func registerOfficialSearchTools(srv *sdk.Server, catalog *ToolCatalog) error {
 			}
 			data, err = json.Marshal(res)
 		} else {
-			tools := catalog.Search(in.Query, in.Category, in.Limit)
+			tools := catalog.SearchFor(in.Query, in.Category, in.Limit, profileFromRequest(request))
 			data, err = json.Marshal(SearchResult{Tools: tools, Total: len(tools)})
 		}
 		if err != nil {
@@ -292,7 +378,7 @@ func registerOfficialDescribeTool(srv *sdk.Server, catalog *ToolCatalog) error {
 		if in.Name == "" {
 			return model.ToolResult{IsError: true, Text: "name is required"}, nil
 		}
-		detail, err := catalog.Describe(in.Name)
+		detail, err := catalog.DescribeFor(in.Name, profileFromRequest(request))
 		if err != nil {
 			// Unknown tool: answer with "did you mean ...?" so the agent can
 			// recover without a separate search round-trip.

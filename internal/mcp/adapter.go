@@ -42,8 +42,10 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	oobpkg "go.lumeweb.com/pinner-cli/internal/mcp/oob"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
@@ -138,6 +140,34 @@ var log = zap.Must(zap.NewProduction())
 // updates the fallback used by call sites reading the package-level log.
 func setPackageLogger(l *zap.Logger) {
 	log = l
+}
+
+// resolveHostUploadVault resolves the profile-aware upload_file and
+// vault_put_file descriptions for a detected host profile. These are what a
+// dedicated per-host HTTP server presents in tools/list; the startup server
+// instead bakes the transport-only descriptions (resolved once at startup).
+// The MCPTargets descriptors keep their target lists so describe_tool and
+// search_tools continue to resolve per request.
+func resolveHostUploadVault(profile hostenv.PlatformProfile) (uploadDesc, vaultDesc string) {
+	u, _ := toolforge.ResolveDescription(toolforge.UploadFileTargets, profile)
+	v, _ := toolforge.ResolveDescription(toolforge.VaultPutFileTargets, profile)
+	return u, v
+}
+
+// uploadVaultMatchesTransport reports whether the startup server — whose
+// upload_file / vault_put_file descriptions are resolved for the given
+// transport — already presents the same upload/vault surface as the detected
+// host profile. When it does, the host can reuse the shared startup server
+// (avoiding an expensive per-host rebuild); when it does not (e.g. an
+// OpenAI-over-HTTP host whose FeatFileHostInput demands the file-handoff
+// presentation over a mint-only HTTP transport), a dedicated per-host server
+// is required so tools/list advertises the right surface.
+func uploadVaultMatchesTransport(profile hostenv.PlatformProfile, transport hostenv.TransportKind) bool {
+	base := hostenv.ProfileForTransport(transport)
+	baseUpload, _ := toolforge.ResolveDescription(toolforge.UploadFileTargets, base)
+	baseVault, _ := toolforge.ResolveDescription(toolforge.VaultPutFileTargets, base)
+	uploadDesc, vaultDesc := resolveHostUploadVault(profile)
+	return uploadDesc == baseUpload && vaultDesc == baseVault
 }
 
 // mcpServerFlags returns the flags for the `mcp` command. Env-backed flags
@@ -285,7 +315,6 @@ adapter.`,
 				oobRestore *oobpkg.OOBRestore
 				oobCreate  *oobpkg.OOBCreate
 				accountOOB *auth.OOBAccountChange
-				catalog    *ToolCatalog
 				err        error
 				// Wizard deps are hoisted so registerCustomTools can hand them
 				// to wizard.RegisterWizardTools directly (they used to be captured in
@@ -385,10 +414,9 @@ adapter.`,
 			// the invoke-tool gate that os.Stdin is the MCP transport pipe (so a
 			// stdin-input command must be redirected rather than consume
 			// protocol bytes); it mirrors the transport decision below.
-			srv, catalog, err := OfficialMCPServer(root, stdioMode, seedDrop, oobRestore, oobCreate, handoffReg, authHandles, catalogOpts...)
-			if err != nil {
-				return err
-			}
+			// Set transport flags so requestCaps can resolve the correct
+			// platform profile for each incoming request.
+			SetTransportFlags(stdioMode, cmd.String("tunnel") == "openai")
 
 			// Install the hub's tool-handler adapter (registerTool, which routes
 			// through sdk.AdaptToolHandler with the hub's deps) as the sdk seam's
@@ -396,45 +424,92 @@ adapter.`,
 			// the same single handler-adaptation path.
 			sdk.SetToolRegistrar(registerTool)
 
-			if err := registerCustomTools(customToolDeps{
-				srv:              srv,
-				catalog:          catalog,
-				store:            store,
-				oob:              oob,
-				authHandles:      authHandles,
-				handoffReg:       handoffReg,
-				seedDrop:         seedDrop,
-				oobRestore:       oobRestore,
-				oobCreate:        oobCreate,
-				curlUpload:       curlUpload,
-				vaultUpload:      vaultUpload,
-				downloadDrop:     dl,
-				accountOOB:       accountOOB,
-				accountWebAppURL: auth.AccountWebAppURL(wizardS.CfgMgr),
-				resourceFactory:  resourceFactory,
-				opts:             mcpOpts,
-				// Local-path upload tools read arbitrary host paths, so they are
-				// only wired in pure co-located stdio mode (no HTTP transport,
-				// no tunnel). Over HTTP/tunnel the caller is remote, so the
-				// tools are not registered at all.
-				coLocated: !cmd.Bool("http") && cmd.String("tunnel") == "",
-				// The presigned HTTP PUT upload route is only reachable when
-				// the shared HTTP mux is actually mounted (plain HTTP, ngrok,
-				// cloudflared). The embedded openai tunnel exposes no reachable
-				// HTTP mux — all RPC flows through the tunnel protocol — so the
-				// remote upload_file branch must not be advertised there.
-				tunnelOpenAI: cmd.String("tunnel") == "openai",
-				hasWizard:    hasWizard,
-				wizardW:      wizardW,
-				wizardS:      wizardS,
-				wizardD:      wizardD,
-			}); err != nil {
+			// assemble builds a fully-registered MCP server from the shared
+			// coordinators and a (possibly profile-specific) upload/vault
+			// presentation. hostProfile is nil for the startup server (used by
+			// stdio, the embedded OpenAI tunnel, and any HTTP host whose
+			// upload/vault presentation already matches the startup transport);
+			// it is non-nil for a dedicated per-host HTTP server whose
+			// upload_file / vault_put_file descriptions are re-resolved against
+			// the detected host profile.
+			assemble := func(hostProfile *hostenv.PlatformProfile) (*sdk.Server, *ToolCatalog, error) {
+				srvH, catH, err := OfficialMCPServer(root, stdioMode, seedDrop, oobRestore, oobCreate, handoffReg, authHandles, catalogOpts...)
+				if err != nil {
+					return nil, nil, err
+				}
+				if err := registerCustomTools(customToolDeps{
+					srv:              srvH,
+					catalog:          catH,
+					store:            store,
+					oob:              oob,
+					authHandles:      authHandles,
+					handoffReg:       handoffReg,
+					seedDrop:         seedDrop,
+					oobRestore:       oobRestore,
+					oobCreate:        oobCreate,
+					curlUpload:       curlUpload,
+					vaultUpload:      vaultUpload,
+					downloadDrop:     dl,
+					accountOOB:       accountOOB,
+					accountWebAppURL: auth.AccountWebAppURL(wizardS.CfgMgr),
+					resourceFactory:  resourceFactory,
+					opts:             mcpOpts,
+					// Local-path upload tools read arbitrary host paths, so they
+					// are only wired in pure co-located stdio mode (no HTTP
+					// transport, no tunnel). Over HTTP/tunnel the caller is
+					// remote, so the tools are not registered at all.
+					coLocated: !cmd.Bool("http") && cmd.String("tunnel") == "",
+					// The presigned HTTP PUT upload route is only reachable when
+					// the shared HTTP mux is actually mounted (plain HTTP,
+					// ngrok, cloudflared). The embedded openai tunnel exposes no
+					// reachable HTTP mux — all RPC flows through the tunnel
+					// protocol — so the remote upload_file branch must not be
+					// advertised there.
+					tunnelOpenAI: cmd.String("tunnel") == "openai",
+					hasWizard:    hasWizard,
+					wizardW:      wizardW,
+					wizardS:      wizardS,
+					wizardD:      wizardD,
+					hostProfile:  hostProfile,
+				}); err != nil {
+					return nil, nil, err
+				}
+				return srvH, catH, nil
+			}
+
+			srv, _, err := assemble(nil)
+			if err != nil {
 				return err
+			}
+
+			// hostServerFactory resolves the server to serve for each detected
+			// host profile over the shared HTTP mux. The startup server (srv)
+			// bakes upload_file / vault_put_file with descriptions resolved for
+			// the startup transport (HTTP → mint only), which already matches
+			// Grok / generic / unknown HTTP hosts. A host whose profile would
+			// change that presentation — an OpenAI-over-HTTP host carries
+			// FeatFileHostInput and must see the file-handoff upload/vault —
+			// gets a dedicated server rebuilt from a fresh catalog with the
+			// profile-resolved descriptors.
+			httpTransport := transfer.UploadFileTransport(stdioMode, cmd.String("tunnel") == "openai")
+			hostServerFactory := func(profile hostenv.PlatformProfile) *sdk.Server {
+				if uploadVaultMatchesTransport(profile, httpTransport) {
+					return srv
+				}
+				srvH, _, err := assemble(&profile)
+				if err != nil {
+					log.Error("failed to build host-specific MCP server; reusing startup server",
+						zap.String("host", string(profile.HostType)),
+						zap.Error(err),
+					)
+					return srv
+				}
+				return srvH
 			}
 
 			if cmd.String("tunnel") == "openai" {
 				log.Debug("serving MCP server through embedded OpenAI Secure MCP Tunnel")
-				return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload, dl, wizardS.CfgMgr)
+				return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload, dl, wizardS.CfgMgr, hostServerFactory)
 			}
 
 			if !cmd.Bool("http") {
@@ -442,7 +517,7 @@ adapter.`,
 				return sdk.RunStdio(ctx, srv, os.Stdin, os.Stdout)
 			}
 
-			return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload, dl, wizardS.CfgMgr)
+			return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload, dl, wizardS.CfgMgr, hostServerFactory)
 		},
 	}
 }
@@ -489,7 +564,7 @@ func mcpHostProtectionDisabled(tunnelActive, httpMode bool, publicURL string) bo
 	return tunnelActive || (httpMode && publicURL != "")
 }
 
-func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth.OutOfBandLogin, seedDrop *oobpkg.SeedDrop, oobRestore *oobpkg.OOBRestore, oobCreate *oobpkg.OOBCreate, accountOOB *auth.OOBAccountChange, curlUpload *transfer.Upload, vaultUpload *transfer.VaultHTTPUpload, dl *transfer.Download, cfgMgr config.Manager) error {
+func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth.OutOfBandLogin, seedDrop *oobpkg.SeedDrop, oobRestore *oobpkg.OOBRestore, oobCreate *oobpkg.OOBCreate, accountOOB *auth.OOBAccountChange, curlUpload *transfer.Upload, vaultUpload *transfer.VaultHTTPUpload, dl *transfer.Download, cfgMgr config.Manager, hostServerFactory func(hostenv.PlatformProfile) *sdk.Server) error {
 	provider := cmd.String("tunnel")
 	domain := cmd.String("domain")
 	token := cmd.String("token")
@@ -617,7 +692,15 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 	// the tunnel before any client connects.
 	mux := http.NewServeMux()
 	disableHostProtection := mcpHostProtectionDisabled(tun != nil, cmd.Bool("http"), publicURL)
-	var mcpHandler http.Handler = sdk.NewStreamableHandler(srv, disableHostProtection)
+	// Use a profile-aware getServer so different MCP hosts connecting
+	// over HTTP each get a server with the right tool surface. The
+	// cache lazily creates servers per detected HostType; the profile-aware
+	// factory materializes each host's upload_file / vault_put_file tool
+	// descriptors against its resolved platform profile (the startup server
+	// is reused whenever its startup-transport presentation already matches,
+	// so Grok/generic HTTP hosts need no dedicated server).
+	serverCache := newHostServerCache(hostServerFactory, log)
+	var mcpHandler http.Handler = sdk.StreamableHTTPHandler(serverCache.ServerGetter(), disableHostProtection)
 	switch {
 	case oauth != nil:
 		// OAuth handshake: /mcp only accepts tokens issued through the flow.
@@ -1212,7 +1295,7 @@ func buildCatalog(root *cli.Command, seedDrop *oobpkg.SeedDrop, oobRestore *oobp
 
 	// Register the compiler-derived operation surface (auth, vault-setup,
 	// vault, pins, websites, dns, ipns, api-keys, operations). These entries
-	// carry the catalogops AgentDescription/typed schemas and dispatch through
+	// carry the catalogops MCPTargets/typed schemas and dispatch through
 	// the operation catalog's Invoke gate at runtime. markCurated promotes the
 	// compiled curated names to tools/list.
 	names, err := populateCatalogSurface(catalog, opsCat)
@@ -1223,7 +1306,7 @@ func buildCatalog(root *cli.Command, seedDrop *oobpkg.SeedDrop, oobRestore *oobp
 	// Route the compiled vault_create / vault_restore entries through the
 	// out-of-band setup handlers, so a model invoking the compiled vault-setup
 	// tool receives the full create_url / restore_url + resume-handle +
-	// needs_human hand-off its AgentDescription promises, rather than a bare
+	// needs_human hand-off its MCPTargets fallback promises, rather than a bare
 	// JSON-serialized VaultCreateHandoff/VaultRestoreHandoff{Profile} plaintext.
 	routeVaultSetupHandlers(catalog,
 		oobpkg.VaultCreateSetupHandler(oobCreate, handoffReg, authHandles),

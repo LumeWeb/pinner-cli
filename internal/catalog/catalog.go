@@ -39,7 +39,7 @@ const (
 type ToolDescriptor struct {
 	Name        string
 	Title       string
-	Description string // respects audience (AgentDescription for model actors)
+	Description string // fallback MCP description (from MCPTargets fallback)
 	// InputSchema is a minimal JSON Schema built from the operation's Args
 	// (object with per-arg properties plus a "required" list).
 	InputSchema json.RawMessage
@@ -47,6 +47,10 @@ type ToolDescriptor struct {
 	Interaction Interaction
 	Visibility  Visibility
 	Category    string
+	// MCPTargets carries per-profile description variants for the MCP surface.
+	// The MCP bridge maps these to model.ToolTarget for per-request resolution.
+	// The CLI compiler never reads this field.
+	MCPTargets []Target
 }
 
 // Catalog is the forward-looking registry every frontend consumes. It provides
@@ -66,8 +70,8 @@ type Catalog interface {
 	Search(query, category string, v Visibility) []Operation
 
 	// Describe returns the discovery descriptor for name (exact match), scoped
-	// to the acting actor. The Description field respects the audience:
-	// AgentDescription when the caller is a model actor, Description otherwise.
+	// to the acting actor. The Description field is resolved from the
+	// MCPTargets fallback (or op.Description() when no targets exist).
 	// Describe applies the same visibility boundary as Search, so an app-only
 	// operation is invisible to model actors and a model-only operation is
 	// invisible to app/human actors. An op excluded from the caller's surface
@@ -291,15 +295,22 @@ func actorVisibility(actor Actor) Visibility {
 	}
 }
 
-// descriptorFor builds a ToolDescriptor from an Operation. With a model actor the
-// Description field uses AgentDescription (falling back to Description when the
-// agent-specific text is empty); with a human/app actor it uses Description. It
-// is the single builder used by both Catalog.Describe and the MCP compiler, so
-// both produce an identical descriptor for the same operation and actor.
+// descriptorFor builds a ToolDescriptor from an Operation, selecting the
+// description by audience so a non-model surface (app/human) never exposes
+// agent-style MCPTargets text.
+//   - actor == ActorModel: resolve the MCP description from MCPTargets — the
+//     fallback target (empty Require, Visible=true) provides the static
+//     description carried on the descriptor.
+//   - actor != ActorModel: use the plain op.Description() (the human/CLI
+//     description), so the CLI and MCP app surface never expose agent text.
+//
+// Per-request resolution in the MCP layer (DescribeFor) may override the model
+// description with a more specific target's description. The CLI compiler does
+// not use descriptorFor — it reads op.Description() directly.
 func descriptorFor(op Operation, actor Actor) ToolDescriptor {
 	desc := op.Description()
-	if actor == ActorModel && op.AgentDescription() != "" {
-		desc = op.AgentDescription()
+	if actor == ActorModel {
+		desc = fallbackDescription(op.Description(), op.MCPTargets())
 	}
 	return ToolDescriptor{
 		Name:        op.Name(),
@@ -310,7 +321,21 @@ func descriptorFor(op Operation, actor Actor) ToolDescriptor {
 		Interaction: op.Interaction(),
 		Visibility:  op.Visibility(),
 		Category:    op.Category(),
+		MCPTargets:  op.MCPTargets(),
 	}
+}
+
+// fallbackDescription returns the fallback target's Description from targets
+// (the one with empty Require and Visible=true). If no fallback target
+// exists, it returns cliDesc as a safety net so the MCP descriptor always
+// has a non-empty description.
+func fallbackDescription(cliDesc string, targets []Target) string {
+	for _, t := range targets {
+		if len(t.Require) == 0 && t.Visible && t.Description != "" {
+			return t.Description
+		}
+	}
+	return cliDesc
 }
 
 func (c *catalogImpl) Invoke(ctx context.Context, name string, input map[string]any, actor Actor) (any, error) {

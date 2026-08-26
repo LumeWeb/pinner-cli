@@ -58,7 +58,7 @@ func TestOfficialMCPServerForwardsCatalogDeps(t *testing.T) {
 // TestCompiledVaultCreateHonorsOOBHandoff verifies that the compiled
 // vault.create tool, as wired by buildCatalog, routes through the out-of-band
 // setup handler so a model receives the full create_url + resume-handle +
-// needs_human hand-off its AgentDescription promises, rather than a bare
+// needs_human hand-off its MCPTargets fallback promises, rather than a bare
 // JSON-serialized VaultCreateHandoff{Profile} plaintext. This guards the Kody
 // critical finding on the compiled vault-setup surface.
 func TestCompiledVaultCreateHonorsOOBHandoff(t *testing.T) {

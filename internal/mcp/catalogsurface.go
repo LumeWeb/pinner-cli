@@ -7,7 +7,9 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 
+	"github.com/samber/lo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 )
 
 // This file is the bridge between the operation catalog (the compiler-backed
@@ -16,7 +18,7 @@ import (
 // (search_tools, describe_tool, invoke_tool).
 //
 // The compiled catalog yields ToolDescriptors whose Description/InputSchema
-// come from the catalogops AgentDescription and typed arg metadata, so CLI
+// come from the catalogops MCPTargets fallback and typed arg metadata, so CLI
 // help prose, global flag bags, and empty "required" arrays never leak into
 // the model surface. Each compiled operation is surfaced as a ToolEntry whose
 // Handler routes through catalog.Catalog.Invoke the dispatch gate so
@@ -52,9 +54,31 @@ func catalogDescriptorToEntry(d catalog.ToolDescriptor, cat catalog.Catalog) *mo
 		OutputSchema: outputSchemaForCompiled(d.Safety, d.Interaction),
 		ReadOnly:     d.Safety == catalog.SafetyRead,
 		Destructive:  d.Safety == catalog.SafetyDestructive,
+		MCPTargets:   toModelTargets(d.MCPTargets),
 		Handler:      compiledHandler(cat, d.Name),
 	})
 	return entry
+}
+
+// toModelTargets maps catalog-native per-profile presentation Targets onto the
+// model's ToolTarget variants. Each catalog Target's opaque Require feature
+// names are cast to hostenv.Feature and packed into a FeatureSet, so the MCP
+// surface can resolve the best-matching variant per request via the detected
+// platform profile.
+func toModelTargets(targets []catalog.Target) []model.ToolTarget {
+	if len(targets) == 0 {
+		return nil
+	}
+	return lo.Map(targets, func(t catalog.Target, _ int) model.ToolTarget {
+		require := lo.SliceToMap(t.Require, func(name string) (hostenv.Feature, bool) {
+			return hostenv.Feature(name), true
+		})
+		return model.ToolTarget{
+			Require:     require,
+			Visible:     t.Visible,
+			Description: t.Description,
+		}
+	})
 }
 
 // outputSchemaForCompiled selects the output schema for a compiled operation

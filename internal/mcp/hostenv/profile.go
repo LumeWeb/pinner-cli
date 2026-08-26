@@ -1,0 +1,106 @@
+package hostenv
+
+import (
+	"net/http"
+	"time"
+)
+
+// HostType identifies the connected MCP client platform.
+type HostType string
+
+const (
+	HostUnknown  HostType = "unknown"
+	HostOpenAI   HostType = "openai"
+	HostChatGPT  HostType = "chatgpt"
+	HostGrok      HostType = "grok"
+	HostGeneric  HostType = "generic"
+)
+
+// TransportKind is the MCP transport the server runs under. It decides
+// which file-input mechanism actually works: only one mechanism is real per
+// transport, and the caller never picks it — registration and the resolver do.
+// The values are the same string constants used by transfer.TransportKind;
+// transfer re-exports these via a type alias so both packages agree.
+type TransportKind string
+
+const (
+	// TransportStdio is co-located stdio/local mode.
+	TransportStdio TransportKind = "stdio"
+	// TransportHTTP is remote HTTP or a real tunnel with a reachable HTTP mux.
+	TransportHTTP TransportKind = "http"
+	// TransportOpenAI is the embedded OpenAI Secure MCP Tunnel: pure MCP
+	// RPC with no reachable HTTP mux.
+	TransportOpenAI TransportKind = "openai"
+)
+
+// AuthMethod describes how the client authenticated.
+type AuthMethod string
+
+const (
+	AuthNone   AuthMethod = "none"
+	AuthBearer AuthMethod = "bearer"
+	AuthOAuth  AuthMethod = "oauth"
+)
+
+// ClientInfo carries the MCP clientInfoImplementation fields from the
+// wire (initialize params or per-request _meta).
+type ClientInfo struct {
+	Name        string
+	Version     string
+	Title       string
+	Description string
+}
+
+// TokenInfo carries the OAuth bearer token information extracted by the
+// SDK's auth middleware.
+type TokenInfo struct {
+	Scopes     []string
+	Expiration time.Time
+	UserID     string
+	Extra      map[string]any
+}
+
+// PlatformProfile is the resolved capability set for a specific host on
+// a specific transport. It is the "browser profile" in the caniuse
+// analogy: a static declaration of which features a HostType + Transport
+// combination supports, overlaid with runtime wire signals.
+type PlatformProfile struct {
+	HostType   HostType
+	Transport  TransportKind
+	AuthMethod AuthMethod
+	Remote     bool
+	Features   FeatureSet
+
+	// Raw wire signals, populated by the detector for runtime
+	// introspection by tools that need them at call time.
+	ClientInfo  *ClientInfo
+	ProtocolVer string
+	UserAgent   string
+	Headers     http.Header
+	TokenInfo   *TokenInfo
+}
+
+// Has reports whether the profile supports the given feature.
+func (p PlatformProfile) Has(f Feature) bool {
+	return p.Features.Has(f)
+}
+
+// IsTransport reports whether the profile's transport matches t.
+func (p PlatformProfile) IsTransport(t TransportKind) bool {
+	return p.Transport == t
+}
+
+// IsHost reports whether the profile's host type matches h.
+func (p PlatformProfile) IsHost(h HostType) bool {
+	return p.HostType == h
+}
+
+// CloneFeatures returns a shallow copy of this profile with a cloned
+// FeatureSet. Callers that overlay runtime flags (e.g. setting
+// FeatFileHostInput based on whether a relay handler is wired) MUST use
+// this before mutating Features — the FeatureSet in a static profile
+// is a shared map.
+func (p PlatformProfile) CloneFeatures() PlatformProfile {
+	p.Features = p.Features.Clone()
+	return p
+}

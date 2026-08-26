@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"io"
@@ -18,9 +19,10 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
-
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
@@ -633,4 +635,107 @@ func TestOfficialHandlerPreservesLargeIntID(t *testing.T) {
 	num, ok := got["id"].(json.Number)
 	require.True(t, ok, "id must decode as json.Number with UseNumber, got %T", got["id"])
 	require.Equal(t, bigID, num.String(), "large integer id must be preserved exactly, not truncated by float64")
+}
+
+// TestOfficialHTTPDetectionOverStreamableHandler asserts the per-request
+// platform detection works end-to-end over the streamable HTTP transport. The
+// go-sdk streamable handler populates req.GetExtra() with the incoming
+// http.Header (including User-Agent) and OAuth token, so requestCaps must
+// resolve OpenAI / Grok / generic hosts from the real HTTP User-Agent — not
+// silently degrade every HTTP client to HostGeneric. This guards the Kody
+// finding that claimed HTTP detection was dead because GetExtra() was nil.
+func TestOfficialHTTPDetectionOverStreamableHandler(t *testing.T) {
+	oldFlags := transportFlagsVar
+	defer func() { transportFlagsVar = oldFlags }()
+	// HTTP mode: not co-located, not the OpenAI tunnel.
+	transportFlagsVar = transportFlags{coLocated: false, tunnelOpenAI: false}
+
+	// Register a probe tool whose handler echoes the resolved HostType from the
+	// per-request profile (built by requestCaps in sdkHandlerDeps).
+	srv := sdk.NewServer(nil)
+	probeDesc := model.ToolDescriptor{
+		Name:        "probe_host",
+		Title:       "Probe host",
+		Description: "Echo the detected platform host type",
+		Category:    model.CategoryCore,
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Handler: model.PinnerToolHandler(func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
+			host := hostenv.HostGeneric
+			if req.Caps != nil && req.Caps.Profile != nil {
+				host = req.Caps.Profile.HostType
+			}
+			return model.ToolResult{Text: string(host)}, nil
+		}),
+	}
+	require.NoError(t, sdk.RegisterTool(srv, sdkHandlerDeps, probeDesc))
+
+	handler := sdk.NewStreamableHandler(srv, true)
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+
+	call := func(userAgent string) string {
+		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"probe_host","arguments":{}}}`
+		req, err := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(body))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("Mcp-Protocol-Version", "2025-11-25")
+		req.Header.Set("Mcp-Method", "tools/call")
+		req.Header.Set("User-Agent", userAgent)
+		resp, err := ts.Client().Do(req)
+		require.NoError(t, err)
+		r, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode, "status for %s (body: %s)", userAgent, string(r))
+		text := sseResultText(string(r))
+		require.NotEmpty(t, text, "no tools/call result in SSE for %s: %s", userAgent, string(r))
+		return text
+	}
+
+	// OpenAI over HTTP must resolve to HostOpenAI from its User-Agent.
+	require.Equal(t, string(hostenv.HostOpenAI), call("openai-mcp/1.0.0"))
+	// Grok over HTTP must resolve to HostGrok from its User-Agent.
+	require.Equal(t, string(hostenv.HostGrok), call("grok-connectors-manager/0.1.0"))
+	// An unrecognized User-Agent falls back to generic HTTP.
+	require.Equal(t, string(hostenv.HostGeneric), call("curl/8.0"))
+}
+
+// sseResultText extracts the first tool-result text from a streamable-HTTP SSE
+// response body. The handler returns events of the form "event: message\ndata:
+// {json}\n\n", optionally split across multiple data lines; the probe tool
+// returns a single TextContent in result.content. It scans once, reusing a
+// strings.Builder for each event, and returns on the first match.
+func sseResultText(body string) string {
+	scanner := bufio.NewScanner(strings.NewReader(body))
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	var data strings.Builder
+	parse := func() string {
+		var msg struct {
+			Result struct {
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"result"`
+		}
+		if data.Len() == 0 || json.Unmarshal([]byte(data.String()), &msg) != nil {
+			return ""
+		}
+		if len(msg.Result.Content) > 0 {
+			return msg.Result.Content[0].Text
+		}
+		return ""
+	}
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" { // blank line: end of an event
+			if t := parse(); t != "" {
+				return t
+			}
+			continue
+		}
+		if rest, ok := strings.CutPrefix(line, "data:"); ok {
+			data.WriteString(strings.TrimPrefix(rest, " "))
+		}
+	}
+	return parse()
 }
