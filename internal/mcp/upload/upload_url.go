@@ -55,7 +55,9 @@ func RelayURLUploadDescriptor(handler transfer.RelayURLUploadHandler, allowedHos
 			// indefinitely. Budget scales with size; see SyncUploadBudget.
 			transferCtx, cancel := context.WithTimeout(ctx, transfer.SyncUploadBudget(size))
 			defer cancel()
-			result, err := handler(transferCtx, body, size, in.Name, in.Wait, in.Wrap)
+			// Relay URL input exposes no archive_mode; always pass "" so the
+			// fetched file is uploaded as-is (single file).
+			result, err := handler(transferCtx, body, size, in.Name, in.Wait, "", in.Wrap)
 			return toolargs.WrapResult(result, err, "URL uploaded.")
 		},
 	}

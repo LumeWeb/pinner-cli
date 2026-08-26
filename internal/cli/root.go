@@ -195,7 +195,7 @@ For more help on any command: pinner <command> --help`,
 					websitesSvc.SetAuthToken(tok)
 				}
 			})
-			uploadHandler = func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, wrap bool) (any, error) {
+			uploadHandler = func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 				if name == "" {
 					name = transfer.DefaultUploadName
 				}
@@ -229,6 +229,32 @@ For more help on any command: pinner <command> --help`,
 				}
 				if _, err := file.Seek(0, io.SeekStart); err != nil {
 					return nil, err
+				}
+				// archive_mode=convert (default) on a stream source: sniff the
+				// buffered temp file and, when it is an archive, extract it into
+				// a directory DAG (preserving relative paths) rather than
+				// uploading the raw archive as a single file. This matches the
+				// directory shape path-mode convert produces, so a host-provided
+				// `file`/url/data site ZIP behaves identically to a co-located
+				// path. The *os.File satisfies the ReaderAtSeeker contract
+				// contentArchive needs for extraction.
+				if ieo.ParseArchiveMode(archiveMode) == ieo.ArchiveConvert {
+					if _, isArc, serr := ieo.SniffArchive(file); serr == nil && isArc {
+						if _, err := file.Seek(0, io.SeekStart); err != nil {
+							return nil, err
+						}
+						vfs, closer, aerr := ieo.OpenArchiveFS(ctx, file)
+						if aerr == nil {
+							defer closer()
+							if err := ieo.CheckTreeSize(vfs, int64(cfgMgr.Config().GetMaxMCPUploadSize()), ieo.TreeSizeAggregate); err != nil {
+								return nil, err
+							}
+							return uploadSvc.Upload(ctx, vfs, name, wait, false)
+						}
+					}
+					if _, err := file.Seek(0, io.SeekStart); err != nil {
+						return nil, err
+					}
 				}
 				result, err := uploadSvc.Upload(ctx, contentfs.NewSingleFileFS(file, name), name, wait, wrap)
 				if err != nil {
@@ -529,11 +555,11 @@ For more help on any command: pinner <command> --help`,
 			}
 			return pinProvider()
 		}),
-		mcpadapter.WithUploadHandler(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, wrap bool) (any, error) {
+		mcpadapter.WithUploadHandler(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 			if uploadHandler == nil {
 				return nil, notInitErr("file upload")
 			}
-			return uploadHandler(ctx, reader, size, name, wait, wrap)
+			return uploadHandler(ctx, reader, size, name, wait, archiveMode, wrap)
 		}),
 		mcpadapter.WithVaultPutHandler(func(ctx context.Context, reader io.Reader, size int64, path string) (any, error) {
 			if vaultPutHandler == nil {
@@ -563,11 +589,11 @@ For more help on any command: pinner <command> --help`,
 			}
 			return cfgMgr.Config().GetDownloadRoot()
 		}),
-		mcpadapter.WithUploadTaskManager(transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, wrap bool) (any, error) {
+		mcpadapter.WithUploadTaskManager(transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 			if uploadHandler == nil {
 				return nil, notInitErr("file upload")
 			}
-			return uploadHandler(ctx, reader, size, name, wait, wrap)
+			return uploadHandler(ctx, reader, size, name, wait, archiveMode, wrap)
 		}, 0)),
 		// pinner_upload_url: vendor-agnostic relay fetch of a caller-supplied
 		// public HTTPS URL. The no-allowlist default permits any public HTTPS
@@ -575,17 +601,19 @@ For more help on any command: pinner <command> --help`,
 		// SSRF guard in the relay's default transport is the hard boundary and
 		// always blocks private/link-local IPs. Operators can restrict further
 		// by passing an explicit allowlist here.
-		mcpadapter.WithRelayURLUpload(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, wrap bool) (any, error) {
+		mcpadapter.WithRelayURLUpload(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 			if uploadHandler == nil {
 				return nil, notInitErr("upload")
 			}
-			return uploadHandler(ctx, reader, size, name, wait, wrap)
+			return uploadHandler(ctx, reader, size, name, wait, archiveMode, wrap)
 		}, nil),
-		mcpadapter.WithDataURIUpload(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, wrap bool) (any, error) {
+		mcpadapter.WithDataURIUpload(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 			if uploadHandler == nil {
 				return nil, notInitErr("upload")
 			}
-			return uploadHandler(ctx, reader, size, name, wait, wrap)
+			// data: URI input exposes no archive_mode; always pass "" so the
+			// single-file byte path is used.
+			return uploadHandler(ctx, reader, size, name, wait, "", wrap)
 		}),
 		// Local-path handler for the consolidated upload_file tool's co-located
 		// branch: upload of a host-side file, directory, or archive. Only

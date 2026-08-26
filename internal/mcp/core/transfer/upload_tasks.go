@@ -365,8 +365,10 @@ func (m *UploadTaskManager) spawn(tt *trackedTask, runCtx context.Context, reade
 			}
 		})
 		// The async/mint path has no wrap concept (bytes reach a presigned URL,
-		// not the SDK's WrapInDir), so wrap is always false here.
-		result, err := m.exec(runCtx, reader, size, name, wait, false)
+		// not the SDK's WrapInDir) and no archive concept (raw bytes to a
+		// one-time endpoint, never buffered for sniffing), so wrap is false and
+		// archiveMode is "" here.
+		result, err := m.exec(runCtx, reader, size, name, wait, "", false)
 		// The work finished before the timeout; disarm the watchdog so it
 		// cannot close the reader afterwards (it would otherwise, on a very
 		// slow-but-finished path, race the normal completion close).

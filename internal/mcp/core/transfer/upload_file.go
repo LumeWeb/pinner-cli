@@ -34,14 +34,16 @@ type UploadFileInput struct {
 	Name string `json:"name,omitempty" jsonschema:"description=Optional upload name (defaults to the file name)."`
 	// Wait waits for this upload's own pin operation to complete.
 	Wait bool `json:"wait,omitempty" jsonschema:"description=Wait until this upload's own pin operation completes before returning (the upload already pins; this only controls whether the call blocks for it)."`
-	// ArchiveMode controls how an archive path is handled. 'convert' (default)
-	// extracts an archive and uploads its contents as a directory DAG while
-	// preserving relative paths. Use 'convert' for complete static website ZIPs
-	// containing index.html, CSS, JS, images, and nested directories; the
-	// resulting CID is a directory CID that can be passed directly to
-	// websites_create/update. 'preserve' keeps the archive intact as a single
-	// file. Only used for source mode path.
-	ArchiveMode string `json:"archive_mode,omitempty" jsonschema:"enum=convert,preserve,description=How to treat an archive path. convert (default) extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. preserve keeps the archive intact as a single file. Only used for source mode path."`
+	// ArchiveMode controls how an archive (host `file`, url/data relay, or
+	// path) is handled. 'convert' (default) extracts an archive and uploads its
+	// contents as a directory DAG while preserving relative paths. Use
+	// 'convert' for complete static website ZIPs containing index.html, CSS,
+	// JS, images, and nested directories; the resulting CID is a directory CID
+	// that can be passed directly to websites_create/update. 'preserve' keeps
+	// the archive intact as a single file. Honored when the executor can buffer
+	// to a seekable temp file (host file, url/data relay, and co-located path);
+	// the mint/presigned-PUT source cannot express it.
+	ArchiveMode string `json:"archive_mode,omitempty" jsonschema:"enum=convert,preserve,description=How to treat an archive. convert (default) extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. preserve keeps the archive intact as a single file. Honored for host file, url/data relay, and co-located path sources; the mint (presigned PUT) source cannot express it."`
 	// TTL is the presigned endpoint lifetime for source mode mint (e.g. 5m).
 	// Only used in HTTP/tunnel mode.
 	TTL string `json:"ttl,omitempty" jsonschema:"description=Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used with source mode mint."`
@@ -152,7 +154,13 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				}
 				transferCtx, cancel := context.WithTimeout(ctx, SyncUploadBudget(size))
 				defer cancel()
-				result, err := relayFn(transferCtx, body, size, name, in.Wait, in.Wrap)
+				// Thread archiveMode so a host-provided `file` (and url/data relay)
+				// with archive_mode=convert extracts the archive into a directory
+				// DAG — the same directory shape path-mode convert produces —
+				// instead of uploading the raw archive as a single file that breaks
+				// websites_create/update root resolution. The executor only honors
+				// it when it can buffer to a seekable temp file.
+				result, err := relayFn(transferCtx, body, size, name, in.Wait, in.ArchiveMode, in.Wrap)
 				return toolargs.WrapResult(result, err, "Uploaded.")
 			}
 
@@ -256,7 +264,13 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				}
 				transferCtx, cancel := context.WithTimeout(ctx, SyncUploadBudget(size))
 				defer cancel()
-				result, err := relayFn(transferCtx, body, size, name, in.Wait, in.Wrap)
+				// Thread archiveMode so a host-provided `file` (and url/data relay)
+				// with archive_mode=convert extracts the archive into a directory
+				// DAG — the same directory shape path-mode convert produces —
+				// instead of uploading the raw archive as a single file that breaks
+				// websites_create/update root resolution. The executor only honors
+				// it when it can buffer to a seekable temp file.
+				result, err := relayFn(transferCtx, body, size, name, in.Wait, in.ArchiveMode, in.Wrap)
 				return toolargs.WrapResult(result, err, "Uploaded.")
 			}
 		},

@@ -53,7 +53,7 @@ func TestChatGPTArtifactZipDirectHandoff(t *testing.T) {
 	var streamed []byte
 	var streamedSize int64
 	desc := newUploadFileDescriptor(false, false, nil, nil,
-		func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
+		func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
 			streamedSize = sz
 			b, err := io.ReadAll(reader)
 			require.NoError(t, err)

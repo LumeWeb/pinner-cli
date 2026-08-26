@@ -53,7 +53,7 @@ func TestUploadFileDescriptorStdioRejectsMint(t *testing.T) {
 }
 
 func TestUploadFileDescriptorHTTPMints(t *testing.T) {
-	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, _ string, _ bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, _ string, _ bool, _ string, _ bool) (any, error) {
 		_, _ = io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmMint"}, nil
 	}, 0)
@@ -108,7 +108,7 @@ func TestUploadFileDescriptorHTTPRejectsPath(t *testing.T) {
 
 func TestUploadFileDescriptorOpenAIRelayData(t *testing.T) {
 	var size int64
-	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
 		size = sz
 		return map[string]string{"cid": "QmRelay"}, nil
 	}, nil, 0)
@@ -125,7 +125,7 @@ func TestUploadFileDescriptorOpenAIRelayHonorsMaxBytes(t *testing.T) {
 	// The relayed url/data source must honor the operator-configured relay cap
 	// threaded through the descriptor, not silently fall back to the 512 MiB
 	// package default. A source advertising more than the cap is rejected.
-	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
 		t.Fatal("relay must not receive an oversized upload")
 		return nil, nil
 	}, nil, 4) // cap at 4 bytes
@@ -135,7 +135,7 @@ func TestUploadFileDescriptorOpenAIRelayHonorsMaxBytes(t *testing.T) {
 	require.Error(t, err)
 }
 func TestUploadFileDescriptorOpenAIRejectsMint(t *testing.T) {
-	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
 		t.Fatal("relay must not run for mint")
 		return nil, nil
 	}, nil, 0)

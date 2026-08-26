@@ -17,7 +17,7 @@ import (
 
 func TestUploadTaskManagerLifecycle(t *testing.T) {
 	var ran atomic.Int64
-	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		ran.Add(1)
 		b, _ := io.ReadAll(reader)
 		return map[string]any{"cid": "QmTest", "bytes": len(b)}, nil
@@ -40,7 +40,7 @@ func TestUploadTaskManagerLifecycle(t *testing.T) {
 }
 
 func TestUploadTaskManagerFailure(t *testing.T) {
-	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		return nil, errors.New("tus failed")
 	}, 0)
 
@@ -60,7 +60,7 @@ func TestUploadTaskManagerFailure(t *testing.T) {
 
 func TestUploadTaskManagerCancelRunning(t *testing.T) {
 	release := make(chan struct{})
-	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -95,7 +95,7 @@ func TestUploadTaskManagerCancelRunning(t *testing.T) {
 }
 
 func TestUploadTaskManagerCancelCompletedFails(t *testing.T) {
-	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		return map[string]any{"cid": "QmZ"}, nil
 	}, 0)
 	id, _ := mgr.Start(context.Background(), io.NopCloser(strings.NewReader("z")), 1, "d.txt", false)
@@ -107,7 +107,7 @@ func TestUploadTaskManagerCancelCompletedFails(t *testing.T) {
 }
 
 func TestUploadTaskManagerListAndUnknown(t *testing.T) {
-	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmA"}, nil
 	}, 0)
@@ -126,7 +126,7 @@ func TestUploadTaskManagerListAndUnknown(t *testing.T) {
 }
 
 func TestAsyncUploadToolsRegistered(t *testing.T) {
-	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		return map[string]any{"cid": "QmB"}, nil
 	}, 0)
 	descs := NewAsyncUploadTools(mgr)
@@ -143,7 +143,7 @@ func TestAsyncUploadToolsRegistered(t *testing.T) {
 }
 
 func TestAsyncUploadStatusToolMissingHandle(t *testing.T) {
-	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		return nil, nil
 	}, 0)
 	descs := NewAsyncUploadTools(mgr)
@@ -163,7 +163,7 @@ func TestAsyncUploadToolsTextCarriesData(t *testing.T) {
 	// upload_status, upload_cancel, and upload_list must put their actionable
 	// data there (not a bare stub) so such clients can use the handle.
 	release := make(chan struct{})
-	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -205,7 +205,7 @@ func TestAsyncUploadToolsTextCarriesData(t *testing.T) {
 }
 
 func TestUploadTaskManagerTTLEviction(t *testing.T) {
-	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmE"}, nil
 	}, 50*time.Millisecond)
@@ -228,7 +228,7 @@ func TestUploadTaskManagerTTLEviction(t *testing.T) {
 }
 
 func TestUploadTaskManagerCancelBeforeStartDoesNotRun(t *testing.T) {
-	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		// A cancelled upload must never fabricate a completion: if the executor
 		// observes the cancelled context it reports the cancellation instead of
 		// returning a bogus result. The executor blocks on ctx.Done() so the
@@ -260,7 +260,7 @@ func TestUploadTaskManagerCancelBeforeStartDoesNotRun(t *testing.T) {
 }
 
 func TestUploadTaskManagerCancelledTasksArePruned(t *testing.T) {
-	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		// Block on ctx.Done() so the cancel deterministically wins the race
 		// against completion — an instant-return executor can finish before
 		// Cancel() runs, making mgr.Cancel fail with 'not cancellable (state
@@ -302,7 +302,7 @@ func (c *countingCloser) Close() error {
 func TestUploadTaskManagerCancelClosesReaderOnce(t *testing.T) {
 	release := make(chan struct{})
 	reader := &countingCloser{Reader: strings.NewReader("x")}
-	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, r io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, r io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		<-release // hold the executor so Cancel runs while it is reading
 		return nil, nil
 	}, 0)
@@ -324,7 +324,7 @@ func TestUploadTaskManagerCancelClosesReaderOnce(t *testing.T) {
 func TestUploadTaskManagerConcurrencyCap(t *testing.T) {
 	release := make(chan struct{})
 	var started atomic.Int64
-	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		started.Add(1)
 		<-release // hold tasks in the running state
 		return map[string]any{"cid": "QmF"}, nil
@@ -354,7 +354,7 @@ func TestUploadTaskManagerConcurrencyCap(t *testing.T) {
 func TestUploadTaskManagerExecTimeoutForcesReaderClose(t *testing.T) {
 	// An executor that blocks forever, ignoring runCtx cancellation — the
 	// worst case a non-cancellable network read.
-	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		select {}
 	}, 0)
 	// Force a short execTimeout so the watchdog fires quickly.

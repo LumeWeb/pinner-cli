@@ -27,7 +27,7 @@ import (
 func buildIPFSUploadAppServer(t *testing.T) (*mcp.Server, *transfer.Upload) {
 	t.Helper()
 
-	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool, _ string, _ bool) (any, error) {
 		_, _ = io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmApp", "name": name}, nil
 	}, 0)
@@ -460,7 +460,7 @@ func buildIPFSUploadSharedServer(t *testing.T) (*mcp.Server, *transfer.Upload, *
 	t.Helper()
 
 	var gotBytes atomic.Value
-	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool, _ string, _ bool) (any, error) {
 		b, _ := io.ReadAll(reader)
 		gotBytes.Store(string(b))
 		return map[string]any{"cid": "QmShared", "name": name}, nil
@@ -859,7 +859,7 @@ func TestIPFSUploadResourceAdvertisesConnectDomains(t *testing.T) {
 // (a brand-new operation, not a continuation), and ALWAYS expose a non-empty
 // presigned_url.
 func TestOpenUploadManagerStaleHandleFallsBack(t *testing.T) {
-	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool, _ bool) (any, error) {
+	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool, _ string, _ bool) (any, error) {
 		_, _ = io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmFallback", "name": name}, nil
 	}, 0)
