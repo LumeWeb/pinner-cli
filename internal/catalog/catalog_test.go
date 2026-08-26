@@ -264,13 +264,14 @@ func TestDescribeScopesToActor(t *testing.T) {
 		t.Fatalf("human Describe(app-only) = %+v ok=%v, want found", sch, ok)
 	}
 	// VisibilityBoth ops are visible to both the model and app surfaces.
-	if _, ok := c.Describe("websites list", ActorModel); !ok {
-		t.Fatal("model Describe(both) should be found")
+	// The description is audience-swapped: a model actor gets the MCP/agent
+	// fallback description, while an app/human actor gets the plain human
+	// Description so the app surface never exposes agent text.
+	if sch, ok := c.Describe("websites list", ActorModel); !ok || sch.Description != "Agent: list sites" {
+		t.Fatalf("model Describe(both) = %+v ok=%v, want agent fallback description", sch, ok)
 	}
-	// The static description resolves from the MCPTargets fallback for both
-	// actors — the description is a single value, not audience-swapped.
-	if sch, ok := c.Describe("websites list", ActorApp); !ok || sch.Description != "Agent: list sites" {
-		t.Fatalf("app Describe(both) = %+v ok=%v, want fallback description", sch, ok)
+	if sch, ok := c.Describe("websites list", ActorApp); !ok || sch.Description != "Long websites desc" {
+		t.Fatalf("app Describe(both) = %+v ok=%v, want plain human description", sch, ok)
 	}
 }
 

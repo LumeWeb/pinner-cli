@@ -217,7 +217,9 @@ func TestRegistry_Detect_OpenAIOverHTTP_NoToken(t *testing.T) {
 
 	require.Equal(t, HostOpenAI, prof.HostType)
 	require.Equal(t, TransportHTTP, prof.Transport)
-	require.Equal(t, ProfileOpenAIHTTP.AuthMethod, prof.AuthMethod)
+	// No wire token → the detected per-request auth is bearer, not the static
+	// ProfileOpenAIHTTP default (oauth).
+	require.Equal(t, AuthBearer, prof.AuthMethod)
 }
 
 func TestRegistry_Detect_GrokOverHTTP(t *testing.T) {
@@ -232,7 +234,9 @@ func TestRegistry_Detect_GrokOverHTTP(t *testing.T) {
 
 	require.Equal(t, ProfileGrokHTTP.HostType, prof.HostType)
 	require.Equal(t, ProfileGrokHTTP.Transport, prof.Transport)
-	require.Equal(t, ProfileGrokHTTP.AuthMethod, prof.AuthMethod)
+	// No wire token → the detected per-request auth is bearer, not the static
+	// ProfileGrokHTTP default (oauth).
+	require.Equal(t, AuthBearer, prof.AuthMethod)
 	// Runtime overlay
 	require.Equal(t, "grok-connectors-manager/0.1.0", prof.UserAgent)
 	// Grok should not have file-host-input or mcp-apps
@@ -628,7 +632,9 @@ func TestDetectFromHTTPRequest_Grok(t *testing.T) {
 
 	require.Equal(t, HostGrok, prof.HostType)
 	require.Equal(t, TransportHTTP, prof.Transport)
-	require.Equal(t, ProfileGrokHTTP.AuthMethod, prof.AuthMethod)
+	// No wire token → detected per-request auth is bearer, not the static
+	// ProfileGrokHTTP default (oauth).
+	require.Equal(t, AuthBearer, prof.AuthMethod)
 	require.Equal(t, "grok-connectors-manager/0.1.0", prof.UserAgent)
 }
 

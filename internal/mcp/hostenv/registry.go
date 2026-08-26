@@ -55,6 +55,17 @@ func (r *DetectorRegistry) Detect(req DetectRequest) PlatformProfile {
 
 	profile := resolveProfile(hostType, transport, authMethod)
 
+	// A matched detector also reports the per-request wire auth (AuthOAuth when
+	// TokenInfo is present, else AuthBearer). resolveProfile only selects a
+	// static variant and does not consume it, so copy the detected auth onto
+	// the returned profile when a host was matched — consumers of
+	// profile.AuthMethod should see the actual wire auth, not the declared
+	// default (e.g. ProfileOpenAIHTTP/ProfileGrokHTTP always declare AuthOAuth
+	// even for token-less bearer requests).
+	if hostType != HostUnknown {
+		profile.AuthMethod = authMethod
+	}
+
 	// Overlay runtime wire signals.
 	profile.ClientInfo = req.ClientInfo
 	profile.ProtocolVer = req.ProtocolVersion
