@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -47,13 +46,76 @@ func (p *MockPinningService) expectPinningVerified() *mock.Call {
 		Return(&PinStatus{Status: "pinned"}, nil).Once()
 }
 
-// TestUploadAppliesPinNameWhenWaiting verifies that on a wait=true upload the
-// caller-supplied name is written to the pin's Name metadata via UpdatePin.
-func TestUploadAppliesPinNameWhenWaiting(t *testing.T) {
-	baseEndpoint, server := createUploadMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+// newUploadNameServer returns a mock upload server that records the request so
+// tests can assert how the caller name was threaded into the SDK upload, and
+// responds with a CID so the upload succeeds.
+func newUploadNameServer(t *testing.T, assertName func(*testing.T, *http.Request)) (string, *httptest.Server) {
+	t.Helper()
+	return createUploadMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if assertName != nil {
+			assertName(t, r)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"CID":"bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"}`))
+	})
+}
+
+// TestUploadThreadsPinName verifies the caller-supplied name is passed through
+// the SDK upload request (as the POST `name` query param), so the server names
+// the pin at creation time rather than the CLI mutating it afterwards.
+func TestUploadThreadsPinName(t *testing.T) {
+	t.Run("when waiting", func(t *testing.T) {
+		baseEndpoint, server := newUploadNameServer(t, func(t *testing.T, r *http.Request) {
+			assert.Equal(t, "my document", r.URL.Query().Get("name"))
+		})
+		defer server.Close()
+
+		h := newUploadTestHelpers(t)
+		h.wireAccountMockServer(t)
+		pinning := NewMockPinningService(t)
+		h.service.pinningService = pinning
+		tmpFile := h.createTestFile("test content")
+		h.setupUploadExpectations(testAuthToken, baseEndpoint, ipfs.DefaultUploadLimit, int64(ipfs.DefaultUploadLimit))
+
+		pinning.expectPinningVerified()
+
+		f, err := os.Open(tmpFile)
+		require.NoError(t, err)
+		defer func() { _ = f.Close() }()
+		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
+
+		result, err := h.service.Upload(context.Background(), filesystem, "my document", true, false)
+		require.NoError(t, err)
+		assert.NotEmpty(t, result.CID)
+	})
+
+	t.Run("when not waiting", func(t *testing.T) {
+		baseEndpoint, server := newUploadNameServer(t, func(t *testing.T, r *http.Request) {
+			assert.Equal(t, "my document", r.URL.Query().Get("name"))
+		})
+		defer server.Close()
+
+		h := newUploadTestHelpers(t)
+		tmpFile := h.createTestFile("test content")
+		h.setupUploadExpectations(testAuthToken, baseEndpoint, ipfs.DefaultUploadLimit, int64(ipfs.DefaultUploadLimit))
+
+		f, err := os.Open(tmpFile)
+		require.NoError(t, err)
+		defer func() { _ = f.Close() }()
+		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
+
+		result, err := h.service.Upload(context.Background(), filesystem, "my document", false, false)
+		require.NoError(t, err)
+		assert.NotEmpty(t, result.CID)
+	})
+}
+
+// TestUploadOmitsEmptyPinName verifies an empty name is not sent on the upload
+// request, so the server applies its default pin name.
+func TestUploadOmitsEmptyPinName(t *testing.T) {
+	baseEndpoint, server := newUploadNameServer(t, func(t *testing.T, r *http.Request) {
+		assert.Empty(t, r.URL.Query().Get("name"))
 	})
 	defer server.Close()
 
@@ -64,171 +126,6 @@ func TestUploadAppliesPinNameWhenWaiting(t *testing.T) {
 	tmpFile := h.createTestFile("test content")
 	h.setupUploadExpectations(testAuthToken, baseEndpoint, ipfs.DefaultUploadLimit, int64(ipfs.DefaultUploadLimit))
 
-	pinning.expectPinningVerified()
-	pinning.EXPECT().
-		UpdatePin(mock.Anything, mock.Anything, "my document", mock.Anything, false).
-		Return(nil).Once()
-
-	f, err := os.Open(tmpFile)
-	require.NoError(t, err)
-	defer func() { _ = f.Close() }()
-	filesystem := contentfs.NewSingleFileFS(f, "test.txt")
-
-	result, err := h.service.Upload(context.Background(), filesystem, "my document", true, false)
-	require.NoError(t, err)
-	assert.NotEmpty(t, result.CID)
-}
-
-// TestUploadAppliesPinNameWhenNotWaiting verifies that a fire-and-forget
-// (wait=false) upload still applies the pin name when a pinning service is
-// wired in (as the MCP path always does): the long-lived MCP server outlives
-// the synchronous call, so the name is set even though the caller did not wait.
-func TestUploadAppliesPinNameWhenNotWaiting(t *testing.T) {
-	baseEndpoint, server := createUploadMockServer(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"CID":"bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"}`))
-	})
-	defer server.Close()
-
-	h := newUploadTestHelpers(t)
-	pinning := NewMockPinningService(t)
-	h.service.pinningService = pinning
-	tmpFile := h.createTestFile("test content")
-	h.setupUploadExpectations(testAuthToken, baseEndpoint, ipfs.DefaultUploadLimit, int64(ipfs.DefaultUploadLimit))
-
-	pinning.EXPECT().
-		UpdatePin(mock.Anything, mock.Anything, "my document", mock.Anything, false).
-		Return(nil).Once()
-
-	f, err := os.Open(tmpFile)
-	require.NoError(t, err)
-	defer func() { _ = f.Close() }()
-	filesystem := contentfs.NewSingleFileFS(f, "test.txt")
-
-	result, err := h.service.Upload(context.Background(), filesystem, "my document", false, false)
-	require.NoError(t, err)
-	assert.NotEmpty(t, result.CID)
-}
-
-// TestUploadRetriesPinNameWhenPinNotYetRegistered verifies that on the
-// fire-and-forget (wait=false) path a pin that has not yet registered in the
-// pinning API does not silently drop the caller's name: UpdatePin's LsSync
-// returns ErrPinNotFound until the pin appears, and the short retry recovers by
-// applying the name once the pin is visible. This is the race the plain
-// success-once mock cannot catch.
-func TestUploadRetriesPinNameWhenPinNotYetRegistered(t *testing.T) {
-	baseEndpoint, server := createUploadMockServer(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"CID":"bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"}`))
-	})
-	defer server.Close()
-
-	h := newUploadTestHelpers(t)
-	pinning := NewMockPinningService(t)
-	h.service.pinningService = pinning
-	tmpFile := h.createTestFile("test content")
-	h.setupUploadExpectations(testAuthToken, baseEndpoint, ipfs.DefaultUploadLimit, int64(ipfs.DefaultUploadLimit))
-
-	// The pinned-at-upload pin is not yet visible: LsSync reports not-found on
-	// the first attempt, then the name applies once the pin registers.
-	pinning.EXPECT().
-		UpdatePin(mock.Anything, mock.Anything, "my document", mock.Anything, false).
-		Return(ErrPinNotFound).Once()
-	pinning.EXPECT().
-		UpdatePin(mock.Anything, mock.Anything, "my document", mock.Anything, false).
-		Return(nil).Once()
-
-	f, err := os.Open(tmpFile)
-	require.NoError(t, err)
-	defer func() { _ = f.Close() }()
-	filesystem := contentfs.NewSingleFileFS(f, "test.txt")
-
-	result, err := h.service.Upload(context.Background(), filesystem, "my document", false, false)
-	require.NoError(t, err)
-	assert.NotEmpty(t, result.CID)
-
-	// Both UpdatePin calls were consumed, proving the retry recovered from the
-	// transient ErrPinNotFound and applied the name. mockery.AssertExpectations
-	// runs automatically via NewMockPinningService's cleanup.
-}
-
-// TestUploadNameFailureIsNotFatalWhenNotWaiting verifies that on a fire-and-forget
-// (wait=false) upload a failure to set the pin name is non-fatal: the upload
-// still returns success. Only on the waited path is a name-set failure surfaced.
-func TestUploadNameFailureIsNotFatalWhenNotWaiting(t *testing.T) {
-	baseEndpoint, server := createUploadMockServer(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"CID":"bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"}`))
-	})
-	defer server.Close()
-
-	h := newUploadTestHelpers(t)
-	pinning := NewMockPinningService(t)
-	h.service.pinningService = pinning
-	tmpFile := h.createTestFile("test content")
-	h.setupUploadExpectations(testAuthToken, baseEndpoint, ipfs.DefaultUploadLimit, int64(ipfs.DefaultUploadLimit))
-
-	pinning.EXPECT().
-		UpdatePin(mock.Anything, mock.Anything, "my document", mock.Anything, false).
-		Return(errors.New("update failed")).Times(3)
-
-	f, err := os.Open(tmpFile)
-	require.NoError(t, err)
-	defer func() { _ = f.Close() }()
-	filesystem := contentfs.NewSingleFileFS(f, "test.txt")
-
-	result, err := h.service.Upload(context.Background(), filesystem, "my document", false, false)
-	require.NoError(t, err)
-	assert.NotEmpty(t, result.CID)
-}
-
-// TestUploadSkipsPinNameWithoutService verifies the name-set is skipped when no
-// pinning service is wired in (e.g. the CLI upload path).
-func TestUploadSkipsPinNameWithoutService(t *testing.T) {
-	baseEndpoint, server := createUploadMockServer(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"CID":"bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"}`))
-	})
-	defer server.Close()
-
-	h := newUploadTestHelpers(t)
-	h.wireAccountMockServer(t)
-	tmpFile := h.createTestFile("test content")
-	h.setupUploadExpectations(testAuthToken, baseEndpoint, ipfs.DefaultUploadLimit, int64(ipfs.DefaultUploadLimit))
-
-	f, err := os.Open(tmpFile)
-	require.NoError(t, err)
-	defer func() { _ = f.Close() }()
-	filesystem := contentfs.NewSingleFileFS(f, "test.txt")
-
-	result, err := h.service.Upload(context.Background(), filesystem, "my document", true, false)
-	require.NoError(t, err)
-	assert.NotEmpty(t, result.CID)
-}
-
-// TestUploadSkipsPinNameWhenEmpty verifies the name-set is skipped when the
-// resolved name is empty.
-func TestUploadSkipsPinNameWhenEmpty(t *testing.T) {
-	baseEndpoint, server := createUploadMockServer(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"CID":"bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"}`))
-	})
-	defer server.Close()
-
-	h := newUploadTestHelpers(t)
-	h.wireAccountMockServer(t)
-	pinning := NewMockPinningService(t)
-	h.service.pinningService = pinning
-	tmpFile := h.createTestFile("test content")
-	h.setupUploadExpectations(testAuthToken, baseEndpoint, ipfs.DefaultUploadLimit, int64(ipfs.DefaultUploadLimit))
-
-	// waitForPin still verifies pin status via the service; empty name must not
-	// trigger any UpdatePin (deliberately no UpdatePin expectation).
 	pinning.expectPinningVerified()
 
 	f, err := os.Open(tmpFile)
@@ -237,40 +134,6 @@ func TestUploadSkipsPinNameWhenEmpty(t *testing.T) {
 	filesystem := contentfs.NewSingleFileFS(f, "test.txt")
 
 	result, err := h.service.Upload(context.Background(), filesystem, "", true, false)
-	require.NoError(t, err)
-	assert.NotEmpty(t, result.CID)
-}
-
-// TestUploadNameFailureIsNotFatalWhenWaiting verifies that even on the waited
-// path a failure to set the pin name does not fail the upload: the name-set is
-// a post-upload metadata label, never part of the upload's core success, so it
-// is always best-effort and its failure is downgraded to a warning.
-func TestUploadNameFailureIsNotFatalWhenWaiting(t *testing.T) {
-	baseEndpoint, server := createUploadMockServer(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"CID":"bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"}`))
-	})
-	defer server.Close()
-
-	h := newUploadTestHelpers(t)
-	h.wireAccountMockServer(t)
-	pinning := NewMockPinningService(t)
-	h.service.pinningService = pinning
-	tmpFile := h.createTestFile("test content")
-	h.setupUploadExpectations(testAuthToken, baseEndpoint, ipfs.DefaultUploadLimit, int64(ipfs.DefaultUploadLimit))
-
-	pinning.expectPinningVerified()
-	pinning.EXPECT().
-		UpdatePin(mock.Anything, mock.Anything, "my document", mock.Anything, false).
-		Return(errors.New("update failed")).Times(3)
-
-	f, err := os.Open(tmpFile)
-	require.NoError(t, err)
-	defer func() { _ = f.Close() }()
-	filesystem := contentfs.NewSingleFileFS(f, "test.txt")
-
-	result, err := h.service.Upload(context.Background(), filesystem, "my document", true, false)
 	require.NoError(t, err)
 	assert.NotEmpty(t, result.CID)
 }
