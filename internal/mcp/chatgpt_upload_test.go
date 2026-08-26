@@ -96,6 +96,25 @@ func TestUploadFileDescriptorHTTPMintRejectsWrap(t *testing.T) {
 	require.Nil(t, res.StructuredContent)
 }
 
+func TestUploadFileDescriptorHTTPMintRejectsArchiveConvert(t *testing.T) {
+	// The mint source streams raw bytes to a presigned PUT URL and exposes no
+	// archive_mode to the agent (the async PUT executor always stays single-file
+	// via explicit "preserve"). An explicit archive_mode=convert on mint cannot
+	// be expressed and must fail loudly rather than silently return the raw
+	// archive as a single-file CID the caller cannot opt back into extracting.
+	cu := transfer.NewHTTPUpload(transfer.NewUploadTaskManager(nil, 0), 0)
+	defer cu.Stop(context.Background())
+	desc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
+		"source":       map[string]any{"mode": "mint"},
+		"archive_mode": "convert",
+	}})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "archive_mode=convert is not supported by the mint source")
+	// No presigned URL may be minted for a rejected convert request.
+	require.Nil(t, res.StructuredContent)
+}
+
 func TestUploadFileDescriptorHTTPRejectsPath(t *testing.T) {
 	cu := transfer.NewHTTPUpload(nil, 0)
 	defer cu.Stop(context.Background())

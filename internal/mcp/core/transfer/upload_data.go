@@ -60,9 +60,11 @@ func DataURIUploadDescriptor(handler DataURIUploadHandler, maxBytes int64) model
 			// Bound the upload phase; see SyncUploadBudget.
 			transferCtx, cancel := context.WithTimeout(ctx, SyncUploadBudget(opt.Size))
 			defer cancel()
-			// data: URI input has no archive_mode field; archiveMode is always ""
-			// (byte chunks are not buffered for archive sniffing).
-			result, err := handler(transferCtx, reader, opt.Size, name, in.Wait, "", in.Wrap)
+			// data: URI input exposes no archive_mode field, so the upload must
+			// always stay single-file. Pass an explicit "preserve" so
+			// ParseArchiveMode cannot default "" to convert and silently extract
+			// a base64 ZIP into a directory DAG the caller cannot opt out of.
+			result, err := handler(transferCtx, reader, opt.Size, name, in.Wait, "preserve", in.Wrap)
 			return toolargs.WrapResult(result, err, "Data URI uploaded.")
 		},
 	}

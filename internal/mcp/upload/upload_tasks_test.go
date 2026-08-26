@@ -370,3 +370,24 @@ func TestUploadTaskManagerExecTimeoutForcesReaderClose(t *testing.T) {
 		return reader.closes.Load() >= 1
 	}, 2*time.Second, 10*time.Millisecond)
 }
+
+func TestUploadTaskManagerAsyncPassesPreserveArchiveMode(t *testing.T) {
+	// The async/mint path exposes no archive_mode to the agent, so it must
+	// always stay single-file. The executor must receive an explicit "preserve"
+	// (not "") so ParseArchiveMode cannot default "" to convert and silently
+	// extract a raw .zip streamed to the presigned URL into a directory DAG the
+	// caller never requested.
+	var gotArchiveMode string
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, _ bool) (any, error) {
+		gotArchiveMode = archiveMode
+		return map[string]any{"cid": "QmPreserve"}, nil
+	}, 0)
+
+	id, err := mgr.Start(context.Background(), io.NopCloser(strings.NewReader("zipbytes")), 8, "site.zip", true)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		t, err := mgr.Get(id)
+		return err == nil && t.State == transfer.UploadStateCompleted
+	}, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, "preserve", gotArchiveMode, "async/mint path must pass explicit preserve, not empty (convert)")
+}

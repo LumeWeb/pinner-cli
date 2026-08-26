@@ -198,6 +198,15 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				if in.Wrap {
 					return model.ToolResult{}, errors.New("wrap is not supported by the mint source; use a co-located path/data/url source for a wrapped (directory-root) single-file upload")
 				}
+				// Archive conversion has the same constraint: the mint source
+				// exposes no archive_mode to the agent and always remains a
+				// single file (the async PUT executor passes explicit
+				// "preserve"). Reject an explicit "convert" request rather than
+				// silently returning a single-file CID the caller cannot opt
+				// back into extracting.
+				if in.ArchiveMode != "" && ieo.ParseArchiveMode(in.ArchiveMode) == ieo.ArchiveConvert {
+					return model.ToolResult{}, errors.New("archive_mode=convert is not supported by the mint source; use a host file/url/data/path source for archive (directory) extraction")
+				}
 				name := in.Name
 				if name == "" {
 					name = DefaultUploadName

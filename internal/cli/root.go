@@ -611,9 +611,11 @@ For more help on any command: pinner <command> --help`,
 			if uploadHandler == nil {
 				return nil, notInitErr("upload")
 			}
-			// data: URI input exposes no archive_mode; always pass "" so the
-			// single-file byte path is used.
-			return uploadHandler(ctx, reader, size, name, wait, "", wrap)
+			// data: URI input exposes no archive_mode field, so the upload must
+			// always stay single-file. Pass an explicit "preserve" so
+			// ParseArchiveMode cannot default "" to convert and silently extract
+			// a base64 ZIP into a directory DAG the caller cannot opt out of.
+			return uploadHandler(ctx, reader, size, name, wait, "preserve", wrap)
 		}),
 		// Local-path handler for the consolidated upload_file tool's co-located
 		// branch: upload of a host-side file, directory, or archive. Only
