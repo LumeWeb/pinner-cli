@@ -172,7 +172,7 @@ func (c ConfigStepChoiceValue) Valid() bool {
 // ContentSourceInput is the input for the content_source step.
 type ContentSourceInput struct {
 	Choice ContentSourceChoice `json:"choice" jsonschema:"enum=cid,enum=upload,description=Whether you have a CID ready or need to upload content first"`
-	CID    string              `json:"cid,omitempty" jsonschema:"description=The IPFS CID (required when choice is cid)"`
+	CID    string              `json:"cid,omitempty" jsonschema:"description=The IPFS CID (required when choice is cid). For websites, the CID must be a directory containing index.html at its root. When uploading a single HTML file, use wrap=true and do not set an explicit name — the tool auto-names wrapped HTML to index.html."`
 }
 
 // TargetTypeInput is the input for the target_type step.
