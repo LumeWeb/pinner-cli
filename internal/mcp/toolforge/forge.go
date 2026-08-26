@@ -1,7 +1,8 @@
 package toolforge
 
 import (
-	"fmt"
+	"strings"
+	"text/template"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
@@ -143,93 +144,61 @@ func copyMeta(m map[string]any) map[string]any {
 	return out
 }
 
+// instructionsTemplate is the text/template for platform-aware server
+// instructions. Conditional sections render only when the profile supports
+// the corresponding feature.
+var instructionsTemplate = template.Must(template.New("instructions").Parse(`This server exposes a curated set of common Pinner tools directly, including upload, pin, list, status, download, vault, website, website/domain wizard tools, and the agent-facing out-of-band sign-in tools (auth_sso and auth_resume). Setup wizard tools are not exposed because they accept credentials.
+
+The tool surface is intentionally two-tier. The tools listed directly in tools/list are the curated, most-used surface. The rest of the catalog (see count below) is served through progressive disclosure and is NOT broken or missing: any tool not listed directly is reachable via search_tools -> describe_tool -> invoke_tool. If a tool you expect is absent from tools/list, search for it rather than assuming it is unavailable. A large catalog is deliberately kept off the direct list to keep the initial tool surface small and the context budget predictable.
+
+For authentication, prefer the out-of-band flow: call auth_sso, give the returned approval URL to the human, then poll auth_resume with the returned handle until it reports done. This avoids an invalid or missing API key blocking work.
+
+Common flows start here:
+- guide:    call agent_guide first for the full ordered flow chains and decision trees
+- auth:     auth_status -> auth_sso -> auth_resume (then auth_status to verify)
+- vault:    vault_create -> vault_create_resume -> vault_status; restore via vault_restore -> vault_restore_resume
+- pins:     pins_add / pins_list / pins_status
+- publish:  upload_file -> websites_create (see agent_guide for domain/label/custom-domain branching)
+- search:   search_tools({ "query": "<one keyword>" })
+- filter:   search_tools({ "category": "vault", "query": "<one keyword>" })
+
+Some internal commands are human-only or read piped stdin; when an agent invokes one via invoke_tool, the server returns a structured needs_human redirect instead of blocking. Commands that prompt interactively are hidden from search_tools entirely.
+
+The internal catalog has {{.ToolCount}} tools.
+{{if .FileHostInput}}
+File input: when the host already has the file (user-uploaded attachments AND assistant-generated files in the assistant's sandbox), pass it via the ` + "`file`" + ` parameter on upload_file/vault_put_file. Do NOT base64-encode, create a data URI, or manually construct the download_url object. The host runtime resolves the file reference into a temporary download_url + file_id this tool receives.
+{{end}}{{if .SourcePath}}
+File source: use source.mode=path with a host-side file/directory/archive path. The server reads it directly because it shares the host filesystem. Local path arguments refer to the MCP server host, not a remote agent's filesystem.
+{{end}}{{if .SourceMint}}
+File source: use source.mode=mint to get a one-time presigned HTTP PUT endpoint. Stream bytes to it with curl, then poll upload_status with the returned upload_handle.
+{{end}}{{if .SourceRelay}}
+File source: use source.mode=url (server-fetchable HTTPS URL) or source.mode=data (RFC 2397 data: URI). The server fetches/decodes and uploads them.
+{{end}}{{if .MCPApps}}
+Companion interactive pages (MCP Apps) may render alongside tool results when a tool returns a needs_human redirect. These are ui:// resources rendered by the host; the model always reads content[].text for the canonical result.
+{{end}}`))
+
+// instructionsData is the template execution context.
+type instructionsData struct {
+	ToolCount      int
+	FileHostInput  bool
+	SourcePath     bool
+	SourceMint     bool
+	SourceRelay    bool
+	MCPApps        bool
+}
+
 // buildInstructions returns the MCP server instructions for the given
 // platform. The instructions are platform-aware: they only mention file
 // input modes, sinks, and UI features the platform actually supports.
 func buildInstructions(profile hostenv.PlatformProfile, toolCount int) string {
-	var b instructionBuilder
-	b.writeBase(toolCount)
-
-	if profile.Has(hostenv.FeatFileHostInput) {
-		b.writeFileHostInputGuidance()
-	}
-	if profile.Has(hostenv.FeatSourcePath) {
-		b.writeSourcePathGuidance()
-	}
-	if profile.Has(hostenv.FeatSourceMint) {
-		b.writeSourceMintGuidance()
-	}
-	if profile.Has(hostenv.FeatSourceURL) || profile.Has(hostenv.FeatSourceData) {
-		b.writeSourceRelayGuidance()
-	}
-	if profile.Has(hostenv.FeatMCPApps) {
-		b.writeMCPAppsGuidance()
-	}
-
-	return b.string()
-}
-
-// instructionBuilder is a string builder for constructing
-// platform-aware server instructions.
-type instructionBuilder struct {
-	sb []byte
-}
-
-func (b *instructionBuilder) write(s string) {
-	b.sb = append(b.sb, s...)
-}
-
-func (b *instructionBuilder) writeln(s string) {
-	b.write(s)
-	b.sb = append(b.sb, '\n')
-}
-
-func (b *instructionBuilder) string() string {
-	return string(b.sb)
-}
-
-func (b *instructionBuilder) writeBase(toolCount int) {
-	b.writeln("This server exposes a curated set of common Pinner tools directly, including upload, pin, list, status, download, vault, website, website/domain wizard tools, and the agent-facing out-of-band sign-in tools (auth_sso and auth_resume). Setup wizard tools are not exposed because they accept credentials.")
-	b.writeln("")
-	b.writeln("The tool surface is intentionally two-tier. The tools listed directly in tools/list are the curated, most-used surface. The rest of the catalog (see count below) is served through progressive disclosure and is NOT broken or missing: any tool not listed directly is reachable via search_tools -> describe_tool -> invoke_tool. If a tool you expect is absent from tools/list, search for it rather than assuming it is unavailable. A large catalog is deliberately kept off the direct list to keep the initial tool surface small and the context budget predictable.")
-	b.writeln("")
-	b.writeln("For authentication, prefer the out-of-band flow: call auth_sso, give the returned approval URL to the human, then poll auth_resume with the returned handle until it reports done. This avoids an invalid or missing API key blocking work.")
-	b.writeln("")
-	b.writeln("Common flows start here:")
-	b.writeln("- guide:    call agent_guide first for the full ordered flow chains and decision trees")
-	b.writeln("- auth:     auth_status -> auth_sso -> auth_resume (then auth_status to verify)")
-	b.writeln("- vault:    vault_create -> vault_create_resume -> vault_status; restore via vault_restore -> vault_restore_resume")
-	b.writeln("- pins:     pins_add / pins_list / pins_status")
-	b.writeln("- publish:  upload_file -> websites_create (see agent_guide for domain/label/custom-domain branching)")
-	b.writeln(`- search:   search_tools({ "query": "<one keyword>" })`)
-	b.writeln(`- filter:   search_tools({ "category": "vault", "query": "<one keyword>" })`)
-	b.writeln("")
-	b.writeln("Some internal commands are human-only or read piped stdin; when an agent invokes one via invoke_tool, the server returns a structured needs_human redirect instead of blocking. Commands that prompt interactively are hidden from search_tools entirely.")
-	b.writeln("")
-	b.writeln(fmt.Sprintf("The internal catalog has %d tools.", toolCount))
-}
-
-func (b *instructionBuilder) writeFileHostInputGuidance() {
-	b.writeln("")
-	b.writeln("File input: when the host already has the file (user-uploaded attachments AND assistant-generated files in the assistant's sandbox), pass it via the `file` parameter on upload_file/vault_put_file. Do NOT base64-encode, create a data URI, or manually construct the download_url object. The host runtime resolves the file reference into a temporary download_url + file_id this tool receives.")
-}
-
-func (b *instructionBuilder) writeSourcePathGuidance() {
-	b.writeln("")
-	b.writeln("File source: use source.mode=path with a host-side file/directory/archive path. The server reads it directly because it shares the host filesystem. Local path arguments refer to the MCP server host, not a remote agent's filesystem.")
-}
-
-func (b *instructionBuilder) writeSourceMintGuidance() {
-	b.writeln("")
-	b.writeln("File source: use source.mode=mint to get a one-time presigned HTTP PUT endpoint. Stream bytes to it with curl, then poll upload_status with the returned upload_handle.")
-}
-
-func (b *instructionBuilder) writeSourceRelayGuidance() {
-	b.writeln("")
-	b.writeln("File source: use source.mode=url (server-fetchable HTTPS URL) or source.mode=data (RFC 2397 data: URI). The server fetches/decodes and uploads them.")
-}
-
-func (b *instructionBuilder) writeMCPAppsGuidance() {
-	b.writeln("")
-	b.writeln("Companion interactive pages (MCP Apps) may render alongside tool results when a tool returns a needs_human redirect. These are ui:// resources rendered by the host; the model always reads content[].text for the canonical result.")
+	var buf strings.Builder
+	_ = instructionsTemplate.Execute(&buf, instructionsData{
+		ToolCount:     toolCount,
+		FileHostInput: profile.Has(hostenv.FeatFileHostInput),
+		SourcePath:    profile.Has(hostenv.FeatSourcePath),
+		SourceMint:    profile.Has(hostenv.FeatSourceMint),
+		SourceRelay:   profile.Has(hostenv.FeatSourceURL) || profile.Has(hostenv.FeatSourceData),
+		MCPApps:       profile.Has(hostenv.FeatMCPApps),
+	})
+	return buf.String()
 }

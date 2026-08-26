@@ -18,6 +18,9 @@ func ResolveDescription(targets []model.ToolTarget, profile hostenv.PlatformProf
 	if target == nil || !target.Visible {
 		return "", false
 	}
+	if target.DescFunc != nil {
+		return target.DescFunc(profile), true
+	}
 	return target.Description, true
 }
 

@@ -29,4 +29,10 @@ type ToolTarget struct {
 	Meta            map[string]any
 	SecuritySchemes []SecurityScheme
 	SensitiveFlags  []string
+
+	// DescFunc, when non-nil, is called at resolution time with the
+	// platform profile to produce a dynamic description. It overrides
+	// Description. Used by targets that compose their description from
+	// feature-gated segments via toolforge.DescBuilder.
+	DescFunc func(hostenv.PlatformProfile) string
 }

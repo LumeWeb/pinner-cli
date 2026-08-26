@@ -16,6 +16,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.uber.org/zap"
 )
 
 // VaultPutHandler is the authenticated vault write executor. It writes bytes
@@ -229,7 +230,7 @@ func vaultPutFileDescription(t transfer.TransportKind) string {
 	profile := hostenv.ProfileForTransport(t).CloneFeatures()
 	desc, ok := toolforge.ResolveDescription(toolforge.VaultPutFileTargets, profile)
 	if !ok {
-		return "Store a file in the encrypted Pinner vault. Use source with the mode appropriate for this transport. vault_path may be any vault file path (e.g. vault:/docs/f.pdf)."
+		zap.L().Fatal("vaultPutFileDescription: no matching target for transport", zap.String("transport", string(t)))
 	}
 	return desc
 }

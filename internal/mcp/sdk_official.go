@@ -174,14 +174,25 @@ func requestCaps(req *sdk.CallToolRequest, transportFlags transportFlags) *model
 	}
 
 	profile := defaultDetectorRegistry.Detect(hostenv.DetectRequest{
-		ClientInfo:   ci,
+		ClientInfo:      ci,
 		ProtocolVersion: req.ProtocolVersion(),
-		UserAgent:    userAgent,
-		Headers:      headers,
-		TokenInfo:    tokenInfo,
-		CoLocated:    transportFlags.coLocated,
-		TunnelOpenAI: transportFlags.tunnelOpenAI,
+		UserAgent:       userAgent,
+		Headers:         headers,
+		TokenInfo:       tokenInfo,
+		CoLocated:       transportFlags.coLocated,
+		TunnelOpenAI:    transportFlags.tunnelOpenAI,
 	})
+
+	// Safety net: if the client advertises MCP Apps support on the wire
+	// (io.modelcontextprotocol/ui extension with text/html;profile=mcp-app)
+	// but the resolved static profile doesn't declare FeatMCPApps, overlay
+	// it so tools can branch at call time. This covers future hosts that
+	// advertise the capability but have no static profile entry yet.
+	if rc.UI != nil && rc.UI.SupportsApps() && !profile.Features[hostenv.FeatMCPApps] {
+		profile = profile.CloneFeatures()
+		profile.Features[hostenv.FeatMCPApps] = true
+	}
+
 	rc.Profile = &profile
 
 	return rc
