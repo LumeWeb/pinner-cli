@@ -74,27 +74,92 @@ func TestCancelFulfilledExpiredHandle(t *testing.T) {
 	mgr.mu.Unlock()
 
 	// Fulfill: pruneLocked inside beginLocked tombstones it as Expired, then
-	// the same call re-registers the id as running.
+	// the same call re-registers the id as running and drops the now-stale
+	// tombstone. Only the live task must remain — no expired tombstone may
+	// coexist with an active upload.
 	require.NoError(t, mgr.Fulfill(context.Background(), handle, io.NopCloser(strings.NewReader("x")), 1, "", false))
 	<-execRan
 
-	// Both a tombstone AND a live running task now exist under this id.
 	mgr.mu.Lock()
 	_, hasTomb := mgr.tombstones[handle]
 	_, hasLive := mgr.tasks[handle]
+	orderHas := false
+	for _, id := range mgr.tombstoneOrder {
+		if id == handle {
+			orderHas = true
+			break
+		}
+	}
 	mgr.mu.Unlock()
-	require.True(t, hasTomb, "lapsed prepared handle must be tombstoned as expired during Fulfill")
 	require.True(t, hasLive, "the same Fulfill re-registers the live running task")
+	require.False(t, hasTomb, "the stale Expired tombstone must be dropped when the handle becomes live again")
+	require.False(t, orderHas, "the re-registered id must leave the tombstone FIFO")
 
-	// Cancel the live upload — this is the regression: it must not be refused
-	// because of the coexisting Expired tombstone.
-	require.NoError(t, mgr.Cancel(handle), "running upload must be cancellable despite an Expired tombstone under the same id")
+	// Cancel the live upload — this is the regression: it must succeed, not be
+	// refused by a stale Expired tombstone under the same id.
+	require.NoError(t, mgr.Cancel(handle), "running upload must be cancellable despite a prior Expired tombstone under the same id")
 	close(release)
 
 	require.Eventually(t, func() bool {
 		tk, err := mgr.Get(handle)
 		return err == nil && tk.State == UploadStateCancelled
 	}, 2*time.Second, 10*time.Millisecond)
+}
+
+// TestReRegisteredHeadDoesNotStrandSuccessors verifies Kody finding: the FIFO
+// retirement assumes tombstoneOrder is monotonic by FinishedAt. A lapsed
+// prepared handle re-registered live AFTER another tombstone was queued would
+// get a young FinishedAt at an OLD FIFO slot (if its old slot was retained),
+// breaking the monotonic head assumption and stranding successors. With the
+// root-cause fix (untombstoneLocked drops the stale tombstone on re-register),
+// the FIFO stays truthful and all expired tombstones retire.
+func TestReRegisteredHeadDoesNotStrandSuccessors(t *testing.T) {
+	mgr := NewUploadTaskManager(func(_ context.Context, _ io.Reader, _ int64, _ string, _ bool, _ string, _ bool) (any, error) {
+		return map[string]any{"cid": "QmX"}, nil
+	}, time.Minute)
+	mgr.PreparedTTL = time.Minute
+
+	// Prepare two handles: A (re-registered later) and B (a normal successor).
+	a, err := mgr.Prepare("a.bin", time.Minute)
+	require.NoError(t, err)
+	b, err := mgr.Prepare("b.bin", time.Minute)
+	require.NoError(t, err)
+	require.NotEqual(t, a, b)
+
+	// Tombstone both by aging them past the prepared TTL and pruning. A is
+	// queued first so it sits at the head of the FIFO.
+	now := time.Now()
+	mgr.mu.Lock()
+	mgr.tasks[a].task.CreatedAt = now.Add(-3 * time.Minute)
+	mgr.tasks[b].task.CreatedAt = now.Add(-3 * time.Minute)
+	mgr.mu.Unlock()
+	mgr.List() // prunes + tombstones both
+
+	// Re-register A as a live running upload (simulating Fulfill of the lapsed
+	// handle). untombstoneLocked drops its stale Expired tombstone.
+	mgr.mu.Lock()
+	tt := &trackedTask{task: &UploadTask{ID: a, Name: "a.live", State: UploadStateRunning, CreatedAt: now}}
+	mgr.tasks[a] = tt
+	mgr.untombstoneLocked(a)
+	// Age all remaining tombstones (including B) past retention.
+	for id := range mgr.tombstones {
+		if tt2, ok := mgr.tombstones[id]; ok {
+			f := time.Now().Add(-3 * time.Minute)
+			tt2.FinishedAt = &f
+		}
+	}
+	mgr.mu.Unlock()
+
+	// The head is now a's LIVE re-registered id, NOT a young expired tombstone.
+	// Run a prune: B and any aged tombstones must retire despite the FIFO head
+	// no longer being expired.
+	mgr.List()
+
+	mgr.mu.Lock()
+	defer mgr.mu.Unlock()
+	require.NotContains(t, mgr.tombstones, b, "successor tombstone B must retire past retention")
+	_, aLive := mgr.tasks[a]
+	require.True(t, aLive, "live re-registered task A must be untouched by tombstone retirement")
 }
 
 // TestExpiredTombstonePruned verifies the tombstone map itself is bounded:

@@ -392,6 +392,13 @@ func (m *UploadTaskManager) beginLocked(ctx context.Context, task *UploadTask, r
 	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), m.ExecTimeout)
 	tt := &trackedTask{task: task, cancel: cancel, reader: reader}
 	m.tasks[task.ID] = tt
+	// A lapsed prepared handle is tombstoned as Expired by the pruneLocked
+	// above, then re-registered here as a live running upload by the same
+	// Fulfill. Drop that stale tombstone: the handle is actively uploading, so
+	// reporting "expired" would be wrong, and leaving it would let a live task
+	// coexist with a tombstone (breaking Cancel) and refresh the FIFO's
+	// FinishedAt (breaking processLocked's monotonic termination).
+	m.untombstoneLocked(task.ID)
 	// Bring the task to the claimable (queued) state so spawn's bail check and
 	// cancel handling see a coherent lifecycle; the goroutine flips it to
 	// running immediately after. Start's task is already queued; Fulfill's is
@@ -707,4 +714,24 @@ func (m *UploadTaskManager) tombstoneLocked(id string, task *UploadTask) {
 		m.tombstoneOrder = append(m.tombstoneOrder, id)
 	}
 	m.tombstones[id] = cloneTask(task)
+}
+
+// untombstoneLocked removes a tombstone (and its FIFO entry) for an id that is
+// being re-registered as a live task. A lapsed prepared handle can be
+// tombstoned by pruneLocked and then re-registered by the same Fulfill; the
+// tombstone is then stale (the handle is active, not expired) and must be
+// dropped so a live task never coexists with a tombstone and the FIFO stays
+// monotonic by FinishedAt (see processLocked). No-op when no tombstone exists.
+// Caller must hold m.mu.
+func (m *UploadTaskManager) untombstoneLocked(id string) {
+	if _, ok := m.tombstones[id]; !ok {
+		return
+	}
+	delete(m.tombstones, id)
+	for i, tid := range m.tombstoneOrder {
+		if tid == id {
+			m.tombstoneOrder = append(m.tombstoneOrder[:i], m.tombstoneOrder[i+1:]...)
+			return
+		}
+	}
 }
