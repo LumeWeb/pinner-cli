@@ -87,6 +87,12 @@ type customToolDeps struct {
 	// are never registered over a remote transport, where a network client
 	// could use them to read/exfiltrate server-side files.
 	coLocated bool
+	// devTools reports whether the MCP server was launched with --dev-tools. When
+	// enabled, the dev_* introspection tools are registered onto the catalog (as
+	// DirectVisible entries) and the per-request raw wire snapshot is captured so
+	// they can introspect the connected host. When disabled they are absent from
+	// the surface entirely.
+	devTools bool
 	// tunnelOpenAI reports whether the server is running through the embedded
 	// OpenAI Secure MCP Tunnel, which exposes no reachable HTTP mux (all RPC
 	// flows through the tunnel protocol). It distinguishes the OpenAI tunnel
@@ -315,6 +321,14 @@ func registerCustomTools(deps customToolDeps) error {
 	}
 	if err := auth.RegisterAuthStatusApp(deps.srv, deps.catalog); err != nil {
 		return fmt.Errorf("failed to register auth status app: %w", err)
+	}
+
+	// Dev introspection tools are registered only when --dev-tools is on. They
+	// are DirectVisible, so the curated loop below surfaces them on tools/list
+	// next to the other direct tools (and the catalog entry makes them
+	// discoverable via search_tools/describe_tool).
+	if deps.devTools {
+		registerDevTools(deps.catalog)
 	}
 
 	// Stamp which tools are part of the direct tools/list surface. This must
