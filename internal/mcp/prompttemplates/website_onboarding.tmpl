@@ -33,6 +33,8 @@ Rules:
   - Always pass the session_id from websites_wizard_start to websites_wizard_step.
   - The next_step_schema in each response tells you the exact input shape.
   - Every step returns an in-band StepResponse carrying next_step_schema. To advance, call the step tool again passing JSON `input` matching that schema. No native form is emitted, so do not wait for one.
+  - Once a wizard session is active, stay in it: never abandon the wizard to rediscover equivalent low-level tools unless the wizard fails or cannot represent the user's request. Always call websites_wizard_step with the session_id and the next_step_schema's input when the response requests it.
+  - Static site bundle rule: a ZIP containing index.html, CSS, JS, images, fonts, or nested pages is a single website directory. When deploying such a bundle, preserve its directory tree — call upload_file with the host file reference and archive_mode=convert, and publish the resulting directory CID with websites_create. Never upload ZIP member files individually, never rewrite HTML to remote asset URLs, and never mint a presigned curl URL for a file your host already holds.
   - If a step returns an error, the session stays in the same state: you can retry.
   - Read pinner:// resources for live data (DNS requirements, platform domains, validation status).
 {{- if .Domain}}
@@ -52,7 +54,7 @@ Call `websites_wizard_step` with the session_id and an empty input object {}. Th
 {{end}}
 
 {{define "website_step_content_source_upload"}}Step: content_source
-Content source is "upload". The wizard requires an existing CID. Instruct the user to upload first: if using the MCP tools, call upload_file with wrap=true and do NOT set an explicit name — the tool auto-names wrapped HTML to index.html so the site resolves at its root. An explicit name like "starter-site" is honored as-is and the page will only be reachable at /starter-site, not /. If using the CLI, run `pinner upload --wrap <file>`. Then restart the wizard with content_source set to "cid". Call `websites_wizard_step` with input: {"choice": "upload"} (this will return an error with instructions).
+Content source is "upload". The wizard requires an existing CID. Instruct the user to upload first: if using the MCP tools, call upload_file with the host file reference (a temporary download_url + file_id) — do NOT set an explicit name. The tool auto-names wrapped HTML to index.html so the site resolves at its root. An explicit name like "starter-site" is honored as-is and the page will only be reachable at /starter-site, not /. If using the CLI, run `pinner upload --wrap <file>`. For a static site bundle (ZIP containing index.html, CSS, JS, images, nested pages): call upload_file with the host file reference and archive_mode=convert — the entire directory tree becomes a single directory DAG whose CID you can publish directly. Never mint a presigned curl URL for a file your host already holds. Then restart the wizard with content_source set to "cid". Call `websites_wizard_step` with input: {"choice": "upload"} (this will return an error with instructions).
 {{end}}
 
 {{define "website_step_content_source_cid"}}Step: content_source
