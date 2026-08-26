@@ -25,11 +25,15 @@ type UploadFileInput struct {
 	// transport: path=co-located stdio; mint=HTTP/tunnel (returns a presigned
 	// curl PUT URL); url/data=OpenAI tunnel (relayed through MCP).
 	Source *UploadSource `json:"source,omitempty"`
-	// File is an OpenAI/host-provided generated-file reference (temporary
-	// download_url + file_id). It enables a ChatGPT user to hand a file it
-	// created in its own environment directly to Pinner, without a human
-	// file-picker or manual transport. Mutually exclusive with Source.
-	File *ChatGPTFileInput `json:"file,omitempty"`
+	// File is a host-provided file reference (temporary download_url +
+	// file_id). It enables a ChatGPT user to hand a file — including
+	// assistant-generated local files at /mnt/data/... — directly to Pinner
+	// without a human file-picker or manual transport. The OpenAI runtime
+	// resolves the file reference into the download_url + file_id structure;
+	// the agent must NOT construct this object itself, base64-encode the
+	// file, or create a data URI when `file` can be used. Mutually exclusive
+	// with Source.
+	File *ChatGPTFileInput `json:"file,omitempty" jsonschema:"description=Host-provided file reference. ALWAYS use this parameter when the host already has the file (user-uploaded attachments AND assistant-generated local files at /mnt/data/...). Pass the host file reference directly; the OpenAI runtime resolves it into a temporary download_url + file_id this tool receives. Do NOT construct this object yourself, base64-encode the file, or create a data URI when file can be used. Use source only when no host file is available."`
 	// Name is the upload label (defaults to the source name or 'upload').
 	Name string `json:"name,omitempty" jsonschema:"description=Optional upload name (defaults to the file name)."`
 	// Wait waits for this upload's own pin operation to complete.
@@ -57,6 +61,16 @@ type UploadFileInput struct {
 
 // UploadFileHandler is the co-located local-path upload path for upload_file.
 type UploadFileHandler = LocalPathUploadHandler
+
+// wrapUploadError enriches context-cancellation errors with a retry hint so
+// the model treats them as transient host-side interruptions rather than
+// structural file rejections that warrant switching to a fallback transport.
+func wrapUploadError(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return fmt.Errorf("upload interrupted (context canceled) — retry upload_file with the same file parameter; this is a transient host-side cancellation, not a file rejection: %w", err)
+	}
+	return err
+}
 
 // UploadFileTransport picks the TransportKind from the wiring flags. It classifies
 // by reachability, not by whether a particular coordinator is wired: co-located
@@ -161,7 +175,7 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				// websites_create/update root resolution. The executor only honors
 				// it when it can buffer to a seekable temp file.
 				result, err := relayFn(transferCtx, body, size, name, in.Wait, in.ArchiveMode, in.Wrap)
-				return toolargs.WrapResult(result, err, "Uploaded.")
+				return toolargs.WrapResult(result, wrapUploadError(err), "Uploaded.")
 			}
 
 			src := *in.Source
@@ -182,7 +196,7 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 					name = FileBaseName(src.Path)
 				}
 				result, err := pathFn(ctx, src.Path, name, in.Wait, in.ArchiveMode, in.Wrap)
-				return toolargs.WrapResult(result, err, "Uploaded.")
+				return toolargs.WrapResult(result, wrapUploadError(err), "Uploaded.")
 			case TransportHTTP:
 				if src.Mode != SourceMint {
 					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", src.Mode, transport)
@@ -196,7 +210,7 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				// silently dropped. Reject it explicitly rather than returning a
 				// non-directory root the caller cannot detect.
 				if in.Wrap {
-					return model.ToolResult{}, errors.New("wrap is not supported by the mint source; use a co-located path/data/url source for a wrapped (directory-root) single-file upload")
+					return model.ToolResult{}, errors.New("wrap is not supported by the mint source; use the `file` parameter (for host files) or a co-located path/data/url source for a wrapped (directory-root) single-file upload")
 				}
 				// Archive conversion has the same constraint: the mint source
 				// exposes no archive_mode to the agent and always remains a
@@ -205,7 +219,7 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				// silently returning a single-file CID the caller cannot opt
 				// back into extracting.
 				if in.ArchiveMode != "" && ieo.ParseArchiveMode(in.ArchiveMode) == ieo.ArchiveConvert {
-					return model.ToolResult{}, errors.New("archive_mode=convert is not supported by the mint source; use a host file/url/data/path source for archive (directory) extraction")
+					return model.ToolResult{}, errors.New("archive_mode=convert is not supported by the mint source; use the `file` parameter with archive_mode=convert (for host files) or a co-located path/url/data source for archive (directory) extraction")
 				}
 				name := in.Name
 				if name == "" {
@@ -280,7 +294,7 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				// websites_create/update root resolution. The executor only honors
 				// it when it can buffer to a seekable temp file.
 				result, err := relayFn(transferCtx, body, size, name, in.Wait, in.ArchiveMode, in.Wrap)
-				return toolargs.WrapResult(result, err, "Uploaded.")
+				return toolargs.WrapResult(result, wrapUploadError(err), "Uploaded.")
 			}
 		},
 	}
@@ -290,21 +304,24 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 // sees the source modes that can actually work. Every transport advertises the
 // OpenAI/host-provided `file` input up front (a generated-file handoff —
 // temporary download_url + file_id — is independent of the transport), then
-// surfaces the transport-specific `source` guidance. A website ZIP (a static
-// site bundle containing index.html, CSS/JS, images, or nested pages) is always
-// uploaded as a converted directory: pass archive_mode=convert and the tool
-// extracts the entire directory tree into a directory DAG, returning a
-// publishable directory CID. Never upload ZIP member files individually, and
-// never mint a presigned URL to curl a site ZIP when the host already holds
-// the file.
+// surfaces the transport-specific `source` guidance. The `file` input is
+// mandatory (MUST) when a host file exists — both user-uploaded attachments
+// and assistant-generated local files at /mnt/data/... — because the OpenAI
+// runtime transparently converts the reference into a download_url + file_id.
+// A website ZIP (a static site bundle containing index.html, CSS/JS, images,
+// or nested pages) is always uploaded as a converted directory: pass
+// archive_mode=convert and the tool extracts the entire directory tree into a
+// directory DAG, returning a publishable directory CID. Never upload ZIP
+// member files individually, and never mint a presigned URL to curl a site
+// ZIP when the host already holds the file.
 func uploadFileDescription(t TransportKind) string {
 	switch t {
 	case TransportStdio:
-		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. Preferred input: `file` (a temporary download_url + file_id your host provides) — Pinner fetches and pins its bytes, no base64 or curl. Fallback (co-located stdio only): source.mode=path with a host-side file/directory/archive path. Website ZIPs: if you already have a site ZIP on the host (index.html + CSS/JS/images), call upload_file with file=<host file> and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update. Do NOT upload individual images/assets, and do NOT mint a presigned curl URL for a file your host already holds. Poll upload_status with the returned handle."
+		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. MUST use `file` when the host already has the file (user-uploaded attachments AND assistant-generated local files at /mnt/data/...); the OpenAI runtime converts it to a temporary download_url + file_id this tool receives — do NOT base64-encode, create a data URI, or manually construct the download_url object. Fallback: source.mode=path with a host-side file/directory/archive path. Website ZIPs: if you already have a site ZIP on the host (index.html + CSS/JS/images), call upload_file with file=<host file> and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update. Do NOT upload individual images/assets, and do NOT mint a presigned curl URL for a file your host already holds. If the upload fails with 'context canceled', retry with the same parameters — this is a transient host-side cancellation, not a file rejection. Poll upload_status with the returned handle."
 	case TransportHTTP:
-		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. Preferred input: `file` (a temporary download_url + file_id) — Pinner fetches and pins its bytes. Website ZIPs: if you already have a site ZIP on the host (index.html + CSS/JS/images), call upload_file with file=<host file> and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update. Do NOT upload individual images/assets, and do NOT mint a presigned curl URL for a file your host already holds. Fallback (HTTP/tunnel only): source.mode=mint returns a one-time presigned HTTP PUT endpoint; stream the bytes with curl, then poll upload_status with the returned upload_handle."
+		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. MUST use `file` when the host already has the file (user-uploaded attachments AND assistant-generated local files at /mnt/data/...); the OpenAI runtime converts it to a temporary download_url + file_id this tool receives — do NOT base64-encode, create a data URI, or manually construct the download_url object. Website ZIPs: if you already have a site ZIP on the host (index.html + CSS/JS/images), call upload_file with file=<host file> and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update. Do NOT upload individual images/assets, and do NOT mint a presigned curl URL for a file your host already holds. Fallback: source.mode=mint returns a one-time presigned HTTP PUT endpoint; stream the bytes with curl, then poll upload_status with the returned upload_handle. If the upload fails with 'context canceled', retry with the same parameters — this is a transient host-side cancellation, not a file rejection."
 	default:
-		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. Preferred input: `file` (a temporary download_url + file_id) — Pinner fetches and pins its bytes. Website ZIPs: if you already have a site ZIP on the host (index.html + CSS/JS/images), call upload_file with file=<host file> and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update. Do NOT upload individual images/assets, and do NOT mint a presigned curl URL for a file your host already holds. Fallback (OpenAI tunnel only): source.mode=url (server-fetchable HTTPS URL) or source.mode=data (RFC 2397 data: URI) — the server fetches/decodes and uploads them. Poll upload_status with the returned handle."
+		return "Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. MUST use `file` when the host already has the file (user-uploaded attachments AND assistant-generated local files at /mnt/data/...); the OpenAI runtime converts it to a temporary download_url + file_id this tool receives — do NOT base64-encode, create a data URI, or manually construct the download_url object. Website ZIPs: if you already have a site ZIP on the host (index.html + CSS/JS/images), call upload_file with file=<host file> and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update. Do NOT upload individual images/assets, and do NOT mint a presigned curl URL for a file your host already holds. Fallback: source.mode=url (server-fetchable HTTPS URL) or source.mode=data (RFC 2397 data: URI) — the server fetches/decodes and uploads them. If the upload fails with 'context canceled', retry with the same parameters — this is a transient host-side cancellation, not a file rejection. Poll upload_status with the returned handle."
 	}
 }
 

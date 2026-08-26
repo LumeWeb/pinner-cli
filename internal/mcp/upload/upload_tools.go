@@ -34,7 +34,7 @@ func NewAsyncUploadTools(mgr *transfer.UploadTaskManager) []model.ToolDescriptor
 		{
 			Name:        "upload_file_async",
 			Title:       "Start an async external-file upload",
-			Description: "Start uploading a file reference in the background and return an opaque handle. Poll upload_status, cancel with upload_cancel, and list with upload_list. Pinner fetches the temporary URL locally and uses its authenticated TUS path.",
+			Description: "Start uploading a file reference in the background and return an opaque handle. Poll upload_status, cancel with upload_cancel, and list with upload_list. Pinner fetches the temporary URL locally and uses its authenticated TUS path. This tool uploads the file as-is (no archive extraction, no wrap) and cannot produce a directory CID. For ZIP archives or static website bundles, do NOT use this tool — use upload_file with archive_mode=convert instead. If an upload_file call fails with 'context canceled', retry upload_file with the same file parameter; do not switch to upload_file_async as a workaround.",
 			Category:    model.CategoryCore,
 			InputSchema: toolargs.ToolSchemaFor[ChatGPTFileAsyncInput](),
 			Meta:        transfer.ChatGPTFileMeta(),

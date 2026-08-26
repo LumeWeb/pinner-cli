@@ -61,8 +61,8 @@ const (
 // ignored. The server routes to the real mechanism by transport; the caller
 // never picks a mechanism, only a source voice.
 type UploadSource struct {
-	Mode FileSourceMode `json:"mode" jsonschema:"enum=path,mint,url,data,description=How the file bytes arrive. Valid modes depend on the server transport: path=co-located stdio only; mint=HTTP/tunnel only (returns a presigned curl URL); url/data=OpenAI-tunnel only (relayed through MCP)."`
-	Path string         `json:"path,omitempty" jsonschema:"description=Host-side path. Only for mode=path (co-located stdio)."`
+	Mode FileSourceMode `json:"mode" jsonschema:"enum=path,mint,url,data,description=Fallback transport only. Do not use if the file already exists as a host file accepted by the file parameter. The schema enum advertises which modes are valid on this server: path=host-side file path; mint=presigned curl PUT URL; url=server-fetchable HTTPS URL; data=RFC 2397 data URI."`
+	Path string         `json:"path,omitempty" jsonschema:"description=Host-side path. Only for mode=path."`
 	URL  string         `json:"url,omitempty" jsonschema:"description=Server-fetchable HTTPS URL. Only for mode=url (OpenAI tunnel)."`
 	Data string         `json:"data,omitempty" jsonschema:"description=RFC 2397 data: URI. Only for mode=data (OpenAI tunnel)."`
 }

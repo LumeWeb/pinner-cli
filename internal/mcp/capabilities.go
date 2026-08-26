@@ -82,6 +82,13 @@ type CapabilityReport struct {
 	// HostFileInputPreferred is true when the host file input is the preferred
 	// upload route over raw source modes (i.e. when a file argument exists).
 	HostFileInputPreferred bool `json:"host_file_input_preferred"`
+	// FileInputPolicy is a machine-readable invariant the agent MUST follow
+	// when deciding how to pass file bytes. "host_file_first" means: when a
+	// host file exists (user-uploaded attachment or assistant-generated local
+	// file), always pass it through the `file` parameter; never base64-encode,
+	// create a data URI, mint a presigned URL, or manually construct the
+	// download_url object. Empty when no upload/vault tool is registered.
+	FileInputPolicy string `json:"file_input_policy,omitempty"`
 }
 
 // sourceModesFor returns the UploadSource modes valid for the transport, in a
@@ -131,18 +138,24 @@ func CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, down
 	if downloadFile || vaultGetFile {
 		sinkModes = sinkModesFor(dropWired, tunnelOpenAI)
 	}
+	hfi := uploadFile || vaultPutFile
+	policy := ""
+	if hfi {
+		policy = "host_file_first"
+	}
 	return CapabilityReport{
-		Transport:         transport,
-		SourceModes:       sourceModes,
-		DownloadSinkModes: sinkModes,
-		DownloadFile:      downloadFile,
-		VaultGetFile:      vaultGetFile,
-		UploadFile:        uploadFile,
-		VaultPutFile:      vaultPutFile,
-		DraftXFile:        draftXFile,
-		RelayMaxBytes:     ieo.EffectiveRelayMaxBytes(maxBytes),
-		HostFileInput:        uploadFile || vaultPutFile,
-		HostFileInputPreferred: uploadFile || vaultPutFile,
+		Transport:             transport,
+		SourceModes:           sourceModes,
+		DownloadSinkModes:     sinkModes,
+		DownloadFile:          downloadFile,
+		VaultGetFile:          vaultGetFile,
+		UploadFile:            uploadFile,
+		VaultPutFile:          vaultPutFile,
+		DraftXFile:            draftXFile,
+		RelayMaxBytes:         ieo.EffectiveRelayMaxBytes(maxBytes),
+		HostFileInput:         hfi,
+		HostFileInputPreferred: hfi,
+		FileInputPolicy:       policy,
 	}
 }
 
@@ -154,7 +167,7 @@ func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile
 	return model.ToolDescriptor{
 		Name:        "capabilities",
 		Title:       "Pinner file-input/output capabilities",
-		Description: "Report the running MCP transport and which file-input source modes and file-output sink modes this Pinner MCP server accepts. The upload_file / vault_put_file tools take a single transport-scoped source: path in co-located stdio mode, mint in HTTP/tunnel mode (a one-time presigned PUT for out-of-band curl), or url/data on the OpenAI tunnel (relayed through MCP). These source_modes apply ONLY to the `source` argument — they do NOT describe the host-provided `file` argument. A host-provided file (a temporary download_url + file_id) is always preferred when available, regardless of source_modes. The download_file / vault_get_file tools take a single sink: local (write to a host-side path on the MCP server's own disk — available on every transport) or drop (a one-time HTTP GET filedrop link — only when a reachable HTTP mux exists). Read source_modes and download_sink_modes to pick the right voice without probing tool descriptions. host_file_input and host_file_input_preferred indicate the file argument is available and preferred over source modes.",
+		Description: "Report the running MCP transport and which file-input source modes and file-output sink modes this Pinner MCP server accepts. The upload_file / vault_put_file tools take a single transport-scoped source: path in co-located stdio mode, mint in HTTP/tunnel mode (a one-time presigned PUT for out-of-band curl), or url/data on the OpenAI tunnel (relayed through MCP). These source_modes apply ONLY to the `source` argument — they do NOT describe the host-provided `file` argument. A host-provided file (a temporary download_url + file_id) is always preferred when available, regardless of source_modes. The download_file / vault_get_file tools take a single sink: local (write to a host-side path on the MCP server's own disk — available on every transport) or drop (a one-time HTTP GET filedrop link — only when a reachable HTTP mux exists). Read source_modes and download_sink_modes to pick the right voice without probing tool descriptions. host_file_input and host_file_input_preferred indicate the file argument is available and preferred over source modes. file_input_policy is a machine-readable invariant: when set to \"host_file_first\", an agent MUST use the file parameter for any file already supplied or created by the host (user-uploaded attachments AND assistant-generated local files at /mnt/data/...), and must NOT base64-encode, create a data URI, or mint a presigned URL when file can be used.",
 		Category:    model.CategoryCore,
 		InputSchema: toolargs.ToolSchemaFor[wizard.NoInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
