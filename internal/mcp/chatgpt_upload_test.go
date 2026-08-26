@@ -3,10 +3,14 @@ package mcp
 import (
 	"context"
 	"io"
+	"net/http"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
@@ -102,6 +106,47 @@ func TestUploadFileDescriptorHTTPMintSupportsWrapAndConvert(t *testing.T) {
 	require.True(t, ok, "mint must return structured content")
 	require.NotEmpty(t, sc["url"])
 	require.NotEmpty(t, sc["upload_handle"])
+}
+
+func TestUploadFileDescriptorHTTPMintDefaultsToPreserve(t *testing.T) {
+	// An undecorated mint (presigned PUT) upload must keep its legacy
+	// single-file behavior: without an explicit archive_mode, the streamed
+	// bytes are never silently extracted into a directory DAG, even when they
+	// look like an archive. Only an explicit archive_mode=convert converts.
+	var gotMode string
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
+		gotMode = archiveMode
+		_, _ = io.Copy(io.Discard, reader)
+		return map[string]any{"cid": "QmRaw"}, nil
+	}, 0)
+	cu := transfer.NewHTTPUpload(mgr, 0)
+	defer cu.Stop(context.Background())
+	desc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
+
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
+		"source": map[string]any{"mode": "mint"},
+	}})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	sc, ok := res.StructuredContent.(map[string]any)
+	require.True(t, ok)
+	handle, _ := sc["upload_handle"].(string)
+	require.NotEmpty(t, handle)
+
+	url, ok := cu.FindUpload(handle)
+	require.True(t, ok, "minted handle must resolve to a presigned URL")
+	req, err := http.NewRequest(http.MethodPut, url, strings.NewReader("PK\x03\x04 raw zip bytes"))
+	require.NoError(t, err)
+	rp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	_ = rp.Body.Close()
+	require.Equal(t, http.StatusAccepted, rp.StatusCode)
+
+	require.Eventually(t, func() bool {
+		t, err := mgr.Get(handle)
+		return err == nil && t.State == transfer.UploadStateCompleted
+	}, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, string(ieo.ArchivePreserve), gotMode, "undecorated mint PUT must default to preserve, not silently extract")
 }
 
 func TestUploadFileDescriptorHTTPRejectsPath(t *testing.T) {

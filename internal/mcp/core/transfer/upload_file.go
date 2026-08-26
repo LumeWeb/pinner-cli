@@ -44,11 +44,13 @@ type UploadFileInput struct {
 	// 'convert' for complete static website ZIPs containing index.html, CSS,
 	// JS, images, and nested directories; the resulting CID is a directory CID
 	// that can be passed directly to websites_create/update. 'preserve' keeps
-	// the archive intact as a single file. Honored on every source: host file
-	// and url/data relays route through a buffering executor directly, while
-	// the mint (presigned PUT) source records the mode on the handle at mint
-	// time and applies it when the PUT bytes arrive.
-	ArchiveMode string `json:"archive_mode,omitempty" jsonschema:"enum=convert,preserve,description=How to treat an archive. convert (default) extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. The archive's directory structure is preserved exactly, so index.html MUST be at the archive root (not inside a wrapper directory). preserve keeps the archive intact as a single file. Honored on every source: host file and url/data relays convert directly; the mint (presigned PUT) source records the mode at mint time and honors it when the PUT bytes arrive."`
+	// the archive intact as a single file. Honored on every source: host file,
+	// path, and url/data relays default to convert and route through a
+	// buffering executor directly; the mint (presigned PUT) source records the
+	// mode on the handle at mint time and applies it when the PUT bytes
+	// arrive, but DEFAULTS to preserve — only an explicit convert extracts a
+	// streamed archive.
+	ArchiveMode string `json:"archive_mode,omitempty" jsonschema:"enum=convert,preserve,description=How to treat an archive. convert (default) extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. The archive's directory structure is preserved exactly, so index.html MUST be at the archive root (not inside a wrapper directory). preserve keeps the archive intact as a single file. Honored on every source: host file, path, and url/data relays default to convert; the mint (presigned PUT) source defaults to preserve and only converts when archive_mode=convert is passed explicitly, so a streamed raw archive is never silently extracted."`
 	// TTL is the presigned endpoint lifetime for source mode mint (e.g. 5m).
 	// Only used in HTTP/tunnel mode.
 	TTL string `json:"ttl,omitempty" jsonschema:"description=Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used with source mode mint."`
@@ -231,9 +233,18 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 				// are captured here and applied by the executor when the bytes
 				// arrive at Fulfill — the same directory-DAG conversion, single
 				// -file wrap, or preserve that host-file/path/url/data sources
-				// express directly. WithArchiveMode("") defaults to "convert",
-				// matching the tool's documented default across every source.
-				opts := []PrepareOption{WithArchiveMode(in.ArchiveMode)}
+				// express directly. Unlike those in-band sources (whose
+				// archive_mode default is convert), mint DEFAULTS to preserve:
+				// it is an out-of-band raw-byte stream with no in-band archive
+				// contract, so an undecorated mint PUT keeps its legacy
+				// single-file CID. Only an EXPLICIT archive_mode=convert
+				// extracts a streamed archive into a directory DAG, so a raw
+				// .zip is never silently converted without being asked.
+				m := in.ArchiveMode
+				if m == "" {
+					m = string(ieo.ArchivePreserve)
+				}
+				opts := []PrepareOption{WithArchiveMode(m)}
 				if in.Wrap {
 					opts = append(opts, WithWrap(true))
 				}
