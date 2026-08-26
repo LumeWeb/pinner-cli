@@ -533,6 +533,42 @@ func TestUploadServiceDefault_waitForPin(t *testing.T) {
 		assert.Contains(t, err.Error(), "operation not found")
 	})
 
+	t.Run("falls back to account operation on 404 and keeps waiting for the pin", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		pinning := NewMockPinningService(t)
+		h.service.pinningService = pinning
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			// WaitForOperation poll for a single operation.
+			if strings.HasPrefix(r.URL.Path, "/api/operations/") && r.URL.Path != "/api/operations" {
+				_, _ = w.Write([]byte(`{"id":1,"status":"completed","operation":"pin","protocol":"ipfs","progress_percent":100,"operation_display_name":"Pin","protocol_display_name":"IPFS","status_display_name":"Completed","status_message":"","started_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}`))
+				return
+			}
+			// FindOperation list: the operation exists, validating the pin.
+			_, _ = w.Write([]byte(`{"data":[{"id":1,"status":"completed","operation":"pin","protocol":"ipfs","progress_percent":100,"operation_display_name":"Pin","protocol_display_name":"IPFS","status_display_name":"Completed","status_message":"","started_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}],"total":1}`))
+		})
+		server := httptest.NewServer(mux)
+		defer server.Close()
+
+		u, _ := url.Parse(server.URL)
+		h.service.accountEndpoint = "http://localhost:" + u.Port()
+
+		// The pinning API reports the pin as not-found (404) on the first poll;
+		// the fallback confirms via the account operation that the pin exists
+		// and keeps waiting, then the next poll sees the pin as pinned.
+		pinning.EXPECT().
+			Status(mock.Anything, "bafybeigtest", false).
+			Return(nil, ErrPinNotFound).Once()
+		pinning.EXPECT().
+			Status(mock.Anything, "bafybeigtest", false).
+			Return(&PinStatus{Status: "pinned"}, nil).Once()
+
+		err := h.service.waitForPin(context.Background(), "bafybeigtest", "test-token")
+		require.NoError(t, err)
+	})
+
 	t.Run("uses fresh timeout for pin polling when parent context deadline is expired", func(t *testing.T) {
 		h := newUploadTestHelpers(t)
 
