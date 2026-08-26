@@ -94,6 +94,14 @@ type trackedTask struct {
 	// still live. It is set on the trackedTask, not the UploadTask, because it
 	// is purely a retention policy detail for the async manager.
 	preparedTTL time.Duration
+	// archiveMode and wrap record the archive/directory-root handling captured
+	// at Prepare time for the mint (presigned PUT) source. The PUT itself
+	// carries only raw bytes with no way to express archive semantics, so the
+	// transformation must be decided when the handle is minted and applied when
+	// the bytes later arrive at Fulfill. Kept on the trackedTask (like
+	// preparedTTL) because they are fulfillment policy for the async manager.
+	archiveMode string
+	wrap        bool
 }
 
 // closeReader closes the owned reader exactly once from either the Cancel path
@@ -204,8 +212,43 @@ func (m *UploadTaskManager) Start(ctx context.Context, reader io.ReadCloser, siz
 		return "", err
 	}
 	m.mu.Unlock()
-	m.spawn(tt, runCtx, reader, size, name, wait)
+	m.spawn(tt, runCtx, reader, size, name, wait, "preserve", false)
 	return id, nil
+}
+
+// PrepareOption adjusts the archive/directory-root handling recorded on a
+// prepared (minted) upload handle so fulfillment honors the agent's requested
+// transformation. The mint/presigned-PUT source is out-of-band: the mode is
+// captured at Prepare time and applied when the handle is later fulfilled,
+// because the PUT itself arrives as raw bytes with no way to express archive
+// semantics.
+type PrepareOption func(*prepareOpts)
+
+type prepareOpts struct {
+	archiveMode string
+	wrap        bool
+}
+
+// WithArchiveMode records how the fulfilled bytes are treated. "convert"
+// (or empty) extracts an archive into a directory DAG when the bytes are an
+// archive; "preserve" keeps them a single file. The default for an undecorated
+// prepared handle is "preserve", so a legacy mint (which carries no agent
+// contract) never silently extracts; the upload_file mint source always passes
+// an explicit option.
+func WithArchiveMode(mode string) PrepareOption {
+	return func(o *prepareOpts) {
+		if mode == "" {
+			mode = "convert"
+		}
+		o.archiveMode = mode
+	}
+}
+
+// WithWrap records whether a single-file fulfillment should be wrapped into a
+// directory root. Only meaningful when the fulfilled bytes are not themselves
+// an archive that gets converted.
+func WithWrap(wrap bool) PrepareOption {
+	return func(o *prepareOpts) { o.wrap = wrap }
 }
 
 // Prepare pre-registers a canonical upload operation and returns its opaque
@@ -221,12 +264,21 @@ func (m *UploadTaskManager) Start(ctx context.Context, reader io.ReadCloser, siz
 // lifetime rather than a hardcoded default — a task is never pruned while its
 // endpoint is still live, so a late PUT can never hit a pruned handle. A
 // non-positive ttl falls back to the manager-wide PreparedTTL default.
-func (m *UploadTaskManager) Prepare(name string, ttl time.Duration) (string, error) {
+func (m *UploadTaskManager) Prepare(name string, ttl time.Duration, opts ...PrepareOption) (string, error) {
 	if m.exec == nil {
 		return "", errors.New("upload executor is not configured")
 	}
 	if name == "" {
 		name = DefaultUploadName
+	}
+	// Default the archive handling to "preserve" so an undecorated (legacy)
+	// prepared handle stays single-file; the upload_file mint source overrides
+	// this with an explicit WithArchiveMode.
+	po := prepareOpts{archiveMode: "preserve"}
+	for _, o := range opts {
+		if o != nil {
+			o(&po)
+		}
 	}
 	id := newTaskID()
 	task := &UploadTask{
@@ -241,7 +293,7 @@ func (m *UploadTaskManager) Prepare(name string, ttl time.Duration) (string, err
 		m.mu.Unlock()
 		return "", err
 	}
-	m.tasks[id] = &trackedTask{task: task, preparedTTL: ttl}
+	m.tasks[id] = &trackedTask{task: task, preparedTTL: ttl, archiveMode: po.archiveMode, wrap: po.wrap}
 	m.mu.Unlock()
 	return id, nil
 }
@@ -286,6 +338,10 @@ func (m *UploadTaskManager) Fulfill(ctx context.Context, id string, reader io.Re
 	if name == "" {
 		name = tt.task.Name
 	}
+	// Carry the archive/wrap handling recorded on the handle at Prepare time
+	// into the executor. beginLocked builds a fresh trackedTask, so capture
+	// these from the original handle before it is re-registered.
+	mode, wrapped := tt.archiveMode, tt.wrap
 	runCtx, cancel, claimed, err := m.beginLocked(ctx, tt.task, reader)
 	if err != nil {
 		m.mu.Unlock()
@@ -294,7 +350,7 @@ func (m *UploadTaskManager) Fulfill(ctx context.Context, id string, reader io.Re
 		return err
 	}
 	m.mu.Unlock()
-	m.spawn(claimed, runCtx, reader, size, name, wait)
+	m.spawn(claimed, runCtx, reader, size, name, wait, mode, wrapped)
 	return nil
 }
 
@@ -335,7 +391,7 @@ func (m *UploadTaskManager) beginLocked(ctx context.Context, task *UploadTask, r
 // share exactly one upload/execution path. It owns the reader (passed in via
 // the trackedTask) and closes it exactly once on completion/cancel via
 // closeOnce.
-func (m *UploadTaskManager) spawn(tt *trackedTask, runCtx context.Context, reader io.ReadCloser, size int64, name string, wait bool) {
+func (m *UploadTaskManager) spawn(tt *trackedTask, runCtx context.Context, reader io.ReadCloser, size int64, name string, wait bool, archiveMode string, wrap bool) {
 	task := tt.task
 	go func() {
 		m.mu.Lock()
@@ -364,13 +420,14 @@ func (m *UploadTaskManager) spawn(tt *trackedTask, runCtx context.Context, reade
 				cancel()
 			}
 		})
-		// The async/mint path has no wrap concept (bytes reach a presigned URL,
-		// not the SDK's WrapInDir) and exposes no archive_mode to the agent, so
-		// it must always stay single-file. Pass an explicit "preserve" rather
-		// than "" so ParseArchiveMode cannot default "" to convert and silently
-		// extract a raw .zip streamed to the presigned URL into a directory DAG
-		// the caller never requested and cannot opt out of. wrap stays false.
-		result, err := m.exec(runCtx, reader, size, name, wait, "preserve", false)
+		// archiveMode/wrap are sourced per-path: Start (a raw app-picker or
+		// legacy bare-mint PUT with no agent contract) passes explicit
+		// "preserve"/false so ParseArchiveMode can never default "" to convert
+		// and silently extract a raw .zip into a directory DAG the caller never
+		// requested. Fulfill (a handle prepared by the mint source) passes the
+		// archiveMode/wrap recorded on the handle at Prepare time, honoring the
+		// agent's requested conversion.
+		result, err := m.exec(runCtx, reader, size, name, wait, archiveMode, wrap)
 		// The work finished before the timeout; disarm the watchdog so it
 		// cannot close the reader afterwards (it would otherwise, on a very
 		// slow-but-finished path, race the normal completion close).

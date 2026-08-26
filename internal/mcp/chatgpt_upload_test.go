@@ -3,10 +3,14 @@ package mcp
 import (
 	"context"
 	"io"
+	"net/http"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
@@ -78,41 +82,71 @@ func TestUploadFileDescriptorHTTPMints(t *testing.T) {
 	require.NotEmpty(t, sc["upload_handle"])
 }
 
-func TestUploadFileDescriptorHTTPMintRejectsWrap(t *testing.T) {
-	// The mint source streams raw bytes to a presigned PUT URL; the
-	// directory-root (wrap) decision is only applied during Pinner's SDK
-	// upload, which the mint path never reaches. Requesting wrap on mint must
-	// fail loudly rather than silently produce a non-directory root.
-	cu := transfer.NewHTTPUpload(transfer.NewUploadTaskManager(nil, 0), 0)
-	defer cu.Stop(context.Background())
-	desc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
-	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
-		"source": map[string]any{"mode": "mint"},
-		"wrap":   true,
-	}})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "wrap is not supported by the mint source")
-	// No presigned URL may be minted for a rejected wrap request.
-	require.Nil(t, res.StructuredContent)
-}
-
-func TestUploadFileDescriptorHTTPMintRejectsArchiveConvert(t *testing.T) {
-	// The mint source streams raw bytes to a presigned PUT URL and exposes no
-	// archive_mode to the agent (the async PUT executor always stays single-file
-	// via explicit "preserve"). An explicit archive_mode=convert on mint cannot
-	// be expressed and must fail loudly rather than silently return the raw
-	// archive as a single-file CID the caller cannot opt back into extracting.
-	cu := transfer.NewHTTPUpload(transfer.NewUploadTaskManager(nil, 0), 0)
+func TestUploadFileDescriptorHTTPMintSupportsWrapAndConvert(t *testing.T) {
+	// The mint source streams raw bytes to a presigned PUT URL, so the
+	// wrap/archive-mode decisions are recorded on the canonical handle at mint
+	// time and applied when the PUT bytes arrive (see upload_tasks.go). A mint
+	// request with wrap and/or archive_mode=convert must now succeed and mint
+	// the presigned URL + handle, not fail.
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
+		_, _ = io.Copy(io.Discard, reader)
+		return map[string]any{"cid": "QmDir"}, nil
+	}, 0)
+	cu := transfer.NewHTTPUpload(mgr, 0)
 	defer cu.Stop(context.Background())
 	desc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
 	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source":       map[string]any{"mode": "mint"},
 		"archive_mode": "convert",
+		"wrap":         true,
 	}})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "archive_mode=convert is not supported by the mint source")
-	// No presigned URL may be minted for a rejected convert request.
-	require.Nil(t, res.StructuredContent)
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	sc, ok := res.StructuredContent.(map[string]any)
+	require.True(t, ok, "mint must return structured content")
+	require.NotEmpty(t, sc["url"])
+	require.NotEmpty(t, sc["upload_handle"])
+}
+
+func TestUploadFileDescriptorHTTPMintDefaultsToPreserve(t *testing.T) {
+	// An undecorated mint (presigned PUT) upload must keep its legacy
+	// single-file behavior: without an explicit archive_mode, the streamed
+	// bytes are never silently extracted into a directory DAG, even when they
+	// look like an archive. Only an explicit archive_mode=convert converts.
+	var gotMode string
+	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
+		gotMode = archiveMode
+		_, _ = io.Copy(io.Discard, reader)
+		return map[string]any{"cid": "QmRaw"}, nil
+	}, 0)
+	cu := transfer.NewHTTPUpload(mgr, 0)
+	defer cu.Stop(context.Background())
+	desc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
+
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
+		"source": map[string]any{"mode": "mint"},
+	}})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	sc, ok := res.StructuredContent.(map[string]any)
+	require.True(t, ok)
+	handle, _ := sc["upload_handle"].(string)
+	require.NotEmpty(t, handle)
+
+	url, ok := cu.FindUpload(handle)
+	require.True(t, ok, "minted handle must resolve to a presigned URL")
+	req, err := http.NewRequest(http.MethodPut, url, strings.NewReader("PK\x03\x04 raw zip bytes"))
+	require.NoError(t, err)
+	rp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	_ = rp.Body.Close()
+	require.Equal(t, http.StatusAccepted, rp.StatusCode)
+
+	require.Eventually(t, func() bool {
+		t, err := mgr.Get(handle)
+		return err == nil && t.State == transfer.UploadStateCompleted
+	}, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, string(ieo.ArchivePreserve), gotMode, "undecorated mint PUT must default to preserve, not silently extract")
 }
 
 func TestUploadFileDescriptorHTTPRejectsPath(t *testing.T) {
