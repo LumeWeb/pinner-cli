@@ -92,6 +92,13 @@ var uploadDetailDesc = toolforge.Static(
 	WhenSentence(hostenv.FeatSourceMint,
 		"3) the completed CID is already pinned — use it directly; do NOT call pins_add. Treat the mint response as the START of the upload, not the end.",
 	).
+	ListWhenAny([]hostenv.Feature{hostenv.FeatSourceURL, hostenv.FeatSourceData},
+		toolforge.List(toolforge.ListNumbered).
+			Intro("Pick the byte route in this order:").
+			ItemWhen(hostenv.FeatSourceMint, "a file you can read locally → upload_file mint + host PUT + upload_status").
+			ItemWhen(hostenv.FeatSourceURL, "bytes already at a public HTTPS URL → upload_url (server fetch; do not download then re-upload)").
+			ItemWhen(hostenv.FeatSourceData, "only raw bytes, no file, no URL → upload_data (RFC 2397 data: URI) — last resort; never base64-encode a real file"),
+	).
 	StaticSentence("Static site bundle rule: a ZIP containing index.html, CSS, JS, images, or nested pages is a single directory DAG — call upload_file").
 	When(hostenv.FeatFileHostInput,
 		"with the host file argument (or a convert source) and archive_mode=convert",
@@ -113,6 +120,12 @@ var vaultUploadDetailDesc = toolforge.Static(
 	).
 	When(hostenv.FeatSourceMint,
 		"When using source.mode=mint, mint returns a url + upload_handle but has NOT stored bytes: (1) put the agent-local file to the returned url, (2) poll upload_status with the returned upload_handle, (3) the completed CID is the vaulted object.",
+	).
+	WhenSentence(hostenv.FeatSourceURL,
+		"Bytes already at a public HTTPS URL go through the separate upload_url tool (then vault the resulting CID).",
+	).
+	WhenSentence(hostenv.FeatSourceData,
+		"Only raw inline bytes with no file and no URL go through upload_data (RFC 2397 data: URI) as a last resort.",
 	)
 
 // downloadDetailDesc composes the download flow detail string. sink=local is

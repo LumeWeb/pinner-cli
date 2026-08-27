@@ -54,11 +54,15 @@ const (
 type CapabilityReport struct {
 	// Transport is the active MCP transport: "stdio", "http", or "openai".
 	Transport transfer.TransportKind `json:"transport"`
-	// SourceModes are the valid UploadSource mode values for Transport, e.g.
-	// ["path"] for stdio, ["mint"] for http, ["url","data"] for openai.
-	// NOTE: these modes apply ONLY to the `source` argument of upload tools;
-	// they do NOT describe the top-level `file` host-input. A host file path
-	// is preferred whenever an upload tool exposes a `file` argument.
+	// SourceModes are the valid UploadSource mode values for the `source`
+	// argument of upload tools, e.g. ["path"] for stdio, ["mint"] for http,
+	// ["url","data"] for openai. They describe ONLY what upload_file /
+	// vault_put_file's source.mode accepts on this transport — they are NOT
+	// the full set of ways bytes can enter Pinner. A host may also expose the
+	// separate top-level relay tools upload_url (server-fetch a public HTTPS
+	// URL) and upload_data (inline RFC 2397 data: URI); their presence is not
+	// reflected here. A mode is never a claim that upload_file has a `file`
+	// argument (see HostFileInput).
 	SourceModes []FileInputCapability `json:"source_modes"`
 	// DownloadSinkModes are the valid DownloadSink mode values for Transport.
 	// Host-local write ("local") is always offered because the server's disk is
@@ -183,6 +187,16 @@ var capabilitiesDesc = toolforge.Static(
 	).
 	WhenSentence(hostenv.FeatSourceMint,
 		"With source.mode=mint, mint returns a url + upload_handle but has NOT stored bytes: PUT the agent-local file to the returned url, then poll upload_status until it reports completed.",
+	).
+	WhenAny([]hostenv.Feature{hostenv.FeatSourceURL, hostenv.FeatSourceData},
+		"source_modes describe only what upload_file/vault_put_file's source.mode accepts; this host also exposes separate top-level relay tools.",
+	).
+	ListWhenAny([]hostenv.Feature{hostenv.FeatSourceURL, hostenv.FeatSourceData},
+		toolforge.List(toolforge.ListNumbered).
+			Intro("Pick the byte route in this order:").
+			ItemWhen(hostenv.FeatSourceMint, "a file the agent can read locally → upload_file(source.mode=mint), then the host PUT, then poll upload_status").
+			ItemWhen(hostenv.FeatSourceURL, "bytes already at a public HTTPS URL → upload_url (server fetch; do not download then re-upload)").
+			ItemWhen(hostenv.FeatSourceData, "only raw bytes, no file, no URL → upload_data (an RFC 2397 data: URI) — last resort; never base64-encode a real file"),
 	).
 	StaticSentence("download_file/vault_get_file take a sink: local writes to a path on the MCP server's own disk (not visible to a remote agent)").
 	WhenSentence(hostenv.FeatSinkDrop,

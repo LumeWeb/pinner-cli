@@ -207,3 +207,53 @@ func TestSentencesWhenAny(t *testing.T) {
 	require.Equal(t, "a. b.", d.Resolve(profileWith(hostenv.FeatSourcePath)))
 	require.Equal(t, "a.", d.Resolve(profileWith(hostenv.FeatSourceURL)))
 }
+
+func TestListBuilderNumberedDropsGatedItems(t *testing.T) {
+	l := List(ListNumbered).
+		Intro("Pick the byte route in this order:").
+		ItemWhen(hostenv.FeatSourceMint, "a local file → upload_file mint + host PUT + upload_status").
+		ItemWhen(hostenv.FeatSourceURL, "a public HTTPS URL → upload_url").
+		ItemWhen(hostenv.FeatSourceData, "only raw bytes → upload_data")
+
+	// Grok: mint + url + data all present → three contiguous items.
+	grok := l.Build(profileWith(hostenv.FeatSourceMint, hostenv.FeatSourceURL, hostenv.FeatSourceData))
+	require.Equal(t, "Pick the byte route in this order:\n"+
+		"1. a local file → upload_file mint + host PUT + upload_status\n"+
+		"2. a public HTTPS URL → upload_url\n"+
+		"3. only raw bytes → upload_data\n", grok)
+
+	// Only mint → item 1 becomes "1." (renumbered, no gaps).
+	mintOnly := l.Build(profileWith(hostenv.FeatSourceMint))
+	require.Equal(t, "Pick the byte route in this order:\n"+
+		"1. a local file → upload_file mint + host PUT + upload_status\n", mintOnly)
+
+	// Openai tunnel (url + data, no mint) → two items renumbered 1..2.
+	tunnel := l.Build(profileWith(hostenv.FeatSourceURL, hostenv.FeatSourceData))
+	require.Equal(t, "Pick the byte route in this order:\n"+
+		"1. a public HTTPS URL → upload_url\n"+
+		"2. only raw bytes → upload_data\n", tunnel)
+}
+
+func TestListBuilderEmptyWhenNoItems(t *testing.T) {
+	l := List(ListBulleted).Intro("Choices:").ItemWhen(hostenv.FeatSourceData, "data")
+	require.Equal(t, "", l.Build(profileWith(hostenv.FeatSourceMint)), "no surviving items and no intro-only output")
+}
+
+func TestListBuilderBulleted(t *testing.T) {
+	l := List(ListBulleted).Item("first").Item("second")
+	require.Equal(t, "- first\n- second\n", l.Build(hostenv.PlatformProfile{}))
+}
+
+func TestDescBuilderListBlock(t *testing.T) {
+	l := List(ListNumbered).
+		ItemWhen(hostenv.FeatSourceMint, "mint route").
+		ItemWhen(hostenv.FeatSourceURL, "url route")
+	d := Static("Choose the byte route in this order:").
+		ListWhenAny([]hostenv.Feature{hostenv.FeatSourceMint, hostenv.FeatSourceURL}, l)
+	got := d.Resolve(profileWith(hostenv.FeatSourceMint, hostenv.FeatSourceURL))
+	require.Equal(t, "Choose the byte route in this order:\n1. mint route\n2. url route\n", got)
+
+	// No matching feature → the whole list block is omitted.
+	gotNone := d.Resolve(profileWith(hostenv.FeatSourceData))
+	require.Equal(t, "Choose the byte route in this order:", gotNone)
+}
