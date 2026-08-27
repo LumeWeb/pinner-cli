@@ -263,11 +263,23 @@ func vaultByteRouteDecision() *toolforge.GuideDecisionBuilder {
 	)
 }
 
-// byteRouteChooserStep is the publish_website step label that means "obtain a
-// CID via the upload flow's byte-route chooser" rather than a single tool. It
+// byteRouteChooserStepFor is the publish_website step label that means "obtain
+// a CID via the upload flow's byte-route chooser" rather than a single tool. It
 // follows the guide's existing non-tool step precedent (<host PUT>) and keeps a
-// branch from forcing every site through upload_file.
-const byteRouteChooserStep = "byte-route chooser (upload_file|upload_url|upload_data)"
+// branch from forcing every site through upload_file. The label is resolved per
+// profile so it only names the upload tools that host actually registers — a
+// generic-HTTP (mint-only) or stdio (path-only) host must never be steered to
+// an upload_url/upload_data it does not have.
+func byteRouteChooserStepFor(p hostenv.PlatformProfile) string {
+	tools := []string{string(UploadToolFile)}
+	if p.Features.Has(hostenv.FeatSourceURL) {
+		tools = append(tools, string(UploadToolURL))
+	}
+	if p.Features.Has(hostenv.FeatSourceData) {
+		tools = append(tools, string(UploadToolData))
+	}
+	return "byte-route chooser (" + strings.Join(tools, "|") + ")"
+}
 
 // buildAgentGuide constructs the AgentGuide declaratively with the platform
 // DSL, then resolves it against the detected platform profile. Every flow,
@@ -324,20 +336,20 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 		Flow(toolforge.Flow("publish_website", "Publish a website").
 			Decision(toolforge.Decision("Does the user have a domain or subdomain label preference?",
 				toolforge.Branch("No — generic request (e.g. \"create me a website\", \"publish this\", \"host this\")").
-					Steps(byteRouteChooserStep, "websites_create", "websites_validate").
+					Steps(byteRouteChooserStepFor(p), "websites_create", "websites_validate").
 					Detail(publishCidLead.Then(htmlRootClause).
 						Static("Call websites_create with only {\"cid\": \"<cid>\"} — no domain, no label, no platform. The platform auto-generates a subdomain and manages DNS. Do NOT invent a label or call websites_platform_domain_availability. Do not infer a desire for custom naming from a generic request to create or publish a website.").
 						Then(validateAfterCreateClause).
 						Then(reconcileNoSleep).
 						Then(siteBundleUpload())),
 				toolforge.Branch("Yes — user explicitly supplied or requested a specific label (e.g. \"call it acme\", \"use myapp\")").
-					Steps(byteRouteChooserStep, "websites_platform_domains_list", "websites_platform_domain_availability", "websites_create", "websites_validate").
+					Steps(byteRouteChooserStepFor(p), "websites_platform_domains_list", "websites_platform_domain_availability", "websites_create", "websites_validate").
 					Detail(publishCidLead.Then(htmlRootClause).
 						Static("List platform roots with websites_platform_domains_list, then check the label is claimable with websites_platform_domain_availability <label>, then call websites_create with {\"cid\": \"<cid>\", \"platform\": true, \"label\": \"<label>\"}. Only use this branch when the user explicitly named a label — never invent one to perform the availability step.").
 						Then(validateAfterCreateClause).
 						Then(reconcilePlain)),
 				toolforge.Branch("Yes — user owns a custom domain (e.g. example.com)").
-					Steps(byteRouteChooserStep, "websites_create", "websites_validate").
+					Steps(byteRouteChooserStepFor(p), "websites_create", "websites_validate").
 					Detail(publishCidLead.Then(htmlRootClause).
 						Static("Call websites_create with {\"cid\": \"<cid>\", \"website\": \"<domain>\"}. The domain is used directly as a custom domain (not a platform subdomain). Read pinner://websites/<domain>/dns-requirements for DNS records to publish. If dns_hosting=true (managed), DNS is reconciled asynchronously — validation may report the old CID right after the update; that is reconciliation lag, not failure, so re-call websites_validate without starting a new flow. If self-managed, publish the _dnslink TXT and validation TXT before calling websites_validate.")),
 			))).

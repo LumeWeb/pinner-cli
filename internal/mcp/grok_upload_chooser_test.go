@@ -214,18 +214,29 @@ func TestAgentGuideByteRouteChooserInSteps(t *testing.T) {
 	require.True(t, flowStepsContain(vault, "vault_put_file"))
 	require.True(t, flowStepsContain(vault, "<host PUT>"))
 
-	// publish_website branches start from the byte-route chooser, not upload_file.
+	// publish_website branches start from the per-profile byte-route chooser,
+	// not upload_file. On Grok the label names all three upload tools.
+	wantChooser := byteRouteChooserStepFor(hostenv.ProfileGrokHTTP)
 	pub := guideFlowByName(t, grok, "publish_website")
 	require.NotNil(t, pub.Decision)
 	sawChooser := false
 	for _, br := range pub.Decision.Branches {
 		require.NotEmpty(t, br.Steps)
-		require.Equal(t, byteRouteChooserStep, br.Steps[0], "publish branch must start from the byte-route chooser: %s", br.When)
-		if br.Steps[0] == byteRouteChooserStep {
+		require.Equal(t, wantChooser, br.Steps[0], "publish branch must start from the byte-route chooser: %s", br.When)
+		if br.Steps[0] == wantChooser {
 			sawChooser = true
 		}
 	}
 	require.True(t, sawChooser, "at least one publish branch starts from the byte-route chooser")
+
+	// A mint-only / stdio host must NOT be steered at upload_url / upload_data.
+	genericLabel := byteRouteChooserStepFor(hostenv.ProfileHTTPGeneric)
+	require.Equal(t, "byte-route chooser (upload_file)", genericLabel)
+	require.NotContains(t, genericLabel, "upload_url")
+	require.NotContains(t, genericLabel, "upload_data")
+	stdioLabel := byteRouteChooserStepFor(hostenv.ProfileStdioGeneric)
+	require.NotContains(t, stdioLabel, "upload_url")
+	require.NotContains(t, stdioLabel, "upload_data")
 }
 
 // TestCapabilitiesLeadInNamesThreeFields locks in audit 6 item 1: the
