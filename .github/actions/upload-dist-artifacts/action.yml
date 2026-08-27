@@ -141,14 +141,22 @@ runs:
         # `linux-amd64` name that is also the upload path below.
         for spec in "deb:linux_amd64" "deb:linux_arm64" "rpm:linux_amd64" "rpm:linux_arm64"; do
           ext="${spec%%:*}"; plat="${spec##*:}"   # e.g. deb + linux_amd64
-          pkg="$(find "${{ inputs.dist-path }}" -maxdepth 1 -type f \
-            -name '${{ inputs.project-name }}_*_'"${plat}"'.'"${ext}"'' 2>/dev/null | head -n1)"
-          if [ -z "$pkg" ]; then
+          # Expect exactly one package per platform. The version-wildcarded
+          # glob could match several (e.g. stale dist/), so require a unique
+          # match instead of silently picking an arbitrary one with head -n1.
+          matches="$(find "${{ inputs.dist-path }}" -maxdepth 1 -type f \
+            -name '${{ inputs.project-name }}_*_'"${plat}"'.'"${ext}"'' 2>/dev/null)"
+          count="$(printf '%s\n' "$matches" | grep -c . || true)"
+          if [ "$count" -eq 0 ]; then
             echo "::warning::no ${plat} ${ext} package found in dist/; skipping"
             continue
           fi
+          if [ "$count" -gt 1 ]; then
+            echo "::warning::expected exactly one ${plat} ${ext} package, found $count; skipping"
+            continue
+          fi
           staged_plat="${plat//_/-}"              # linux_amd64 -> linux-amd64
-          cp "$pkg" "${{ inputs.dist-path }}/.artifact-staging/${{ inputs.project-name }}-${staged_plat}.${ext}"
+          cp "$matches" "${{ inputs.dist-path }}/.artifact-staging/${{ inputs.project-name }}-${staged_plat}.${ext}"
         done
 
     - name: Upload Debian package (amd64)
