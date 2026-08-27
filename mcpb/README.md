@@ -15,10 +15,11 @@ pinner-<os>-<arch>.mcpb
     └── pinner[.exe]   # the compiled pinner binary (runs `pinner mcp`)
 ```
 
-The manifest describes the server (`server.type: "binary"`, entry point
-`pinner mcp`), the required user config (Pinner API token), the platform
-compatibility, and links to the applicable privacy policy. On install, the app
-prompts the user for their API token and registers the server.
+The manifest describes the server (`server.type: "binary"`, command
+`${__dirname}/server/pinner mcp`), the required user config (Pinner auth
+token), the platform compatibility, and links to the applicable privacy
+policy. On install, the app prompts for the user's auth token and
+registers the server.
 
 > `privacy_policies` is required by the manifest spec because the server
 > connects to the Pinner service (pinner.xyz), which processes user data. It

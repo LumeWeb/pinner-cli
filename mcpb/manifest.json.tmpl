@@ -23,14 +23,14 @@
     "type": "binary",
     "entry_point": "server/pinner",
     "mcp_config": {
-      "command": "server/pinner",
+      "command": "${__dirname}/server/pinner",
       "args": ["mcp"],
       "env": {
-        "PINNER_API_TOKEN": "${user_config.pinner_api_token}"
+        "PINNER_AUTH_TOKEN": "${user_config.pinner_api_token}"
       },
       "platform_overrides": {
         "win32": {
-          "command": "server/pinner.exe"
+          "command": "${__dirname}/server/pinner.exe"
         }
       }
     }
@@ -39,7 +39,7 @@
     "pinner_api_token": {
       "type": "string",
       "title": "Pinner API Token",
-      "description": "Your Pinner.xyz API token (get one at https://pinner.xyz/dashboard/keys)",
+      "description": "Your Pinner.xyz API token (get one at https://account.pinner.xyz/account/api-keys)",
       "sensitive": true,
       "required": true
     }
