@@ -193,3 +193,53 @@ func TestCapabilitiesUploadToolsListsRelayTools(t *testing.T) {
 	require.Equal(t, []UploadToolCapability{UploadToolFile, UploadToolURL, UploadToolData},
 		run(hostenv.ProfileOpenAITunnel.Features, true)(&model.RequestCaps{Profile: &hostenv.ProfileOpenAITunnel}).UploadTools)
 }
+
+// TestAgentGuideByteRouteChooserInSteps locks in audit 6 items 2/3/4: the
+// byte-route chooser lives in the guide STEPS (as a decision), not only in
+// detail prose, so a steps-first model on Grok can produce a CID from mint
+// (upload_file), a public URL (upload_url), or raw bytes (upload_data).
+func TestAgentGuideByteRouteChooserInSteps(t *testing.T) {
+	grok := buildAgentGuide(strPtr(hostenv.ProfileGrokHTTP))
+
+	upload := guideFlowByName(t, grok, "upload")
+	require.Equal(t, []string{"capabilities"}, upload.Steps, "upload flow leads with capabilities")
+	require.NotNil(t, upload.Decision, "upload flow must carry a byte-route decision")
+	require.True(t, flowStepsContain(upload, "upload_file"))
+	require.True(t, flowStepsContain(upload, "upload_url"))
+	require.True(t, flowStepsContain(upload, "upload_data"))
+	require.True(t, flowStepsContain(upload, "<host PUT>"))
+
+	vault := guideFlowByName(t, grok, "vault_upload")
+	require.NotNil(t, vault.Decision, "vault_upload flow must carry a byte-route decision")
+	require.True(t, flowStepsContain(vault, "vault_put_file"))
+	require.True(t, flowStepsContain(vault, "<host PUT>"))
+
+	// publish_website leads with the byte-route decision (real upload tools),
+	// then nests the domain decision. Every step must be a real tool, so the
+	// publish flow never names a fabricated chooser.
+	pub := guideFlowByName(t, grok, "publish_website")
+	require.NotNil(t, pub.Decision, "publish_website must carry a byte-route decision")
+	require.True(t, flowStepsContain(pub, "upload_file"))
+	require.True(t, flowStepsContain(pub, "upload_url"))
+	require.True(t, flowStepsContain(pub, "upload_data"))
+	require.True(t, flowStepsContain(pub, "websites_create"))
+	require.True(t, flowStepsContain(pub, "websites_validate"))
+	// No fabricated non-tool step may leak into guide steps.
+	require.False(t, flowStepsContain(pub, "byte-route chooser"))
+}
+
+// TestCapabilitiesLeadInNamesThreeFields locks in audit 6 item 1: the
+// capabilities description leads by naming source_modes, upload_tools, and
+// download_sink_modes with distinct jobs, without hard-naming tools the host
+// may not register (so generic HTTP never references upload_url/upload_data).
+func TestCapabilitiesLeadInNamesThreeFields(t *testing.T) {
+	grok := capabilitiesDesc.Resolve(hostenv.ProfileGrokHTTP)
+	require.Contains(t, grok, "source_modes lists the source.mode values")
+	require.Contains(t, grok, "upload_tools lists every upload tool registered on this host")
+	require.Contains(t, grok, "download_sink_modes lists the sinks")
+
+	generic := capabilitiesDesc.Resolve(hostenv.ProfileHTTPGeneric)
+	require.Contains(t, generic, "upload_tools lists every upload tool registered on this host")
+	require.NotContains(t, generic, "upload_url", "generic HTTP has no relay tools")
+	require.NotContains(t, generic, "upload_data", "generic HTTP has no relay tools")
+}

@@ -196,7 +196,7 @@ func CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, down
 // endpoint. Resolving against the calling profile prevents the description
 // from promising a `file` parameter a host (e.g. Grok) cannot fill.
 var capabilitiesDesc = toolforge.Static(
-	"Report the running MCP transport and which file-input source modes and file-output sink modes this Pinner MCP server accepts. Read source_modes and download_sink_modes to pick the right voice without probing tool descriptions.",
+	"Report the running MCP transport and which file-input source modes, upload tools, and file-output sink modes this Pinner MCP server accepts. Read all three fields to pick the right byte route without probing tool descriptions: source_modes lists the source.mode values upload_file/vault_put_file accept on this transport (they are NOT the whole upload surface); upload_tools lists every upload tool registered on this host (upload_file plus any separate relay tools present); download_sink_modes lists the sinks download_file/vault_get_file accept.",
 ).
 	When(hostenv.FeatFileHostInput,
 		"The upload_file/vault_put_file tools take a transport-scoped source (mint, path, or url/data) OR a host-provided `file` argument. A host-provided file (a temporary download_url + file_id object) is always preferred when available, regardless of source_modes. file_input_policy=host_file_first is a machine-readable invariant: when set, an agent MUST pass any file already supplied or created by the host through the file parameter (user-uploaded attachments AND assistant-generated sandbox files) and must NOT base64-encode, create a data URI, or mint a presigned URL when file can be used.",
