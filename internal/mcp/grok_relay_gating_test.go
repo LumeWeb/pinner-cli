@@ -7,6 +7,8 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
+	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 )
 
 // TestEffectiveFeaturesGateRelayTools guards the audit-3 registration gate:
@@ -66,4 +68,31 @@ func TestAgentGuideInOnboarding(t *testing.T) {
 	summaries := catalog.Search("agent_guide", "", 0)
 	require.Len(t, summaries, 1)
 	require.Equal(t, "agent_guide", summaries[0].Name)
+}
+
+// TestOpenAITunnelUploadURLBakesUsableCopy regresses the reviewer finding: on
+// the OpenAI tunnel startup server (hostProfile == nil), upload_url's baked
+// description was left at its generic-HTTP base copy ("no URL-fetch relay"),
+// contradicting upload_data and misleading a model into avoiding a callable
+// tool. effectiveProfileFor must fall back to the transport profile so the
+// tunnel bake resolves against TransportOpenAI (FeatSourceURL present) and is
+// usable.
+func TestOpenAITunnelUploadURLBakesUsableCopy(t *testing.T) {
+	tunnelDeps := customToolDeps{
+		hostProfile:  nil,
+		coLocated:    false,
+		tunnelOpenAI: true,
+	}
+
+	// The effective profile for the OpenAI tunnel startup server is the OpenAI
+	// tunnel (url/data features), not generic HTTP.
+	prof := effectiveProfileFor(tunnelDeps)
+	require.True(t, prof.Features.Has(hostenv.FeatSourceURL), "OpenAI tunnel effective profile declares FeatSourceURL")
+
+	// Resolving the upload_url MCPTargets against the effective profile must
+	// yield the usable copy, not the generic-HTTP forbid.
+	d, ok := toolforge.ResolveDescription(upload.RelayURLUploadTargets, *prof)
+	require.True(t, ok)
+	require.NotContains(t, d, "Do NOT call this tool on this host")
+	require.NotContains(t, d, "no URL-fetch relay")
 }

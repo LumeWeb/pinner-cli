@@ -363,15 +363,15 @@ func registerCustomTools(deps customToolDeps) error {
 	// tried. Registration, not copy, is the gate.
 	if opts.relayURLUpload != nil && effectiveFeaturesFor(deps).Has(hostenv.FeatSourceURL) {
 		relayDesc := upload.RelayURLUploadDescriptor(opts.relayURLUpload, opts.relayAllowedHosts, opts.maxRelayBytes)
-		// A dedicated per-host server re-resolves the baked tools/list
-		// description against the detected host profile, mirroring
-		// upload_file/vault_put_file. The startup bake (generic HTTP) would
-		// otherwise carry the "do NOT call this tool" forbid, which is wrong
-		// on a host (e.g. Grok) whose feature set registers the URL relay.
-		if deps.hostProfile != nil {
-			if d, ok := toolforge.ResolveDescription(upload.RelayURLUploadTargets, *deps.hostProfile); ok {
-				relayDesc.Description = d
-			}
+		// Re-resolve the baked tools/list description against the effective
+		// profile (the URL relay bakes against generic HTTP, whose no-relay
+		// forbid would otherwise stick on a host that actually registers the
+		// tool). A dedicated per-host server uses the detected host profile; the
+		// startup server (OpenAI tunnel) falls back to its transport profile so
+		// upload_url — like upload_data — carries its usable copy there instead
+		// of misleading a model into avoiding a callable tool.
+		if d, ok := toolforge.ResolveDescription(upload.RelayURLUploadTargets, *effectiveProfileFor(deps)); ok {
+			relayDesc.Description = d
 		}
 		reg.add(customToolSpec{desc: relayDesc, index: true, direct: true})
 	}
@@ -424,14 +424,12 @@ func registerCustomTools(deps customToolDeps) error {
 	// call" sentence, is the gate.
 	if opts.dataURIUpload != nil && effectiveFeaturesFor(deps).Has(hostenv.FeatSourceData) {
 		dataDesc := transfer.DataURIUploadDescriptor(opts.dataURIUpload, opts.maxRelayBytes)
-		// Re-resolve the baked tools/list description against a dedicated per-host
-		// profile (mirroring upload_file/vault_put_file/upload_url). The startup
-		// bake would otherwise carry the "do NOT call this tool" forbid on a host
-		// (e.g. Grok) whose feature set registers the data: URI relay.
-		if deps.hostProfile != nil {
-			if d, ok := toolforge.ResolveDescription(transfer.DataURIUploadTargets, *deps.hostProfile); ok {
-				dataDesc.Description = d
-			}
+		// Re-resolve the baked tools/list description against the effective
+		// profile (mirroring upload_file/vault_put_file/upload_url), so a host
+		// whose feature set registers the data: URI relay carries its usable
+		// copy rather than a "do NOT call this tool" forbid.
+		if d, ok := toolforge.ResolveDescription(transfer.DataURIUploadTargets, *effectiveProfileFor(deps)); ok {
+			dataDesc.Description = d
 		}
 		reg.add(customToolSpec{desc: dataDesc, index: true, direct: true})
 	}
@@ -564,10 +562,22 @@ func uploadFileAvailable(coLocated, localPathWired, curlWired, relayWired, tunne
 // capability-backed tool or omits it entirely — never advertises it and then
 // forbids it in prose.
 func effectiveFeaturesFor(deps customToolDeps) hostenv.FeatureSet {
+	return effectiveProfileFor(deps).Features
+}
+
+// effectiveProfileFor returns the PlatformProfile that determines tool
+// registration and baked-description resolution for this server. It mirrors
+// effectiveFeaturesFor: a dedicated per-host server uses the detected host
+// profile, while the startup server falls back to the transport's generic
+// profile (e.g. the OpenAI tunnel resolves against TransportOpenAI so its tools
+// bake a usable, non-forbid description). Returns a pointer so call sites can
+// re-resolve a tool's MCPTargets against the same profile uniformly.
+func effectiveProfileFor(deps customToolDeps) *hostenv.PlatformProfile {
 	if deps.hostProfile != nil {
-		return deps.hostProfile.Features
+		return deps.hostProfile
 	}
-	return hostenv.ProfileForTransport(transfer.UploadFileTransport(deps.coLocated, deps.tunnelOpenAI)).Features
+	p := hostenv.ProfileForTransport(transfer.UploadFileTransport(deps.coLocated, deps.tunnelOpenAI))
+	return &p
 }
 
 // vaultPutFileAvailable reports whether the unified vault_put_file tool has at
