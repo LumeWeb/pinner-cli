@@ -6,6 +6,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
@@ -58,22 +59,30 @@ func profileFromRequest(request model.ToolRequest) *hostenv.PlatformProfile {
 	return &p
 }
 
+// sourceModePrefix prefixes a transfer.FileSourceMode value into the
+// "source.mode=X" label the guide surfaces. The mode names themselves come
+// from the shared transfer enum so this guide can never drift from what
+// capabilities() and the upload_file schema advertise.
+const sourceModePrefix = "source.mode="
+
 // guideSourceModes returns the transport-scoped source modes the resolved
-// profile actually supports. The guide only advertises modes the transport can
-// serve, so a host is never directed to a mode its transport cannot perform
-// (e.g. source.mode=path from a remote HTTP host).
+// profile actually supports. It derives from the transport (matching
+// capabilities().source_modes and the upload_file schema enum), never from the
+// profile's feature flags: the separate upload_data / upload_url TOOLS are
+// gated on FeatSourceData/FeatSourceURL, but upload_file's `source` enum is a
+// pure function of the transport (mint on HTTP, path on stdio, url/data on the
+// OpenAI tunnel). Deriving from features here would advertise a source mode
+// the upload_file schema on that transport cannot accept.
 func guideSourceModes(profile *hostenv.PlatformProfile) []string {
-	modes := make([]string, 0, 3)
-	if profile.Has(hostenv.FeatSourcePath) {
-		modes = append(modes, "source.mode=path")
+	switch profile.Transport {
+	case hostenv.TransportStdio:
+		return []string{sourceModePrefix + string(transfer.SourcePath)}
+	case hostenv.TransportOpenAI:
+		// The tunnel's url + data pair is a single relay label in the guide.
+		return []string{sourceModePrefix + string(transfer.SourceURL) + "/" + string(transfer.SourceData)}
+	default: // TransportHTTP
+		return []string{sourceModePrefix + string(transfer.SourceMint)}
 	}
-	if profile.Has(hostenv.FeatSourceMint) {
-		modes = append(modes, "source.mode=mint")
-	}
-	if profile.Has(hostenv.FeatSourceURL) || profile.Has(hostenv.FeatSourceData) {
-		modes = append(modes, "source.mode=url/data")
-	}
-	return modes
 }
 
 // sourceModesText joins guideSourceModes with "or" for inline use in
@@ -95,7 +104,16 @@ var uploadDetailDesc = toolforge.Static(
 	).
 	Static("The returned CID is already pinned — use it directly in websites_create/update; do NOT call pins_add after an upload").
 	WhenSentence(hostenv.FeatSourceMint,
-		"When using source.mode=mint, poll upload_status with the returned upload_handle for the CID",
+		"Mint (source.mode=mint) has NOT stored bytes when upload_file returns — it only mints url + upload_handle.",
+	).
+	WhenSentence(hostenv.FeatSourceMint,
+		"1) PUT your agent-local file to the returned url (curl -sS -T <file> \"<url>\")",
+	).
+	WhenSentence(hostenv.FeatSourceMint,
+		"2) poll upload_status with the returned upload_handle until it reports completed",
+	).
+	WhenSentence(hostenv.FeatSourceMint,
+		"3) the completed CID is already pinned — use it directly; do NOT call pins_add. Treat the mint response as the START of the upload, not the end.",
 	).
 	StaticSentence("Static site bundle rule: a ZIP containing index.html, CSS, JS, images, or nested pages is a single directory DAG — call upload_file").
 	When(hostenv.FeatFileHostInput,
@@ -120,26 +138,34 @@ var vaultUploadDetailDesc = toolforge.Static(
 		"When using source.mode=mint, poll upload_status with the returned upload_handle for the CID.",
 	)
 
-// downloadDetailDesc composes the download flow detail string.
+// downloadDetailDesc composes the download flow detail string. sink=local is
+// always available but writes to the MCP server's own disk; for a remote agent
+// (not co-located) that path is invisible, so drop is the preferred sink.
 var downloadDetailDesc = toolforge.Static(
-	"Check capabilities' download_sink_modes; call download_file with ipfs_path (CID or CID/path) and a supported sink. sink=local writes the bytes to a host-side output_path on the MCP server's own disk (available on every transport)",
+	"Read capabilities' download_sink_modes; call download_file with ipfs_path (CID or CID/path) using a supported sink.",
 ).
-	WhenClause(hostenv.FeatSinkDrop,
-		"sink=drop (when advertised) returns a one-time HTTP GET filedrop link to pull from out of band with curl -o or a browser.",
+	WhenSentence(hostenv.FeatSinkDrop,
+		"Prefer sink=drop: it returns a one-time HTTP GET filedrop link to pull into your sandbox with curl -o or a browser.",
 	).
-	UnlessRun(hostenv.FeatSinkDrop,
-		".",
+	UnlessSep(toolforge.SepSentence, hostenv.FeatCoLocated,
+		"sink=local writes to a path on the MCP server's own disk and is NOT visible to a remote agent like this one — do not look for the downloaded file in your sandbox.",
+	).
+	UnlessSep(toolforge.SepSentence, hostenv.FeatSinkDrop,
+		"On this transport, sink=local is the only sink offered.",
 	)
 
 // vaultDownloadDetailDesc composes the vault download flow detail string.
 var vaultDownloadDetailDesc = toolforge.Static(
-	"Check capabilities' download_sink_modes and that the vault is unlocked; call vault_get_file with vault_path and a supported sink. sink=local writes the decrypted bytes to a host-side output_path on the MCP server's own disk",
+	"Read capabilities' download_sink_modes and ensure the vault is unlocked; call vault_get_file with vault_path using a supported sink.",
 ).
-	WhenClause(hostenv.FeatSinkDrop,
-		"sink=drop (when advertised) returns a one-time HTTP GET filedrop link.",
+	WhenSentence(hostenv.FeatSinkDrop,
+		"Prefer sink=drop: it returns a one-time HTTP GET filedrop link to pull into your sandbox.",
 	).
-	UnlessRun(hostenv.FeatSinkDrop,
-		".",
+	UnlessSep(toolforge.SepSentence, hostenv.FeatCoLocated,
+		"sink=local writes the decrypted bytes to the MCP server's own disk and is NOT visible to a remote agent like this one.",
+	).
+	UnlessSep(toolforge.SepSentence, hostenv.FeatSinkDrop,
+		"On this transport, sink=local is the only sink offered.",
 	)
 
 // resolveDetail resolves a DescBuilder, substituting {{SOURCES}} with the
@@ -174,7 +200,7 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 		Unless(hostenv.FeatFileHostInput,
 			"with a convert-capable transport source ({{SOURCES}})",
 		).
-		StaticList("then publish the resulting directory CID. Do NOT mint a presigned curl URL for a file your host already holds unless capabilities directs you to a transport-scoped source. For guided, interactive website onboarding (human-in-the-loop, step-by-step DNS setup), use the website-onboarding prompt and the websites_wizard tools instead of the publish_website flow.")
+		StaticList("then publish the resulting directory CID. Follow the byte path capabilities reports: prefer the `file` parameter when your host has one; otherwise use a transport-scoped source (for source.mode=mint, PUT the file to the returned url and poll upload_status). Do NOT invent an OpenAI download_url/file_id or base64-encode a file as a data URI. For guided, interactive website onboarding (human-in-the-loop, step-by-step DNS setup), use the website-onboarding prompt and the websites_wizard tools instead of the publish_website flow.")
 
 	siteUploadClause := resolveDetail(
 		toolforge.Static("call upload_file").
@@ -202,7 +228,7 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 				"Call vault_restore; poll vault_restore_resume with the returned handle; confirm with vault_status until unlocked.",
 				"vault_restore", "vault_restore_resume", "vault_status"),
 			dynamicFlow("upload", "Upload new content (creates + pins)", uploadDetailDesc, profile,
-				"capabilities", "upload_file"),
+				"capabilities", "upload_file", "upload_status"),
 			dynamicFlow("vault_upload", "Store a file in a vault", vaultUploadDetailDesc, profile,
 				"capabilities", "vault_put_file"),
 			dynamicFlow("download", "Download IPFS content to a file", downloadDetailDesc, profile,
@@ -221,21 +247,24 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 						{
 							When:   "No — generic request (e.g. \"create me a website\", \"publish this\", \"host this\")",
 							Steps:  []string{"upload_file", "websites_create", "websites_validate"},
-							Detail: "Upload with wrap=true and do NOT set an explicit name for HTML — the tool auto-names wrapped HTML to index.html so the site resolves at its root. An explicit name like \"starter-site\" is honored as-is and the site will only be reachable at /starter-site, not /. Call websites_create with only {\"cid\": \"<cid>\"} — no domain, no label, no platform. The platform auto-generates a subdomain and manages DNS. Do NOT invent a label or call websites_platform_domain_availability. Do not infer a desire for custom naming from a generic request to create or publish a website. After creation, call websites_validate to confirm DNS propagation. If validation fails, wait ~30-60s and retry. For a static site bundle (ZIP containing index.html, CSS, JS, images, nested pages): " + siteUploadClause + " — the entire directory tree becomes a single directory DAG and the returned CID is the publishable directory CID. Do NOT mint a presigned curl URL for a ZIP the host already holds, and do NOT upload individual assets. Before uploading a site ZIP, verify that index.html is at the archive root, not wrapped in a parent directory. The tool will reject a CID whose root has no index.html or is wrapped in a single wrapper directory.",
+							Detail: "Upload with wrap=true and do NOT set an explicit name for HTML — the tool auto-names wrapped HTML to index.html so the site resolves at its root. An explicit name like \"starter-site\" is honored as-is and the site will only be reachable at /starter-site, not /. Call websites_create with only {\"cid\": \"<cid>\"} — no domain, no label, no platform. The platform auto-generates a subdomain and manages DNS. Do NOT invent a label or call websites_platform_domain_availability. Do not infer a desire for custom naming from a generic request to create or publish a website. After creation, call websites_validate to confirm DNS propagation. On this host there is no sleep tool: if validation is still pending or failing, treat that as reconciliation lag rather than failure and re-call websites_validate after other work, without starting a new flow. For a static site bundle (ZIP containing index.html, CSS, JS, images, nested pages): " + siteUploadClause + " — the entire directory tree becomes a single directory DAG and the returned CID is the publishable directory CID. Do NOT mint a presigned curl URL for a ZIP the host already holds, and do NOT upload individual assets. Before uploading a site ZIP, verify that index.html is at the archive root, not wrapped in a parent directory. The tool will reject a CID whose root has no index.html or is wrapped in a single wrapper directory.",
 						},
 						{
 							When:   "Yes — user explicitly supplied or requested a specific label (e.g. \"call it acme\", \"use myapp\")",
 							Steps:  []string{"upload_file", "websites_platform_domains_list", "websites_platform_domain_availability", "websites_create", "websites_validate"},
-							Detail: "Upload with wrap=true and do NOT set an explicit name for HTML — the tool auto-names wrapped HTML to index.html so the site resolves at its root. An explicit name like \"starter-site\" is honored as-is and the site will only be reachable at /starter-site, not /. List platform roots with websites_platform_domains_list, then check the label is claimable with websites_platform_domain_availability <label>, then call websites_create with {\"cid\": \"<cid>\", \"platform\": true, \"label\": \"<label>\"}. Only use this branch when the user explicitly named a label — never invent one to perform the availability step. After creation, call websites_validate to confirm DNS propagation. If validation fails, wait ~30-60s and retry.",
+							Detail: "Upload with wrap=true and do NOT set an explicit name for HTML — the tool auto-names wrapped HTML to index.html so the site resolves at its root. An explicit name like \"starter-site\" is honored as-is and the site will only be reachable at /starter-site, not /. List platform roots with websites_platform_domains_list, then check the label is claimable with websites_platform_domain_availability <label>, then call websites_create with {\"cid\": \"<cid>\", \"platform\": true, \"label\": \"<label>\"}. Only use this branch when the user explicitly named a label — never invent one to perform the availability step. After creation, call websites_validate to confirm DNS propagation. If validation is still pending or failing, treat it as reconciliation lag and re-call websites_validate after other work, without starting a new flow.",
 						},
 						{
 							When:   "Yes — user owns a custom domain (e.g. example.com)",
 							Steps:  []string{"upload_file", "websites_create", "websites_validate"},
-							Detail: "Upload with wrap=true and do NOT set an explicit name for HTML — the tool auto-names wrapped HTML to index.html so the site resolves at its root. An explicit name like \"starter-site\" is honored as-is and the site will only be reachable at /starter-site, not /. Call websites_create with {\"cid\": \"<cid>\", \"website\": \"<domain>\"}. The domain is used directly as a custom domain (not a platform subdomain). Read pinner://websites/<domain>/dns-requirements for DNS records to publish. If dns_hosting=true (managed), DNS is reconciled asynchronously — wait ~30-60s and retry websites_validate. If self-managed, publish the _dnslink TXT and validation TXT before calling websites_validate.",
+							Detail: "Upload with wrap=true and do NOT set an explicit name for HTML — the tool auto-names wrapped HTML to index.html so the site resolves at its root. An explicit name like \"starter-site\" is honored as-is and the site will only be reachable at /starter-site, not /. Call websites_create with {\"cid\": \"<cid>\", \"website\": \"<domain>\"}. The domain is used directly as a custom domain (not a platform subdomain). Read pinner://websites/<domain>/dns-requirements for DNS records to publish. If dns_hosting=true (managed), DNS is reconciled asynchronously — validation may report the old CID right after the update; that is reconciliation lag, not failure, so re-call websites_validate without starting a new flow. If self-managed, publish the _dnslink TXT and validation TXT before calling websites_validate.",
 						},
 					},
 				},
 			},
+			simpleFlow("update_website", "Update an existing website",
+				"Update a deployed website's content without recreating it. 1) websites_get <domain> first to capture the current target_type and dns_hosting_enabled — never guess them. 2) If the new CID is external, pins_add it first; updating an unpinned CID returns CidNotPinned. 3) websites_update <domain> with the new cid (target-type is inherited when omitted; change it only when intentionally switching IPFS<->IPNS). 4) websites_validate. If DNS hosting is managed, validation may report the old CID right after the update — that is reconciliation lag, not failure; re-call websites_validate without starting a new flow.",
+				"websites_get", "websites_update", "websites_validate"),
 		},
 	}
 }

@@ -166,29 +166,81 @@ func CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, down
 // transport and the file-input source modes / file-output sink modes available.
 // It is cheap and safe to expose directly, and is the feature-detection hook
 // for hosts that stage on draft MCP file metadata.
-// capabilitiesDescription is shared between the static Description (tools/list)
-// and the Fallback MCPTarget so the tool carries a target list for uniformity
-// (it is a direct-only tool and does not enter the catalog).
-const capabilitiesDescription = "Report the running MCP transport and which file-input source modes and file-output sink modes this Pinner MCP server accepts. The upload_file / vault_put_file tools take a single transport-scoped source: path in co-located stdio mode, mint in HTTP/tunnel mode (a one-time presigned PUT for out-of-band curl), or url/data on the OpenAI tunnel (relayed through MCP). These source_modes apply ONLY to the `source` argument — they do NOT describe the host-provided `file` argument. A host-provided file (a temporary download_url + file_id) is always preferred when available, regardless of source_modes. The download_file / vault_get_file tools take a single sink: local (write to a host-side path on the MCP server's own disk — available on every transport) or drop (a one-time HTTP GET filedrop link — only when a reachable HTTP mux exists). Read source_modes and download_sink_modes to pick the right voice without probing tool descriptions. host_file_input and host_file_input_preferred indicate the file argument is available and preferred over source modes. file_input_policy is a machine-readable invariant: when set to \"host_file_first\", an agent MUST use the file parameter for any file already supplied or created by the host (user-uploaded attachments AND assistant-generated files in the assistant's sandbox), and must NOT base64-encode, create a data URI, or mint a presigned URL when file can be used."
+// capabilitiesDesc is the profile-adapted capabilities description. The
+// "host file first" clause is gated on FeatFileHostInput (only OpenAI/ChatGPT
+// hosts can build a {download_url, file_id} file object), and the mint
+// put+poll contract is surfaced for hosts that reach the presigned HTTP PUT
+// endpoint. Resolving against the calling profile prevents the description
+// from promising a `file` parameter a host (e.g. Grok) cannot fill.
+var capabilitiesDesc = toolforge.Static(
+	"Report the running MCP transport and which file-input source modes and file-output sink modes this Pinner MCP server accepts. Read source_modes and download_sink_modes to pick the right voice without probing tool descriptions.",
+).
+	When(hostenv.FeatFileHostInput,
+		"The upload_file/vault_put_file tools take a transport-scoped source (mint, path, or url/data) OR a host-provided `file` argument. A host-provided file (a temporary download_url + file_id object) is always preferred when available, regardless of source_modes. file_input_policy=host_file_first is a machine-readable invariant: when set, an agent MUST pass any file already supplied or created by the host through the file parameter (user-uploaded attachments AND assistant-generated sandbox files) and must NOT base64-encode, create a data URI, or mint a presigned URL when file can be used.",
+	).
+	Unless(hostenv.FeatFileHostInput,
+		"This client has no `file` parameter it can fill; source_modes ARE the byte path. Call upload_file/vault_put_file with a transport-scoped source.",
+	).
+	WhenSentence(hostenv.FeatSourceMint,
+		"With source.mode=mint, mint returns a url + upload_handle but has NOT stored bytes: PUT the agent-local file to the returned url, then poll upload_status until it reports completed.",
+	).
+	StaticSentence("download_file/vault_get_file take a sink: local writes to a path on the MCP server's own disk (not visible to a remote agent)").
+	WhenSentence(hostenv.FeatSinkDrop,
+		"or drop returns a one-time HTTP GET filedrop link to pull from out of band.",
+	)
+
+// capabilitiesDescriptionFor resolves the capabilities description against
+// profile, clearing FeatFileHostInput when no file-capable upload/vault tool is
+// wired so the advertised prose matches the report's host_file_input. The
+// description is gated on the same combined condition as the report (client can
+// build the file object AND a tool is wired), keeping tools/list and the
+// per-request describe_tool surface consistent with the handler.
+func capabilitiesDescriptionFor(profile hostenv.PlatformProfile, uploadFile, vaultPutFile bool) string {
+	if !(uploadFile || vaultPutFile) {
+		profile = profile.CloneFeatures()
+		delete(profile.Features, hostenv.FeatFileHostInput)
+	}
+	return capabilitiesDesc.Resolve(profile)
+}
+
+// capabilitiesTargets resolves the capabilities description per profile for a
+// specific tool-wiring decision. It is a direct-only tool outside the catalog,
+// so it carries a single DescFunc target for uniformity.
+func capabilitiesTargets(uploadFile, vaultPutFile bool) []model.ToolTarget {
+	return toolforge.MCPTargets(model.ToolTarget{Visible: true,
+		DescFunc: func(p hostenv.PlatformProfile) string {
+			return capabilitiesDescriptionFor(p, uploadFile, vaultPutFile)
+		},
+	})
+}
 
 func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, draftXFile bool, maxBytes int64) model.ToolDescriptor {
+	// The baked tools/list description is resolved for the startup transport's
+	// generic profile; describe_tool re-resolves it against the actual profile
+	// via the wiring-aware targets.
+	startupProfile := hostenv.ProfileForTransport(transfer.UploadFileTransport(coLocated, tunnelOpenAI)).CloneFeatures()
 	return model.ToolDescriptor{
 		Name:        "capabilities",
 		Title:       "Pinner file-input/output capabilities",
-		Description: capabilitiesDescription,
+		Description: capabilitiesDescriptionFor(startupProfile, uploadFile, vaultPutFile),
 		Category:    model.CategoryCore,
-		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback(capabilitiesDescription)),
+		MCPTargets:  capabilitiesTargets(uploadFile, vaultPutFile),
 		InputSchema: toolargs.ToolSchemaFor[wizard.NoInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			report := CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, draftXFile, maxBytes)
-			// host_file_first is only honest when the calling client can build
+			// host_file_input is only honest when the calling client can build
 			// the `file` {download_url, file_id} object (ChatGPT/OpenAI). A
-			// non-OpenAI host (e.g. Grok over HTTP/tunnel) has no file_id, so
-			// telling it to prefer `file` over a transport-scoped source is a
-			// lie; gate the preferred flag and the policy on the client.
+			// non-OpenAI host (e.g. Grok over HTTP) has no file_id, so telling
+			// it a file parameter exists is a lie; gate the flag, the preferred
+			// flag, and the policy on the client.
 			canHostFile := request.Caps != nil && request.Caps.Profile != nil && request.Caps.Profile.Has(hostenv.FeatFileHostInput)
-			report.HostFileInputPreferred = report.HostFileInput && canHostFile
-			if !report.HostFileInputPreferred {
+			// host_file_input requires BOTH the client can build the file object
+			// (FeatFileHostInput) AND a file-capable upload/vault tool is actually
+			// wired — otherwise an OpenAI/ChatGPT host would advertise a file
+			// handoff no tool can serve.
+			report.HostFileInput = canHostFile && (report.UploadFile || report.VaultPutFile)
+			report.HostFileInputPreferred = report.HostFileInput
+			if !report.HostFileInput {
 				report.FileInputPolicy = ""
 			}
 			// Text carries the same canonical JSON as StructuredContent so a

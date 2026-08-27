@@ -23,7 +23,7 @@ var uploadFileDesc = Static(
 		"MUST use `file` when the host already has the file (user-uploaded attachments AND assistant-generated files in the assistant's sandbox); the OpenAI runtime converts it to a temporary download_url + file_id this tool receives — do NOT base64-encode, create a data URI, or manually construct the download_url object.",
 	).
 	When(hostenv.FeatSourceMint,
-		"Use source.mode=mint to get a one-time presigned HTTP PUT endpoint; stream your file's bytes to it with curl, then poll upload_status with the returned upload_handle. archive_mode and wrap are honored on mint too: request archive_mode=convert to have the PUT bytes extracted into a directory DAG when they are an archive (or wrap=true to wrap a single file), exactly as on host-file/path/url/data sources.",
+		"Use source.mode=mint to get a one-time presigned HTTP PUT endpoint. Mint does NOT store bytes: PUT your agent-local file to the returned url (curl -sS -T <file> \"<url>\"), then poll upload_status with the returned upload_handle until it reports completed — the completed CID is already pinned; do not call pins_add. For a website ZIP, mint holds the bytes as a raw archive unless you pass archive_mode=convert, so always pass archive_mode=convert for a site ZIP (or wrap=true for a single HTML page).",
 	).
 	When(hostenv.FeatSourcePath,
 		"Use source.mode=path with a host-side file/directory/archive path.",
