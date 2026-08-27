@@ -12,41 +12,17 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 )
 
-// GuideFlow describes one chained flow an agent can drive end-to-end.
-// Simple flows use Steps directly. Branching flows use Decision so the agent
-// picks the correct path deterministically instead of guessing.
-type GuideFlow struct {
-	Name     string         `json:"name"`               // flow identifier, e.g. auth
-	Title    string         `json:"title"`              // short human label
-	Steps    []string       `json:"steps,omitempty"`    // ordered tools (simple flows)
-	Detail   string         `json:"detail,omitempty"`   // one-line guidance
-	Decision *GuideDecision `json:"decision,omitempty"` // branching flows
-}
-
-// GuideDecision models a branching point in a flow. The agent evaluates each
-// Branch's When clause and follows the first match.
-type GuideDecision struct {
-	Question string        `json:"question"` // what to decide
-	Branches []GuideBranch `json:"branches"` // ordered branches
-}
-
-// GuideBranch is one path through a decision. When is a natural-language
-// condition; Steps is the ordered tool chain for that path; Detail is
-// guidance; Next allows nested decisions.
-type GuideBranch struct {
-	When   string         `json:"when"`  // condition for this branch
-	Steps  []string       `json:"steps"` // ordered tools for that path
-	Detail string         `json:"detail,omitempty"`
-	Next   *GuideDecision `json:"next,omitempty"` // nested decision if needed
-}
-
-// AgentGuide is the structured payload returned by the agent_guide tool.
-type AgentGuide struct {
-	Summary string      `json:"summary"`
-	Flows   []GuideFlow `json:"flows"`
-	// Rules holds operational invariants the agent must not violate.
-	Rules []string `json:"rules,omitempty"`
-}
+// The guide wire-model types (AgentGuide, GuideFlow, GuideDecision,
+// GuideBranch) live in toolforge — the platform-DSL package — so the guide is
+// composed by the same DSL that builds schemas and descriptions. These aliases
+// let call-sites and tests keep referencing the mcp-package names without
+// maintaining a parallel definition.
+type (
+	AgentGuide    = toolforge.AgentGuide
+	GuideFlow     = toolforge.GuideFlow
+	GuideDecision = toolforge.GuideDecision
+	GuideBranch   = toolforge.GuideBranch
+)
 
 // profileFromRequest safely extracts the PlatformProfile from a tool request.
 // If the request has no Caps or no Profile (e.g. tests invoking handlers
@@ -92,7 +68,8 @@ func sourceModesText(profile *hostenv.PlatformProfile) string {
 }
 
 // uploadDetailDesc composes the upload flow detail string from feature-gated
-// segments, replacing the previous string concatenation.
+// segments, replacing the previous string concatenation. The returned CID is
+// already pinned, so it must never steer an agent to pins_add.
 var uploadDetailDesc = toolforge.Static(
 	"Check capabilities to pick the byte source THIS client is told to use.",
 ).
@@ -168,113 +145,107 @@ var vaultDownloadDetailDesc = toolforge.Static(
 		"On this transport, sink=local is the only sink offered.",
 	)
 
-// resolveDetail resolves a DescBuilder, substituting {{SOURCES}} with the
-// profile's actual source mode list.
-func resolveDetail(d toolforge.DescBuilder, profile *hostenv.PlatformProfile) string {
-	s := d.Resolve(*profile)
-	return strings.ReplaceAll(s, "{{SOURCES}}", sourceModesText(profile))
-}
-
-// simpleFlow builds a GuideFlow with a static detail string.
-func simpleFlow(name, title, detail string, steps ...string) GuideFlow {
-	return GuideFlow{Name: name, Title: title, Steps: steps, Detail: detail}
-}
-
-// dynamicFlow builds a GuideFlow whose detail is resolved from a DescBuilder
-// against the given profile.
-func dynamicFlow(name, title string, desc toolforge.DescBuilder, profile *hostenv.PlatformProfile, steps ...string) GuideFlow {
-	return GuideFlow{Name: name, Title: title, Steps: steps, Detail: resolveDetail(desc, profile)}
-}
-
-// buildAgentGuide constructs the AgentGuide, adapting upload/download
-// guidance based on the detected platform profile's feature set.
-func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
-	// --- Summary -----------------------------------------------------------
-
-	summaryDesc := toolforge.Static(
-		"Start here. Drive Pinner through these primary flows; each step is a tool. Check the current state first, then follow the matching flow. Once a wizard session is active, stay in it: always call the returned next_step_schema via the wizard step tool — do not abandon the wizard to rediscover low-level tools. A static website ZIP (index.html, CSS, JS, images, nested pages) is always a single directory DAG: call upload_file",
+// guideSummary is the guide's opening orientation: start here, check state,
+// follow flows, stay in an active wizard session, and treat a static website
+// ZIP as a single directory DAG. Its file-handoff/convert-source wording is
+// feature-gated and the {{SOURCES}} token is substituted per profile.
+var guideSummary = toolforge.Static(
+	"Start here. Drive Pinner through these primary flows; each step is a tool. Check the current state first, then follow the matching flow. Once a wizard session is active, stay in it: always call the returned next_step_schema via the wizard step tool — do not abandon the wizard to rediscover low-level tools. A static website ZIP (index.html, CSS, JS, images, nested pages) is always a single directory DAG: call upload_file",
+).
+	When(hostenv.FeatFileHostInput,
+		"with a host file argument IF capabilities' file_input_policy is host_file_first (your client can hand Pinner a {download_url, file_id} object), otherwise a convert-capable transport source",
 	).
-		When(hostenv.FeatFileHostInput,
-			"with a host file argument IF capabilities' file_input_policy is host_file_first (your client can hand Pinner a {download_url, file_id} object), otherwise a convert-capable transport source",
-		).
-		Unless(hostenv.FeatFileHostInput,
-			"with a convert-capable transport source ({{SOURCES}})",
-		).
-		StaticList("then publish the resulting directory CID. Follow the byte path capabilities reports: prefer the `file` parameter when your host has one; otherwise use a transport-scoped source (for source.mode=mint, PUT the file to the returned url and poll upload_status). Do NOT invent an OpenAI download_url/file_id or base64-encode a file as a data URI. For guided, interactive website onboarding (human-in-the-loop, step-by-step DNS setup), use the website-onboarding prompt and the websites_wizard tools instead of the publish_website flow.")
+	Unless(hostenv.FeatFileHostInput,
+		"with a convert-capable transport source ({{SOURCES}})",
+	).
+	StaticList("then publish the resulting directory CID. Follow the byte path capabilities reports: prefer the `file` parameter when your host has one; otherwise use a transport-scoped source (for source.mode=mint, PUT the file to the returned url and poll upload_status). Do NOT invent an OpenAI download_url/file_id or base64-encode a file as a data URI. For guided, interactive website onboarding (human-in-the-loop, step-by-step DNS setup), use the website-onboarding prompt and the websites_wizard tools instead of the publish_website flow.")
 
-	siteUploadClause := resolveDetail(
-		toolforge.Static("call upload_file").
-			Unless(hostenv.FeatFileHostInput,
-				"with a convert source ({{SOURCES}}) and archive_mode=convert").
-			When(hostenv.FeatFileHostInput,
-				"with the host file argument and archive_mode=convert"),
-		profile,
-	)
+// guideArchiveInvariant and guideCIDStructure are the two operational website
+// rules every agent must honor. Kept as named fragments so branch guidance can
+// cite the same wrapper rule without duplicating the prose.
+var (
+	guideArchiveInvariant = "Website archive invariant: before publishing any generated static-site archive, verify that index.html is at the archive root. Never publish an archive where the entire site is wrapped in a single parent directory (e.g. site.zip/mysite/index.html). The correct layout is site.zip/index.html. If the first path component wraps the entire site, rebuild the archive from the directory's contents, not the directory itself."
+	guideCIDStructure     = "Website CID structure: a website CID must be a directory whose root contains index.html. Gateways serve /index.html at the directory path. Uploading an archive with archive_mode=convert produces a directory CID whose structure mirrors the archive — if the archive has a wrapper directory, the CID will too, and the site will not resolve at /. The tool will reject a CID that has no root index.html or is wrapped in a single parent directory."
+)
 
-	return AgentGuide{
-		Summary: resolveDetail(summaryDesc, profile),
-		Rules: []string{
-			"Website archive invariant: before publishing any generated static-site archive, verify that index.html is at the archive root. Never publish an archive where the entire site is wrapped in a single parent directory (e.g. site.zip/mysite/index.html). The correct layout is site.zip/index.html. If the first path component wraps the entire site, rebuild the archive from the directory's contents, not the directory itself.",
-			"Website CID structure: a website CID must be a directory whose root contains index.html. Gateways serve /index.html at the directory path. Uploading an archive with archive_mode=convert produces a directory CID whose structure mirrors the archive — if the archive has a wrapper directory, the CID will too, and the site will not resolve at /. The tool will reject a CID that has no root index.html or is wrapped in a single parent directory.",
-		},
-		Flows: []GuideFlow{
-			simpleFlow("auth", "Authenticate",
-				"Run auth_status; if unauthenticated, call auth_sso and poll auth_resume with the returned handle until the human completes the browser sign-in.",
-				"auth_status", "auth_sso", "auth_resume", "auth_status"),
-			simpleFlow("vault_create", "Create a vault",
-				"Call vault_create with a profile name; poll vault_create_resume with the returned handle; confirm with vault_status until unlocked.",
-				"vault_create", "vault_create_resume", "vault_status"),
-			simpleFlow("vault_restore", "Restore a vault",
-				"Call vault_restore; poll vault_restore_resume with the returned handle; confirm with vault_status until unlocked.",
-				"vault_restore", "vault_restore_resume", "vault_status"),
-			dynamicFlow("upload", "Upload new content (creates + pins)", uploadDetailDesc, profile,
-				"capabilities", "upload_file", "upload_status"),
-			dynamicFlow("vault_upload", "Store a file in a vault", vaultUploadDetailDesc, profile,
-				"capabilities", "vault_put_file"),
-			dynamicFlow("download", "Download IPFS content to a file", downloadDetailDesc, profile,
-				"capabilities", "download_file"),
-			dynamicFlow("vault_download", "Download a file from a vault", vaultDownloadDetailDesc, profile,
-				"capabilities", "vault_get_file"),
-			simpleFlow("pins", "Manage pins",
-				"pins_add imports content already on IPFS by external CID; it is NOT for use after an upload tool (which already pins). pins_status takes one cid; pins_rm requires confirm and exactly one of cids or all.",
-				"pins_add", "pins_list", "pins_status", "pins_rm"),
-			{
-				Name:  "publish_website",
-				Title: "Publish a website",
-				Decision: &GuideDecision{
-					Question: "Does the user have a domain or subdomain label preference?",
-					Branches: []GuideBranch{
-						{
-							When:   "No — generic request (e.g. \"create me a website\", \"publish this\", \"host this\")",
-							Steps:  []string{"upload_file", "websites_create", "websites_validate"},
-							Detail: "Upload with wrap=true and do NOT set an explicit name for HTML — the tool auto-names wrapped HTML to index.html so the site resolves at its root. An explicit name like \"starter-site\" is honored as-is and the site will only be reachable at /starter-site, not /. Call websites_create with only {\"cid\": \"<cid>\"} — no domain, no label, no platform. The platform auto-generates a subdomain and manages DNS. Do NOT invent a label or call websites_platform_domain_availability. Do not infer a desire for custom naming from a generic request to create or publish a website. After creation, call websites_validate to confirm DNS propagation. On this host there is no sleep tool: if validation is still pending or failing, treat that as reconciliation lag rather than failure and re-call websites_validate after other work, without starting a new flow. For a static site bundle (ZIP containing index.html, CSS, JS, images, nested pages): " + siteUploadClause + " — the entire directory tree becomes a single directory DAG and the returned CID is the publishable directory CID. Do NOT mint a presigned curl URL for a ZIP the host already holds, and do NOT upload individual assets. Before uploading a site ZIP, verify that index.html is at the archive root, not wrapped in a parent directory. The tool will reject a CID whose root has no index.html or is wrapped in a single wrapper directory.",
-						},
-						{
-							When:   "Yes — user explicitly supplied or requested a specific label (e.g. \"call it acme\", \"use myapp\")",
-							Steps:  []string{"upload_file", "websites_platform_domains_list", "websites_platform_domain_availability", "websites_create", "websites_validate"},
-							Detail: "Upload with wrap=true and do NOT set an explicit name for HTML — the tool auto-names wrapped HTML to index.html so the site resolves at its root. An explicit name like \"starter-site\" is honored as-is and the site will only be reachable at /starter-site, not /. List platform roots with websites_platform_domains_list, then check the label is claimable with websites_platform_domain_availability <label>, then call websites_create with {\"cid\": \"<cid>\", \"platform\": true, \"label\": \"<label>\"}. Only use this branch when the user explicitly named a label — never invent one to perform the availability step. After creation, call websites_validate to confirm DNS propagation. If validation is still pending or failing, treat it as reconciliation lag and re-call websites_validate after other work, without starting a new flow.",
-						},
-						{
-							When:   "Yes — user owns a custom domain (e.g. example.com)",
-							Steps:  []string{"upload_file", "websites_create", "websites_validate"},
-							Detail: "Upload with wrap=true and do NOT set an explicit name for HTML — the tool auto-names wrapped HTML to index.html so the site resolves at its root. An explicit name like \"starter-site\" is honored as-is and the site will only be reachable at /starter-site, not /. Call websites_create with {\"cid\": \"<cid>\", \"website\": \"<domain>\"}. The domain is used directly as a custom domain (not a platform subdomain). Read pinner://websites/<domain>/dns-requirements for DNS records to publish. If dns_hosting=true (managed), DNS is reconciled asynchronously — validation may report the old CID right after the update; that is reconciliation lag, not failure, so re-call websites_validate without starting a new flow. If self-managed, publish the _dnslink TXT and validation TXT before calling websites_validate.",
-						},
-					},
-				},
-			},
-			simpleFlow("update_website", "Update an existing website",
-				"Update a deployed website's content without recreating it. 1) websites_get <domain> first to capture the current target_type and dns_hosting_enabled — never guess them. 2) If the new CID is external, pins_add it first; updating an unpinned CID returns CidNotPinned. 3) websites_update <domain> with the new cid (target-type is inherited when omitted; change it only when intentionally switching IPFS<->IPNS). 4) websites_validate. If DNS hosting is managed, validation may report the old CID right after the update — that is reconciliation lag, not failure; re-call websites_validate without starting a new flow.",
-				"websites_get", "websites_update", "websites_validate"),
-		},
+// buildAgentGuide constructs the AgentGuide declaratively with the platform
+// DSL, then resolves it against the detected platform profile. Every flow,
+// step, branch and sentence is feature-gated and per-host resolved through the
+// same toolforge DSL the tool schemas use, so the guide can never advertise a
+// tool or source mode the resolved surface rejects (e.g. upload_status only
+// appears on mint transports).
+func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
+	p := *profile
+	substitute := func(s string) string {
+		return strings.ReplaceAll(s, "{{SOURCES}}", sourceModesText(&p))
 	}
+
+	spec := toolforge.Guide().
+		Substitute(substitute).
+		Summary(guideSummary).
+		Rule(guideArchiveInvariant).
+		Rule(guideCIDStructure).
+		Flow(toolforge.Flow("auth", "Authenticate").
+			Steps("auth_status", "auth_sso", "auth_resume", "auth_status").
+			Detail(toolforge.Static("Run auth_status; if unauthenticated, call auth_sso and poll auth_resume with the returned handle until the human completes the browser sign-in."))).
+		Flow(toolforge.Flow("vault_create", "Create a vault").
+			Steps("vault_create", "vault_create_resume", "vault_status").
+			Detail(toolforge.Static("Call vault_create with a profile name; poll vault_create_resume with the returned handle; confirm with vault_status until unlocked."))).
+		Flow(toolforge.Flow("vault_restore", "Restore a vault").
+			Steps("vault_restore", "vault_restore_resume", "vault_status").
+			Detail(toolforge.Static("Call vault_restore; poll vault_restore_resume with the returned handle; confirm with vault_status until unlocked."))).
+		Flow(toolforge.Flow("upload", "Upload new content (creates + pins)").
+			Steps("capabilities", "upload_file").
+			StepWhen(hostenv.FeatSourceMint, "upload_status").
+			Detail(uploadDetailDesc)).
+		Flow(toolforge.Flow("vault_upload", "Store a file in a vault").
+			Steps("capabilities", "vault_put_file").
+			Detail(vaultUploadDetailDesc)).
+		Flow(toolforge.Flow("download", "Download IPFS content to a file").
+			Steps("capabilities", "download_file").
+			Detail(downloadDetailDesc)).
+		Flow(toolforge.Flow("vault_download", "Download a file from a vault").
+			Steps("capabilities", "vault_get_file").
+			Detail(vaultDownloadDetailDesc)).
+		Flow(toolforge.Flow("pins", "Manage pins").
+			Steps("pins_add", "pins_list", "pins_status", "pins_rm").
+			Detail(toolforge.Static("pins_add imports content already on IPFS by external CID; it is NOT for use after an upload tool (which already pins). pins_status takes one cid; pins_rm requires confirm and exactly one of cids or all."))).
+		Flow(toolforge.Flow("publish_website", "Publish a website").
+			Decision(toolforge.Decision("Does the user have a domain or subdomain label preference?",
+				toolforge.Branch("No — generic request (e.g. \"create me a website\", \"publish this\", \"host this\")").
+					Steps("upload_file", "websites_create", "websites_validate").
+					Detail(htmlRootClause.
+						Static("Call websites_create with only {\"cid\": \"<cid>\"} — no domain, no label, no platform. The platform auto-generates a subdomain and manages DNS. Do NOT invent a label or call websites_platform_domain_availability. Do not infer a desire for custom naming from a generic request to create or publish a website.").
+						Then(validateAfterCreateClause).
+						Then(reconcileNoSleep).
+						Then(siteBundleUpload())),
+				toolforge.Branch("Yes — user explicitly supplied or requested a specific label (e.g. \"call it acme\", \"use myapp\")").
+					Steps("upload_file", "websites_platform_domains_list", "websites_platform_domain_availability", "websites_create", "websites_validate").
+					Detail(htmlRootClause.
+						Static("List platform roots with websites_platform_domains_list, then check the label is claimable with websites_platform_domain_availability <label>, then call websites_create with {\"cid\": \"<cid>\", \"platform\": true, \"label\": \"<label>\"}. Only use this branch when the user explicitly named a label — never invent one to perform the availability step.").
+						Then(validateAfterCreateClause).
+						Then(reconcilePlain)),
+				toolforge.Branch("Yes — user owns a custom domain (e.g. example.com)").
+					Steps("upload_file", "websites_create", "websites_validate").
+					Detail(htmlRootClause.
+						Static("Call websites_create with {\"cid\": \"<cid>\", \"website\": \"<domain>\"}. The domain is used directly as a custom domain (not a platform subdomain). Read pinner://websites/<domain>/dns-requirements for DNS records to publish. If dns_hosting=true (managed), DNS is reconciled asynchronously — validation may report the old CID right after the update; that is reconciliation lag, not failure, so re-call websites_validate without starting a new flow. If self-managed, publish the _dnslink TXT and validation TXT before calling websites_validate.")),
+			))).
+		Flow(toolforge.Flow("update_website", "Update an existing website").
+			Steps("websites_get", "websites_update", "websites_validate").
+			Detail(toolforge.Static("Update a deployed website's content without recreating it. 1) websites_get <domain> first to capture the current target_type and dns_hosting_enabled — never guess them. 2) If the new CID is external, pins_add it first; updating an unpinned CID returns CidNotPinned. 3) websites_update <domain> with the new cid (target-type is inherited when omitted; change it only when intentionally switching IPFS<->IPNS). 4) websites_validate. If DNS hosting is managed, validation may report the old CID right after the update — that is reconciliation lag, not failure; re-call websites_validate without starting a new flow."))).
+		Resolve(p)
+
+	return spec
 }
 
 // NewAgentGuideDescriptor returns a static, no-input tool that orients an agent
 // to the primary Pinner flows and how to chain them. It is the "start here"
 // surface added in the v5 audit: deterministic structured guidance, so a model
 // does not have to discover the flows by probing tool descriptions. The guide
-// content is adapted based on the calling client's platform profile so that
-// file-input and download-sink guidance matches the transport's capabilities.
+// content is composed via the platform DSL and adapted based on the calling
+// client's platform profile so file-input and download-sink guidance match the
+// transport's capabilities; because it is host-aware it is re-resolved per
+// request rather than at startup.
 // agentGuideDescription is shared between the static Description (tools/list)
 // and the Fallback MCPTarget so the tool carries a target list for uniformity
 // (it is a direct-only tool and does not enter the catalog).

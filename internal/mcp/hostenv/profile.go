@@ -80,6 +80,24 @@ type PlatformProfile struct {
 	TokenInfo   *TokenInfo
 }
 
+// Predicate is a boolean test over a resolved PlatformProfile. Builders use it
+// for gates that cannot be expressed as a Feature — e.g. a decision specific to
+// one host. The platform DSL (toolforge.DescBuilder and the guide builders)
+// accept predicates where a feature is not the right abstraction.
+type Predicate func(PlatformProfile) bool
+
+// HostIs matches profiles connected from the given host. It is a convenience
+// constructor so call sites read as prose (WhenHost(hostenv.HostGrok, ...))
+// rather than spelling out the closure.
+func HostIs(h HostType) Predicate {
+	return func(p PlatformProfile) bool { return p.HostType == h }
+}
+
+// Not negates a predicate. Builders use it for the "unless host" style gates.
+func Not(p Predicate) Predicate {
+	return func(prof PlatformProfile) bool { return !p(prof) }
+}
+
 // Has reports whether the profile supports the given feature.
 func (p PlatformProfile) Has(f Feature) bool {
 	return p.Features.Has(f)
