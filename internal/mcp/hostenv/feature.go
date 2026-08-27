@@ -82,3 +82,29 @@ func (fs FeatureSet) HasAll(req FeatureSet) bool {
 func (fs FeatureSet) Clone() FeatureSet {
 	return lo.Assign(fs)
 }
+
+// transportMechanismFeatures returns the features that are a pure function of
+// the running transport: which source/sink modes upload_file/download_file can
+// actually serve, plus the reachability facts (co-located vs remote). These
+// are DERIVED, never hand-declared per host — an HTTP host always gets mint
+// (never url/data), a stdio host path, and the OpenAI tunnel url/data.
+//
+// They form the transport-mechanism half of every profile's FeatureSet; the
+// per-host capability half (FeatFileHostInput, FeatXMcpFile, FeatMCPApps,
+// FeatElicitation) is what a profile actually declares. Deriving mechanism
+// features from the transport (rather than storing them on the profile) is
+// what keeps source-mode prose consistent with the transport-bound schema
+// enum, so a host that supports the separate upload_data/upload_url tools can
+// never accidentally flip upload_file's source mode to url/data.
+func transportMechanismFeatures(t TransportKind) FeatureSet {
+	switch t {
+	case TransportStdio:
+		return FeatureSet{FeatSourcePath: true, FeatSinkLocal: true, FeatCoLocated: true}
+	case TransportHTTP:
+		return FeatureSet{FeatSourceMint: true, FeatSinkLocal: true, FeatSinkDrop: true, FeatRemoteAccess: true}
+	case TransportOpenAI:
+		return FeatureSet{FeatSourceURL: true, FeatSourceData: true, FeatSinkLocal: true}
+	default:
+		return FeatureSet{}
+	}
+}

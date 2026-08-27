@@ -1,94 +1,87 @@
 package hostenv
 
 // Pre-declared platform profiles. Each is a static declaration of the
-// features a HostType + Transport combination supports. The detector
-// resolves a wire request to one of these and overlays runtime signals.
+// capability features a HostType supports; the transport-mechanism features
+// (source/sink/reachability) are merged in by newProfile from the profile's
+// Transport (see transportMechanismFeatures). The detector resolves a wire
+// request to one of these and overlays runtime signals.
+
+// newProfile assembles a static PlatformProfile by merging a host's declared
+// capability features with the transport-mechanism features derived from t.
+// Mechanism features are transport-derived by construction (see
+// transportMechanismFeatures), so they can never drift from the transport — an
+// HTTP host always presents mint, never url/data, regardless of what is put in
+// caps. Only genuine per-host capability features (FeatFileHostInput,
+// FeatXMcpFile, FeatMCPApps, FeatElicitation) should be declared in caps.
+func newProfile(caps FeatureSet, host HostType, t TransportKind, auth AuthMethod, remote bool) PlatformProfile {
+	features := caps.Clone()
+	mechanism := transportMechanismFeatures(t)
+	for k, v := range mechanism {
+		features[k] = v
+	}
+	return PlatformProfile{
+		HostType:   host,
+		Transport:  t,
+		AuthMethod: auth,
+		Remote:     remote,
+		Features:   features,
+	}
+}
 
 // ProfileOpenAITunnel is the OpenAI/ChatGPT embedded tunnel: pure MCP
 // RPC with no reachable HTTP mux. The ChatGPT runtime provides file
 // references ({download_url, file_id}) and supports MCP Apps.
-var ProfileOpenAITunnel = PlatformProfile{
-	HostType:   HostChatGPT,
-	Transport:  TransportOpenAI,
-	AuthMethod: AuthNone,
-	Remote:     true,
-	Features: FeatureSet{
+var ProfileOpenAITunnel = newProfile(
+	FeatureSet{
 		FeatFileHostInput: true,
-		FeatSourceURL:      true,
-		FeatSourceData:     true,
-		FeatXMcpFile:       true,
-		FeatMCPApps:        true,
+		FeatXMcpFile:      true,
+		FeatMCPApps:       true,
 		FeatElicitation:   true,
-		FeatSinkLocal:     true,
 	},
-}
+	HostChatGPT, TransportOpenAI, AuthNone, true,
+)
 
 // ProfileOpenAIHTTP is OpenAI's openai-mcp client connecting over HTTP
 // (e.g. ChatGPT via remote MCP). It advertises OpenAI-specific headers
 // and supports MCP Apps UI, but uses HTTP transport sources.
-var ProfileOpenAIHTTP = PlatformProfile{
-	HostType:   HostOpenAI,
-	Transport:  TransportHTTP,
-	AuthMethod: AuthOAuth,
-	Remote:     true,
-	Features: FeatureSet{
+var ProfileOpenAIHTTP = newProfile(
+	FeatureSet{
 		FeatFileHostInput: true,
-		FeatSourceMint:    true,
-		FeatSinkLocal:     true,
-		FeatSinkDrop:      true,
 		FeatXMcpFile:      true,
 		FeatMCPApps:       true,
-		FeatElicitation:  true,
-		FeatRemoteAccess:  true,
+		FeatElicitation:   true,
 	},
-}
+	HostOpenAI, TransportHTTP, AuthOAuth, true,
+)
 
 // ProfileGrokHTTP is xAI Grok connectors over HTTP + OAuth. Grok sends a
-// distinctive User-Agent (grok-connectors-manager) but no clientInfo.
-// It does not support file references or MCP Apps.
-var ProfileGrokHTTP = PlatformProfile{
-	HostType:   HostGrok,
-	Transport:  TransportHTTP,
-	AuthMethod: AuthOAuth,
-	Remote:     true,
-	Features: FeatureSet{
-		FeatSourceMint:    true,
-		FeatSinkLocal:     true,
-		FeatSinkDrop:      true,
-		FeatRemoteAccess:  true,
+// distinctive User-Agent (grok-connectors-manager) but no clientInfo. It
+// cannot hand Pinner an OpenAI {download_url, file_id} file object (no
+// FeatFileHostInput), but it CAN render MCP Apps. Its data/url uploads go
+// through the separately-wired upload_data / upload_url tools, not through
+// upload_file's transport-bound mint source.
+var ProfileGrokHTTP = newProfile(
+	FeatureSet{
+		FeatMCPApps: true,
 	},
-}
+	HostGrok, TransportHTTP, AuthOAuth, true,
+)
 
 // ProfileStdioGeneric is the fallback for any unidentified client over
 // stdio. It assumes co-located filesystem access but no host-specific
-// features.
-var ProfileStdioGeneric = PlatformProfile{
-	HostType:   HostGeneric,
-	Transport:  TransportStdio,
-	AuthMethod: AuthNone,
-	Remote:     false,
-	Features: FeatureSet{
-		FeatSourcePath:    true,
-		FeatSinkLocal:     true,
-		FeatCoLocated:     true,
-	},
-}
+// capability features.
+var ProfileStdioGeneric = newProfile(
+	nil,
+	HostGeneric, TransportStdio, AuthNone, false,
+)
 
 // ProfileHTTPGeneric is the fallback for any unidentified client over
 // HTTP. It supports HTTP-reachable sources/sinks but no host-specific
-// file input or MCP Apps.
-var ProfileHTTPGeneric = PlatformProfile{
-	HostType:   HostGeneric,
-	Transport:  TransportHTTP,
-	AuthMethod: AuthBearer,
-	Remote:     true,
-	Features: FeatureSet{
-		FeatSourceMint:    true,
-		FeatSinkLocal:     true,
-		FeatSinkDrop:      true,
-		FeatRemoteAccess:  true,
-	},
-}
+// capability features.
+var ProfileHTTPGeneric = newProfile(
+	nil,
+	HostGeneric, TransportHTTP, AuthBearer, true,
+)
 
 // ProfileForTransport returns the generic profile for a transport kind.
 // It is used at server startup when only the transport is known (no
