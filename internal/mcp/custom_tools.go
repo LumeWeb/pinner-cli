@@ -453,18 +453,28 @@ func registerCustomTools(deps customToolDeps) error {
 
 	// Always expose capability detection so hosts can choose a file-input mode
 	// without assuming draft MCP file support is negotiated. Each capability
-	// reflects whether its handler is actually wired.
-	reg.add(customToolSpec{desc: NewCapabilitiesDescriptor(
+	// reflects whether its handler is actually wired. A dedicated per-host
+	// server re-resolves the baked description against the detected profile so
+	// tools/list never promises a `file` parameter the host cannot fill. The
+	// re-resolve threads the same tool-wiring flags so the description drops the
+	// file-handoff prose when no upload/vault tool is wired, matching the report.
+	uploadWired := uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, opts.uploadHandler != nil, deps.tunnelOpenAI)
+	vaultWired := vaultPutFileAvailable(deps.coLocated, opts.localPathVaultPut != nil, deps.vaultUpload != nil, opts.vaultPutHandler != nil, deps.tunnelOpenAI)
+	capDesc := NewCapabilitiesDescriptor(
 		deps.coLocated,
 		deps.tunnelOpenAI,
-		uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, opts.uploadHandler != nil, deps.tunnelOpenAI),
-		vaultPutFileAvailable(deps.coLocated, opts.localPathVaultPut != nil, deps.vaultUpload != nil, opts.vaultPutHandler != nil, deps.tunnelOpenAI),
+		uploadWired,
+		vaultWired,
 		opts.ipfsDownload != nil,
 		opts.vaultGet != nil,
 		deps.downloadDrop != nil,
 		opts.dataURIUpload != nil, // the data: URI upload tool carries the draft x-mcp-file metadata
 		opts.maxRelayBytes,
-	), direct: true})
+	)
+	if deps.hostProfile != nil {
+		capDesc.Description = capabilitiesDescriptionFor(*deps.hostProfile, uploadWired, vaultWired)
+	}
+	reg.add(customToolSpec{desc: capDesc, direct: true})
 
 	// Always expose the static agent guide so a model can orient to the
 	// primary flows without probing each tool's description.

@@ -11,6 +11,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
@@ -167,4 +168,66 @@ func TestSourceModesForAllTransports(t *testing.T) {
 	require.Equal(t, []FileInputCapability{CapabilityMint}, sourceModesFor(transfer.TransportHTTP))
 	require.Equal(t, []FileInputCapability{CapabilityRelayURL, CapabilityDataURI}, sourceModesFor(transfer.TransportOpenAI))
 	require.Nil(t, sourceModesFor(transfer.TransportKind("bogus")))
+}
+
+// TestCapabilitiesDescDropGated ensures the capabilities DESCRIPTION only
+// advertises the filedrop sink when the profile supports it (FeatSinkDrop),
+// so co-located / OpenAI-tunnel hosts are not misled into an unavailable sink.
+func TestCapabilitiesDescDropGated(t *testing.T) {
+	httpDesc := capabilitiesDesc.Resolve(hostenv.ProfileHTTPGeneric)
+	require.Contains(t, httpDesc, "drop", "HTTP profile with a reachable mux must advertise the drop sink")
+
+	for _, p := range []hostenv.PlatformProfile{hostenv.ProfileStdioGeneric, hostenv.ProfileOpenAITunnel} {
+		require.NotContains(t, capabilitiesDesc.Resolve(p), "drop",
+			"%s must not advertise the filedrop sink", p.Transport)
+		require.Contains(t, capabilitiesDesc.Resolve(p), "local", "local sink is always available")
+	}
+}
+
+// TestCapabilitiesHostFileInputRequiresWiredTool verifies host_file_input is
+// only advertised when BOTH the client can build a file object (FeatFileHostInput)
+// AND a file-capable upload/vault tool is actually wired. An OpenAI/ChatGPT
+// host with no upload/vault tool must not report host_file_input=true.
+func TestCapabilitiesHostFileInputRequiresWiredTool(t *testing.T) {
+	httpProfile := hostenv.ProfileOpenAIHTTP.CloneFeatures()
+	caps := &model.RequestCaps{Profile: &httpProfile}
+
+	run := func(upload, vault bool) CapabilityReport {
+		desc := NewCapabilitiesDescriptor(false, false, upload, vault, false, false, false, false, 0)
+		res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}, Caps: caps})
+		require.NoError(t, err)
+		return res.StructuredContent.(CapabilityReport)
+	}
+
+	// Both a client capability and a wired upload tool -> advertised.
+	withTool := run(true, false)
+	require.True(t, withTool.HostFileInput)
+	require.True(t, withTool.HostFileInputPreferred)
+	require.Equal(t, "host_file_first", withTool.FileInputPolicy)
+
+	// Host can build the file object, but NO upload/vault tool is wired -> must NOT advertise.
+	noTool := run(false, false)
+	require.False(t, noTool.HostFileInput)
+	require.False(t, noTool.HostFileInputPreferred)
+	require.Empty(t, noTool.FileInputPolicy)
+}
+
+// TestCapabilitiesDescriptionMatchesWiring verifies the capabilities
+// DESCRIPTION is gated on the same combined condition as the report: the file
+// handoff prose only appears when a file-capable tool is wired AND the client
+// can fill it. tools/list must not advertise a file handoff the report clears.
+func TestCapabilitiesDescriptionMatchesWiring(t *testing.T) {
+	// OpenAI/HTTP host WITH an upload tool wired -> advertises the file handoff.
+	wired := capabilitiesDescriptionFor(hostenv.ProfileOpenAIHTTP, true, false)
+	require.Contains(t, wired, "file_input_policy", "a wired file tool must advertise the host-file branch")
+
+	// Same OpenAI/HTTP host, NO file tool wired -> must fall to the no-file prose.
+	noTool := capabilitiesDescriptionFor(hostenv.ProfileOpenAIHTTP, false, false)
+	require.NotContains(t, noTool, "file_input_policy", "no wired file tool must not advertise host_file_first")
+	require.Contains(t, noTool, "no `file` parameter", "without a file tool the no-file prose must show")
+
+	// A client that cannot build the file object never sees the handoff, even
+	// when an upload tool is wired.
+	grokWired := capabilitiesDescriptionFor(hostenv.ProfileGrokHTTP, true, false)
+	require.NotContains(t, grokWired, "file_input_policy", "Grok never advertises the OpenAI file handoff")
 }
