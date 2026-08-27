@@ -450,33 +450,63 @@ var mintOnlyArchiveModeDesc = toolforge.Static(
 	StaticSentence("preserve (the default for the mint source) keeps the archive intact as a single file.").
 	StaticSentence("For source.mode=mint, pass archive_mode=convert for a website ZIP or it uploads as a raw single-file CID that websites_create will reject.")
 
-// archiveModeSchemaTransform trims the archive_mode copy to what the host's
-// sources actually support. The full copy explains per-source defaults (host
-// file / path / url-data convert, mint preserve); on a mint-only host (e.g.
-// Grok) those other-source defaults are dead copy, so it is replaced by
-// mintOnlyArchiveModeDesc (which keeps the preserve-for-mint warning).
+// archiveModeSchemaTransform rewrites archive_mode.description to name only the
+// byte sources THIS tool actually accepts on the resolved profile. The static
+// base copy enumerates every transport source, so leaving it in place would make
+// property-level schema text advertise path/url/data beside a source.mode enum
+// that rejects them (e.g. a mint-only HTTP host with file input). The resolved
+// copy is composed from gated sentence fragments (archiveModeDesc), so each
+// accepted route contributes only its own default.
 func archiveModeSchemaTransform(s *jsonschema.Schema, fs hostenv.FeatureSet) {
-	// The archive_mode copy is pinned to the transport's actual sources, not
-	// to capability features. A host may declare FeatSourceData/FeatSourceURL
-	// to register the separate upload_data/upload_url tools, but those do not
-	// change upload_file's own archive contract; on a mint-only HTTP transport
-	// the full other-source-default prose would be dead copy. Keeping this
-	// transport-derived means Grok (mint-only on upload_file) still gets the
-	// mint preserve/convert warning after it gains the data/url capability
-	// features, without those features flipping the upload_file archive copy.
-	hasMint := TransportKindFromFeatures(fs) == TransportHTTP
-	if hasMint {
-		// A mint-only upload_file has no in-band file/path/url/data branch.
-		hasFile := fs.Has(hostenv.FeatFileHostInput)
-		otherSource := hasFile
-		if !otherSource {
-			// A Features-only profile is enough for resolution — the segments
-			// are unconditional sentences, so only the feature set feeds
-			// matches().
-			s.Description = mintOnlyArchiveModeDesc.Resolve(hostenv.PlatformProfile{Features: fs})
-		}
+	// A host whose only byte source for upload_file is mint (e.g. Grok) keeps
+	// the focused mint preserve/convert copy; any host with another accepted
+	// source gets the route-gated general copy.
+	if mintOnlySource(fs) {
+		s.Description = mintOnlyArchiveModeDesc.Resolve(hostenv.PlatformProfile{Features: fs})
+		return
 	}
+	// archiveModeDesc gates its source sentences on the mechanism transport
+	// (WhenTransport), so the profile must carry the resolved transport — a
+	// Features-only profile would leave Transport zero and drop every clause.
+	profile := hostenv.PlatformProfile{Features: fs, Transport: TransportKindFromFeatures(fs)}
+	s.Description = archiveModeDesc.Resolve(profile)
 }
+
+// mintOnlySource reports whether a profile routes upload_file through the mint
+// source alone (HTTP transport, no host-file input). It keys on the transport's
+// mechanism, not on capability features: a host may declare FeatSourceURL or
+// FeatSourceData to register separate upload_url/upload_data relay tools, but
+// those do not change upload_file's own mint-only source.
+func mintOnlySource(fs hostenv.FeatureSet) bool {
+	return TransportKindFromFeatures(fs) == TransportHTTP && !fs.Has(hostenv.FeatFileHostInput)
+}
+
+// archiveModeDesc composes the route-specific archive_mode copy. Each byte
+// source this profile accepts contributes one sentence naming its own default,
+// so an HTTP host with file input advertises only host-file + mint behavior, a
+// stdio host only path, and a tunnel host only url/data — never a route the
+// source.mode enum rejects. Sources are keyed on the transport's mechanism
+// (see mintOnlySource's comment for why relay capability features are ignored).
+// See mintOnlyArchiveModeDesc for the pure mint-only variant.
+var archiveModeDesc = toolforge.Static(
+	"How to treat an archive. convert extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. The archive's directory structure is preserved exactly, so index.html MUST be at the archive root (not inside a wrapper directory). preserve keeps the archive intact as a single file.",
+).
+	StaticSentence("The default depends on which sources this host accepts.").
+	WhenSentence(hostenv.FeatFileHostInput,
+		"A host-file source defaults to convert.",
+	).
+	WhenTransportSentence(hostenv.TransportStdio,
+		"A path source defaults to convert.",
+	).
+	WhenTransportSentence(hostenv.TransportHTTP,
+		"The mint (presigned PUT) source defaults to preserve, converting only when archive_mode=convert is passed explicitly.",
+	).
+	WhenTransportSentence(hostenv.TransportOpenAI,
+		"A url/data source defaults to convert.",
+	).
+	WhenTransportSentence(hostenv.TransportHTTP,
+		"A website ZIP streamed via source.mode=mint therefore MUST pass archive_mode=convert, or it uploads as a raw single-file CID that websites_create will reject.",
+	)
 
 // uploadFileDescription resolves the tool description from the forge's
 // feature-keyed targets. The transport determines which features the

@@ -251,6 +251,13 @@ func (d DescBuilder) WhenTransportSep(sep string, t hostenv.TransportKind, text 
 	return d.predSep(sep, hostenv.TransportIs(t), text)
 }
 
+// WhenTransportSentence is WhenTransport with a sentence separator: it appends
+// text that starts a new sentence when the profile's transport matches t. It
+// mirrors WhenSentence for transport-gated clauses.
+func (d DescBuilder) WhenTransportSentence(t hostenv.TransportKind, text string) DescBuilder {
+	return d.WhenTransportSep(SepSentence, t, text)
+}
+
 // UnlessTransport appends text included only when the profile's transport is NOT t.
 func (d DescBuilder) UnlessTransport(t hostenv.TransportKind, text string) DescBuilder {
 	return d.predSep(SepSpace, hostenv.TransportIs(t), text, true)
