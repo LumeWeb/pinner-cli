@@ -3,14 +3,19 @@ package toolforge
 import (
 	"strings"
 
+	"github.com/samber/lo"
+
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 )
 
-// segment is one piece of a composed description. When require is empty the
+// segment is one piece of a composed description. A segment is gated either by
+// a feature set (require/any/negate) or by a predicate over the platform
+// profile (pred); pred takes precedence when set. When require is empty the
 // segment is always included; otherwise all listed features must be present.
 // sep is prepended when the output buffer is already non-empty.
 type segment struct {
 	require []hostenv.Feature
+	pred    hostenv.Predicate // platform predicate gate (host/transport/auth)
 	text    string
 	any     bool   // when true, match if ANY required feature is present
 	negate  bool   // when true, match if NONE of the required features are present
@@ -169,6 +174,118 @@ func (d DescBuilder) UnlessRun(feat hostenv.Feature, text string) DescBuilder {
 	return d.UnlessSep(SepNone, feat, text)
 }
 
+// ---------------------------------------------------------------------------
+// Platform-predicate gating
+//
+// These gate a segment on the resolved platform profile directly (e.g. one
+// specific host) rather than on a feature. They share the segment/sep model
+// with the feature gates above, so a platform decision composes with prose the
+// same way a feature decision does.
+// ---------------------------------------------------------------------------
+
+// WhenHost appends text included only when the profile's host matches h.
+func (d DescBuilder) WhenHost(h hostenv.HostType, text string) DescBuilder {
+	return d.predSep(SepSpace, hostenv.HostIs(h), text)
+}
+
+// WhenHostSep is WhenHost with a custom separator prepended when the buffer is
+// non-empty.
+func (d DescBuilder) WhenHostSep(sep string, h hostenv.HostType, text string) DescBuilder {
+	return d.predSep(sep, hostenv.HostIs(h), text)
+}
+
+// UnlessHost appends text included only when the profile's host does NOT match h.
+func (d DescBuilder) UnlessHost(h hostenv.HostType, text string) DescBuilder {
+	return d.predSep(SepSpace, hostenv.HostIs(h), text, true)
+}
+
+// UnlessHostSep is UnlessHost with a custom separator prepended when the buffer
+// is non-empty.
+func (d DescBuilder) UnlessHostSep(sep string, h hostenv.HostType, text string) DescBuilder {
+	return d.predSep(sep, hostenv.HostIs(h), text, true)
+}
+
+// predSep appends a predicate-gated segment.
+func (d DescBuilder) predSep(sep string, pred hostenv.Predicate, text string, negate ...bool) DescBuilder {
+	return DescBuilder{segments: append(d.segments, segment{pred: pred, text: text, negate: len(negate) > 0 && negate[0], sep: sep})}
+}
+
+// ---------------------------------------------------------------------------
+// Sentence-block composition
+//
+// Long guidance (a flow detail, a publish-site paragraph) should be assembled
+// from discrete, independently-gateable sentences rather than one monolithic
+// string, so a single instruction can be reused or gated without touching the
+// whole block. Each sentence is a complete, self-punctuated unit (carries its
+// own trailing period); sentences are joined by single spaces, so there is no
+// double-punctuation footgun. The gated variants are thin loops over the
+// feature gates above, so a block of sentences all apply the same gate.
+// ---------------------------------------------------------------------------
+
+// Sentences appends several complete, self-punctuated sentences as discrete
+// segments — shorthand for repeated Static() calls that keeps long guidance
+// composed instead of collapsed into one giant string.
+func (d DescBuilder) Sentences(texts ...string) DescBuilder {
+	s := d
+	for _, t := range texts {
+		s = s.Static(t)
+	}
+	return s
+}
+
+// SentencesWhen appends a block of sentences included only when the profile has feat.
+func (d DescBuilder) SentencesWhen(feat hostenv.Feature, texts ...string) DescBuilder {
+	s := d
+	for _, t := range texts {
+		s = s.When(feat, t)
+	}
+	return s
+}
+
+// SentencesUnless appends a block of sentences included only when the profile lacks feat.
+func (d DescBuilder) SentencesUnless(feat hostenv.Feature, texts ...string) DescBuilder {
+	s := d
+	for _, t := range texts {
+		s = s.Unless(feat, t)
+	}
+	return s
+}
+
+// SentencesWhenAny appends a block of sentences included only when the profile
+// has at least one of feats (see WhenAny).
+func (d DescBuilder) SentencesWhenAny(feats []hostenv.Feature, texts ...string) DescBuilder {
+	s := d
+	for _, t := range texts {
+		s = s.WhenAny(feats, t)
+	}
+	return s
+}
+
+// Then splices another builder's segments onto the end, joining with a single
+// space. Fragments passed here are treated as complete, self-punctuated units
+// (they already end with their own terminator), so the join is a plain space
+// rather than an extra sentence separator that would double the punctuation.
+func (d DescBuilder) Then(f DescBuilder) DescBuilder {
+	return d.splice(f, SepSpace)
+}
+
+// ThenSentence splices another builder's segments onto the end, starting a new
+// sentence (". ") before the fragment. Use it when the appended fragment is
+// itself an un-punctuated clause (no trailing period).
+func (d DescBuilder) ThenSentence(f DescBuilder) DescBuilder {
+	return d.splice(f, SepSentence)
+}
+
+// splice appends a copy of f's segments, overriding f's first segment's
+// separator with sep so the boundary join is controlled by the caller.
+func (d DescBuilder) splice(f DescBuilder, sep string) DescBuilder {
+	segs := lo.Clone(f.segments)
+	if len(segs) > 0 && sep != "" {
+		segs[0].sep = sep
+	}
+	return DescBuilder{segments: lo.Concat(d.segments, segs)}
+}
+
 // ResolveSegments returns the texts of the segments that match profile, in
 // declaration order, without joining separators or text substitutions (e.g.
 // {{SOURCES}}). Prefer it over Resolve for structural assertions that must
@@ -202,6 +319,10 @@ func (d DescBuilder) Resolve(profile hostenv.PlatformProfile) string {
 
 // matches reports whether a segment should be included for a profile.
 func matches(profile hostenv.PlatformProfile, s segment) bool {
+	if s.pred != nil {
+		// A predicate is a single boolean gate; negate flips it.
+		return s.negate != s.pred(profile)
+	}
 	if len(s.require) == 0 {
 		return true
 	}

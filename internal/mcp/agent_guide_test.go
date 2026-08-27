@@ -178,3 +178,55 @@ func guideFlowByName(t *testing.T, guide AgentGuide, name string) GuideFlow {
 	t.Fatalf("guide has no flow named %q", name)
 	return GuideFlow{}
 }
+
+// strPtr dereferences a profile value into a pointer for buildAgentGuide.
+func strPtr(p hostenv.PlatformProfile) *hostenv.PlatformProfile { return &p }
+
+// TestAgentGuideStepsAreFeatureGated guards the structural step gating added
+// with the guide DSL: the upload flow's `upload_status` poll step is only real
+// on mint transports, so it must be advertised only when the resolved profile
+// has FeatSourceMint. The other source transports must not be steered to a poll
+// step their schema/flow never returns.
+func TestAgentGuideStepsAreFeatureGated(t *testing.T) {
+	mintFlows := []*hostenv.PlatformProfile{
+		strPtr(hostenv.ProfileHTTPGeneric),
+		strPtr(hostenv.ProfileGrokHTTP),
+		strPtr(hostenv.ProfileOpenAIHTTP),
+	}
+	for _, p := range mintFlows {
+		f := guideFlowByName(t, buildAgentGuide(p), "upload")
+		require.Contains(t, f.Steps, "upload_status", "%s is a mint transport; the guide must keep the poll step", p.Transport)
+		require.Contains(t, f.Steps, "upload_file")
+		require.Contains(t, f.Steps, "capabilities")
+	}
+
+	nonMintFlows := []*hostenv.PlatformProfile{
+		strPtr(hostenv.ProfileStdioGeneric), // path
+		strPtr(hostenv.ProfileOpenAITunnel), // url/data relay
+	}
+	for _, p := range nonMintFlows {
+		f := guideFlowByName(t, buildAgentGuide(p), "upload")
+		require.NotContains(t, f.Steps, "upload_status", "%s is not a mint transport; the guide must not advertise the mint poll step", p.Transport)
+		require.Contains(t, f.Steps, "upload_file")
+		require.Contains(t, f.Steps, "capabilities")
+	}
+}
+
+// TestAgentGuidePublishBranchesPerProfile verifies the publish_website decision
+// tree is stable and complete for every resolved profile, and that each branch
+// carries the rejected/desired-naming distinction a deterministic agent needs.
+func TestAgentGuidePublishBranchesPerProfile(t *testing.T) {
+	for _, p := range []*hostenv.PlatformProfile{
+		strPtr(hostenv.ProfileStdioGeneric),
+		strPtr(hostenv.ProfileHTTPGeneric),
+		strPtr(hostenv.ProfileGrokHTTP),
+		strPtr(hostenv.ProfileOpenAITunnel),
+	} {
+		pub := guideFlowByName(t, buildAgentGuide(p), "publish_website")
+		require.NotNil(t, pub.Decision, "publish_website must be a decision flow for %s", p.Transport)
+		require.Len(t, pub.Decision.Branches, 3, "publish_website must keep the generic/label/custom-domain branches for %s", p.Transport)
+		for _, br := range pub.Decision.Branches {
+			require.GreaterOrEqual(t, len(br.Steps), 2, "each publish branch must list an ordered tool chain")
+		}
+	}
+}

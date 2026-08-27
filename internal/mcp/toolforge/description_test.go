@@ -170,3 +170,29 @@ func TestWhenRunAndUnlessRun(t *testing.T) {
 	require.Equal(t, "disk ; via drop", d.Resolve(profileWith(hostenv.FeatSinkDrop)))
 	require.Equal(t, "disk.", d.Resolve(profileWith()))
 }
+
+func TestSentences(t *testing.T) {
+	d := Static("a.").Sentences("b.", "c.", "d.")
+	got := d.Resolve(profileWith())
+	require.Equal(t, "a. b. c. d.", got, "self-punctuated sentences join with single spaces, no double periods")
+	require.NotContains(t, got, "..")
+}
+
+func TestSentencesWhen(t *testing.T) {
+	d := Static("a.").Sentences("b.").SentencesWhen(hostenv.FeatSourceMint, "c.", "d.")
+	require.Equal(t, "a. b. c. d.", d.Resolve(profileWith(hostenv.FeatSourceMint)))
+	require.Equal(t, "a. b.", d.Resolve(profileWith()), "block drops entirely when the gate feature is absent")
+}
+
+func TestSentencesUnless(t *testing.T) {
+	d := Static("a.").SentencesUnless(hostenv.FeatSourceMint, "b.")
+	require.Equal(t, "a.", d.Resolve(profileWith(hostenv.FeatSourceMint)))
+	require.Equal(t, "a. b.", d.Resolve(profileWith()))
+}
+
+func TestSentencesWhenAny(t *testing.T) {
+	d := Static("a.").SentencesWhenAny([]hostenv.Feature{hostenv.FeatSourceMint, hostenv.FeatSourcePath}, "b.")
+	require.Equal(t, "a. b.", d.Resolve(profileWith(hostenv.FeatSourceMint)))
+	require.Equal(t, "a. b.", d.Resolve(profileWith(hostenv.FeatSourcePath)))
+	require.Equal(t, "a.", d.Resolve(profileWith(hostenv.FeatSourceURL)))
+}
