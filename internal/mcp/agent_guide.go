@@ -121,8 +121,11 @@ var vaultUploadDetailDesc = toolforge.Static(
 	When(hostenv.FeatSourceMint,
 		"When using source.mode=mint, mint returns a url + upload_handle but has NOT stored bytes: (1) put the agent-local file to the returned url, (2) poll upload_status with the returned upload_handle, (3) the completed CID is the vaulted object.",
 	).
-	WhenSentence(hostenv.FeatSourceURL,
-		"The separate upload_url / upload_data tools pin to IPFS and are NOT vault writes: vault storage always goes through vault_put_file with the destination vault_path, which takes public-URL or raw-inline bytes via its own url/data source on the tunnel transport. Do not invent a 'vault a CID' step.",
+	WhenSentence(hostenv.FeatSourceMint,
+		"On this mint-only transport there is no direct vault path for a public URL or inline bytes: materialize them to an agent-local file first, then vault_put_file(source.mode=mint) + PUT. The separate upload_url / upload_data tools are IPFS-only, not vault writes — do not invent a 'vault a CID' step.",
+	).
+	WhenTransportSep(toolforge.SepSentence, hostenv.TransportOpenAI,
+		"The separate upload_url / upload_data tools pin to IPFS and are NOT vault writes: over this tunnel transport vault_put_file takes public-URL or raw-inline bytes via its own url/data source plus the destination vault_path. Do not invent a 'vault a CID' step.",
 	)
 
 // downloadDetailDesc composes the download flow detail string. sink=local is
@@ -260,11 +263,15 @@ func vaultByteRouteDecision() *toolforge.GuideDecisionBuilder {
 			StepWhen(hostenv.FeatSourceMint, "<host PUT>", "upload_status").
 			Detail(toolforge.Static("vault_put_file with source.mode=mint + vault_path: PUT the agent-local file to the returned url, poll upload_status, and the completed object is stored at vault_path — there is no separate 'vault a CID' step.")),
 		toolforge.Branch("bytes already at a public HTTPS URL").
-			WhenFeature(hostenv.FeatSourceURL).
+			// vault_put_file's url source exists ONLY on the OpenAI tunnel
+			// transport. Gate on the transport, not FeatSourceURL: Grok declares
+			// FeatSourceURL to register upload_url, but its vault_put_file is
+			// mint-only — there is no "vault a URL" branch on Grok.
+			WhenTransport(hostenv.TransportOpenAI).
 			Steps("vault_put_file").
 			Detail(toolforge.Static("vault_put_file takes the URL via its own url source on the tunnel transport; the separate upload_url tool is IPFS-only, not a vault write.")),
 		toolforge.Branch("only raw inline bytes, no file and no URL").
-			WhenFeature(hostenv.FeatSourceData).
+			WhenTransport(hostenv.TransportOpenAI).
 			Steps("vault_put_file").
 			Detail(toolforge.Static("vault_put_file takes raw inline bytes via its own data source as a last resort; never base64-encode a real or host-provided file.")),
 	)
