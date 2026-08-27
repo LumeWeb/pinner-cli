@@ -44,7 +44,7 @@ func TestGrokColdStartCanResolveAgentGuide(t *testing.T) {
 // search can discover it. capabilities is registered with index=true.
 func TestCapabilitiesDiscoverableInCatalog(t *testing.T) {
 	catalog := NewToolCatalog()
-	desc := NewCapabilitiesDescriptor(true, false, true, true, true, true, true, false, 0)
+	desc := NewCapabilitiesDescriptor(true, false, true, true, true, true, true, true, true, false, 0)
 	catalog.Add(model.ToolEntryFromDescriptor(desc))
 
 	// "capabilities" matches the tool name exactly; "modes"/"source"/"file"

@@ -222,20 +222,22 @@ var capabilitiesDesc = toolforge.Static(
 		"or drop returns a one-time HTTP GET filedrop link to pull from out of band.",
 	)
 
-// uploadToolsFor lists the upload tools registered for the effective profile
-// in chooser order: upload_file first, then the relay tools the profile gates
-// on (FeatSourceURL → upload_url, FeatSourceData → upload_data). It mirrors
-// both the capabilities description's ordered chooser and the per-host relay
-// tool registration in custom_tools.go, so the JSON object matches the prose.
-func uploadToolsFor(p hostenv.PlatformProfile, uploadFile bool) []UploadToolCapability {
+// uploadToolsFor lists the upload tools actually registered for the effective
+// profile, in chooser order: upload_file first, then the relay tools. It gates
+// each tool on the SAME condition custom_tools.go uses to register it — the
+// profile must declare the feature AND the relay handler must be wired
+// (relayURLWired/dataURIWired) — so the capabilities JSON never advertises a
+// tool that does not exist. This mirrors the upload_file pattern, where the
+// report only claims the tool when its handler is wired.
+func uploadToolsFor(p hostenv.PlatformProfile, uploadFile, relayURLWired, dataURIWired bool) []UploadToolCapability {
 	var out []UploadToolCapability
 	if uploadFile {
 		out = append(out, UploadToolFile)
 	}
-	if p.Has(hostenv.FeatSourceURL) {
+	if relayURLWired && p.Has(hostenv.FeatSourceURL) {
 		out = append(out, UploadToolURL)
 	}
-	if p.Has(hostenv.FeatSourceData) {
+	if dataURIWired && p.Has(hostenv.FeatSourceData) {
 		out = append(out, UploadToolData)
 	}
 	return out
@@ -266,7 +268,7 @@ func capabilitiesTargets(uploadFile, vaultPutFile bool) []model.ToolTarget {
 	})
 }
 
-func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, draftXFile bool, maxBytes int64) model.ToolDescriptor {
+func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, relayURLWired, dataURIWired, draftXFile bool, maxBytes int64) model.ToolDescriptor {
 	// The baked tools/list description is resolved for the startup transport's
 	// generic profile; describe_tool re-resolves it against the actual profile
 	// via the wiring-aware targets.
@@ -312,7 +314,7 @@ func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile
 			if request.Caps != nil && request.Caps.Profile != nil {
 				reportProfile = *request.Caps.Profile
 			}
-			report.UploadTools = uploadToolsFor(reportProfile, report.UploadFile)
+			report.UploadTools = uploadToolsFor(reportProfile, report.UploadFile, relayURLWired, dataURIWired)
 			// Text carries the same canonical JSON as StructuredContent so a
 			// text-only MCP client still sees the source/sink mode data instead
 			// of an unhelpful stub ("Pinner capabilities.").

@@ -504,7 +504,9 @@ func registerCustomTools(deps customToolDeps) error {
 		opts.ipfsDownload != nil,
 		opts.vaultGet != nil,
 		deps.downloadDrop != nil,
-		opts.dataURIUpload != nil, // the data: URI upload tool carries the draft x-mcp-file metadata
+		opts.relayURLUpload != nil, // upload_url relay tool wiring (gates upload_tools + URL registration)
+		opts.dataURIUpload != nil,  // upload_data relay tool wiring (gates upload_tools + data registration)
+		opts.dataURIUpload != nil,  // the data: URI upload tool carries the draft x-mcp-file metadata
 		opts.maxRelayBytes,
 	)
 	if deps.hostProfile != nil {

@@ -153,24 +153,31 @@ func TestAgentGuideUploadDetailNamesRelayTools(t *testing.T) {
 // TestCapabilitiesUploadToolsListsRelayTools locks in audit 5 item 2: the
 // capabilities JSON exposes upload_tools so a structured/JSON-only reader sees
 // every upload route (not just source_modes=["mint"]). The list follows the
-// chooser order and reflects the CALLING profile's registered relay tools.
+// chooser order and reflects the CALLING profile's REGISTERED relay tools —
+// a relay tool appears only when BOTH the profile declares the feature AND the
+// relay handler is wired (matching custom_tools.go registration).
 func TestCapabilitiesUploadToolsListsRelayTools(t *testing.T) {
-	run := func(caps *model.RequestCaps) CapabilityReport {
-		desc := NewCapabilitiesDescriptor(false, false, true, false, false, false, false, false, 0)
-		res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}, Caps: caps})
-		require.NoError(t, err)
-		return res.StructuredContent.(CapabilityReport)
+	run := func(wired bool) func(*model.RequestCaps) CapabilityReport {
+		return func(caps *model.RequestCaps) CapabilityReport {
+			desc := NewCapabilitiesDescriptor(false, false, true, false, false, false, false, wired, wired, false, 0)
+			res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}, Caps: caps})
+			require.NoError(t, err)
+			return res.StructuredContent.(CapabilityReport)
+		}
 	}
 
 	grokProf := hostenv.ProfileGrokHTTP.CloneFeatures()
 	require.Equal(t, []UploadToolCapability{UploadToolFile, UploadToolURL, UploadToolData},
-		run(&model.RequestCaps{Profile: &grokProf}).UploadTools)
+		run(true)(&model.RequestCaps{Profile: &grokProf}).UploadTools)
+	// Same profile, relay handlers NOT wired → no relay tools advertised.
+	require.Equal(t, []UploadToolCapability{UploadToolFile},
+		run(false)(&model.RequestCaps{Profile: &grokProf}).UploadTools)
 
 	genericProf := hostenv.ProfileHTTPGeneric.CloneFeatures()
 	require.Equal(t, []UploadToolCapability{UploadToolFile},
-		run(&model.RequestCaps{Profile: &genericProf}).UploadTools)
+		run(true)(&model.RequestCaps{Profile: &genericProf}).UploadTools)
 
 	openaiProf := hostenv.ProfileOpenAITunnel.CloneFeatures()
 	require.Equal(t, []UploadToolCapability{UploadToolFile, UploadToolURL, UploadToolData},
-		run(&model.RequestCaps{Profile: &openaiProf}).UploadTools)
+		run(true)(&model.RequestCaps{Profile: &openaiProf}).UploadTools)
 }
