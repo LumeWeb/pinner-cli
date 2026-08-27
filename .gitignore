@@ -39,6 +39,7 @@ pkg/account/client/
 *.md
 !AGENTS.md
 !README.md
+!docs/*.md
 pinner
 completions/
 .sisyphus/

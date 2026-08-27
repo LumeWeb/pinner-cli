@@ -1,204 +1,283 @@
 # AGENTS.md
-This file provides guidance to various AI agents when working with code in this repository.
+
+This file provides guidance to AI agents and developers working with the
+Pinner.xyz CLI. For the full architecture, see
+[`docs/architecture.md`](docs/architecture.md); for build, test, and release
+workflows, see [`docs/build.md`](docs/build.md).
 
 ## Common Commands
 
 ### Building
+
+**Use `make` targets.** The Makefile chains the full pipeline (`templ
+generate` → JS app bundles → Tailwind CSS → Go build), which a raw
+`go build`/`go test` skips — the latter produces a binary missing the embedded
+app assets.
+
 ```bash
-# Build with version info (recommended)
-make build
+make build          # full pipeline, produces ./pinner with version info
+make install        # full pipeline, installs to $GOPATH/bin
+make test           # build assets, then go test ./...
+make generate       # templ generate only
+make clean          # rm -f pinner
+```
 
-# Or install to $GOPATH/bin
-make install
+Raw builds (for quick Go-only checks or cross-compilation):
 
-# Build without make
+```bash
 go build -o pinner ./cmd/pinner
 
-# Cross-compile for different platforms
-GOOS=linux GOARCH=amd64 go build -o pinner-linux-amd64 ./cmd/pinner
-GOOS=darwin GOARCH=arm64 go build -o pinner-darwin-arm64 ./cmd/pinner
+GOOS=linux   GOARCH=amd64 go build -o pinner-linux-amd64   ./cmd/pinner
+GOOS=darwin  GOARCH=arm64 go build -o pinner-darwin-arm64  ./cmd/pinner
 GOOS=windows GOARCH=amd64 go build -o pinner-windows-amd64.exe ./cmd/pinner
 ```
 
 ### Testing
+
 ```bash
-# Run all tests
-go test ./...
-
-# Run with coverage
-go test -cover ./...
-
-# Run tests for a specific package
+go test ./...                  # whole suite (assumes assets already built)
 go test ./internal/cli
-
-# Run tests with verbose output
 go test -v ./...
-
-# Run specific test functions
 go test ./internal/cli -run TestUpload
 ```
 
 ### Mock Generation
 
-The project uses [mockery](https://github.com/vektra/mockery) for generating mocks. See the [official documentation](https://vektra.github.io/mockery/latest/installation/) for installation instructions.
-
-#### Usage
+Mocks are generated with [mockery](https://vektra.github.io/mockery/latest/)
+using `.mockery.yaml` (interface → output dir/package mapping, testify
+template). Run `mockery` with **no arguments**. Do not reinstall mockery; the
+dev environment already has it.
 
 ```bash
-# Generate all mocks
-mockery
-
-# Generate mocks for specific interfaces
-mockery --name=PinningService
-mockery --name=UploadService
-mockery --name=AuthService
+mockery        # regenerate all mocks from .mockery.yaml
 ```
 
 ### Running the CLI
-```bash
-# Run from source
-go run ./cmd/pinner
 
-# Or use built binary
-./pinner <command>
+```bash
+go run ./cmd/pinner           # from source
+./pinner <command>            # built binary
 ```
 
-## High-Level Architecture
+## Repository Layout
 
-### Project Overview
-Pinner.xyz CLI is a Go-based command-line tool for managing IPFS content via the Pinner.xyz service. Beyond pinning, it supports website hosting, DNS management, IPNS publishing, downloading, benchmarking, and admin operations. It uses a layered architecture with clear separation of concerns between CLI presentation, business logic, and external service integration.
+The codebase is a **two-tier design**: a domain layer plus frontends, all
+compiled from a single operation catalog.
+
+```
+cmd/pinner/                 Entry point. Minimal main.go -> cli.Run()
+internal/core/<domain>/     Domain logic; pure Go, no urfave/MCP/Output
+internal/catalog/           Operation-descriptor registry (single source of truth)
+internal/catalogops/        Per-domain Operation providers
+internal/cli/               urfave CLI commands, service interfaces, wiring
+internal/cli/internal/      PinningClient / BoxoPinningClient (HTTP + retry)
+internal/fieldform/         CLI-side wizard field system (Field/Gather/ValueSource)
+internal/cli/wizard/        pterm-backed wizard + prompter; Step[S]/Run[S] framework
+internal/mcp/               MCP server adapter (catalog-driven tool surface)
+internal/mcp/wizard/        MCP-side wizard FSMs (website/setup flows)
+internal/mcp/core/          MCP building blocks (sessions, model, transfer, ...)
+internal/mcp/hostenv/       Host platform capability model (features/profiles)
+internal/mcp/toolforge/     Forge: host-aware tool/schema/guide construction
+internal/mcpapp/            Embedded MCP app assets & CSS (go:embed)
+internal/urlopen/           Cross-platform "open URL in browser" helper
+internal/service/           OS service integration (Windows/systemd/launchd)
+internal/car/               CAR file root reading (GetCarRoots)
+internal/io/                stdin as fs.FS (stdinfs.go)
+build/                      Build-time info (version/commit injected via ldflags)
+tests/sunpeak/              MCP integration tests (driver `pinner mcp` over stdio)
+```
 
 ### Core Directories
 
-- **`cmd/pinner/`**: Entry point for the CLI application. Minimal main.go that delegates to `internal/cli.Run()`.
+- **`internal/core/`** — domain logic, one package per domain: `auth`,
+  `upload`, `download`, `pinning`, `status`, `operations`, `websites`, `dns`,
+  `ipns`, `vault`, `admin`, `apikeys`, `bench`, `config`, `errors`,
+  `ipfsbase`. Nothing here depends on urfave, MCP, or the `Output` formatter.
+  - `internal/core/config/` — configuration management (extends
+    `go.lumeweb.com/configmanager`). Default config location is platform
+    native: `~/.config/pinner/config.yaml` (Linux),
+    `~/Library/Application Support/pinner/config.yaml` (macOS),
+    `%AppData%\pinner\config.yaml` (Windows), or `$PINNER_HOME/config.yaml`.
+    Config keys include: `auth_token`, `base_endpoint`, `max_retries`,
+    `memory_limit`, `secure`, `gateway_endpoint`, `default_timeout`,
+    `upload_timeout`, `sync_timeout`.
 
-- **`internal/cli/`**: Primary CLI command implementations and orchestration logic.
-  - Contains all command handlers: `auth.go`, `account.go`, `account_api_keys.go`, `register.go`, `confirm_email.go`, `upload.go`, `download.go`, `pin.go`, `pins.go` + `pins_*.go` (add/ls/rm/status/update), `list.go`, `status.go`, `unpin.go`, `unpin_all.go`, `metadata.go` (removed command), `meta.go` (metadata flag helpers), `operations.go`, `dns.go`, `ipns.go`, `websites.go`, `bench.go`, `config.go`, `doctor.go`, `setup.go`, `admin.go`, `version.go`, `root.go`
-  - Defines service interfaces: `PinningService`, `StatusService`, `UploadService`, `AuthService`, `DownloadService`, `BenchService`, `OperationsService`, `DNSService`, `IPNSService`, `WebsitesService`, `QuotaAdminService`, `BillingAdminService`, `WebsiteAdminService`, `AdminTokenProvider`
-  - Output formatting system with human-readable and JSON modes
-  - Global flags and command registration in `flags.go` and `register.go`
-  - Shell completion support for bash, zsh, fish, and PowerShell
-  - Generic wizard framework in `wizard/` using Go generics (`Step[S any]`, `Run[S]()`)
-  - Structured error types: `BenchError`, `HTTPError`, `FormatError`
+- **`internal/catalog/`** — the operation registry. `Operation` descriptors
+  declare `Safety` (Read/Mutate/Destructive), `Interaction`
+  (AgentSafe/HumanOnly/NeedsHandoff), `Visibility` (Model/AppOnly/Both),
+  and `Args`. `compile_cli.go` compiles operations into urfave commands;
+  `compile_mcp.go` compiles them into MCP JSON Schemas. Dispatch always flows
+  through `Catalog.Invoke`; the discovery-only `ToolDescriptor` never carries
+  a handler.
 
-- **`internal/cli/internal/`**: Internal implementations of service interfaces.
-  - `PinningClient` interface wraps boxo's remote pinning client
-  - `BoxoPinningClient` provides the actual implementation with retry logic
-  - HTTP client with configurable retry behavior
+- **`internal/catalogops/`** — one provider per domain (`pins.go`,
+  `websites.go`, `dns.go`, ...) returning `[]catalog.Operation`. Providers
+  take per-domain deps structs of **getter functions** (resolved lazily per
+  invocation, never at package init). Handlers return typed data; rendering is
+  the frontend's job.
 
-- **`internal/mcp/`**: MCP adapter for exposing the CLI as a Model Context Protocol server.
-  - `MCPCommand()` returns a `*cli.Command` that serves the command tree over stdio
-  - `adapter.go` - in-process command execution and MCP command registration
-  - `catalog.go` - `ToolCatalog` with progressive disclosure
-  - `schema.go` - CLI flag to JSON Schema conversion
-  - `sdk_official.go` - official MCP SDK server, transport, and descriptor registration
-  - `session.go` - FSM-based wizard sessions with TTL (`DefaultSessionTTL = 30m`, `DefaultMaxSessions = 100`)
-  - `wizard.go` - website and setup wizard MCP tools (`websites_wizard_start`, `websites_wizard_step`, `setup_wizard_start`, `setup_wizard_step`)
-  - `resources.go` - `pinner://` resource handlers (`account/status`, `websites/{domain}/dns-requirements`, `websites/{id}/validation-status`, `wizard/{session_id}/state`)
-  - `prompts.go` - MCP prompt templates (`website-onboarding`, `setup`)
-  - `interfaces.go` - breaks import cycles between `internal/cli` and `internal/mcp`
+- **`internal/cli/`** — urfave CLI commands and orchestration.
+  - Root command and registration in `root.go`; global flags in `flags.go`.
+  - Domain service interfaces (`PinningService`, `StatusService`,
+    `UploadService`, `AuthService`, `DownloadService`, `BenchService`,
+    `OperationsService`, `DNSService`, `IPNSService`, `WebsitesService`,
+    `QuotaAdminService`, `BillingAdminService`, `WebsiteAdminService`,
+    `AdminTokenProvider`) with concrete implementations.
+  - Catalog wiring (`catalog_wiring.go`, `dns_wiring.go`, ...) adapts catalog
+    operations to the urfave tree (positional args, `--file`/stdin, `--force`
+    gate, rendering).
+  - `internal/cli/internal/` — `PinningClient` wraps boxo's remote pinning
+    client; `BoxoPinningClient` is the concrete implementation with an HTTP
+    client supporting retry.
 
-- **`internal/`**: Internal shared utilities.
-  - `car.go` - CAR file root reading (`GetCarRoots`)
-  - `io/stdinfs.go` - Implements `fs.FS` for stdin (pipe) input
+- **`internal/mcp/`** — MCP adapter exposing the CLI tree as an MCP server
+  over stdio.
+  - `sdk_official.go` — official MCP SDK server, transport, capability/tool
+    registration.
+  - `catalog.go` — `ToolCatalog`: a two-tier tool surface. Curated, most-used
+    tools are listed directly in `tools/list`; the rest of the catalog is
+    served through progressive disclosure (`search_tools` → `describe_tool` →
+    `invoke_tool`).
+  - `hostenv/` + `toolforge/` — the MCP surface is host-aware: tool
+    descriptions, schemas, and variants are resolved against the connected host
+    profile (platform/transport/auth) via feature gating (`hostenv.Feature`
+    sets); the agent guide is built from a platform DSL.
+  - `catalogassembly.go` / `catalogdeps.go` — `AssembleCatalogOps(deps
+    *CatalogDepsBundle)` builds one catalog covering every domain;
+    per-domain deps live in `CatalogDepsBundle`.
+  - `catalogdispatch.go` — `DispatchCatalogOp` routes typed tool requests
+    through the catalog and maps gated outcomes into MCP result envelopes.
+  - `resources.go` / `prompts.go` — `pinner://` resources and prompt
+    templates.
+  - `internal/mcp/wizard/` — FSM wizard flows, session-based with TTL
+    (`DefaultSessionTTL = 30m`, `DefaultMaxSessions = 100`).
+  - `internal/mcpapp/` — embedded JS/CSS app bundles (server fails at startup
+    if missing; build with `pnpm` first).
 
-- **`pkg/config/`**: Configuration management.
-  - Extends `go.lumeweb.com/configmanager` for CLI-specific config
-  - Default config location: `~/.config/pinner/config.yaml`
-  - Config keys: `auth_token`, `base_endpoint`, `max_retries`, `memory_limit`, `secure`, `gateway_endpoint`
-  - Methods for managing auth tokens, endpoints, retries, and secure flags
+## Key Interfaces and Patterns
 
-- **`build/`**: Build-time information.
-  - `build.go` - Variables populated at build time via ldflags
-  - `build_info.go` - BuildInfo interface and Info struct for version tracking
+### Service Layer Pattern
 
-### Key Interfaces and Patterns
+Each major feature has a service interface with a default implementation
+(`PinningService`, `UploadService`, ...). Rules:
 
-**Service Layer Pattern**: Each major feature has a service interface with default implementation:
-- `PinningService` - Pin/unpin/list/status/batch/update operations on existing CIDs
-- `StatusService` - Extended status checking with operation tracking
-- `UploadService` - Upload files/directories to IPFS
-- `AuthService` - Authentication, registration, OTP, token management
-- `DownloadService` - Download, cat, and directory listing from IPFS
-- `BenchService` - Benchmark upload and pinning performance
-- `OperationsService` - List and inspect account operations
-- `DNSService` - DNS zone and record CRUD operations
-- `IPNSService` - IPNS key management, publish, republish, resolve
-- `WebsitesService` - Website CRUD, SSL status, config
-- `QuotaAdminService` - Admin quota plans, allowances, user configs, stats
-- `BillingAdminService` - Admin credits, price lines, pricing plans, subscribers
-- `WebsiteAdminService` - Admin website block/unblock
-- `Manager` - Configuration management
+- CLI service interfaces are **delegation only** — they pass through to the
+  SDK wrapper, not raw SDK methods, and contain no business logic.
+- Service instances come from **factory functions**
+  (`defaultPinningServiceFactory`, `defaultUploadServiceFactory`, ...). Commands
+  accept factories so tests can inject fakes.
 
-These interfaces enable dependency injection for testing. Factory functions create service instances (`defaultPinningServiceFactory`, `defaultUploadServiceFactory`, etc.).
+### Output Formatting
 
-**Output Formatting**: The `Output` interface provides methods for formatted output:
-- `Print`, `Printf`, `Printfln` for text output
-- `PrintJSON` for structured data
-- `PrintTable`, `PrintList` for tabular/list data
-- `MaskSensitive` to hide tokens/passwords
-- `Watch` for monitoring long-running operations
+The `Output` interface separates presentation from logic:
 
-Two implementations: `humanFormatter` and `jsonFormatter`, selected based on global `--json` flag.
+- `Print` / `Printf` / `Printfln` — text; `PrintJSON` — structured output
+- `PrintTable` / `PrintList` — tabular list rendering
+- `MaskSensitive` — token/password masking
+- `Watch` — long-running polling loops
 
-**MCP Adapter Pattern**: The MCP adapter (`internal/mcp/`) exposes the CLI command tree as an MCP server over stdio. Key design decisions:
-- In-process execution: tool invocations run the command tree directly, no subprocess fork
-- Progressive disclosure: only `search_tools`, `describe_tool`, and `invoke_tool` are visible in `tools/list`; the full catalog is internal
-- Automatic `--agent` injection: all tool invocations receive `--agent`, forcing JSON output and disabling interactive prompts
-- Wizard sessions: FSM-based with `SessionStore` enforcing TTL (`30m`) and max capacity (`100`)
-- Resources: live data exposed via `pinner://` URIs (`account/status`, `websites/{domain}/dns-requirements`, etc.)
-- Prompts: deterministic workflow guides (`website-onboarding`, `setup`) with optional pre-filled arguments
-- Import cycle broken via `interfaces.go` — `WizardDepsFactory` and `ResourceProvidersFactory` are defined in `internal/mcp`, concrete implementations live in `internal/cli`
+Two implementations (`humanFormatter`, `jsonFormatter`) are selected by the
+global `--json` flag. Handlers in `catalogops` return typed data; wiring
+layers render it, so one handler serves both human and JSON output.
 
-**CAR Generation Flow**:
-1. Upload uses IPFS boxo libraries for DAG building and CAR format handling
-2. CAR root reading via `GetCarRoots` in `internal/car.go`
-3. Memory usage limited by `--memory-limit` flag (default: 100MB)
+### Operation Catalog Architecture
 
-**CLI Command Pattern**:
-- Each command has a `newXxxCommand()` function returning a `cli.Command`
-- Commands use `commandGetter` interface for flag access (enables testing)
-- Command handlers accept factory functions for dependency injection
-- `cliCommandWrapper` adapts `cli.Command` to `commandGetter`
-- The `pins` command group (`pins add/rm/ls/status/update`) is the canonical interface; `pin`, `unpin`, `list`, `status` are first-class root shortcuts
-- Help categories (Setup, Content, Pinning, Management, System, Admin) are set via urfave/cli `Category` field
-- `mcp` command is registered in `root.go` via `mcpadapter.MCPCommand()` with wizard and resource factories
+- Both frontends (CLI, MCP) compile from the catalog; **no frontend is the
+  source of truth**.
+- `Operation` metadata (Safety/Interaction/Visibility) is declared, never
+  inferred from command names.
+- **Discovery vs dispatch**: `ToolDescriptor` is the discovery-only view and
+  carries no handler. All execution goes through `Catalog.Invoke` — the single
+  enforcement point for interaction, visibility, safety, and required-arg
+  gates.
+- Normalization: operation input is normalized on every frontend path before
+  handler execution, so defaults are applied and types coerced consistently
+  (CLI and MCP).
 
-**Mockery Configuration**:
-- Mocks are generated using mockery
-- Configuration in `.mockery.yaml` defines which interfaces to mock
-- Mocks are placed alongside source files or in `mocks/` subdirectories
+### Command Wiring
 
-**Build Information Injection**:
-- Version, commit, and build time are injected at build time via ldflags
-- `build.Default` provides access to build info throughout the application
-- Used in diagnostics (`pinner doctor`) and version display
+**To add a traditional (service-based) command:**
+1. Add the method to the service interface.
+2. Add a delegating implementation (calls the SDK wrapper).
+3. Create `newXxxCommand()` returning `*cli.Command` (urfave v3 uses
+   `Commands:`, not `Subcommands:`).
+4. Register in `root.go` or the parent command's `Commands` slice.
+5. Extend **all** mock structs implementing the interface (func-type `*Fn`
+   fields); grep every `*_test.go` and `*_handler_test.go`.
+6. Update `expectedRootSubcommands` in `command_registration_test.go`, which
+   asserts `len(root.Commands)`.
 
-**Command Structure**:
-- `pins` is the canonical command group with subcommands: `add`, `rm`, `ls`, `status`, `update`
-- Root shortcuts (`pin`, `unpin`, `list`, `status`) delegate to pins subcommands — first-class, no deprecation
-- `metadata` command removed; `pins update` replaces it (hidden error command with suggestion)
-- Upload and pins add wait by default for pinning to complete; `--no-wait` to detach
-- `--meta key=value` flag on pins add and upload for metadata at pin creation time
-- `--force` consolidates `--confirm`/`--yes` as the primary skip-confirmation flag
+**To add a new domain to both CLI and MCP (catalog path):**
+1. Core service in `internal/core/<domain>/` — pure Go, no urfave/MCP/Output.
+2. Catalog ops in `internal/catalogops/<domain>_ops.go` — `Operation` with args
+   + handler.
+3. CLI wiring in `internal/cli/<domain>_wiring.go` — `CatalogOpsAdapter` impl,
+   `catalogActionAdapter`.
+4. Assembly in `internal/mcp/catalogassembly.go` — call
+   `AssembleCatalogOps(deps *CatalogDepsBundle)`.
+
+The domain must appear in **both** the CLI wiring and `catalogops`; missing
+catalog ops produces a silent half-failure (CLI works, MCP has no tools).
+
+### Import Boundaries
+
+- `internal/core/...` depends on nothing above the domain layer.
+- `internal/cli` imports `internal/mcp` (to register the `mcp` command);
+  therefore `internal/mcp` **must not** import the `internal/cli` package (an
+  import cycle). Leaf subpackages that do not themselves import `internal/cli`
+  (e.g. `internal/cli/wizard`) are fine.
+- Cross-cutting helpers both need live in neutral leaf packages, e.g.
+  `internal/urlopen`.
+- `internal/catalogops` is presentation-free (no `internal/cli`, no `Output`).
+
+### Testing Patterns
+
+- **`*WithService` helpers**: extract command logic into
+  `xxxWithService(ctx, cmd, output, service)` so tests exercise it with mock
+  services and no live urfave context.
+- **Mock fidelity**: when extending an interface, extend **every** mock struct
+  with func-type fields (`*Fn`) that return `nil, nil` when unset.
+- **Integration**: `internal/mcptest` is a Go fake of the upstream API at the
+  HTTP layer; `tests/sunpeak` drives `pinner mcp` as a real stdio server.
+
+### Wizard Framework
+
+Two wizard systems exist:
+
+- **CLI side**: `internal/fieldform/` (declarative `Field[S,T]`,
+  `Gather`/`GatherAny`, `ValueSource` provenance) wired to pterm by
+  `internal/cli/wizard/` (generic `Step[S]`, `Run[S](ctx, ui, steps, state)`).
+  Used for install/setup and service configuration.
+- **MCP side**: `internal/mcp/wizard/` — typed structs with `jsonschema` tags
+  compiled to step definitions, run as stateless FSM transitions with
+  TTL-bounded sessions.
+
+## Content Flows
+
+### CAR Generation Flow
+
+1. Upload builds the DAG + CAR via IPFS boxo libraries.
+2. CAR roots are read via `GetCarRoots` in `internal/car/car.go`.
+3. Memory is capped by the `--memory-limit` flag (default 100 MB).
 
 ### Website Update Flow
 
-When updating an existing website (its domain already exists, so `websites create`
-conflicts), follow this order. `websites_update` / `websites_update` (MCP tool)
-is the correct tool; the MCP `website-update` prompt encodes this same protocol.
+When updating an existing website (its domain already exists, so `websites
+create` conflicts), follow this order. `websites_update` (MCP tool) / `websites
+update` is the correct command; the MCP `website-update` prompt encodes this
+same protocol.
 
 1. **Resolve current state** — call `websites get <domain>` first. Capture the
-   current `target_type` (`ipfs` or `ipns`) and `dns_hosting_enabled`. Never guess
-   these; passing a wrong `target-type` can silently flip IPFS↔IPNS and break DNS.
+   current `target_type` (`ipfs` or `ipns`) and `dns_hosting_enabled`. Never
+   guess these; passing a wrong `target-type` can silently flip IPFS↔IPNS and
+   break DNS.
 2. **Pin the new content** — ensure the new CID is pinned before updating
-   (`pins_add`/`pins add` with `wait`). Updating an unpinned CID returns a 422
+   (`pins add` with wait). Updating an unpinned CID returns a 422
    `CidNotPinned`; pin first, then retry.
-3. **Update** — `websites_update <domain> --cid <new> --target-type <current>`.
+3. **Update** — `websites update <domain> --cid <new> --target-type <current>`.
    If `--target-type` is omitted together with `--cid`, the site's current
-   `target_type` is preserved automatically (it is resolved internally), so a
-   bare `--cid` update is safe. Change `target-type` only when intentionally
-   switching IPFS↔IPNS.
+   `target_type` is preserved automatically, so a bare `--cid` update is safe.
+   Change `target-type` only when intentionally switching IPFS↔IPNS.
 4. **DNS by mode**:
    - **Managed** (`dns_hosting_enabled=true`): do not touch DNS. Pinner
      reconciles the `_dnslink` record asynchronously, so `websites validate` /
@@ -207,30 +286,49 @@ is the correct tool; the MCP `website-update` prompt encodes this same protocol.
    - **Self-managed**: publish the new `_dnslink` TXT before validation will
      pass; read `pinner://websites/<domain>/dns-requirements` for the expected
      value.
-5. **Verify** — re-check `websites get` (confirm `target_hash` updated) and then
-   `websites validate`.
+5. **Verify** — re-check `websites get` (confirm `target_hash` updated) and
+   then `websites validate`.
 
 Common failure modes:
 - `--target-type is required when --cid is provided` → re-run including the
   current `target-type` (or omit it and let it be inherited).
-- `CID_NOT_PINNED` → the CID is not pinned on the gateway; run `pins_add` first.
-- Validation showing a stale `_dnslink` after a managed-DNS update → reconciliation
-  is still running; wait and re-check, do not treat as an update failure.
+- `CID_NOT_PINNED` → the CID is not pinned on the gateway; run `pins add`
+  first.
+- Validation showing a stale `_dnslink` after a managed-DNS update →
+  reconciliation is still running; wait and re-check, do not treat as an
+  update failure.
 
-### Global Flags
+## Command Structure
+
+- `pins` is the canonical command group with subcommands `add`, `rm`, `ls`,
+  `status`, `update`; root shortcuts (`pin`, `unpin`, `list`, `status`)
+  delegate to it — first-class, no deprecation.
+- `metadata` command removed; `pins update` replaces it (a hidden error
+  command suggests this).
+- Upload and `pins add` wait by default for pinning to complete;
+  `--no-wait` to detach.
+- `--meta key=value` on `pins add` and `upload` sets metadata at pin creation.
+- `--force` is the primary skip-confirmation flag (consolidating
+  `--confirm`/`--yes`).
+- Shell completion is enabled for bash/zsh/fish/PowerShell.
+
+## Global Flags
+
 All commands support these global flags:
-- `--json` - Output JSON instead of human-readable text
-- `--verbose, -v` - Show detailed output
-- `--quiet, -q` - Suppress non-error output
-- `--unmask` - Show sensitive data (tokens, passwords) unmasked
-- `--auth-token` - Override auth token (also reads from `PINNER_AUTH_TOKEN` env var)
-- `--secure` - Use HTTPS instead of HTTP for endpoints (default: true, env: `PINNER_SECURE`)
+- `--json` — output JSON instead of human-readable text
+- `--verbose, -v` — detailed output
+- `--quiet, -q` — suppress non-error output
+- `--unmask` — show sensitive data (tokens, passwords) unmasked
+- `--auth-token` — override auth token (also reads `PINNER_AUTH_TOKEN` env
+  var)
+- `--secure` — use HTTPS instead of HTTP (default: true, env: `PINNER_SECURE`)
 
-### Dependencies
-- `github.com/urfave/cli/v3` - CLI framework
-- `github.com/ipfs/boxo` - IPFS libraries (pinning, DAG, blockstore)
-- `go.lumeweb.com/configmanager` - Configuration management
-- `go.lumeweb.com/portal-sdk` - Portal SDK (local replace in go.mod)
-- `github.com/pterm/pterm` - Terminal UI for setup wizard
-- `github.com/stretchr/testify` - Testing framework
-- `github.com/vektra/mockery` - Mock generation
+## Dependencies
+
+- `github.com/urfave/cli/v3` — CLI framework
+- `github.com/ipfs/boxo` — IPFS libraries (pinning, DAG, blockstore)
+- `go.lumeweb.com/configmanager` — configuration management
+- `go.lumeweb.com/portal-sdk` — Portal SDK (local replace in `go.mod`)
+- `github.com/pterm/pterm` — terminal UI for the setup wizard
+- `github.com/stretchr/testify` — testing framework
+- `github.com/vektra/mockery` — mock generation
