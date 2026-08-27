@@ -351,7 +351,17 @@ func UploadSourceSchemaTransform(s *jsonschema.Schema, fs hostenv.FeatureSet) {
 	if fs.Has(hostenv.FeatFileHostInput) {
 		mode.Description = "Fallback transport. Only use when the host does not already hold the file as a host file accepted by the file parameter. The enum advertises which modes are valid on this transport."
 	} else {
-		mode.Description = "Required on this host: the only byte path. The enum advertises which mode is valid on this transport."
+		// The copy is tool-scoped (only what THIS tool's source.mode accepts),
+		// never a claim that the host has no other upload tool: the separate
+		// upload_url / upload_data relay tools may still exist and are named
+		// here only when the profile registers them (FeatSourceURL/FeatSourceData).
+		mode.Description = "Only source.mode this tool accepts on this transport."
+		if fs.Has(hostenv.FeatSourceURL) {
+			mode.Description += " For a public HTTPS URL use the separate upload_url tool."
+		}
+		if fs.Has(hostenv.FeatSourceData) {
+			mode.Description += " For inline data: bytes with no file and no URL use the separate upload_data tool."
+		}
 	}
 	// Drop sibling payload fields whose source mode upload_file's handler cannot
 	// accept on the resolved transport. The reflected UploadSource object

@@ -1,7 +1,9 @@
 package toolforge
 
 import (
+	"strconv"
 	"strings"
+	"text/template"
 
 	"github.com/samber/lo"
 
@@ -12,14 +14,17 @@ import (
 // a feature set (require/any/negate) or by a predicate over the platform
 // profile (pred); pred takes precedence when set. When require is empty the
 // segment is always included; otherwise all listed features must be present.
-// sep is prepended when the output buffer is already non-empty.
+// sep is prepended when the output buffer is already non-empty. A segment
+// carries either text or a list (a structured ordered/bulleted block) — never
+// both.
 type segment struct {
 	require []hostenv.Feature
 	pred    hostenv.Predicate // platform predicate gate (host/transport/auth)
 	text    string
-	any     bool   // when true, match if ANY required feature is present
-	negate  bool   // when true, match if NONE of the required features are present
-	sep     string // separator prepended when buffer is non-empty
+	list    *ListBuilder // structured list block when set (overrides text)
+	any     bool         // when true, match if ANY required feature is present
+	negate  bool         // when true, match if NONE of the required features are present
+	sep     string       // separator prepended when buffer is non-empty
 }
 
 // DescBuilder composes a description from a static prefix plus feature-gated
@@ -54,6 +59,9 @@ const (
 	SepList = ", "
 	// SepDash joins an em-dash aside.
 	SepDash = " — "
+	// SepListBlock starts a structured list block on its own line after
+	// preceding prose.
+	SepListBlock = "\n"
 )
 
 // defaultSep is the standard separator between segments.
@@ -253,6 +261,190 @@ func (d DescBuilder) predSep(sep string, pred hostenv.Predicate, text string, ne
 	return DescBuilder{segments: append(d.segments, segment{pred: pred, text: text, negate: len(negate) > 0 && negate[0], sep: sep})}
 }
 
+// List appends an ordered/bulleted list block. The list's items are rendered
+// (and renumbered) at resolve time against the profile, so a step a host does
+// not support is dropped without leaving a gap. The list block starts on its
+// own line (SepListBlock) after any preceding prose.
+func (d DescBuilder) List(lb ListBuilder) DescBuilder {
+	return DescBuilder{segments: append(d.segments, segment{list: &lb, sep: SepListBlock})}
+}
+
+// ListWhen appends a list block included only when the profile has feat.
+func (d DescBuilder) ListWhen(feat hostenv.Feature, lb ListBuilder) DescBuilder {
+	return DescBuilder{segments: append(d.segments, segment{require: []hostenv.Feature{feat}, list: &lb, sep: SepListBlock})}
+}
+
+// ListWhenAll appends a list block included only when the profile has every feat.
+func (d DescBuilder) ListWhenAll(feats []hostenv.Feature, lb ListBuilder) DescBuilder {
+	return DescBuilder{segments: append(d.segments, segment{require: feats, list: &lb, sep: SepListBlock})}
+}
+
+// ListWhenAny appends a list block included only when the profile has any feat.
+// Use it to surface a chooser only when the profile has more than one route to
+// choose among (e.g. a relay tool alongside mint).
+func (d DescBuilder) ListWhenAny(feats []hostenv.Feature, lb ListBuilder) DescBuilder {
+	return DescBuilder{segments: append(d.segments, segment{require: feats, any: true, list: &lb, sep: SepListBlock})}
+}
+
+// ListUnless appends a list block included only when the profile lacks feat.
+func (d DescBuilder) ListUnless(feat hostenv.Feature, lb ListBuilder) DescBuilder {
+	return DescBuilder{segments: append(d.segments, segment{require: []hostenv.Feature{feat}, negate: true, list: &lb, sep: SepListBlock})}
+}
+
+// ---------------------------------------------------------------------------
+// List block composition
+//
+// Ordered/bulleted guidance is a structured block, not prose. Inline
+// "(1) ... (2) ..." shoehorns a decision sequence into a single string and
+// cannot drop a step a host does not support without leaving a numbered gap.
+// ListBuilder fixes that: each item is independently gated on the resolved
+// profile, items that do not apply are dropped, and the survivors are
+// renumbered so the block always reads as a contiguous decision order. It is
+// the same gate model the rest of the DSL uses, so a list item is the natural
+// unit a future decision/logic tree builds on (mirroring GuideDecision).
+// ---------------------------------------------------------------------------
+
+// ListMarker is the bullet style a ListBuilder renders.
+type ListMarker int
+
+const (
+	// ListNumbered renders items as "1. ", "2. ", ... (renumbered after
+	// gated-off items are dropped).
+	ListNumbered ListMarker = iota
+	// ListBulleted renders items as "- " (order matters but position doesn't).
+	ListBulleted
+)
+
+// listItem is one entry in a ListBuilder. It carries the same gate model as a
+// segment (feature set and/or platform predicate), so individual steps can be
+// included or excluded per profile.
+type listItem struct {
+	text    string
+	require []hostenv.Feature
+	pred    hostenv.Predicate
+	any     bool
+	negate  bool
+}
+
+// ListBuilder composes a list whose items are independently profile-gated.
+// It is constructed with toolforge.List(marker) then chained with Item* calls
+// and embedded into a description via DescBuilder.List/ListWhen (or resolved
+// directly with Build against a profile).
+type ListBuilder struct {
+	items  []listItem
+	marker ListMarker
+	intro  string // optional lead-in line rendered above the items
+}
+
+// List starts a ListBuilder with the given marker style.
+func List(marker ListMarker) ListBuilder { return ListBuilder{marker: marker} }
+
+// Intro sets an optional lead-in line rendered above the first item (e.g.
+// "Pick the byte route in this order:").
+func (l ListBuilder) Intro(text string) ListBuilder { l.intro = text; return l }
+
+// Item appends an always-included item.
+func (l ListBuilder) Item(text string) ListBuilder {
+	return l.append(listItem{text: text})
+}
+
+// ItemWhen appends an item included only when the profile has feat.
+func (l ListBuilder) ItemWhen(feat hostenv.Feature, text string) ListBuilder {
+	return l.append(listItem{text: text, require: []hostenv.Feature{feat}})
+}
+
+// ItemUnless appends an item included only when the profile lacks feat.
+func (l ListBuilder) ItemUnless(feat hostenv.Feature, text string) ListBuilder {
+	return l.append(listItem{text: text, require: []hostenv.Feature{feat}, negate: true})
+}
+
+// ItemWhenAll appends an item included only when the profile has every feat.
+func (l ListBuilder) ItemWhenAll(feats []hostenv.Feature, text string) ListBuilder {
+	return l.append(listItem{text: text, require: feats})
+}
+
+// ItemWhenAny appends an item included only when the profile has any feat.
+func (l ListBuilder) ItemWhenAny(feats []hostenv.Feature, text string) ListBuilder {
+	return l.append(listItem{text: text, require: feats, any: true})
+}
+
+// ItemWhenHost appends an item included only when the profile's host matches h.
+func (l ListBuilder) ItemWhenHost(h hostenv.HostType, text string) ListBuilder {
+	return l.append(listItem{text: text, pred: hostenv.HostIs(h)})
+}
+
+// ItemUnlessHost appends an item included only when the profile's host does NOT
+// match h.
+func (l ListBuilder) ItemUnlessHost(h hostenv.HostType, text string) ListBuilder {
+	return l.append(listItem{text: text, pred: hostenv.HostIs(h), negate: true})
+}
+
+func (l ListBuilder) append(it listItem) ListBuilder {
+	l.items = append(l.items, it)
+	return l
+}
+
+// Build renders the list against a profile. Items whose gate does not match the
+// profile are dropped and the survivors are renumbered/bulleted. Returns an
+// empty string when no items survive. Selection (which items, what number) is
+// computed in Go; the line layout (marker + text join) is a static text/template
+// so presentation stays declarative.
+func (l ListBuilder) Build(profile hostenv.PlatformProfile) string {
+	view := listRenderView{Intro: l.intro}
+	n := 0
+	for _, it := range l.items {
+		if !matchesList(profile, it) {
+			continue
+		}
+		n++
+		view.Items = append(view.Items, listRenderItem{
+			Marker: listMarkerFor(l.marker, n),
+			Text:   it.text,
+		})
+	}
+	if len(view.Items) == 0 {
+		// Nothing survived gating; a lone intro line over an empty list is
+		// noise, so drop the whole block.
+		return ""
+	}
+	var b strings.Builder
+	if err := listBlockTemplate.Execute(&b, view); err != nil {
+		// The template is static and cannot fail at runtime; the only
+		// possible error would be a broken render, which is a programmer
+		// error we surface rather than swallow.
+		panic(err)
+	}
+	return b.String()
+}
+
+// listMarkerFor formats the per-item marker for the given style and position.
+func listMarkerFor(m ListMarker, n int) string {
+	if m == ListNumbered {
+		return strconv.Itoa(n) + ". "
+	}
+	return "- "
+}
+
+// listRenderView is the data passed to listBlockTemplate: a lead-in line and
+// the already-filtered, already-numbered items.
+type listRenderView struct {
+	Intro string
+	Items []listRenderItem
+}
+
+// listRenderItem is one rendered line of a list.
+type listRenderItem struct {
+	Marker string // e.g. "1. " or "- "
+	Text   string
+}
+
+// listBlockTemplate lays out a list block: an optional intro line, then each
+// item as "<marker><text>" on its own line. It owns presentation only; item
+// selection and numbering happen before execution.
+var listBlockTemplate = template.Must(template.New("listBlock").Parse(
+	`{{ if .Intro }}{{ .Intro }}{{ "\n" }}{{ end }}{{ range .Items }}{{ .Marker }}{{ .Text }}{{ "\n" }}{{ end }}`,
+))
+
 // ---------------------------------------------------------------------------
 // Sentence-block composition
 //
@@ -336,16 +528,24 @@ func (d DescBuilder) splice(f DescBuilder, sep string) DescBuilder {
 func (d DescBuilder) ResolveSegments(profile hostenv.PlatformProfile) []string {
 	var out []string
 	for _, s := range d.segments {
-		if matches(profile, s) {
-			out = append(out, s.text)
+		if !matches(profile, s) {
+			continue
 		}
+		if s.list != nil {
+			if rendered := s.list.Build(profile); rendered != "" {
+				out = append(out, rendered)
+			}
+			continue
+		}
+		out = append(out, s.text)
 	}
 	return out
 }
 
 // Resolve concatenates all matching segments in declaration order against the
 // given profile, inserting each segment's separator when the buffer is
-// already non-empty.
+// already non-empty. A list segment renders its block (dropping and
+// renumbering gated-off items) against the same profile.
 func (d DescBuilder) Resolve(profile hostenv.PlatformProfile) string {
 	var b strings.Builder
 	for _, s := range d.segments {
@@ -354,6 +554,10 @@ func (d DescBuilder) Resolve(profile hostenv.PlatformProfile) string {
 		}
 		if b.Len() > 0 && s.sep != "" {
 			b.WriteString(s.sep)
+		}
+		if s.list != nil {
+			b.WriteString(s.list.Build(profile))
+			continue
 		}
 		b.WriteString(s.text)
 	}
@@ -386,6 +590,39 @@ func matches(profile hostenv.PlatformProfile, s segment) bool {
 		return false
 	}
 	for _, f := range s.require {
+		if !profile.Has(f) {
+			return false
+		}
+	}
+	return true
+}
+
+// matchesList reports whether a list item should be included for a profile,
+// using the same gate model as segment.matches (feature set and/or predicate).
+func matchesList(profile hostenv.PlatformProfile, it listItem) bool {
+	if it.pred != nil {
+		return it.negate != it.pred(profile)
+	}
+	if len(it.require) == 0 {
+		return true
+	}
+	if it.negate {
+		for _, f := range it.require {
+			if profile.Has(f) {
+				return false
+			}
+		}
+		return true
+	}
+	if it.any {
+		for _, f := range it.require {
+			if profile.Has(f) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, f := range it.require {
 		if !profile.Has(f) {
 			return false
 		}

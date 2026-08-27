@@ -37,6 +37,9 @@ var dataURIUploadDesc = toolforge.Static(
 	When(hostenv.FeatSourceData,
 		"Last resort only — never use for a host-provided or assistant-generated file.",
 	).
+	WhenAll([]hostenv.Feature{hostenv.FeatSourceMint, hostenv.FeatSourceURL, hostenv.FeatSourceData},
+		"On this host prefer upload_file (mint + PUT) for an agent-local file and upload_url for a public HTTPS URL.",
+	).
 	Unless(hostenv.FeatSourceData,
 		"Do NOT call this tool on this host: this transport has no data: URI relay. Upload bytes with upload_file(source.mode=mint) by PUTting the agent-local file to the returned url, then poll upload_status. Never base64-encode a file as a data URI.",
 	)

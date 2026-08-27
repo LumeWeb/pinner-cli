@@ -11,8 +11,14 @@ package hostenv
 // Mechanism features are transport-derived by construction (see
 // transportMechanismFeatures), so they can never drift from the transport — an
 // HTTP host always presents mint, never url/data, regardless of what is put in
-// caps. Only genuine per-host capability features (FeatFileHostInput,
-// FeatXMcpFile, FeatMCPApps, FeatElicitation) should be declared in caps.
+// caps. Genuine per-host capability features (FeatFileHostInput, FeatXMcpFile,
+// FeatMCPApps, FeatElicitation) belong in caps. FeatSourceData/FeatSourceURL
+// may also be declared (e.g. ProfileGrokHTTP) but there they gate the SEPARATE
+// relay tools (upload_data / upload_url) for registration and positive copy —
+// they do NOT widen upload_file/vault_put_file's source.mode enum, which
+// travels only with the transport (via TransportKindFromFeatures). Declaring a
+// source mechanism feature never implies the corresponding upload_file source
+// mode.
 func newProfile(caps FeatureSet, host HostType, t TransportKind, auth AuthMethod, remote bool) PlatformProfile {
 	features := caps.Clone()
 	mechanism := transportMechanismFeatures(t)
