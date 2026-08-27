@@ -31,15 +31,14 @@ OUT_FILE="$REPO_ROOT/dist/mcpb/pinner-${OS}-${ARCH}.mcpb"
 # Windows output binary name: on disk the file carries a .exe extension (the
 # toolchain requires it to be treated as an executable).
 #
-# Manifest naming (verified against the MCPB SDK source, src/shared/config.ts):
-# the SDK does NOT auto-append .exe on Windows — the mcp_config command is
+# Manifest naming: the manifest command uses ${__dirname}/server/pinner so the
+# host app resolves the absolute path to the unpacked bundle directory. The
+# SDK does NOT auto-append .exe on Windows — the mcp_config command is
 # executed exactly as resolved (platform_overrides applied, variables
-# substituted). So the base command/entry_point stay "server/pinner", and the
-# Windows bundle's .mcpb manifest declares the real file via
-# platform_overrides.win32.command = "server/pinner.exe". This matches the
-# spec's documented cross-platform binary example. `EXE` below is used only to
-# name the on-disk file (server/pinner.exe); the manifest carries the win32
-# override statically, so no extension marker is rendered into the manifest.
+# substituted). So the win32 override uses ${__dirname}/server/pinner.exe.
+# `EXE` below is used only to name the on-disk file (server/pinner.exe); the
+# manifest carries the win32 override statically, so no extension marker is
+# rendered into the manifest.
 EXE=""
 if [ "$OS" = "windows" ]; then
     EXE=".exe"
@@ -60,8 +59,8 @@ rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR/server"
 
 # Render the manifest. The template uses {{VERSION}} and {{OS}} markers; the
-# entry point/command are always "server/pinner" (apps auto-append .exe on
-# Windows), so no extension marker is rendered into the manifest.
+# command uses ${__dirname}/server/pinner (win32 override adds .exe), so no
+# extension marker is rendered into the manifest.
 sed -e "s/{{VERSION}}/${VERSION}/g" \
     -e "s/{{OS}}/${PLATFORM_OS}/g" \
     "$TEMPLATE" > "$STAGE_DIR/manifest.json"
