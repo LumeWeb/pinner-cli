@@ -219,7 +219,9 @@ describe("flow machine", () => {
     gate.find((g) => g.op === "start_t")!.resolve(needsHuman("h-inuse", "https://x.test/approve", undefined, true));
     await untilState(service, FlowState.Polling);
 
-    service.send("revoke");
+    // robot3 only infers events declared on state() nodes; "revoke" lives on the
+    // polling invoke node so it isn't in the static send union — cast it.
+    service.send("revoke" as never);
     await untilState(service, FlowState.Revoking);
     // The revoke call carries the in-use handle.
     const revokeCall = calls.find((c) => c.name === "revoke_t");

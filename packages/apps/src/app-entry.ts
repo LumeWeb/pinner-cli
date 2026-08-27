@@ -174,7 +174,10 @@ export function runAppEntry(opts: AppEntryOptions) {
   if (opts.elements.revokeBtn) {
     opts.elements.revokeBtn.addEventListener("click", () => {
       if (currentFlowState(service) === FlowState.Polling) {
-        service.send("revoke");
+        // robot3's event union only infers events declared on `state()` nodes
+        // ("start"/"retry"); the revoke transition lives on the polling
+        // `invoke` node, so its name isn't part of the static union — cast it.
+        service.send("revoke" as never);
       }
     });
   }
