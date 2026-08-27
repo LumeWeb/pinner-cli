@@ -98,6 +98,18 @@ func Not(p Predicate) Predicate {
 	return func(prof PlatformProfile) bool { return !p(prof) }
 }
 
+// TransportIs matches profiles running on the given transport. It is a
+// convenience constructor so description DSL call sites read as prose
+// (WhenTransport(hostenv.TransportOpenAI, ...)) rather than spelling out a
+// closure. It lets a segment gate on the transport alone — e.g. url/data
+// source-mode copy for upload_file, which only actually accept those modes on
+// the OpenAI tunnel transport even when a host profile also declares
+// FeatSourceData/FeatSourceURL to register the separate upload_data/upload_url
+// tools.
+func TransportIs(t TransportKind) Predicate {
+	return func(p PlatformProfile) bool { return p.Transport == t }
+}
+
 // Has reports whether the profile supports the given feature.
 func (p PlatformProfile) Has(f Feature) bool {
 	return p.Features.Has(f)

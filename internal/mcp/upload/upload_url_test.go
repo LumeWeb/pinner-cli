@@ -20,19 +20,24 @@ func TestRelayURLUploadDescriptorRequiresURL(t *testing.T) {
 	require.ErrorContains(t, err, "url is required")
 }
 
-// TestRelayURLUploadDescriptionProfileForbid regresses the cross-host leak:
-// upload_url must be unconditionally forbidden on a host without a URL-fetch
-// relay (Grok), not silently usable — a Grok model should mint+PUT, not invent
-// a URL it cannot have the server fetch on its behalf.
-func TestRelayURLUploadDescriptionProfileForbid(t *testing.T) {
+// TestRelayURLUploadDescriptionProfileRegisters pins the cross-host gating
+// design: upload_url is registered (and advertised with its usable copy) for
+// any host whose feature set declares FeatSourceURL — including Grok, which
+// supports the server-fetch URL relay. It must NOT be forbidden for Grok in
+// prose. A host WITHOUT FeatSourceURL (generic HTTP) omits the tool entirely
+// at registration rather than advertising a forbidden tool.
+func TestRelayURLUploadDescriptionProfileRegisters(t *testing.T) {
 	desc := RelayURLUploadDescriptor(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		return nil, nil
 	}, nil, 0)
 
 	grok, ok := toolforge.ResolveDescription(desc.MCPTargets, hostenv.ProfileGrokHTTP)
 	require.True(t, ok)
-	require.Contains(t, grok, "Do NOT call this tool on this host")
-	require.Contains(t, grok, "upload_file(source.mode=mint)")
+	require.NotContains(t, grok, "Do NOT call this tool on this host", "Grok declares FeatSourceURL so upload_url is usable for it")
+
+	genericHTTP, ok := toolforge.ResolveDescription(desc.MCPTargets, hostenv.ProfileHTTPGeneric)
+	require.True(t, ok)
+	require.Contains(t, genericHTTP, "Do NOT call this tool on this host")
 
 	openai, ok := toolforge.ResolveDescription(desc.MCPTargets, hostenv.ProfileOpenAITunnel)
 	require.True(t, ok)

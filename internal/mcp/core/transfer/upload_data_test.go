@@ -17,21 +17,29 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 
-// TestDataURIUploadDescriptionProfileForbid regresses the cross-host gating
-// bug: upload_data must be unconditionally forbidden on a host without the
-// data: URI relay (e.g. Grok), and must NOT lean on the (now honest, false)
-// host_file_input negation. A Grok cold-start that reads the tool description
-// must be told mint+PUT, never to base64-encode.
-func TestDataURIUploadDescriptionProfileForbid(t *testing.T) {
+// TestDataURIUploadDescriptionProfileRegisters regresses the cross-host gating
+// design: upload_data is registered (and advertised with its positive copy)
+// for any host whose feature set declares FeatSourceData — including Grok,
+// which supports the data: URI relay. It must NOT be forbidden for Grok in
+// prose (a registered tool Grok can call carries the usable copy), and it must
+// NOT lean on a ChatGPT-oriented host_file_input negation. A host WITHOUT
+// FeatSourceData (generic HTTP) omits the tool entirely at registration.
+func TestDataURIUploadDescriptionProfileRegisters(t *testing.T) {
 	desc := transfer.DataURIUploadDescriptor(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		return nil, nil
 	}, 0)
 
 	grok, ok := toolforge.ResolveDescription(desc.MCPTargets, hostenv.ProfileGrokHTTP)
 	require.True(t, ok)
-	require.Contains(t, grok, "Do NOT call this tool on this host")
-	require.Contains(t, grok, "upload_file(source.mode=mint)")
+	require.NotContains(t, grok, "Do NOT call this tool on this host", "Grok declares FeatSourceData so upload_data is usable for it")
 	require.NotContains(t, grok, "host_file_input == true", "no ChatGPT-oriented negation may survive")
+
+	// Generic HTTP declares no FeatSourceData: the tool must be omitted at
+	// registration (the tool does not appear in the toolbox), so its baked
+	// description for that profile never surfaces a usable copy.
+	genericHTTP, ok := toolforge.ResolveDescription(desc.MCPTargets, hostenv.ProfileHTTPGeneric)
+	require.True(t, ok)
+	require.Contains(t, genericHTTP, "Do NOT call this tool on this host")
 
 	openai, ok := toolforge.ResolveDescription(desc.MCPTargets, hostenv.ProfileOpenAITunnel)
 	require.True(t, ok)

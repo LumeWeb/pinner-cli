@@ -211,10 +211,18 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 			Detail(toolforge.Static("Call vault_restore; poll vault_restore_resume with the returned handle; confirm with vault_status until unlocked."))).
 		Flow(toolforge.Flow("upload", "Upload new content (creates + pins)").
 			Steps("capabilities", "upload_file").
-			StepWhen(hostenv.FeatSourceMint, "upload_status").
+			// The mint flow must name the host PUT between mint and the poll:
+			// mint mints a url + handle but stores no bytes, and a step chain
+			// that ends at upload_file looks complete when it is not. <host PUT>
+			// is an out-of-band action, not an MCP tool, but it belongs in the
+			// ordered step list so mint return is not mistaken for success.
+			StepWhen(hostenv.FeatSourceMint, "<host PUT>", "upload_status").
 			Detail(uploadDetailDesc)).
 		Flow(toolforge.Flow("vault_upload", "Store a file in a vault").
 			Steps("capabilities", "vault_put_file").
+			// Same as upload: on mint transports name the host PUT and the
+			// upload_status poll so the chain is not read as done after mint.
+			StepWhen(hostenv.FeatSourceMint, "<host PUT>", "upload_status").
 			Detail(vaultUploadDetailDesc)).
 		Flow(toolforge.Flow("download", "Download IPFS content to a file").
 			Steps("capabilities", "download_file").

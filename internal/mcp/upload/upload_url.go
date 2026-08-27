@@ -38,8 +38,9 @@ var relayURLUploadDesc = toolforge.Static(
 		"Do NOT call this tool on this host: it has no URL-fetch relay. Upload bytes with upload_file(source.mode=mint) by PUTting the agent-local file to the returned url, then poll upload_status.",
 	)
 
-// relayURLUploadTargets is the per-profile description target for upload_url.
-var relayURLUploadTargets = toolforge.MCPTargets(model.ToolTarget{
+// RelayURLUploadTargets is the per-profile description target for upload_url,
+// exported so the server can re-resolve a dedicated per-host description.
+var RelayURLUploadTargets = toolforge.MCPTargets(model.ToolTarget{
 	Visible:  true,
 	DescFunc: relayURLUploadDesc.Resolve,
 })
@@ -58,7 +59,7 @@ func RelayURLUploadDescriptor(handler transfer.RelayURLUploadHandler, allowedHos
 		// Profile-aware target so the description resolves through the catalog
 		// seam (describe_tool/search_tools) per calling host like every other
 		// custom tool.
-		MCPTargets:  relayURLUploadTargets,
+		MCPTargets:  RelayURLUploadTargets,
 		InputSchema: toolargs.ToolSchemaFor[RelayURLUploadInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeArgsFor[RelayURLUploadInput]("relay URL upload", handler != nil, request)
