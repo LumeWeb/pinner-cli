@@ -18,6 +18,17 @@ func NewMCPCompiler() Compiler[ToolDescriptor] { return newMCPCompiler(Visibilit
 // hosting application, not to the model.
 func NewMCPAppCompiler() Compiler[ToolDescriptor] { return newMCPCompiler(VisibilityAppOnly) }
 
+// NewMCPCompilerForProfile returns a model-surface Compiler that resolves
+// DescFunc-only fallback targets (FallbackFunc) against profile when building
+// the static descriptor. profile is opaque (the mcp layer passes its
+// startup/transport hostenv.PlatformProfile); catalog itself never touches it
+// beyond handing it to a DescFunc, so no hostenv import is needed. Use it to
+// keep the static/non-profile tool surface carrying agent-critical
+// DSL-composed description instead of falling back to the short CLI text.
+func NewMCPCompilerForProfile(profile any) Compiler[ToolDescriptor] {
+	return &mcpCompiler{target: VisibilityModel, profile: profile}
+}
+
 // newMCPCompiler builds an MCP compiler targeting the given visibility surface.
 //
 // The target selects which Search visibility the descriptor set is drawn from,
@@ -32,9 +43,11 @@ func newMCPCompiler(target Visibility) Compiler[ToolDescriptor] {
 // into []ToolDescriptor. Target records which surface it produces:
 // VisibilityModel for the agent-facing tool set, VisibilityAppOnly for the
 // app-facing set. Its zero value is VisibilityModel, matching the default.
-// It satisfies Compiler[ToolDescriptor].
+// It satisfies Compiler[ToolDescriptor]. profile is the opaque
+// startup/transport profile used to resolve DescFunc-only fallback targets.
 type mcpCompiler struct {
-	target Visibility
+	target  Visibility
+	profile any
 }
 
 // Compile converts the catalog's operations visible to the target surface into
@@ -60,5 +73,5 @@ func (m *mcpCompiler) toolFor(op Operation) ToolDescriptor {
 	if m.target == VisibilityModel {
 		actor = ActorModel
 	}
-	return descriptorFor(op, actor)
+	return descriptorFor(op, actor, m.profile)
 }

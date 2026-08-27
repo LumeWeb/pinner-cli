@@ -9,6 +9,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 
@@ -22,6 +23,31 @@ type DataURIUploadInput struct {
 	Wrap bool   `json:"wrap,omitempty" jsonschema:"description=Wrap the single file in a directory root so the resulting CID is a directory. Required when the upload is a website (a website must be a directory, not a bare file). When wrap=true and no name is given, HTML content is auto-named index.html so the site resolves at its root. Do NOT set an explicit name like 'starter-site' — it is honored as-is and the page will only be reachable at /starter-site, not /. True only affects single-file uploads; directory uploads are already a directory root."`
 }
 
+// dataURIUploadDesc composes the upload_data tool description per profile.
+// upload_data is only usable on a host that exposes the data: URI relay
+// (FeatSourceData — the OpenAI tunnel). On a host without it (Grok, generic
+// HTTP) the copy unconditionally forbids the tool so a model never
+// base64-encodes a sandbox file when mint + PUT is the byte path. The old
+// ChatGPT-oriented stop-rule ("do not call when host_file_input == true") is
+// gone: it was a negation that flipped meaning after the honest host_file_input
+// report, so the gate is now the presence of the data relay itself.
+var dataURIUploadDesc = toolforge.Static(
+	"Upload bytes from an RFC 2397 data: URI and pin the resulting CID. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation.",
+).
+	When(hostenv.FeatSourceData,
+		"Last resort only — never use for a host-provided or assistant-generated file.",
+	).
+	Unless(hostenv.FeatSourceData,
+		"Do NOT call this tool on this host: this transport has no data: URI relay. Upload bytes with upload_file(source.mode=mint) by PUTting the agent-local file to the returned url, then poll upload_status. Never base64-encode a file as a data URI.",
+	)
+
+// dataURIUploadTargets is the per-profile description target for upload_data,
+// resolved against the calling host profile (via describe_tool/search_tools).
+var dataURIUploadTargets = toolforge.MCPTargets(model.ToolTarget{
+	Visible:  true,
+	DescFunc: dataURIUploadDesc.Resolve,
+})
+
 // DataURIUploadDescriptor uploads a file passed as a SEP-2356 data: URI. This
 // is the additive, optional draft-MCP file-input mode declared via the
 // x-mcp-file schema annotation; hosts that don't speak the draft simply omit
@@ -30,16 +56,18 @@ type DataURIUploadInput struct {
 // materialized in memory.
 func DataURIUploadDescriptor(handler DataURIUploadHandler, maxBytes int64) model.ToolDescriptor {
 	maxBytes = ieo.EffectiveRelayMaxBytes(maxBytes)
-	// dataURIUploadDescription is shared between the static Description
-	// (tools/list) and the Fallback MCPTarget so the profile-aware catalog seam
-	// (describe_tool/search_tools) reports the same last-resort guidance.
-	dataURIUploadDescription := "Upload bytes from an RFC 2397 data: URI and pin the resulting CID. The returned CID is already pinned: do NOT call pins_add afterward. The wait flag waits for this upload's own pin operation. Do not call this tool when capabilities.host_file_input == true and the requested content exists as a host file (user-uploaded or assistant-generated files in the assistant's sandbox); use upload_file(file=...) instead. Last resort only — never use for a host-provided or assistant-generated file that can be passed to upload_file."
+	// dataURIUploadDescription is the startup/tools-list bake. upload_data only
+	// works on a host that exposes the data: URI relay (FeatSourceData, the
+	// OpenAI tunnel). The per-request surface resolves the same builder against
+	// the calling profile (see dataURIUploadTargets) so a host without the
+	// relay sees an unconditional forbid instead of this neutral copy.
+	dataURIUploadDescription := dataURIUploadDesc.Resolve(hostenv.ProfileForTransport(TransportOpenAI))
 	return model.ToolDescriptor{
 		Name:        "upload_data",
 		Title:       "Upload a file from a data URI",
 		Description: dataURIUploadDescription,
 		Category:    model.CategoryCore,
-		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback(dataURIUploadDescription)),
+		MCPTargets:  dataURIUploadTargets,
 		InputSchema: toolargs.ToolSchemaFor[DataURIUploadInput](),
 		// x-mcp-file marks the "file" property as a file-valued input per the
 		// draft spec; the SDK's Meta map carries it without a typed field.

@@ -19,14 +19,18 @@ type uploadFileSchemaShape struct {
 			Enum []string `json:"enum"`
 		} `json:"sink"`
 		ArchiveMode struct {
-			Enum []string `json:"enum"`
+			Enum        []string `json:"enum"`
+			Description string   `json:"description"`
 		} `json:"archive_mode"`
-		File any `json:"file"`
+		File   any `json:"file"`
 		Source struct {
 			Properties struct {
 				Mode struct {
 					Enum []string `json:"enum"`
 				} `json:"mode"`
+				Path any `json:"path"`
+				URL  any `json:"url"`
+				Data any `json:"data"`
 			} `json:"properties"`
 		} `json:"source"`
 	} `json:"properties"`
@@ -109,6 +113,31 @@ func TestUploadFileSchemaHostFileGated(t *testing.T) {
 	var sWith uploadFileSchemaShape
 	require.NoError(t, json.Unmarshal(withFile, &sWith))
 	require.NotNil(t, sWith.Properties.File, "OpenAI tunnel (FeatFileHostInput) must see the file property")
+}
+
+// TestUploadFileSchemaMintOnlyDropsDeadSources verifies that on a mint-only
+// host (Grok) the compiled source schema omits the path/url/data sibling
+// payloads that no valid mode can use, while the OpenAI tunnel keeps them.
+// Dead OpenAI/ChatGPT schema members on a mint-only host are bindable training
+// data, so they must not be published.
+func TestUploadFileSchemaMintOnlyDropsDeadSources(t *testing.T) {
+	grok := uploadFileSchema(hostenv.ProfileGrokHTTP.Features)
+	var sg uploadFileSchemaShape
+	require.NoError(t, json.Unmarshal(grok, &sg))
+	srcProps := sg.Properties.Source.Properties
+	require.NotNil(t, srcProps.Mode, "mint-only host keeps source.mode")
+	require.Nil(t, srcProps.Path, "mint-only host (Grok) must drop source.path")
+	require.Nil(t, srcProps.URL, "mint-only host (Grok) must drop source.url")
+	require.Nil(t, srcProps.Data, "mint-only host (Grok) must drop source.data")
+	// The archive_mode copy must keep the Grok-critical mint-preserve warning.
+	require.Contains(t, sg.Properties.ArchiveMode.Description, "preserve (the default for the mint source)")
+
+	openai := uploadFileSchema(hostenv.ProfileOpenAITunnel.Features)
+	var so uploadFileSchemaShape
+	require.NoError(t, json.Unmarshal(openai, &so))
+	oProps := so.Properties.Source.Properties
+	require.NotNil(t, oProps.URL, "OpenAI tunnel keeps source.url")
+	require.NotNil(t, oProps.Data, "OpenAI tunnel keeps source.data")
 }
 
 // TestSourceModeEnumValuesContract verifies SourceModeEnumValues stays the

@@ -182,6 +182,22 @@ func guideFlowByName(t *testing.T, guide AgentGuide, name string) GuideFlow {
 // strPtr dereferences a profile value into a pointer for buildAgentGuide.
 func strPtr(p hostenv.PlatformProfile) *hostenv.PlatformProfile { return &p }
 
+// TestAgentGuideSummaryNeverPrefersFileForGrok regresses the shared-compiler
+// residue: a host without a `file` parameter must never see a "prefer the file
+// parameter when your host has one" clause, which previously let Grok invent a
+// {download_url, file_id} even after the schema dropped `file`. Grok's summary
+// must instead say it has no file parameter and lead with mint + PUT + poll.
+func TestAgentGuideSummaryNeverPrefersFileForGrok(t *testing.T) {
+	grok := buildAgentGuide(strPtr(hostenv.ProfileGrokHTTP))
+	require.NotContains(t, grok.Summary, "prefer the `file` parameter when your host has one")
+	require.Contains(t, grok.Summary, "no `file` parameter")
+	require.Contains(t, grok.Summary, "upload_data", "Grok must be told not to call upload_data")
+
+	openai := buildAgentGuide(strPtr(hostenv.ProfileOpenAITunnel))
+	require.Contains(t, openai.Summary, "prefer the `file` parameter when your host has one")
+	require.NotContains(t, openai.Summary, "no `file` parameter")
+}
+
 // TestAgentGuideStepsAreFeatureGated guards the structural step gating added
 // with the guide DSL: the upload flow's `upload_status` poll step is only real
 // on mint transports, so it must be advertised only when the resolved profile

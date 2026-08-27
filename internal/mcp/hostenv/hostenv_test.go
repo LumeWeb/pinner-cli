@@ -239,10 +239,11 @@ func TestRegistry_Detect_GrokOverHTTP(t *testing.T) {
 	require.Equal(t, AuthBearer, prof.AuthMethod)
 	// Runtime overlay
 	require.Equal(t, "grok-connectors-manager/0.1.0", prof.UserAgent)
-	// Grok renders MCP Apps but cannot hand Pinner an OpenAI
-	// {download_url, file_id} file object.
+	// Grok cannot hand Pinner an OpenAI {download_url, file_id} file object,
+	// and it does NOT statically claim MCP Apps: Apps is only set by the live
+	// wire overlay (UI.SupportsApps()) once the client advertises it.
 	require.False(t, prof.Has(FeatFileHostInput))
-	require.True(t, prof.Has(FeatMCPApps))
+	require.False(t, prof.Has(FeatMCPApps))
 	// Mechanism features are transport-derived: HTTP -> mint + remote, and
 	// never url/data (those are OpenAI-tunnel source modes; Grok's data/url
 	// uploads go through the separately-wired upload_data/upload_url tools).

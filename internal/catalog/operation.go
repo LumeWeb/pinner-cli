@@ -98,6 +98,12 @@ type Target struct {
 	// description; per-request resolution may override it with a more
 	// specific target's Description.
 	Description string
+	// DescFunc is a per-profile description resolver. When non-nil, the MCP
+	// bridge calls it with the resolved hostenv.PlatformProfile to produce a
+	// dynamic, feature-gated description. It overrides Description at
+	// resolution time. The parameter type is any because catalog cannot
+	// import hostenv; the MCP bridge (catalogsurface.go) performs the cast.
+	DescFunc func(any) string
 }
 
 // MCPTargets wraps a variadic list of Targets into a slice. Use it in
@@ -121,6 +127,15 @@ func Fallback(desc string) Target {
 // MCP profiles matching the given features.
 func Hidden(features ...string) Target {
 	return Target{Require: features, Visible: false}
+}
+
+// FallbackFunc creates a visible Target with no feature requirements whose
+// description is resolved dynamically via fn at per-request resolution time.
+// The MCP bridge calls fn with the resolved hostenv.PlatformProfile, so fn
+// is expected to accept any (the bridge casts it). Use it when a tool's MCP
+// description is composed from feature-gated segments via toolforge.DescBuilder.
+func FallbackFunc(fn func(any) string) Target {
+	return Target{Visible: true, DescFunc: fn}
 }
 
 // OperationArg describes one input. It drives both the JSON Schema (MCP) and
@@ -178,8 +193,8 @@ type Operation interface {
 	Name() string
 	Title() string
 	Summary() string
-	Description() string         // CLI description; the CLI compiler reads this
-	MCPTargets() []Target         // MCP per-profile targets; MCP-only
+	Description() string  // CLI description; the CLI compiler reads this
+	MCPTargets() []Target // MCP per-profile targets; MCP-only
 	Args() []OperationArg
 	Positional() string // ArgsUsage, drives MCP _args
 	Safety() Safety

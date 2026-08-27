@@ -322,13 +322,13 @@ func registerCustomTools(deps customToolDeps) error {
 			pathFn = opts.localPathVaultPut
 		}
 		// The effective features come from the detected host profile when this is
-	// a dedicated per-host server, else from the startup transport's generic
-	// profile. The schema, description, and Meta are all compiled from them.
-	vaultFeatures := hostenv.ProfileForTransport(transfer.UploadFileTransport(deps.coLocated, deps.tunnelOpenAI)).Features
-	if deps.hostProfile != nil {
-		vaultFeatures = deps.hostProfile.Features
-	}
-	vaultPutDesc := vault.NewVaultPutFileDescriptor(vaultFeatures, deps.coLocated, deps.tunnelOpenAI, pathFn, deps.vaultUpload, opts.vaultPutHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
+		// a dedicated per-host server, else from the startup transport's generic
+		// profile. The schema, description, and Meta are all compiled from them.
+		vaultFeatures := hostenv.ProfileForTransport(transfer.UploadFileTransport(deps.coLocated, deps.tunnelOpenAI)).Features
+		if deps.hostProfile != nil {
+			vaultFeatures = deps.hostProfile.Features
+		}
+		vaultPutDesc := vault.NewVaultPutFileDescriptor(vaultFeatures, deps.coLocated, deps.tunnelOpenAI, pathFn, deps.vaultUpload, opts.vaultPutHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
 		// A dedicated per-host server re-resolves the tool description against
 		// the detected host profile (e.g. an OpenAI-over-HTTP host sees the
 		// `file` handoff even though the startup HTTP transport bakes the
@@ -426,13 +426,13 @@ func registerCustomTools(deps customToolDeps) error {
 			pathFn = opts.localPathUpload
 		}
 		// The effective features come from the detected host profile when this is
-	// a dedicated per-host server, else from the startup transport's generic
-	// profile. The schema, description, and Meta are all compiled from them.
-	uploadFeatures := hostenv.ProfileForTransport(transfer.UploadFileTransport(deps.coLocated, deps.tunnelOpenAI)).Features
-	if deps.hostProfile != nil {
-		uploadFeatures = deps.hostProfile.Features
-	}
-	uploadFileDesc := transfer.NewUploadFileDescriptor(uploadFeatures, deps.coLocated, deps.tunnelOpenAI, pathFn, deps.curlUpload, opts.uploadHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
+		// a dedicated per-host server, else from the startup transport's generic
+		// profile. The schema, description, and Meta are all compiled from them.
+		uploadFeatures := hostenv.ProfileForTransport(transfer.UploadFileTransport(deps.coLocated, deps.tunnelOpenAI)).Features
+		if deps.hostProfile != nil {
+			uploadFeatures = deps.hostProfile.Features
+		}
+		uploadFileDesc := transfer.NewUploadFileDescriptor(uploadFeatures, deps.coLocated, deps.tunnelOpenAI, pathFn, deps.curlUpload, opts.uploadHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
 		// A dedicated per-host server re-resolves the tool description against
 		// the detected host profile (e.g. an OpenAI-over-HTTP host sees the
 		// `file` handoff even though the startup HTTP transport bakes the
@@ -488,11 +488,15 @@ func registerCustomTools(deps customToolDeps) error {
 	if deps.hostProfile != nil {
 		capDesc.Description = capabilitiesDescriptionFor(*deps.hostProfile, uploadWired, vaultWired)
 	}
-	reg.add(customToolSpec{desc: capDesc, direct: true})
+	// capabilities is both directly visible on tools/list and indexed in the
+	// catalog so a cold-start host following search_tools(help) can resolve it.
+	reg.add(customToolSpec{desc: capDesc, direct: true, index: true})
 
-	// Always expose the static agent guide so a model can orient to the
-	// primary flows without probing each tool's description.
-	reg.add(customToolSpec{desc: NewAgentGuideDescriptor(), direct: true})
+	// Always expose the agent guide so a model can orient to the primary flows
+	// without probing each tool's description. It is both directly visible on
+	// tools/list and indexed in the catalog so a cold-start host that follows
+	// search_tools(help) can resolve and read it via describe_tool / invoke_tool.
+	reg.add(customToolSpec{desc: NewAgentGuideDescriptor(), index: true, direct: true})
 
 	// Optionally expose the prompt templates.
 	if opts.prompts {

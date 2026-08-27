@@ -55,6 +55,17 @@ func TestDescBuilderUnlessSkipsMatchingFeature(t *testing.T) {
 	require.Equal(t, "P", d.Resolve(profileWith(hostenv.FeatSinkDrop)))
 }
 
+func TestDescBuilderUnlessSentenceStartsWithSentence(t *testing.T) {
+	// UnlessSentence mirrors WhenSentence for the negation: it begins a new
+	// sentence (". ") when the feature is absent, so an if/else pair reads with
+	// the same joining language on both branches.
+	d := Static("Call upload_file").
+		WhenSentence(hostenv.FeatFileHostInput, "Prefer the file parameter.").
+		UnlessSentence(hostenv.FeatFileHostInput, "This host has no file parameter.")
+	require.Equal(t, "Call upload_file. This host has no file parameter.", d.Resolve(profileWith()))
+	require.Equal(t, "Call upload_file. Prefer the file parameter.", d.Resolve(profileWith(hostenv.FeatFileHostInput)))
+}
+
 func TestDescBuilderIfElsePattern(t *testing.T) {
 	// The if/else idiom: a When for present + Unless for absent.
 	d := Static("byte source").

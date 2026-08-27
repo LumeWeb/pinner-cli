@@ -57,13 +57,12 @@ var ProfileOpenAIHTTP = newProfile(
 // ProfileGrokHTTP is xAI Grok connectors over HTTP + OAuth. Grok sends a
 // distinctive User-Agent (grok-connectors-manager) but no clientInfo. It
 // cannot hand Pinner an OpenAI {download_url, file_id} file object (no
-// FeatFileHostInput), but it CAN render MCP Apps. Its data/url uploads go
-// through the separately-wired upload_data / upload_url tools, not through
-// upload_file's transport-bound mint source.
+// FeatFileHostInput). MCP Apps is NOT declared here: Grok's connector has not
+// advertised Apps support on the wire, so it is set only by the live overlay
+// (requestCaps / UI.SupportsApps()) when the initialize client capabilities
+// actually negotiate it.
 var ProfileGrokHTTP = newProfile(
-	FeatureSet{
-		FeatMCPApps: true,
-	},
+	nil,
 	HostGrok, TransportHTTP, AuthOAuth, true,
 )
 

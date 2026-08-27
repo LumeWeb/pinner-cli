@@ -231,3 +231,20 @@ func TestCapabilitiesDescriptionMatchesWiring(t *testing.T) {
 	grokWired := capabilitiesDescriptionFor(hostenv.ProfileGrokHTTP, true, false)
 	require.NotContains(t, grokWired, "file_input_policy", "Grok never advertises the OpenAI file handoff")
 }
+
+// TestCapabilitiesDraftXFileGatedOnProfile verifies draft_x_mcp_file is a
+// per-host capability, not a wiring fact: even when an x-mcp-file upload tool
+// is wired for some other host, a host without FeatXMcpFile (Grok) must see
+// false, while the OpenAI tunnel (which declares the feature) keeps it true.
+func TestCapabilitiesDraftXFileGatedOnProfile(t *testing.T) {
+	run := func(draftWired bool, profile hostenv.PlatformProfile) CapabilityReport {
+		desc := NewCapabilitiesDescriptor(false, false, true, false, false, false, false, draftWired, 0)
+		caps := &model.RequestCaps{Profile: &profile}
+		res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}, Caps: caps})
+		require.NoError(t, err)
+		return res.StructuredContent.(CapabilityReport)
+	}
+
+	require.True(t, run(true, hostenv.ProfileOpenAITunnel).DraftXFile, "OpenAI tunnel declares FeatXMcpFile")
+	require.False(t, run(true, hostenv.ProfileGrokHTTP).DraftXFile, "Grok lacks FeatXMcpFile; a wired upload_data must not report the draft")
+}

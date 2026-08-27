@@ -11,6 +11,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 
@@ -22,11 +23,26 @@ type RelayURLUploadInput struct {
 	Wrap bool   `json:"wrap,omitempty" jsonschema:"description=Wrap the single fetched file in a directory root so the CID is a directory (required when the upload is a website)."`
 }
 
-// relayURLUploadDescription is the agent-facing description for upload_url. It
-// is shared between the static Description (tools/list) and the Fallback
-// MCPTarget so describe_tool/search_tools resolve it per request without the
-// two surfaces drifting.
-const relayURLUploadDescription = "Fetch a public HTTPS URL and upload it to Pinner, pinning the resulting CID. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. Do not put Pinner's credentials in the URL; Pinner fetches with its own stored auth. For remote HTTP clients that cannot reference a local path."
+// relayURLUploadDesc composes the upload_url tool description per profile.
+// upload_url is a server-fetch URL relay — only a host with FeatSourceURL can
+// have bytes fetched for it. On a host without it (Grok, generic HTTP) the copy
+// unconditionally forbids the tool so a model never routes the byte path
+// through a URL fetch when mint + PUT is what works.
+var relayURLUploadDesc = toolforge.Static(
+	"Fetch a public HTTPS URL and upload it to Pinner, pinning the resulting CID. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. Do not put Pinner's credentials in the URL; Pinner fetches with its own stored auth.",
+).
+	When(hostenv.FeatSourceURL,
+		"For hosts that expose a server-fetchable URL relay.",
+	).
+	Unless(hostenv.FeatSourceURL,
+		"Do NOT call this tool on this host: it has no URL-fetch relay. Upload bytes with upload_file(source.mode=mint) by PUTting the agent-local file to the returned url, then poll upload_status.",
+	)
+
+// relayURLUploadTargets is the per-profile description target for upload_url.
+var relayURLUploadTargets = toolforge.MCPTargets(model.ToolTarget{
+	Visible:  true,
+	DescFunc: relayURLUploadDesc.Resolve,
+})
 
 // RelayURLUploadDescriptor uploads a file by having the local MCP process
 // fetch a caller-supplied HTTPS URL, then stream it through the existing
@@ -37,11 +53,12 @@ func RelayURLUploadDescriptor(handler transfer.RelayURLUploadHandler, allowedHos
 	return model.ToolDescriptor{
 		Name:        "upload_url",
 		Title:       "Upload a file from a URL",
-		Description: relayURLUploadDescription,
+		Description: relayURLUploadDesc.Resolve(hostenv.ProfileForTransport(transfer.TransportHTTP)),
 		Category:    model.CategoryCore,
-		// Fallback target so the description resolves through the profile-aware
-		// catalog seam (describe_tool/search_tools) like every other custom tool.
-		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback(relayURLUploadDescription)),
+		// Profile-aware target so the description resolves through the catalog
+		// seam (describe_tool/search_tools) per calling host like every other
+		// custom tool.
+		MCPTargets:  relayURLUploadTargets,
 		InputSchema: toolargs.ToolSchemaFor[RelayURLUploadInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeArgsFor[RelayURLUploadInput]("relay URL upload", handler != nil, request)

@@ -174,6 +174,28 @@ func (d DescBuilder) UnlessRun(feat hostenv.Feature, text string) DescBuilder {
 	return d.UnlessSep(SepNone, feat, text)
 }
 
+// UnlessSentence appends text that starts a new sentence (". ") when feat is
+// absent. It mirrors WhenSentence for the negation, so an if/else pair can use
+// the same joining language at both branches.
+func (d DescBuilder) UnlessSentence(feat hostenv.Feature, text string) DescBuilder {
+	return d.UnlessSep(SepSentence, feat, text)
+}
+
+// UnlessClause appends a semicolon clause ("; ") when feat is absent.
+func (d DescBuilder) UnlessClause(feat hostenv.Feature, text string) DescBuilder {
+	return d.UnlessSep(SepClause, feat, text)
+}
+
+// UnlessList appends a serial item (", ") when feat is absent.
+func (d DescBuilder) UnlessList(feat hostenv.Feature, text string) DescBuilder {
+	return d.UnlessSep(SepList, feat, text)
+}
+
+// UnlessDash appends an em-dash aside (" — ") when feat is absent.
+func (d DescBuilder) UnlessDash(feat hostenv.Feature, text string) DescBuilder {
+	return d.UnlessSep(SepDash, feat, text)
+}
+
 // ---------------------------------------------------------------------------
 // Platform-predicate gating
 //

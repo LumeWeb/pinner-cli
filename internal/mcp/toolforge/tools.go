@@ -48,7 +48,12 @@ var uploadFileDesc = Static(
 	)
 
 // vaultPutFileDesc composes the vault_put_file tool description from a static
-// preamble plus feature-gated segments.
+// preamble plus feature-gated segments. The mint branch states the full
+// mint + PUT + poll contract (never "no curl needed") because it fires on
+// every FeatSourceMint host — including Grok, which has no `file` parameter
+// and CANNOT skip the curl. The "no curl needed" fragment from an earlier
+// draft was removed: it only ever belonged on file-host-input hosts, and its
+// presence here told Grok the mint was already done.
 var vaultPutFileDesc = Static(
 	"Store a file in the encrypted Pinner vault.",
 ).
@@ -56,19 +61,13 @@ var vaultPutFileDesc = Static(
 		"If your host provides a generated file directly, pass it in the file input (a temporary download_url + file_id) and Pinner fetches and stores its bytes at vault_path. Do NOT mint a presigned URL to curl a file when the host already holds it; pass the file reference instead.",
 	).
 	When(hostenv.FeatSourceMint,
-		"Otherwise set source.mode=mint to get a one-time presigned HTTP PUT endpoint bound to vault_path and stream your file's bytes to it with curl.",
+		"Use source.mode=mint plus vault_path: mint returns a url + upload_handle but has NOT stored bytes — PUT the agent-local file to the returned url, then poll upload_status until it reports completed.",
 	).
 	When(hostenv.FeatSourcePath,
 		"In this co-located stdio mode you may instead set source.mode=path and source.path to a host-side file/directory/archive path; the server reads it directly.",
 	).
 	WhenAny(sourceURLData(),
 		"Over this transport you may instead set source.mode=url (a server-fetchable HTTPS download URL) or source.mode=data (an RFC 2397 data: URI).",
-	).
-	WhenDash(hostenv.FeatSourceMint,
-		"no curl needed for a file the host already owns.",
-	).
-	WhenDash(hostenv.FeatSourcePath,
-		"no curl needed for a file the host already owns.",
 	).
 	Static("vault_path may be any vault file path (e.g. vault:/docs/f.pdf).")
 
