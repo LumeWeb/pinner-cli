@@ -5,6 +5,14 @@
 # so the platform-specific glob logic (Windows uses pinner.exe + .zip, unix
 # uses pinner + .tar.gz) lives in exactly one place instead of being repeated
 # and re-derived at every call site.
+#
+# Every artifact here is a single file, so it is uploaded with
+# actions/upload-artifact@v7 + archive: false. That keeps the file directly
+# downloadable from the UI/run summary without being wrapped in a zip
+# (upload-artifact@v4 and older always zip). With archive: false the artifact
+# is named after the uploaded file itself, so each file is staged under a
+# unique name before upload (raw binaries are all called `pinner`, which would
+# otherwise collide across platforms).
 name: Upload platform artifacts
 description: Uploads raw binary, mcpb bundle, and release archive for a single OS/arch, with platform-specific naming resolved here
 
@@ -38,23 +46,48 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    # With archive: false the uploaded file's name becomes the artifact name,
+    # so stage the raw binary under a unique per-platform name first. This
+    # avoids every OS/arch pair colliding on the artifact name `pinner`.
+    - name: Stage raw binary (unique name)
+      shell: bash
+      run: |
+        bin="$(find "${{ inputs.dist-path }}" -type f \
+          \( -name '${{ inputs.binary-name }}${{ inputs.os == 'windows' && '.exe' || '' }}' \) \
+          -not -path '*/mcpb/*' \
+          -path '*${{ inputs.os }}_${{ inputs.arch }}*' \
+          2>/dev/null | head -n1)"
+        if [ -z "$bin" ]; then
+          echo "::warning::no ${{ inputs.os }}/${{ inputs.arch }} binary found in dist/; skipping raw binary"
+          exit 0
+        fi
+        mkdir -p "${{ inputs.dist-path }}/.artifact-staging"
+        cp "$bin" "${{ inputs.dist-path }}/.artifact-staging/${{ inputs.binary-name }}-${{ inputs.os }}-${{ inputs.arch }}${{ inputs.os == 'windows' && '.exe' || '' }}"
+
     - name: Upload raw binary
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
-        name: ${{ inputs.name }}-binaries-${{ inputs.os }}-${{ inputs.arch }}
-        path: ${{ inputs.dist-path }}/*${{ inputs.os }}_${{ inputs.arch }}*/${{ inputs.binary-name }}${{ inputs.os == 'windows' && '.exe' || '' }}
+        path: ${{ inputs.dist-path }}/.artifact-staging/${{ inputs.binary-name }}-${{ inputs.os }}-${{ inputs.arch }}${{ inputs.os == 'windows' && '.exe' || '' }}
+        archive: false
+        if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
 
     - name: Upload MCP bundle
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
-        name: ${{ inputs.name }}-mcpb-${{ inputs.os }}-${{ inputs.arch }}
         path: ${{ inputs.dist-path }}/mcpb/${{ inputs.binary-name }}-${{ inputs.os }}-${{ inputs.arch }}.mcpb
+        archive: false
+        if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
 
     - name: Upload release archive
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
-        name: ${{ inputs.name }}-archive-${{ inputs.os }}-${{ inputs.arch }}
         path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_${{ inputs.os }}_${{ inputs.arch }}.${{ inputs.os == 'windows' && 'zip' || 'tar.gz' }}
+        # Version-wildcarded glob can match more than one file, and archive:
+        # false only supports a single guaranteed file (it would hard-fail on
+        # multiple matches). Keep this zipped; the raw binary and .mcpb above
+        # stay direct downloads via their exact staged/mcpb paths.
+        archive: true
+        if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}

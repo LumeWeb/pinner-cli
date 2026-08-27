@@ -127,32 +127,41 @@ runs:
         project-name: ${{ inputs.project-name }}
         retention-days: ${{ inputs.retention-days }}
 
+    # Each .deb/.rpm is a single file, but upload-artifact's archive: false
+    # only supports a single guaranteed file and the version-wildcarded glob
+    # (_*_) can match more than one, which would hard-fail the step. Keep
+    # these zipped (archive defaults to true) so any number of matches upload
+    # harmlessly; the raw binary and .mcpb above are the direct downloads.
     - name: Upload Debian package (amd64)
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
-        name: ${{ inputs.name }}-deb-amd64
         path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_amd64.deb
+        archive: true
+        if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
 
     - name: Upload Debian package (arm64)
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
-        name: ${{ inputs.name }}-deb-arm64
         path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_arm64.deb
+        archive: true
+        if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
 
     - name: Upload RPM package (amd64)
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
-        name: ${{ inputs.name }}-rpm-amd64
         path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_amd64.rpm
+        archive: true
+        if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
 
     - name: Upload RPM package (arm64)
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
-        name: ${{ inputs.name }}-rpm-arm64
         path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_arm64.rpm
+        archive: true
+        if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
 
     - name: Upload logs
