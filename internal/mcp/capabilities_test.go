@@ -134,7 +134,7 @@ func TestCurrentCapabilitiesHonorsMaxBytes(t *testing.T) {
 }
 
 func TestCapabilitiesDescriptorSerializes(t *testing.T) {
-	desc := NewCapabilitiesDescriptor(true, false, true, true, true, true, true, true, true, true, 0)
+	desc := NewCapabilitiesDescriptor(true, false, true, true, true, true, true, true, true, true, 0, hostenv.ProfileStdioGeneric.Features)
 	require.Equal(t, "capabilities", desc.Name)
 	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}})
 	require.NoError(t, err)
@@ -158,7 +158,7 @@ func TestCapabilitiesDescriptorSerializes(t *testing.T) {
 }
 
 func TestCapabilitiesDescriptorIsDirectVisible(t *testing.T) {
-	desc := NewCapabilitiesDescriptor(false, false, false, false, false, false, false, false, false, false, 0)
+	desc := NewCapabilitiesDescriptor(false, false, false, false, false, false, false, false, false, false, 0, hostenv.FeatureSet{})
 	tool := sdk.Tool(desc)
 	require.Equal(t, "capabilities", tool.Name)
 }
@@ -193,7 +193,7 @@ func TestCapabilitiesHostFileInputRequiresWiredTool(t *testing.T) {
 	caps := &model.RequestCaps{Profile: &httpProfile}
 
 	run := func(upload, vault bool) CapabilityReport {
-		desc := NewCapabilitiesDescriptor(false, false, upload, vault, false, false, false, false, false, false, 0)
+		desc := NewCapabilitiesDescriptor(false, false, upload, vault, false, false, false, false, false, false, 0, hostenv.FeatureSet{})
 		res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}, Caps: caps})
 		require.NoError(t, err)
 		return res.StructuredContent.(CapabilityReport)
@@ -238,7 +238,7 @@ func TestCapabilitiesDescriptionMatchesWiring(t *testing.T) {
 // false, while the OpenAI tunnel (which declares the feature) keeps it true.
 func TestCapabilitiesDraftXFileGatedOnProfile(t *testing.T) {
 	run := func(draftWired bool, profile hostenv.PlatformProfile) CapabilityReport {
-		desc := NewCapabilitiesDescriptor(false, false, true, false, false, false, false, true, true, draftWired, 0)
+		desc := NewCapabilitiesDescriptor(false, false, true, false, false, false, false, true, true, draftWired, 0, hostenv.ProfileOpenAITunnel.Features)
 		caps := &model.RequestCaps{Profile: &profile}
 		res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}, Caps: caps})
 		require.NoError(t, err)

@@ -222,22 +222,24 @@ var capabilitiesDesc = toolforge.Static(
 		"or drop returns a one-time HTTP GET filedrop link to pull from out of band.",
 	)
 
-// uploadToolsFor lists the upload tools actually registered for the effective
-// profile, in chooser order: upload_file first, then the relay tools. It gates
-// each tool on the SAME condition custom_tools.go uses to register it — the
-// profile must declare the feature AND the relay handler must be wired
-// (relayURLWired/dataURIWired) — so the capabilities JSON never advertises a
-// tool that does not exist. This mirrors the upload_file pattern, where the
-// report only claims the tool when its handler is wired.
-func uploadToolsFor(p hostenv.PlatformProfile, uploadFile, relayURLWired, dataURIWired bool) []UploadToolCapability {
+// uploadToolsFor lists the upload tools actually registered on THIS server, in
+// chooser order: upload_file first, then the relay tools. It gates each tool
+// on the EXACT condition custom_tools.go uses to register it — the handler must
+// be wired AND the registration-time effective feature set must declare the
+// feature (relayURLWired&&FeatSourceURL / dataURIWired&&FeatSourceData) — so
+// the capabilities JSON never advertises a tool that was not registered. feats
+// is the registration-time effectiveFeaturesFor(deps), NOT the per-request
+// wire profile, so a startup server that registered no relay tools for a host
+// never claims them even if a later request detects that host.
+func uploadToolsFor(feats hostenv.FeatureSet, uploadFile, relayURLWired, dataURIWired bool) []UploadToolCapability {
 	var out []UploadToolCapability
 	if uploadFile {
 		out = append(out, UploadToolFile)
 	}
-	if relayURLWired && p.Has(hostenv.FeatSourceURL) {
+	if relayURLWired && feats.Has(hostenv.FeatSourceURL) {
 		out = append(out, UploadToolURL)
 	}
-	if dataURIWired && p.Has(hostenv.FeatSourceData) {
+	if dataURIWired && feats.Has(hostenv.FeatSourceData) {
 		out = append(out, UploadToolData)
 	}
 	return out
@@ -268,7 +270,7 @@ func capabilitiesTargets(uploadFile, vaultPutFile bool) []model.ToolTarget {
 	})
 }
 
-func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, relayURLWired, dataURIWired, draftXFile bool, maxBytes int64) model.ToolDescriptor {
+func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, relayURLWired, dataURIWired, draftXFile bool, maxBytes int64, relayFeatures hostenv.FeatureSet) model.ToolDescriptor {
 	// The baked tools/list description is resolved for the startup transport's
 	// generic profile; describe_tool re-resolves it against the actual profile
 	// via the wiring-aware targets.
@@ -307,14 +309,12 @@ func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile
 			if !report.HostFileInput {
 				report.FileInputPolicy = ""
 			}
-			// upload_tools reflects the CALLING host's registered tools (the
-			// profile that drove relay tool registration), falling back to the
-			// startup transport profile when no per-request profile is present.
-			reportProfile := startupProfile
-			if request.Caps != nil && request.Caps.Profile != nil {
-				reportProfile = *request.Caps.Profile
-			}
-			report.UploadTools = uploadToolsFor(reportProfile, report.UploadFile, relayURLWired, dataURIWired)
+			// upload_tools reflects THIS server's registered tools, gated on the
+			// registration-time effective feature set (relayFeatures) — never the
+			// per-request wire profile. A server that registered no relay tools
+			// for a host therefore never advertises them, keeping the report
+			// identical to what tools/list actually exposed on this server.
+			report.UploadTools = uploadToolsFor(relayFeatures, report.UploadFile, relayURLWired, dataURIWired)
 			// Text carries the same canonical JSON as StructuredContent so a
 			// text-only MCP client still sees the source/sink mode data instead
 			// of an unhelpful stub ("Pinner capabilities.").
