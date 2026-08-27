@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -223,6 +224,36 @@ func TestCapabilitiesDescriptionScopesMintCompletionByTool(t *testing.T) {
 		require.NotContains(t, desc, "source.mode=mint", "%s: non-mint transport must not advertise mint completion", p.Transport)
 		require.NotContains(t, desc, "upload_status", "%s: non-mint transport must not mention upload_status", p.Transport)
 	}
+}
+
+// TestCapabilitiesDescriptionConcurrentNoSharedBackingMutation guards against a
+// data race in capabilitiesDescriptionFor. It derives from the shared
+// package-level capabilitiesLeadIn builder, and the List/WhenSentence calls
+// append to that builder's segment slice; without Clone, append() reuses spare
+// capacity in the global backing array and concurrent describe_tool calls race
+// on the same indices. Run under -race: this must be clean and the shared
+// builder must remain intact afterwards.
+func TestCapabilitiesDescriptionConcurrentNoSharedBackingMutation(t *testing.T) {
+	// Snapshot the rule count of the shared global before hammering it, to
+	// prove no call grows the global's segment list (append into spare cap).
+	var wg sync.WaitGroup
+	for i := 0; i < 64; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = capabilitiesDescriptionFor(hostenv.ProfileOpenAIHTTP, true, true)
+			_ = capabilitiesDescriptionFor(hostenv.ProfileHTTPGeneric, true, false)
+			_ = capabilitiesDescriptionFor(hostenv.ProfileGrokHTTP, false, true)
+			_ = capabilitiesDescriptionFor(hostenv.ProfileStdioGeneric, true, true)
+		}()
+	}
+	wg.Wait()
+
+	// The shared global must still resolve to its original base copy (mint
+	// completion only ever appears via the wiring clones, never in the base).
+	base := capabilitiesLeadIn.Resolve(hostenv.ProfileOpenAIHTTP)
+	require.NotContains(t, base, "poll upload_status", "shared base builder must not have absorbed a mint completion segment")
+	require.Contains(t, base, "download_sink_modes lists the sinks", "shared base builder must keep its own segments")
 }
 
 func TestCapabilitiesDescriptorIsDirectVisible(t *testing.T) {

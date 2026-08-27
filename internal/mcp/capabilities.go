@@ -288,7 +288,12 @@ func capabilitiesDescriptionFor(profile hostenv.PlatformProfile, uploadFile, vau
 		profile = profile.CloneFeatures()
 		delete(profile.Features, hostenv.FeatFileHostInput)
 	}
-	desc := capabilitiesLeadIn
+	// Clone before composing: capabilitiesLeadIn is a shared package-level
+	// builder and the List/WhenSentence calls below append to its segment
+	// slice. Without Clone, append() would reuse spare capacity in the
+	// global's backing array, letting concurrent describe_tool calls race on
+	// the same indices. Clone copies the slice so each call grows its own array.
+	desc := capabilitiesLeadIn.Clone()
 	if uploadFile {
 		desc = desc.List(capabilitiesByteChooser).WhenSentence(hostenv.FeatSourceMint, mintUploadCompletion)
 	}
