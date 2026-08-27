@@ -227,7 +227,17 @@ func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile
 		MCPTargets:  capabilitiesTargets(uploadFile, vaultPutFile),
 		InputSchema: toolargs.ToolSchemaFor[wizard.NoInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
-			report := CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, draftXFile, maxBytes)
+			// draft_x_mcp_file reports whether the CALLING client can speak the
+			// SEP-2356 x-mcp-file metadata — it is a per-host capability, not a
+			// wiring fact. The registration-time draftXFile flag reflects that
+			// an upload_data tool is wired (for some other host); a host whose
+			// profile does not declare FeatXMcpFile (e.g. Grok) must see false
+			// so the report never advertises a draft it cannot read.
+			effectiveDraft := draftXFile
+			if request.Caps != nil && request.Caps.Profile != nil && !request.Caps.Profile.Has(hostenv.FeatXMcpFile) {
+				effectiveDraft = false
+			}
+			report := CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, effectiveDraft, maxBytes)
 			// host_file_input is only honest when the calling client can build
 			// the `file` {download_url, file_id} object (ChatGPT/OpenAI). A
 			// non-OpenAI host (e.g. Grok over HTTP) has no file_id, so telling

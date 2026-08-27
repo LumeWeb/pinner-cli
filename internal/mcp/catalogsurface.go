@@ -73,11 +73,18 @@ func toModelTargets(targets []catalog.Target) []model.ToolTarget {
 		require := lo.SliceToMap(t.Require, func(name string) (hostenv.Feature, bool) {
 			return hostenv.Feature(name), true
 		})
-		return model.ToolTarget{
+		mt := model.ToolTarget{
 			Require:     require,
 			Visible:     t.Visible,
 			Description: t.Description,
 		}
+		if t.DescFunc != nil {
+			fn := t.DescFunc
+			mt.DescFunc = func(p hostenv.PlatformProfile) string {
+				return fn(p)
+			}
+		}
+		return mt
 	})
 }
 

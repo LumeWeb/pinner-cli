@@ -112,7 +112,7 @@ var vaultUploadDetailDesc = toolforge.Static(
 		"Use a transport-scoped source ({{SOURCES}}) plus the destination vault_path.",
 	).
 	When(hostenv.FeatSourceMint,
-		"When using source.mode=mint, poll upload_status with the returned upload_handle for the CID.",
+		"When using source.mode=mint, mint returns a url + upload_handle but has NOT stored bytes: (1) put the agent-local file to the returned url, (2) poll upload_status with the returned upload_handle, (3) the completed CID is the vaulted object.",
 	)
 
 // downloadDetailDesc composes the download flow detail string. sink=local is
@@ -146,11 +146,14 @@ var vaultDownloadDetailDesc = toolforge.Static(
 	)
 
 // guideSummary is the guide's opening orientation: start here, check state,
-// follow flows, stay in an active wizard session, and treat a static website
-// ZIP as a single directory DAG. Its file-handoff/convert-source wording is
-// feature-gated and the {{SOURCES}} token is substituted per profile.
+// follow flows, treat a static website ZIP as a single directory DAG, and take
+// the byte path capabilities actually reports for THIS host. The byte-path and
+// wizard-orientation tails are feature-gated so a host without a `file`
+// parameter (e.g. Grok) never sees a "prefer the file parameter" clause, and a
+// host without elicitation is not steered into a wizard. The {{SOURCES}} token
+// is substituted per profile.
 var guideSummary = toolforge.Static(
-	"Start here. Drive Pinner through these primary flows; each step is a tool. Check the current state first, then follow the matching flow. Once a wizard session is active, stay in it: always call the returned next_step_schema via the wizard step tool — do not abandon the wizard to rediscover low-level tools. A static website ZIP (index.html, CSS, JS, images, nested pages) is always a single directory DAG: call upload_file",
+	"Start here. Drive Pinner through these primary flows; each step is a tool. Check the current state first, then follow the matching flow. A static website ZIP (index.html, CSS, JS, images, nested pages) is always a single directory DAG: call upload_file",
 ).
 	When(hostenv.FeatFileHostInput,
 		"with a host file argument IF capabilities' file_input_policy is host_file_first (your client can hand Pinner a {download_url, file_id} object), otherwise a convert-capable transport source",
@@ -158,7 +161,19 @@ var guideSummary = toolforge.Static(
 	Unless(hostenv.FeatFileHostInput,
 		"with a convert-capable transport source ({{SOURCES}})",
 	).
-	StaticList("then publish the resulting directory CID. Follow the byte path capabilities reports: prefer the `file` parameter when your host has one; otherwise use a transport-scoped source (for source.mode=mint, PUT the file to the returned url and poll upload_status). Do NOT invent an OpenAI download_url/file_id or base64-encode a file as a data URI. For guided, interactive website onboarding (human-in-the-loop, step-by-step DNS setup), use the website-onboarding prompt and the websites_wizard tools instead of the publish_website flow.")
+	StaticList("then publish the resulting directory CID.").
+	When(hostenv.FeatFileHostInput,
+		"Follow the byte path capabilities reports: prefer the `file` parameter when your host has one; otherwise use a transport-scoped source (for source.mode=mint, PUT the file to the returned url and poll upload_status). Do NOT invent an OpenAI download_url/file_id or base64-encode a file as a data URI.",
+	).
+	Unless(hostenv.FeatFileHostInput,
+		"This host has no `file` parameter it can fill: PUT your agent-local file to the returned Mint url and poll upload_status. Do NOT invent a file_id or OpenAI download_url, and do NOT base64-encode a file as upload_data.",
+	).
+	WhenSentence(hostenv.FeatElicitation,
+		"Once a wizard session is active, stay in it: always call the returned next_step_schema via the wizard step tool — do not abandon the wizard to rediscover low-level tools. For guided, interactive website onboarding (human-in-the-loop, step-by-step DNS setup), use the website-onboarding prompt and the websites_wizard tools instead of the publish_website flow.",
+	).
+	UnlessSentence(hostenv.FeatElicitation,
+		"For autonomous website publishing after an upload, run the publish_website flow directly rather than starting a wizard.",
+	)
 
 // guideArchiveInvariant and guideCIDStructure are the two operational website
 // rules every agent must honor. Kept as named fragments so branch guidance can

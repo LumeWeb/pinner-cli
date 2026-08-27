@@ -13,7 +13,30 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
+	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
+
+// TestDataURIUploadDescriptionProfileForbid regresses the cross-host gating
+// bug: upload_data must be unconditionally forbidden on a host without the
+// data: URI relay (e.g. Grok), and must NOT lean on the (now honest, false)
+// host_file_input negation. A Grok cold-start that reads the tool description
+// must be told mint+PUT, never to base64-encode.
+func TestDataURIUploadDescriptionProfileForbid(t *testing.T) {
+	desc := transfer.DataURIUploadDescriptor(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
+		return nil, nil
+	}, 0)
+
+	grok, ok := toolforge.ResolveDescription(desc.MCPTargets, hostenv.ProfileGrokHTTP)
+	require.True(t, ok)
+	require.Contains(t, grok, "Do NOT call this tool on this host")
+	require.Contains(t, grok, "upload_file(source.mode=mint)")
+	require.NotContains(t, grok, "host_file_input == true", "no ChatGPT-oriented negation may survive")
+
+	openai, ok := toolforge.ResolveDescription(desc.MCPTargets, hostenv.ProfileOpenAITunnel)
+	require.True(t, ok)
+	require.NotContains(t, openai, "Do NOT call this tool on this host", "OpenAI tunnel keeps upload_data usable")
+}
 
 func TestDataURIUploadDescriptorRequiresFile(t *testing.T) {
 	desc := transfer.DataURIUploadDescriptor(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {

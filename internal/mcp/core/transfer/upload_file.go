@@ -142,7 +142,7 @@ func newUploadFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenA
 		// capabilities derived from one source of truth.
 		InputSchema: uploadFileSchema(features),
 		Meta:        meta,
-		MCPTargets: toolforge.UploadFileTargets,
+		MCPTargets:  toolforge.UploadFileTargets,
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[UploadFileInput](request)
 			if err != nil {
@@ -327,7 +327,7 @@ func newUploadFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenA
 // vary by feature.
 const (
 	archiveModeSchemaDesc = "How to treat an archive. convert extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. The archive's directory structure is preserved exactly, so index.html MUST be at the archive root (not inside a wrapper directory). preserve keeps the archive intact as a single file. IMPORTANT: the default depends on the source. Host-file, path, and url/data sources default to convert; the mint (presigned PUT) source defaults to preserve and ONLY converts when archive_mode=convert is passed explicitly. A website ZIP streamed via source.mode=mint therefore MUST pass archive_mode=convert, or it uploads as a raw single-file CID and websites_create will reject it."
-	wrapSchemaDesc   = "Wrap a single file in a directory root so the CID is a directory (required when the upload is a website). When wrap=true and no name is given, HTML content is auto-named index.html so the site resolves at its root. Do NOT set an explicit name like 'starter-site' — it is honored as-is and the page will only be reachable at /starter-site, not /. Only affects single-file uploads; directories and archive-converted uploads are already a directory root."
+	wrapSchemaDesc        = "Wrap a single file in a directory root so the CID is a directory (required when the upload is a website). When wrap=true and no name is given, HTML content is auto-named index.html so the site resolves at its root. Do NOT set an explicit name like 'starter-site' — it is honored as-is and the page will only be reachable at /starter-site, not /. Only affects single-file uploads; directories and archive-converted uploads are already a directory root."
 )
 
 // UploadSourceSchemaTransform narrows a reflected UploadSource schema's `mode`
@@ -346,6 +346,24 @@ func UploadSourceSchemaTransform(s *jsonschema.Schema, fs hostenv.FeatureSet) {
 	} else {
 		mode.Description = "Required on this host: the only byte path. The enum advertises which mode is valid on this transport."
 	}
+	// Drop sibling payload fields whose source mode the host cannot accept. The
+	// reflected UploadSource object publishes path/url/data on every profile;
+	// on a mint-only host (e.g. Grok) those dead OpenAI/ChatGPT fields are
+	// bindable training data even though the mode enum has narrowed. Removing
+	// them keeps the schema honest: a model cannot hand the server a
+	// path/url/data it would have to bind with no valid mode.
+	for _, p := range [...]struct {
+		name string
+		feat hostenv.Feature
+	}{
+		{"path", hostenv.FeatSourcePath},
+		{"url", hostenv.FeatSourceURL},
+		{"data", hostenv.FeatSourceData},
+	} {
+		if !fs.Has(p.feat) {
+			s.Properties.Delete(p.name)
+		}
+	}
 }
 
 // uploadFileSchema compiles the upload_file input schema from the tool's
@@ -361,10 +379,35 @@ func uploadFileSchema(features hostenv.FeatureSet) json.RawMessage {
 		Property("source", toolargs.SchemaFor[UploadSource](), toolforge.Transform(UploadSourceSchemaTransform)).
 		StringProperty("name", "Optional upload name (defaults to the file name).").
 		BoolProperty("wait", "Wait until this upload's own pin operation completes before returning (the upload already pins; this only controls whether the call blocks for it).").
-		StringProperty("archive_mode", archiveModeSchemaDesc, toolforge.Enum("convert", "preserve")).
+		StringProperty("archive_mode", archiveModeSchemaDesc, toolforge.Enum("convert", "preserve"), toolforge.Transform(archiveModeSchemaTransform)).
 		StringProperty("ttl", "Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used with source mode mint.").
 		BoolProperty("wrap", wrapSchemaDesc).
 		RawJSON(features)
+}
+
+// mintOnlyArchiveModeDesc is the archive_mode copy for a host whose ONLY byte
+// source is mint (e.g. Grok). It is composed from discrete self-punctuated
+// sentences so the preserve-for-mint default and the convert-for-website rule
+// stay Grok-critical and independently maintainable.
+var mintOnlyArchiveModeDesc = toolforge.Static(
+	"convert extracts an archive and uploads its contents as a directory DAG (index.html must be at the archive root).",
+).
+	StaticSentence("preserve (the default for the mint source) keeps the archive intact as a single file.").
+	StaticSentence("On this mint-only host, pass archive_mode=convert for a website ZIP or it uploads as a raw single-file CID that websites_create will reject.")
+
+// archiveModeSchemaTransform trims the archive_mode copy to what the host's
+// sources actually support. The full copy explains per-source defaults (host
+// file / path / url-data convert, mint preserve); on a mint-only host (e.g.
+// Grok) those other-source defaults are dead copy, so it is replaced by
+// mintOnlyArchiveModeDesc (which keeps the preserve-for-mint warning).
+func archiveModeSchemaTransform(s *jsonschema.Schema, fs hostenv.FeatureSet) {
+	hasMint := fs.Has(hostenv.FeatSourceMint)
+	otherSource := fs.Has(hostenv.FeatFileHostInput) || fs.Has(hostenv.FeatSourcePath) || fs.Has(hostenv.FeatSourceURL) || fs.Has(hostenv.FeatSourceData)
+	if hasMint && !otherSource {
+		// A Features-only profile is enough for resolution — the segments are
+		// unconditional sentences, so only the feature set feeds matches().
+		s.Description = mintOnlyArchiveModeDesc.Resolve(hostenv.PlatformProfile{Features: fs})
+	}
 }
 
 // uploadFileDescription resolves the tool description from the forge's
