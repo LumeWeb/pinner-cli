@@ -36,8 +36,13 @@ func TestAgentGuideDescriptor(t *testing.T) {
 			require.NotEmpty(t, f.Decision.Branches)
 			for _, b := range f.Decision.Branches {
 				require.NotEmpty(t, b.When)
-				require.GreaterOrEqual(t, len(b.Steps), 2, "each decision branch must list an ordered tool chain: %s/%s", f.Name, b.When)
+				// A branch may be a single tool (e.g. the byte-route upload_url
+				// / upload_data branches) or a full chain; it must never be empty.
+				require.NotEmpty(t, b.Steps, "each decision branch must list at least one step: %s/%s", f.Name, b.When)
 			}
+			// Some decision flows (upload, vault_upload) carry a flat lead-in
+			// step like capabilities; others (publish_website) are pure
+			// decisions. Both shapes are valid — branches above carry the steps.
 		} else {
 			require.GreaterOrEqual(t, len(f.Steps), 2, "each flat flow must list an ordered tool chain: %s", f.Name)
 		}
@@ -179,6 +184,37 @@ func guideFlowByName(t *testing.T, guide AgentGuide, name string) GuideFlow {
 	return GuideFlow{}
 }
 
+// flowSteps returns every ordered step in a flow: its flat Steps plus, when it
+// carries a decision, the steps of every branch (and nested decisions). Guide
+// flows express a byte route as a decision (e.g. upload, vault_upload) so
+// mint-specific tail steps live inside a branch rather than the flat list.
+func flowSteps(f GuideFlow) []string {
+	var out []string
+	out = append(out, f.Steps...)
+	var walk func(d *GuideDecision)
+	walk = func(d *GuideDecision) {
+		if d == nil {
+			return
+		}
+		for _, b := range d.Branches {
+			out = append(out, b.Steps...)
+			walk(b.Next)
+		}
+	}
+	walk(f.Decision)
+	return out
+}
+
+// flowStepsContain reports whether any flat or decision-branch step equals s.
+func flowStepsContain(f GuideFlow, s string) bool {
+	for _, x := range flowSteps(f) {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
 // strPtr dereferences a profile value into a pointer for buildAgentGuide.
 func strPtr(p hostenv.PlatformProfile) *hostenv.PlatformProfile { return &p }
 
@@ -211,9 +247,9 @@ func TestAgentGuideStepsAreFeatureGated(t *testing.T) {
 	}
 	for _, p := range mintFlows {
 		f := guideFlowByName(t, buildAgentGuide(p), "upload")
-		require.Contains(t, f.Steps, "upload_status", "%s is a mint transport; the guide must keep the poll step", p.Transport)
-		require.Contains(t, f.Steps, "upload_file")
-		require.Contains(t, f.Steps, "capabilities")
+		require.Contains(t, f.Steps, "capabilities", "%s must keep the capabilities lead-in", p.Transport)
+		require.True(t, flowStepsContain(f, "upload_status"), "%s is a mint transport; the guide must keep the poll step", p.Transport)
+		require.True(t, flowStepsContain(f, "<host PUT>"), "%s mint flow must name the host PUT", p.Transport)
 	}
 
 	nonMintFlows := []*hostenv.PlatformProfile{
@@ -222,8 +258,8 @@ func TestAgentGuideStepsAreFeatureGated(t *testing.T) {
 	}
 	for _, p := range nonMintFlows {
 		f := guideFlowByName(t, buildAgentGuide(p), "upload")
-		require.NotContains(t, f.Steps, "upload_status", "%s is not a mint transport; the guide must not advertise the mint poll step", p.Transport)
-		require.Contains(t, f.Steps, "upload_file")
+		require.False(t, flowStepsContain(f, "upload_status"), "%s is not a mint transport; the guide must not advertise the mint poll step", p.Transport)
+		require.False(t, flowStepsContain(f, "<host PUT>"), "%s non-mint flow must not name the host PUT", p.Transport)
 		require.Contains(t, f.Steps, "capabilities")
 	}
 }
@@ -243,8 +279,8 @@ func TestAgentGuideNamesHostPUTOnMintSteps(t *testing.T) {
 	for _, p := range mintProfiles {
 		for _, flowName := range []string{"upload", "vault_upload"} {
 			f := guideFlowByName(t, buildAgentGuide(p), flowName)
-			require.Contains(t, f.Steps, "<host PUT>", "%s: %s mint flow must name the host PUT", p.Transport, flowName)
-			require.Contains(t, f.Steps, "upload_status", "%s: %s mint flow must name the upload_status poll", p.Transport, flowName)
+			require.True(t, flowStepsContain(f, "<host PUT>"), "%s: %s mint flow must name the host PUT", p.Transport, flowName)
+			require.True(t, flowStepsContain(f, "upload_status"), "%s: %s mint flow must name the upload_status poll", p.Transport, flowName)
 		}
 	}
 
@@ -255,7 +291,7 @@ func TestAgentGuideNamesHostPUTOnMintSteps(t *testing.T) {
 	for _, p := range nonMintProfiles {
 		for _, flowName := range []string{"upload", "vault_upload"} {
 			f := guideFlowByName(t, buildAgentGuide(p), flowName)
-			require.NotContains(t, f.Steps, "<host PUT>", "%s: %s non-mint flow must not name the host PUT", p.Transport, flowName)
+			require.False(t, flowStepsContain(f, "<host PUT>"), "%s: %s non-mint flow must not name the host PUT", p.Transport, flowName)
 		}
 	}
 }

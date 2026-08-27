@@ -122,10 +122,7 @@ var vaultUploadDetailDesc = toolforge.Static(
 		"When using source.mode=mint, mint returns a url + upload_handle but has NOT stored bytes: (1) put the agent-local file to the returned url, (2) poll upload_status with the returned upload_handle, (3) the completed CID is the vaulted object.",
 	).
 	WhenSentence(hostenv.FeatSourceURL,
-		"Bytes already at a public HTTPS URL go through the separate upload_url tool (then vault the resulting CID).",
-	).
-	WhenSentence(hostenv.FeatSourceData,
-		"Only raw inline bytes with no file and no URL go through upload_data (RFC 2397 data: URI) as a last resort.",
+		"The separate upload_url / upload_data tools pin to IPFS and are NOT vault writes: vault storage always goes through vault_put_file with the destination vault_path, which takes public-URL or raw-inline bytes via its own url/data source on the tunnel transport. Do not invent a 'vault a CID' step.",
 	)
 
 // downloadDetailDesc composes the download flow detail string. sink=local is
@@ -199,6 +196,79 @@ var (
 	guideCIDStructure     = "Website CID structure: a website CID must be a directory whose root contains index.html. Gateways serve /index.html at the directory path. Uploading an archive with archive_mode=convert produces a directory CID whose structure mirrors the archive — if the archive has a wrapper directory, the CID will too, and the site will not resolve at /. The tool will reject a CID that has no root index.html or is wrapped in a single parent directory."
 )
 
+// byteRouteDecision composes the "where are the bytes?" chooser as a guide
+// Decision so the flow's steps (not just its detail) can produce a CID from any
+// source the host actually registers. Each branch is feature-gated, so a model
+// that follows steps first lands on the correct tool chain (host file, local
+// path, mint + PUT, upload_url, or upload_data) instead of assuming upload_file.
+//
+// The branches are intentionally the union of every profile's route; each host
+// resolves to only the branches its features enable, so uploaded bytes always
+// have a matching, non-invented chain.
+func byteRouteDecision() *toolforge.GuideDecisionBuilder {
+	return toolforge.Decision("Where are the bytes?",
+		toolforge.Branch("a file already on the host (user attachment or host-provided file)").
+			WhenFeature(hostenv.FeatFileHostInput).
+			Steps("upload_file").
+			Detail(toolforge.Static("Pass the host file reference via the file argument; the host runtime fetches and uploads it. Do not base64-encode, mint a presigned URL, or build a download_url/file_id yourself.")),
+		toolforge.Branch("a local file/directory path on a co-located host").
+			WhenFeature(hostenv.FeatSourcePath).
+			Steps("upload_file").
+			Detail(toolforge.Static("Use source.mode=path with the host-side file/directory/archive path; the server reads it directly.")),
+		toolforge.Branch("a file the agent can read locally (sandbox / generated / agent-local file)").
+			WhenFeature(hostenv.FeatSourceMint).
+			Steps("upload_file").
+			StepWhen(hostenv.FeatSourceMint, "<host PUT>", "upload_status").
+			Detail(toolforge.Static("Mint has NOT stored bytes when upload_file returns: PUT the agent-local file to the returned url (curl -sS -T <file> \"<url>\"), then poll upload_status until completed — the completed CID is already pinned; do not call pins_add.")),
+		toolforge.Branch("bytes already at a public HTTPS URL (user handed a URL)").
+			WhenFeature(hostenv.FeatSourceURL).
+			Steps("upload_url").
+			Detail(toolforge.Static("upload_url server-fetches the public HTTPS URL and pins it; do not download then re-upload.")),
+		toolforge.Branch("only raw inline bytes, with no file and no URL").
+			WhenFeature(hostenv.FeatSourceData).
+			Steps("upload_data").
+			Detail(toolforge.Static("upload_data is a last resort (RFC 2397 data: URI); never base64-encode a real or host-provided file into it.")),
+	)
+}
+
+// vaultByteRouteDecision is the upload-chooser twin for the vault flow. Every
+// branch still ends at vault_put_file — the ONLY vault write (there is no
+// "vault a CID" tool) — but the decision makes the steps represent the byte
+// source (host file, local path, mint, public URL, raw bytes) so a steps-first
+// model does not assume vault storage must be mint, nor invent a path through
+// the IPFS-only upload_url / upload_data tools.
+func vaultByteRouteDecision() *toolforge.GuideDecisionBuilder {
+	return toolforge.Decision("Where are the bytes for the vault?",
+		toolforge.Branch("a file already on the host (user attachment or host-provided file)").
+			WhenFeature(hostenv.FeatFileHostInput).
+			Steps("vault_put_file").
+			Detail(toolforge.Static("Pass the host file reference via the file argument; the vault stores its bytes at vault_path.")),
+		toolforge.Branch("a local file/directory path on a co-located host").
+			WhenFeature(hostenv.FeatSourcePath).
+			Steps("vault_put_file").
+			Detail(toolforge.Static("Use source.mode=path with the host-side path and the destination vault_path; the server reads it directly.")),
+		toolforge.Branch("a file the agent can read locally").
+			WhenFeature(hostenv.FeatSourceMint).
+			Steps("vault_put_file").
+			StepWhen(hostenv.FeatSourceMint, "<host PUT>", "upload_status").
+			Detail(toolforge.Static("vault_put_file with source.mode=mint + vault_path: PUT the agent-local file to the returned url, poll upload_status, and the completed object is stored at vault_path — there is no separate 'vault a CID' step.")),
+		toolforge.Branch("bytes already at a public HTTPS URL").
+			WhenFeature(hostenv.FeatSourceURL).
+			Steps("vault_put_file").
+			Detail(toolforge.Static("vault_put_file takes the URL via its own url source on the tunnel transport; the separate upload_url tool is IPFS-only, not a vault write.")),
+		toolforge.Branch("only raw inline bytes, no file and no URL").
+			WhenFeature(hostenv.FeatSourceData).
+			Steps("vault_put_file").
+			Detail(toolforge.Static("vault_put_file takes raw inline bytes via its own data source as a last resort; never base64-encode a real or host-provided file.")),
+	)
+}
+
+// byteRouteChooserStep is the publish_website step label that means "obtain a
+// CID via the upload flow's byte-route chooser" rather than a single tool. It
+// follows the guide's existing non-tool step precedent (<host PUT>) and keeps a
+// branch from forcing every site through upload_file.
+const byteRouteChooserStep = "byte-route chooser (upload_file|upload_url|upload_data)"
+
 // buildAgentGuide constructs the AgentGuide declaratively with the platform
 // DSL, then resolves it against the detected platform profile. Every flow,
 // step, branch and sentence is feature-gated and per-host resolved through the
@@ -226,19 +296,21 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 			Steps("vault_restore", "vault_restore_resume", "vault_status").
 			Detail(toolforge.Static("Call vault_restore; poll vault_restore_resume with the returned handle; confirm with vault_status until unlocked."))).
 		Flow(toolforge.Flow("upload", "Upload new content (creates + pins)").
-			Steps("capabilities", "upload_file").
-			// The mint flow must name the host PUT between mint and the poll:
-			// mint mints a url + handle but stores no bytes, and a step chain
-			// that ends at upload_file looks complete when it is not. <host PUT>
-			// is an out-of-band action, not an MCP tool, but it belongs in the
-			// ordered step list so mint return is not mistaken for success.
-			StepWhen(hostenv.FeatSourceMint, "<host PUT>", "upload_status").
+			Steps("capabilities").
+			// The byte route is a decision, not a fixed upload_file: a model
+			// that reads steps first still sees upload_url / upload_data as the
+			// route for a public URL / raw inline bytes. The mint tail (<host
+			// PUT> + upload_status) lives inside the mint branch; <host PUT> is
+			// an out-of-band action, not an MCP tool, but naming it keeps the
+			// chain from looking complete at the mint response.
+			Decision(byteRouteDecision()).
 			Detail(uploadDetailDesc)).
 		Flow(toolforge.Flow("vault_upload", "Store a file in a vault").
-			Steps("capabilities", "vault_put_file").
-			// Same as upload: on mint transports name the host PUT and the
-			// upload_status poll so the chain is not read as done after mint.
-			StepWhen(hostenv.FeatSourceMint, "<host PUT>", "upload_status").
+			Steps("capabilities").
+			// Vault storage is always vault_put_file (no vault-from-CID tool);
+			// the decision surfaces the byte source so steps-first models do not
+			// route vault bytes through the IPFS-only upload_url / upload_data.
+			Decision(vaultByteRouteDecision()).
 			Detail(vaultUploadDetailDesc)).
 		Flow(toolforge.Flow("download", "Download IPFS content to a file").
 			Steps("capabilities", "download_file").
@@ -252,20 +324,20 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 		Flow(toolforge.Flow("publish_website", "Publish a website").
 			Decision(toolforge.Decision("Does the user have a domain or subdomain label preference?",
 				toolforge.Branch("No — generic request (e.g. \"create me a website\", \"publish this\", \"host this\")").
-					Steps("upload_file", "websites_create", "websites_validate").
+					Steps(byteRouteChooserStep, "websites_create", "websites_validate").
 					Detail(publishCidLead.Then(htmlRootClause).
 						Static("Call websites_create with only {\"cid\": \"<cid>\"} — no domain, no label, no platform. The platform auto-generates a subdomain and manages DNS. Do NOT invent a label or call websites_platform_domain_availability. Do not infer a desire for custom naming from a generic request to create or publish a website.").
 						Then(validateAfterCreateClause).
 						Then(reconcileNoSleep).
 						Then(siteBundleUpload())),
 				toolforge.Branch("Yes — user explicitly supplied or requested a specific label (e.g. \"call it acme\", \"use myapp\")").
-					Steps("upload_file", "websites_platform_domains_list", "websites_platform_domain_availability", "websites_create", "websites_validate").
+					Steps(byteRouteChooserStep, "websites_platform_domains_list", "websites_platform_domain_availability", "websites_create", "websites_validate").
 					Detail(publishCidLead.Then(htmlRootClause).
 						Static("List platform roots with websites_platform_domains_list, then check the label is claimable with websites_platform_domain_availability <label>, then call websites_create with {\"cid\": \"<cid>\", \"platform\": true, \"label\": \"<label>\"}. Only use this branch when the user explicitly named a label — never invent one to perform the availability step.").
 						Then(validateAfterCreateClause).
 						Then(reconcilePlain)),
 				toolforge.Branch("Yes — user owns a custom domain (e.g. example.com)").
-					Steps("upload_file", "websites_create", "websites_validate").
+					Steps(byteRouteChooserStep, "websites_create", "websites_validate").
 					Detail(publishCidLead.Then(htmlRootClause).
 						Static("Call websites_create with {\"cid\": \"<cid>\", \"website\": \"<domain>\"}. The domain is used directly as a custom domain (not a platform subdomain). Read pinner://websites/<domain>/dns-requirements for DNS records to publish. If dns_hosting=true (managed), DNS is reconciled asynchronously — validation may report the old CID right after the update; that is reconciliation lag, not failure, so re-call websites_validate without starting a new flow. If self-managed, publish the _dnslink TXT and validation TXT before calling websites_validate.")),
 			))).
