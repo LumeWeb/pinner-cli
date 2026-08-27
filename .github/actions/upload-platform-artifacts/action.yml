@@ -1,0 +1,60 @@
+# upload-platform-artifacts: upload the per-platform output of a GoReleaser
+# dist/ tree (raw binary, .mcpb, release archive) for a single OS/arch pair.
+#
+# The outer upload-dist-artifacts action calls this once per desktop target,
+# so the platform-specific glob logic (Windows uses pinner.exe + .zip, unix
+# uses pinner + .tar.gz) lives in exactly one place instead of being repeated
+# and re-derived at every call site.
+name: Upload platform artifacts
+description: Uploads raw binary, mcpb bundle, and release archive for a single OS/arch, with platform-specific naming resolved here
+
+inputs:
+  name:
+    description: Base artifact name prefix
+    required: true
+  os:
+    description: GOOS (linux|darwin|windows)
+    required: true
+  arch:
+    description: GOARCH (amd64|arm64)
+    required: true
+  dist-path:
+    description: Path to the GoReleaser dist/ directory (relative to workspace root)
+    required: false
+    default: dist
+  binary-name:
+    description: Name of the compiled binary (used to resolve raw binary + .mcpb filenames)
+    required: false
+    default: pinner
+  project-name:
+    description: GoReleaser project name (prefix of archive and package filenames, e.g. pinner-cli)
+    required: false
+    default: pinner-cli
+  retention-days:
+    description: Artifact retention in days
+    required: false
+    default: '90'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Upload raw binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.name }}-binaries-${{ inputs.os }}-${{ inputs.arch }}
+        path: ${{ inputs.dist-path }}/*${{ inputs.os }}_${{ inputs.arch }}*/${{ inputs.binary-name }}${{ inputs.os == 'windows' && '.exe' || '' }}
+        retention-days: ${{ inputs.retention-days }}
+
+    - name: Upload MCP bundle
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.name }}-mcpb-${{ inputs.os }}-${{ inputs.arch }}
+        path: ${{ inputs.dist-path }}/mcpb/${{ inputs.binary-name }}-${{ inputs.os }}-${{ inputs.arch }}.mcpb
+        retention-days: ${{ inputs.retention-days }}
+
+    - name: Upload release archive
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.name }}-archive-${{ inputs.os }}-${{ inputs.arch }}
+        path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_${{ inputs.os }}_${{ inputs.arch }}.${{ inputs.os == 'windows' && 'zip' || 'tar.gz' }}
+        retention-days: ${{ inputs.retention-days }}

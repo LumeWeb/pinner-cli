@@ -1,0 +1,163 @@
+# upload-dist-artifacts: split a GoReleaser `dist/` tree into focused CI
+# artifacts so consumers can grab just what they need (e.g. a single .mcpb,
+# a raw binary, or one deb/rpm) instead of pulling one monolithic archive.
+#
+# Idempotent per-artifact globs: each upload uses a narrow `path` with
+# upload-artifact's default `if-no-files-found: warn`, so any category that is
+# absent for a given build simply no-ops without failing the job.
+name: Upload split dist artifacts
+description: Uploads GoReleaser dist/ outputs (binaries, mcpb, archives, packages, logs) as focused, dedicated artifacts
+
+inputs:
+  # Base name prefix for every artifact, e.g. "pinner-cli" produces
+  # pinner-cli-binaries, pinner-cli-mcpb, pinner-cli-deb-amd64, ...
+  name:
+    description: Base artifact name prefix
+    required: true
+
+  # Paths are resolved relative to the GitHub workspace root.
+  dist-path:
+    description: Path to the GoReleaser dist/ directory
+    required: false
+    default: dist
+
+  binary-name:
+    description: Name of the compiled binary (used to resolve raw binary + .mcpb filenames)
+    required: false
+    default: pinner
+
+  project-name:
+    description: GoReleaser project name (prefix of archive and package filenames, e.g. pinner-cli)
+    required: false
+    default: pinner-cli
+
+  logs-path:
+    description: Path to a directory of *.log files to upload as the logs artifact
+    required: false
+    default: ci-logs
+
+  retention-days:
+    description: Artifact retention in days
+    required: false
+    default: '90'
+
+  include-snapshot:
+    description: Also upload the entire dist/ tree as a single <name>-snapshot archive
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Upload full dist snapshot
+      if: ${{ inputs.include-snapshot == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.name }}-snapshot
+        path: ${{ inputs.dist-path }}/
+        retention-days: ${{ inputs.retention-days }}
+
+    # Raw binaries, .mcpb bundles, and release archives are all OS/arch-specific
+    # (Go cgo). Delegate each desktop target to upload-platform-artifacts so the
+    # platform glob/naming logic lives in one place instead of being re-derived
+    # here.
+    - name: Upload platform artifacts (linux/amd64)
+      uses: ./.github/actions/upload-platform-artifacts
+      with:
+        name: ${{ inputs.name }}
+        os: linux
+        arch: amd64
+        dist-path: ${{ inputs.dist-path }}
+        binary-name: ${{ inputs.binary-name }}
+        project-name: ${{ inputs.project-name }}
+        retention-days: ${{ inputs.retention-days }}
+
+    - name: Upload platform artifacts (linux/arm64)
+      uses: ./.github/actions/upload-platform-artifacts
+      with:
+        name: ${{ inputs.name }}
+        os: linux
+        arch: arm64
+        dist-path: ${{ inputs.dist-path }}
+        binary-name: ${{ inputs.binary-name }}
+        project-name: ${{ inputs.project-name }}
+        retention-days: ${{ inputs.retention-days }}
+
+    - name: Upload platform artifacts (darwin/amd64)
+      uses: ./.github/actions/upload-platform-artifacts
+      with:
+        name: ${{ inputs.name }}
+        os: darwin
+        arch: amd64
+        dist-path: ${{ inputs.dist-path }}
+        binary-name: ${{ inputs.binary-name }}
+        project-name: ${{ inputs.project-name }}
+        retention-days: ${{ inputs.retention-days }}
+
+    - name: Upload platform artifacts (darwin/arm64)
+      uses: ./.github/actions/upload-platform-artifacts
+      with:
+        name: ${{ inputs.name }}
+        os: darwin
+        arch: arm64
+        dist-path: ${{ inputs.dist-path }}
+        binary-name: ${{ inputs.binary-name }}
+        project-name: ${{ inputs.project-name }}
+        retention-days: ${{ inputs.retention-days }}
+
+    - name: Upload platform artifacts (windows/amd64)
+      uses: ./.github/actions/upload-platform-artifacts
+      with:
+        name: ${{ inputs.name }}
+        os: windows
+        arch: amd64
+        dist-path: ${{ inputs.dist-path }}
+        binary-name: ${{ inputs.binary-name }}
+        project-name: ${{ inputs.project-name }}
+        retention-days: ${{ inputs.retention-days }}
+
+    - name: Upload platform artifacts (windows/arm64)
+      uses: ./.github/actions/upload-platform-artifacts
+      with:
+        name: ${{ inputs.name }}
+        os: windows
+        arch: arm64
+        dist-path: ${{ inputs.dist-path }}
+        binary-name: ${{ inputs.binary-name }}
+        project-name: ${{ inputs.project-name }}
+        retention-days: ${{ inputs.retention-days }}
+
+    - name: Upload Debian package (amd64)
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.name }}-deb-amd64
+        path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_amd64.deb
+        retention-days: ${{ inputs.retention-days }}
+
+    - name: Upload Debian package (arm64)
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.name }}-deb-arm64
+        path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_arm64.deb
+        retention-days: ${{ inputs.retention-days }}
+
+    - name: Upload RPM package (amd64)
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.name }}-rpm-amd64
+        path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_amd64.rpm
+        retention-days: ${{ inputs.retention-days }}
+
+    - name: Upload RPM package (arm64)
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.name }}-rpm-arm64
+        path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_arm64.rpm
+        retention-days: ${{ inputs.retention-days }}
+
+    - name: Upload logs
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.name }}-logs
+        path: ${{ inputs.logs-path }}/*.log
+        retention-days: ${{ inputs.retention-days }}
