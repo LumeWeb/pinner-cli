@@ -2,16 +2,14 @@ package hostenv
 
 import "strings"
 
-// User-agent, clientInfo, and header substrings sent by Anthropic's Claude
-// Web client. The clientInfo match keys on the "anthropic" vendor token
-// (Web sends "Anthropic/ClaudeAI"); Claude Desktop sends the distinct name
-// "claude-ai" (no "anthropic") and is matched by claudeDesktopDetector, so
-// the two detectors never disagree on the same clientInfo.
+// User-agent and clientInfo tokens sent by Anthropic's Claude Web client.
+// The clientInfo match keys on the "anthropic" vendor token (Web sends
+// "Anthropic/ClaudeAI"); Claude Desktop sends the distinct name "claude-ai"
+// (no "anthropic") and is matched by claudeDesktopDetector, so the two
+// detectors never disagree on the same clientInfo.
 const (
-	userAgentClaude         = "claude-user"
-	clientNameAnthropic     = "anthropic"
-	headerXAnthropicClient  = "X-Anthropic-Client"
-	headerXAnthropicVersion = "X-Anthropic-Version"
+	userAgentClaude     = "claude-user"
+	clientNameAnthropic = "anthropic"
 )
 
 // claudeDetector matches Anthropic's Claude Web client over HTTP. It sends:
@@ -42,17 +40,10 @@ func (claudeDetector) Match(req DetectRequest) (HostType, AuthMethod) {
 	if req.ClientInfo != nil && strings.Contains(strings.ToLower(req.ClientInfo.Name), clientNameAnthropic) {
 		return HostClaude, authFromToken(req.TokenInfo)
 	}
-	// Check for Anthropic-specific HTTP headers, but only as corroboration:
+	// X-Anthropic-* headers are intentionally not used for classification:
 	// X-Anthropic-Version is a generic protocol-negotiation header that an
 	// Anthropic SDK or relay can emit on a non-Claude-Web connection, so a bare
-	// header must never classify the call. Trust the header only when combined
-	// with the Claude-Web User-Agent or the "anthropic" clientInfo vendor token.
-	if req.Headers != nil {
-		if (req.Headers.Get(headerXAnthropicClient) != "" || req.Headers.Get(headerXAnthropicVersion) != "") &&
-			(strings.Contains(strings.ToLower(req.UserAgent), userAgentClaude) ||
-				(req.ClientInfo != nil && strings.Contains(strings.ToLower(req.ClientInfo.Name), clientNameAnthropic))) {
-			return HostClaude, authFromToken(req.TokenInfo)
-		}
-	}
+	// header must never classify the call. The claude-user User-Agent and the
+	// "anthropic" clientInfo vendor token are sufficient to identify Claude Web.
 	return HostUnknown, ""
 }

@@ -215,10 +215,13 @@ func TestClaudeDetector_MatchByClientInfo(t *testing.T) {
 	require.Equal(t, AuthMethod(""), auth)
 }
 
-func TestClaudeDetector_MatchByHeader(t *testing.T) {
+func TestClaudeDetector_BareHeaderDoesNotMatch(t *testing.T) {
 	d := claudeDetector{}
 
-	// A header alone is NOT sufficient — require UA or clientInfo corroboration.
+	// Anthropic headers are deliberately not used for classification: they are
+	// generic SDK/relay protocol headers that a non-Claude-Web connection can
+	// emit, and the claude-user UA / "anthropic" clientInfo above already
+	// identify the host. A bare header must not classify the call.
 	h := http.Header{}
 	h.Set("X-Anthropic-Client", "ClaudeAI")
 	host, auth := d.Match(DetectRequest{Headers: h})
@@ -230,23 +233,6 @@ func TestClaudeDetector_MatchByHeader(t *testing.T) {
 	host, auth = d.Match(DetectRequest{Headers: h2})
 	require.Equal(t, HostUnknown, host)
 	require.Equal(t, AuthMethod(""), auth)
-
-	// Header + claude-user UA corroborates → Claude Web.
-	h3 := http.Header{}
-	h3.Set("X-Anthropic-Version", "2026-07-28")
-	host, auth = d.Match(DetectRequest{UserAgent: "Claude-User", Headers: h3})
-	require.Equal(t, HostClaude, host)
-	require.Equal(t, AuthBearer, auth)
-
-	// Header + "anthropic" clientInfo vendor token corroborates → Claude Web.
-	h4 := http.Header{}
-	h4.Set("X-Anthropic-Client", "ClaudeAI")
-	host, auth = d.Match(DetectRequest{
-		ClientInfo: &ClientInfo{Name: "Anthropic/ClaudeAI", Version: "1.0.0"},
-		Headers:    h4,
-	})
-	require.Equal(t, HostClaude, host)
-	require.Equal(t, AuthBearer, auth)
 }
 
 // TestClaudeDetector_NarrowUA guards the intentionally-narrow Web UA match: a
