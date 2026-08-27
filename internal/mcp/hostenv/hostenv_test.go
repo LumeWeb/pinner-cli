@@ -239,11 +239,17 @@ func TestRegistry_Detect_GrokOverHTTP(t *testing.T) {
 	require.Equal(t, AuthBearer, prof.AuthMethod)
 	// Runtime overlay
 	require.Equal(t, "grok-connectors-manager/0.1.0", prof.UserAgent)
-	// Grok should not have file-host-input or mcp-apps
+	// Grok renders MCP Apps but cannot hand Pinner an OpenAI
+	// {download_url, file_id} file object.
 	require.False(t, prof.Has(FeatFileHostInput))
-	require.False(t, prof.Has(FeatMCPApps))
-	// but should have remote-access
+	require.True(t, prof.Has(FeatMCPApps))
+	// Mechanism features are transport-derived: HTTP -> mint + remote, and
+	// never url/data (those are OpenAI-tunnel source modes; Grok's data/url
+	// uploads go through the separately-wired upload_data/upload_url tools).
+	require.True(t, prof.Has(FeatSourceMint))
 	require.True(t, prof.Has(FeatRemoteAccess))
+	require.False(t, prof.Has(FeatSourceData))
+	require.False(t, prof.Has(FeatSourceURL))
 }
 
 func TestRegistry_Detect_UnknownOverStdio(t *testing.T) {
@@ -755,4 +761,49 @@ func TestRegistry_Priority_FirstMatchWins(t *testing.T) {
 	}
 	prof := r.Detect(req)
 	require.Equal(t, HostGrok, prof.HostType)
+}
+
+// ---------------------------------------------------------------------------
+// Transport-mechanism vs host-capability separation
+// ---------------------------------------------------------------------------
+
+// TestTransportMechanismFeaturesDerived locks in the invariant that source/
+// sink/reachability features are a pure function of the transport, so they can
+// never be hand-declared inconsistently per host.
+func TestTransportMechanismFeaturesDerived(t *testing.T) {
+	stdio := transportMechanismFeatures(TransportStdio)
+	require.True(t, stdio[FeatSourcePath])
+	require.True(t, stdio[FeatSinkLocal])
+	require.True(t, stdio[FeatCoLocated])
+	require.False(t, stdio[FeatSourceMint])
+
+	http := transportMechanismFeatures(TransportHTTP)
+	require.True(t, http[FeatSourceMint])
+	require.True(t, http[FeatSinkLocal])
+	require.True(t, http[FeatSinkDrop])
+	require.True(t, http[FeatRemoteAccess])
+	require.False(t, http[FeatSourceURL])
+	require.False(t, http[FeatSourceData])
+
+	openai := transportMechanismFeatures(TransportOpenAI)
+	require.True(t, openai[FeatSourceURL])
+	require.True(t, openai[FeatSourceData])
+	require.True(t, openai[FeatSinkLocal])
+	require.False(t, openai[FeatSourceMint])
+	require.False(t, openai[FeatRemoteAccess])
+}
+
+// TestNewProfileMechanismCannotBeOverridden verifies that a profile's declared
+// capability features can never flip a transport-mechanism feature: an HTTP
+// host that declares e.g. FeatMCPApps still resolves to mint (not url/data),
+// so a host supporting the data/url tools cannot corrupt upload_file's source.
+func TestNewProfileMechanismCannotBeOverridden(t *testing.T) {
+	// A hypothetical HTTP host that renders MCP Apps (like Grok) must still
+	// present the HTTP mechanism: mint, never url/data, despite any capability.
+	p := newProfile(FeatureSet{FeatMCPApps: true}, HostGrok, TransportHTTP, AuthOAuth, true)
+	require.True(t, p.Has(FeatSourceMint))
+	require.False(t, p.Has(FeatSourceURL))
+	require.False(t, p.Has(FeatSourceData))
+	require.True(t, p.Has(FeatMCPApps))
+	require.True(t, p.Has(FeatRemoteAccess))
 }
