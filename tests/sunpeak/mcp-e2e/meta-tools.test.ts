@@ -175,14 +175,16 @@ test('agent_guide returns a coherent guide whose steps resolve to real tools', a
   }
 
   // Cross-surface invariant: every step tool the guide names resolves to a real
-  // tool in the catalog (advertised OR behind invoke_tool). We resolve via
-  // describe_tool, which can describe the whole catalog, rather than requiring
-  // each step to be on the host-specific advertised tools/list — the guide may
-  // legitimately point at invoke-only tools. This fails only if the guide
-  // references a tool that was removed or renamed.
+  // tool in the catalog (advertised OR behind invoke_tool). describe_tool alone
+  // only resolves catalog operations, so host-curated direct tools the guide
+  // legitimately references (e.g. capabilities) would be flagged "unknown".
+  // A step is real if it is either on the advertised tools/list (covers direct
+  // tools) or describable (covers invoke-only catalog ops). This fails only if
+  // the guide references something that is neither — a removed or renamed tool.
+  const advertised = new Set((await mcp.listTools()).map((t) => t.name));
   for (const step of collectGuideSteps(guide)) {
     const desc = await describeTool(mcp, step);
-    expect(desc.isError, `agent_guide references unknown tool "${step}"`).toBeFalsy();
+    expect(advertised.has(step) || !desc.isError, `agent_guide references unknown tool "${step}"`).toBe(true);
   }
 });
 
