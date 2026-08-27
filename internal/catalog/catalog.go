@@ -279,7 +279,7 @@ func (c *catalogImpl) Describe(name string, actor Actor) (ToolDescriptor, bool) 
 	if !visibleTo(op.Visibility(), actorVisibility(actor)) {
 		return ToolDescriptor{}, false
 	}
-	return descriptorFor(op, actor), true
+	return descriptorFor(op, actor, nil), true
 }
 
 // actorVisibility maps an actor to the Visibility of the search surface that
@@ -307,10 +307,14 @@ func actorVisibility(actor Actor) Visibility {
 // Per-request resolution in the MCP layer (DescribeFor) may override the model
 // description with a more specific target's description. The CLI compiler does
 // not use descriptorFor — it reads op.Description() directly.
-func descriptorFor(op Operation, actor Actor) ToolDescriptor {
+//
+// profile is the opaque startup/transport profile used to resolve a
+// DescFunc-only fallback target (see FallbackFunc). It is optional: nil skips
+// DescFunc resolution and falls back to the CLI description.
+func descriptorFor(op Operation, actor Actor, profile any) ToolDescriptor {
 	desc := op.Description()
 	if actor == ActorModel {
-		desc = fallbackDescription(op.Description(), op.MCPTargets())
+		desc = fallbackDescription(op.Description(), op.MCPTargets(), profile)
 	}
 	return ToolDescriptor{
 		Name:        op.Name(),
@@ -329,10 +333,25 @@ func descriptorFor(op Operation, actor Actor) ToolDescriptor {
 // (the one with empty Require and Visible=true). If no fallback target
 // exists, it returns cliDesc as a safety net so the MCP descriptor always
 // has a non-empty description.
-func fallbackDescription(cliDesc string, targets []Target) string {
+//
+// A fallback target may be a DescFunc-only variant (empty Description, the
+// resolver in DescFunc) built via FallbackFunc. DescFunc is resolved against
+// profile — the startup/transport profile when compiling the static surface,
+// nil elsewhere — so agent-critical guidance composed from discrete DSL
+// segments is not dropped from the static/non-profile descriptor. When profile
+// is nil (an unknown profile), the DescFunc fallback is skipped and cliDesc is
+// returned, matching the pre-FallbackFunc behavior.
+func fallbackDescription(cliDesc string, targets []Target, profile any) string {
 	for _, t := range targets {
-		if len(t.Require) == 0 && t.Visible && t.Description != "" {
-			return t.Description
+		if len(t.Require) == 0 && t.Visible {
+			if t.Description != "" {
+				return t.Description
+			}
+			if t.DescFunc != nil && profile != nil {
+				if s := t.DescFunc(profile); s != "" {
+					return s
+				}
+			}
 		}
 	}
 	return cliDesc

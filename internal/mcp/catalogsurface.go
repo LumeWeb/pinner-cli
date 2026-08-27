@@ -9,8 +9,18 @@ import (
 
 	"github.com/samber/lo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 )
+
+// startupProfile returns the static profile for the startup transport, used to
+// resolve DescFunc-only MCPTarget fallbacks when the compiled surface is built
+// (no per-request profile is available there). The startup transport is
+// derived from the same flags that SetTransportFlags records (co-located stdio,
+// OpenAI tunnel, or plain HTTP).
+func startupProfile() hostenv.PlatformProfile {
+	return hostenv.ProfileForTransport(transfer.UploadFileTransport(transportFlagsVar.coLocated, transportFlagsVar.tunnelOpenAI))
+}
 
 // This file is the bridge between the operation catalog (the compiler-backed
 // source of truth for MCP tool descriptions/schemas) and the legacy ToolCatalog
@@ -132,7 +142,12 @@ func populateCatalogSurface(tc *ToolCatalog, cat catalog.Catalog) (map[string]bo
 	if cat == nil {
 		return nil, fmt.Errorf("populateCatalogSurface: nil operation catalog")
 	}
-	descs, err := catalog.NewMCPCompiler().Compile(cat)
+	// Resolve the static descriptor against the startup/transport profile so a
+	// DescFunc-only MCPTarget fallback (FallbackFunc, e.g. websites_create's
+	// DSL-composed description) survives onto the static/non-profile surface
+	// instead of collapsing to the short CLI description. Per-request
+	// describe_tool/search_tools still re-resolves against the live profile.
+	descs, err := catalog.NewMCPCompilerForProfile(startupProfile()).Compile(cat)
 	if err != nil {
 		return nil, fmt.Errorf("populateCatalogSurface: compile operation catalog: %w", err)
 	}
