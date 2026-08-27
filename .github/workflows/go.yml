@@ -187,56 +187,66 @@ jobs:
 
       - name: Build snapshot artifacts (goreleaser-cross)
         run: |
+          # Tee the goreleaser output to ci-logs/ so it can be attached as its
+          # own artifact (ci-logs/ lives outside dist/, which goreleaser --clean
+          # wipes at start).
+          mkdir -p ci-logs
+          set -o pipefail
           docker run --rm \
             -v "$PWD":/go/src/go.lumeweb.com/pinner-cli \
             -w /go/src/go.lumeweb.com/pinner-cli \
             -e GO_VERSION \
             ghcr.io/goreleaser/goreleaser-cross:v1.26 \
-            release --snapshot --clean --skip=docker
+            release --snapshot --clean --skip=docker 2>&1 | tee ci-logs/goreleaser.log
 
       - name: Build MCP bundles (.mcpb)
         run: |
-          # The goreleaser publishers pipe (which builds .mcpb at release time)
-          # is skipped in snapshot builds, so pack one bundle per compiled
-          # binary here. This makes a set of .mcpb files available as CI
-          # artifacts on every PR/merge to develop, not just at release.
+          set -o pipefail
+          # The following block is teed to ci-logs/mcpb.log so the run's MCP
+          # bundle output is captured as a dedicated logs artifact. The goreleaser
+          # publishers pipe (which builds .mcpb at release time) is skipped in
+          # snapshot builds, so pack one bundle per compiled binary here. This
+          # makes a set of .mcpb files available as CI artifacts on every
+          # PR/merge to develop, not just at release.
           #
           # The goreleaser-cross container writes dist/ as root, so the runner
           # user cannot create dist/mcpb. Re-own the tree first so packing can
-          # write into it (and the upload-artifact step below can read it).
-          sudo chown -R "$(id -u):$(id -g)" dist
-          if npm install --prefix /opt/runner-mcpb -g @anthropic-ai/mcpb >/dev/null 2>&1; then
-            echo "/opt/runner-mcpb/bin" >> "$GITHUB_PATH"
-          else
-            echo "::warning::mcpb CLI unavailable on this runner; the pack script will fall back to a python3 zip"
-          fi
-          SNAP_VERSION="$(git describe --tags --always --dirty 2>/dev/null || git rev-parse --short HEAD)"
-          # One bundle per supported desktop target (goos/arch tuple).
-          PLATFORMS="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"
-          for pair in $PLATFORMS; do
-            goos="${pair%/*}"; goarch="${pair#*/}"
-            bin="$(find dist -type f \( -name 'pinner' -o -name 'pinner.exe' \) -not -path '*/mcpb/*' -path "*${goos}_${goarch}*" 2>/dev/null | head -n1)"
-            if [ -z "$bin" ]; then
-              echo "::warning::no ${goos}/${goarch} binary found in dist/; skipping .mcpb"
-              continue
+          # write into it (and the upload step below can read it).
+          {
+            sudo chown -R "$(id -u):$(id -g)" dist
+            if npm install --prefix /opt/runner-mcpb -g @anthropic-ai/mcpb >/dev/null 2>&1; then
+              echo "/opt/runner-mcpb/bin" >> "$GITHUB_PATH"
+            else
+              echo "::warning::mcpb CLI unavailable on this runner; the pack script will fall back to a python3 zip"
             fi
-            echo ">> packing ${goos}/${goarch} from $bin"
-            ./scripts/mcpb-pack.sh "$bin" "$goos" "$goarch" "$SNAP_VERSION"
-          done
-          # Print what was produced; guard against no bundles yet existing.
-          shopt -s nullglob
-          mbundles=(dist/mcpb/*.mcpb)
-          if [ ${#mbundles[@]} -eq 0 ]; then
-            echo "::warning::no .mcpb bundles produced"
-          else
-            echo ">> MCP bundles produced:" && ls -lh "${mbundles[@]}"
-          fi
+            SNAP_VERSION="$(git describe --tags --always --dirty 2>/dev/null || git rev-parse --short HEAD)"
+            # One bundle per supported desktop target (goos/arch tuple).
+            PLATFORMS="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"
+            for pair in $PLATFORMS; do
+              goos="${pair%/*}"; goarch="${pair#*/}"
+              bin="$(find dist -type f \( -name 'pinner' -o -name 'pinner.exe' \) -not -path '*/mcpb/*' -path "*${goos}_${goarch}*" 2>/dev/null | head -n1)"
+              if [ -z "$bin" ]; then
+                echo "::warning::no ${goos}/${goarch} binary found in dist/; skipping .mcpb"
+                continue
+              fi
+              echo ">> packing ${goos}/${goarch} from $bin"
+              ./scripts/mcpb-pack.sh "$bin" "$goos" "$goarch" "$SNAP_VERSION"
+            done
+            # Print what was produced; guard against no bundles yet existing.
+            shopt -s nullglob
+            mbundles=(dist/mcpb/*.mcpb)
+            if [ ${#mbundles[@]} -eq 0 ]; then
+              echo "::warning::no .mcpb bundles produced"
+            else
+              echo ">> MCP bundles produced:" && ls -lh "${mbundles[@]}"
+            fi
+          } 2>&1 | tee ci-logs/mcpb.log
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - name: Upload split artifacts
+        uses: ./.github/actions/upload-dist-artifacts
         with:
-          name: pinner-cli-snapshot
-          path: dist/
+          name: pinner-cli
+          include-snapshot: 'true'
           retention-days: 90
 
   # Runs the managed pinner-mcp service install/start against a REAL systemd
