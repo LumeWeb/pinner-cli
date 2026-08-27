@@ -42,12 +42,12 @@ func TestServedUploadFileAcceptMintOnHTTP(t *testing.T) {
 	require.Contains(t, enum, "mint", "upload_file.source.mode enum must contain mint on HTTP")
 	require.Equal(t, []string{"mint"}, enum, "upload_file.source.mode enum must equal capabilities().source_modes on HTTP")
 
-	// The file object must be present and first-class on HTTP too.
+	// A generic HTTP host (no FeatFileHostInput) cannot provide a host file, so
+	// the direct file object must NOT be exposed; mint is the only byte path.
 	schemaBytes, err := json.Marshal(tool.InputSchema)
 	require.NoError(t, err)
 	var schema map[string]any
 	require.NoError(t, json.Unmarshal(schemaBytes, &schema))
-	fileField, ok := schema["properties"].(map[string]any)["file"].(map[string]any)
-	require.True(t, ok, "upload_file must expose the direct file object on HTTP")
-	require.Equal(t, "object", fileField["type"])
+	_, hasFile := schema["properties"].(map[string]any)["file"].(map[string]any)
+	require.False(t, hasFile, "generic HTTP upload_file must not expose a host file object")
 }

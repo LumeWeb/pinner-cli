@@ -7,12 +7,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 )
 
-// uploadFileSchema is the typed shape of the upload_file tool schema we assert
-// on. We unmarshal into typed structs rather than casting map[string]any so a
-// structural surprise fails loudly at the unmarshal instead of a nil/panic.
-type uploadFileSchema struct {
+// uploadFileSchemaShape is the typed shape of the upload_file tool schema we
+// assert on. We unmarshal into typed structs rather than casting map[string]any
+// so a structural surprise fails loudly at the unmarshal instead of a nil/panic.
+type uploadFileSchemaShape struct {
 	Properties struct {
 		Sink struct {
 			Enum []string `json:"enum"`
@@ -20,6 +21,7 @@ type uploadFileSchema struct {
 		ArchiveMode struct {
 			Enum []string `json:"enum"`
 		} `json:"archive_mode"`
+		File any `json:"file"`
 		Source struct {
 			Properties struct {
 				Mode struct {
@@ -36,7 +38,7 @@ func sinkEnumOf(t *testing.T, raw json.RawMessage) []string {
 	if raw == nil {
 		return nil
 	}
-	var s uploadFileSchema
+	var s uploadFileSchemaShape
 	if err := json.Unmarshal(raw, &s); err != nil {
 		t.Fatalf("unmarshal schema: %v", err)
 	}
@@ -49,7 +51,7 @@ func sourceModeEnumOf(t *testing.T, raw json.RawMessage) []string {
 	if raw == nil {
 		return nil
 	}
-	var s uploadFileSchema
+	var s uploadFileSchemaShape
 	if err := json.Unmarshal(raw, &s); err != nil {
 		t.Fatalf("unmarshal schema: %v", err)
 	}
@@ -75,28 +77,43 @@ func TestDownloadSinkSchemaEnum(t *testing.T) {
 		"no filedrop coordinator wired -> local only")
 }
 
-// TestUploadSourceModeSchemaEnum verifies two things: (1) the static mode tag
-// uses the repeated enum form so the union of all four modes survives
-// reflection (not collapsed to ["path"]), and (2) RewriteSourceModeEnum narrows
-// that union per transport so HTTP advertises only mint, matching
-// capabilities().source_modes.
+// TestUploadSourceModeSchemaEnum verifies the compiled upload_file schema's
+// source.mode enum follows the profile's feature set: each transport advertises
+// exactly the modes its mechanism features support, matching capabilities.
 func TestUploadSourceModeSchemaEnum(t *testing.T) {
-	raw := toolargs.ToolSchemaFor[UploadFileInput]()
-	require.Equal(t, []string{"path", "mint", "url", "data"}, sourceModeEnumOf(t, raw),
-		"static mode tag must carry the full union before per-transport rewrite")
+	for _, tc := range []struct {
+		name      string
+		transport TransportKind
+		want      []string
+	}{
+		{"stdio", TransportStdio, []string{"path"}},
+		{"http", TransportHTTP, []string{"mint"}},
+		{"openai", TransportOpenAI, []string{"url", "data"}},
+	} {
+		features := hostenv.ProfileForTransport(tc.transport).Features
+		require.Equal(t, tc.want, sourceModeEnumOf(t, uploadFileSchema(features)), tc.name)
+	}
+}
 
-	onHTTP := RewriteSourceModeEnum(raw, TransportHTTP)
-	require.Equal(t, []string{"mint"}, sourceModeEnumOf(t, onHTTP))
+// TestUploadFileSchemaHostFileGated verifies the `file` (OpenAI host-file
+// reference) property is present only when the profile has FeatFileHostInput —
+// the Grok-vs-OpenAI distinction. A host without the feature must not be
+// advertised a handoff it cannot produce.
+func TestUploadFileSchemaHostFileGated(t *testing.T) {
+	noFile := uploadFileSchema(hostenv.ProfileGrokHTTP.Features)
+	var sNo uploadFileSchemaShape
+	require.NoError(t, json.Unmarshal(noFile, &sNo))
+	require.Nil(t, sNo.Properties.File, "Grok (no FeatFileHostInput) must not see a file property")
 
-	onStdio := RewriteSourceModeEnum(raw, TransportStdio)
-	require.Equal(t, []string{"path"}, sourceModeEnumOf(t, onStdio))
-
-	onOpenAI := RewriteSourceModeEnum(raw, TransportOpenAI)
-	require.Equal(t, []string{"url", "data"}, sourceModeEnumOf(t, onOpenAI))
+	withFile := uploadFileSchema(hostenv.ProfileOpenAITunnel.Features)
+	var sWith uploadFileSchemaShape
+	require.NoError(t, json.Unmarshal(withFile, &sWith))
+	require.NotNil(t, sWith.Properties.File, "OpenAI tunnel (FeatFileHostInput) must see the file property")
 }
 
 // TestSourceModeEnumValuesContract verifies SourceModeEnumValues stays the
-// source of truth for the per-transport enum rewrite.
+// source of truth for the per-transport enum (derived from the transport's
+// generic profile features).
 func TestSourceModeEnumValuesContract(t *testing.T) {
 	require.Equal(t, []string{"path"}, SourceModeEnumValues(TransportStdio))
 	require.Equal(t, []string{"mint"}, SourceModeEnumValues(TransportHTTP))
@@ -107,8 +124,8 @@ func TestSourceModeEnumValuesContract(t *testing.T) {
 // upload_file: both convert and preserve must be advertised (previously the
 // tag collapsed to ["convert"], so a strict client could not pass preserve).
 func TestArchiveModeSchemaEnum(t *testing.T) {
-	raw := toolargs.ToolSchemaFor[UploadFileInput]()
-	var s uploadFileSchema
+	raw := uploadFileSchema(hostenv.ProfileHTTPGeneric.Features)
+	var s uploadFileSchemaShape
 	require.NoError(t, json.Unmarshal(raw, &s))
 	require.Equal(t, []string{"convert", "preserve"}, s.Properties.ArchiveMode.Enum,
 		"archive_mode enum must carry both convert and preserve")

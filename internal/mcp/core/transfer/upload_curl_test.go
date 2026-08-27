@@ -169,7 +169,7 @@ func TestCurlUploadToolDescriptor(t *testing.T) {
 	cu := NewHTTPUpload(mgr, 1024)
 	defer cu.Stop(context.Background())
 
-	desc := NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
+	desc := NewUploadFileDescriptor(transportFeatures(false, false), false, false, nil, cu, nil, nil, 0)
 	require.Equal(t, "upload_file", desc.Name)
 
 	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{

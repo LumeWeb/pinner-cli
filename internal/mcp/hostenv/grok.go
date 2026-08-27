@@ -36,8 +36,7 @@ func (grokDetector) Match(req DetectRequest) (HostType, AuthMethod) {
 }
 
 // uaMatch reports whether the User-Agent contains the product token,
-// case-insensitively. It mirrors the older single-substring helper while
-// making the token an exact product name rather than a generic fragment.
+// case-insensitively.
 func uaMatch(userAgent, product string) bool {
 	return strings.Contains(strings.ToLower(userAgent), product)
 }

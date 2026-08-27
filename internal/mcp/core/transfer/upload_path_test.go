@@ -8,10 +8,11 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 )
 
 func TestLocalPathUploadDescriptorRequiresPath(t *testing.T) {
-	desc := transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(hostenv.ProfileForTransport(transfer.UploadFileTransport(true, false)).Features, true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 		return nil, nil
 	}, nil, nil, nil, 0)
 	// An empty source (no mode) must be rejected by validation.
@@ -22,7 +23,7 @@ func TestLocalPathUploadDescriptorRequiresPath(t *testing.T) {
 }
 
 func TestLocalPathUploadDescriptorNotConfigured(t *testing.T) {
-	desc := transfer.NewUploadFileDescriptor(true, false, nil, nil, nil, nil, 0)
+	desc := transfer.NewUploadFileDescriptor(hostenv.ProfileForTransport(transfer.UploadFileTransport(true, false)).Features, true, false, nil, nil, nil, nil, 0)
 	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source": map[string]any{"mode": "path", "path": "/tmp/x"},
 	}})
@@ -33,7 +34,7 @@ func TestLocalPathUploadDescriptorCallsHandler(t *testing.T) {
 	var gotPath, gotName, gotMode string
 	var gotWait bool
 	result := map[string]any{"cid": "QmTest"}
-	desc := transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(hostenv.ProfileForTransport(transfer.UploadFileTransport(true, false)).Features, true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 		gotPath = path
 		gotName = name
 		gotWait = wait
@@ -59,7 +60,7 @@ func TestLocalPathUploadDescriptorCallsHandler(t *testing.T) {
 }
 
 func TestLocalPathUploadDescriptorRejectsMintInStdio(t *testing.T) {
-	desc := transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(hostenv.ProfileForTransport(transfer.UploadFileTransport(true, false)).Features, true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 		t.Fatal("path handler must not be invoked")
 		return nil, nil
 	}, nil, nil, nil, 0)

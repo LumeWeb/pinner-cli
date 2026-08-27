@@ -86,7 +86,7 @@ func (fs FeatureSet) Clone() FeatureSet {
 // transportMechanismFeatures returns the features that are a pure function of
 // the running transport: which source/sink modes upload_file/download_file can
 // actually serve, plus the reachability facts (co-located vs remote). These
-// are DERIVED, never hand-declared per host — an HTTP host always gets mint
+// are derived, never hand-declared per host — an HTTP host always gets mint
 // (never url/data), a stdio host path, and the OpenAI tunnel url/data.
 //
 // They form the transport-mechanism half of every profile's FeatureSet; the
