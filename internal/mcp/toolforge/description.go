@@ -210,6 +210,57 @@ func (d DescBuilder) predSep(sep string, pred hostenv.Predicate, text string, ne
 	return DescBuilder{segments: append(d.segments, segment{pred: pred, text: text, negate: len(negate) > 0 && negate[0], sep: sep})}
 }
 
+// ---------------------------------------------------------------------------
+// Sentence-block composition
+//
+// Long guidance (a flow detail, a publish-site paragraph) should be assembled
+// from discrete, independently-gateable sentences rather than one monolithic
+// string, so a single instruction can be reused or gated without touching the
+// whole block. Each sentence is a complete, self-punctuated unit (carries its
+// own trailing period); sentences are joined by single spaces, so there is no
+// double-punctuation footgun. The gated variants are thin loops over the
+// feature gates above, so a block of sentences all apply the same gate.
+// ---------------------------------------------------------------------------
+
+// Sentences appends several complete, self-punctuated sentences as discrete
+// segments — shorthand for repeated Static() calls that keeps long guidance
+// composed instead of collapsed into one giant string.
+func (d DescBuilder) Sentences(texts ...string) DescBuilder {
+	s := d
+	for _, t := range texts {
+		s = s.Static(t)
+	}
+	return s
+}
+
+// SentencesWhen appends a block of sentences included only when the profile has feat.
+func (d DescBuilder) SentencesWhen(feat hostenv.Feature, texts ...string) DescBuilder {
+	s := d
+	for _, t := range texts {
+		s = s.When(feat, t)
+	}
+	return s
+}
+
+// SentencesUnless appends a block of sentences included only when the profile lacks feat.
+func (d DescBuilder) SentencesUnless(feat hostenv.Feature, texts ...string) DescBuilder {
+	s := d
+	for _, t := range texts {
+		s = s.Unless(feat, t)
+	}
+	return s
+}
+
+// SentencesWhenAny appends a block of sentences included only when the profile
+// has at least one of feats (see WhenAny).
+func (d DescBuilder) SentencesWhenAny(feats []hostenv.Feature, texts ...string) DescBuilder {
+	s := d
+	for _, t := range texts {
+		s = s.WhenAny(feats, t)
+	}
+	return s
+}
+
 // Then splices another builder's segments onto the end, joining with a single
 // space. Fragments passed here are treated as complete, self-punctuated units
 // (they already end with their own terminator), so the join is a plain space

@@ -29,15 +29,23 @@ var reconcileNoSleep = toolforge.Static("On this host there is no sleep tool: if
 // caveat is needed. Shares the same decision (re-check rather than fail).
 var reconcilePlain = toolforge.Static("If validation is still pending or failing, treat it as reconciliation lag and re-call websites_validate after other work, without starting a new flow.")
 
-// siteBundleUpload composes the full "how to upload a static site bundle"
-// sentence: a ZIP of index.html/CSS/JS/images is a single directory DAG. It
-// self-gates on FeatFileHostInput — a host that can hand over a file object
-// uploads via the `file` argument, others must convert a transport source —
-// and always ends with the wrapper-index.html rejection rule so the flow
-// guidance can never drift from the tool schema.
+// siteBundleUpload composes the "how to upload a static site bundle" guidance
+// block. The upload call self-gates on FeatFileHostInput (a host that can hand
+// over a file object uploads via the `file` argument, others must convert a
+// transport source), and the trailing instructions are discrete sentences —
+// each independently gateable — so the wrapper-index.html rule and the
+// no-mint-for-a-host-held-ZIP rule can never drift from the tool schema.
 func siteBundleUpload() toolforge.DescBuilder {
 	return toolforge.Static("For a static site bundle (ZIP containing index.html, CSS, JS, images, nested pages): call upload_file").
 		Unless(hostenv.FeatFileHostInput, "with a convert source ({{SOURCES}}) and archive_mode=convert").
 		When(hostenv.FeatFileHostInput, "with the host file argument and archive_mode=convert").
-		Static("— the entire directory tree becomes a single directory DAG and the returned CID is the publishable directory CID. Do NOT mint a presigned curl URL for a ZIP the host already holds, and do NOT upload individual assets. Before uploading a site ZIP, verify that index.html is at the archive root, not wrapped in a parent directory. The tool will reject a CID whose root has no index.html or is wrapped in a single wrapper directory.")
+		Sentences(
+			"The entire directory tree becomes a single directory DAG and the returned CID is the publishable directory CID.",
+			"Do NOT upload individual assets.",
+			"Before uploading a site ZIP, verify that index.html is at the archive root, not wrapped in a parent directory.",
+			"The tool will reject a CID whose root has no index.html or is wrapped in a single wrapper directory.",
+		).
+		SentencesWhenAny([]hostenv.Feature{hostenv.FeatFileHostInput, hostenv.FeatSourcePath},
+			"Do NOT mint a presigned curl URL for a ZIP the host already holds.",
+		)
 }
