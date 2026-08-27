@@ -59,22 +59,31 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore
 				return model.ToolResult{IsError: true, Text: err.Error()}, nil
 			}
 
-			// Single-flight: if an out-of-band login is already in flight on
-			// this server (e.g. the Sign In GUI started one while the model
-			// already had one, or vice-versa), surface the SAME in-use handle
-			// and approval URL instead of minting a competing login. Two
-			// concurrent browser sign-ins deadlock: a human can only complete
-			// one approval, so whichever side is polling the other login never
-			// resolves. Returning the in-use handle lets both the GUI and the
-			// model converge on a single approval, and offers an explicit
-			// revoke path (auth_sso_revoke) to start fresh.
-			if id, url, ok := oob.ActiveLogin(in.Email); ok {
-				// Refresh the backing handle TTL and re-register the
-				// continuation so the re-surfaced handle stays resumable even
-				// if the flow that first created it moved on. Both operations
-				// are idempotent when the flow is still the original one.
-				_ = handles.Set(id, "pending", nil)
-				reg.Begin(id, SSOResumeContinuation(oob, handles, reg))
+			// Single-flight: begin the out-of-band login atomically, or resume
+			// an already-in-flight one. Two concurrent browser sign-ins
+			// deadlock: a human can only complete one approval, so whichever
+			// side is polling the other login never resolves. BeginOrResume
+			// runs the pending-login existence check and (if none) the insert
+			// under one lock, so simultaneous triggers (the Sign In GUI and the
+			// model) converge on the SAME handle rather than minting competing
+			// logins. The returned id is the resume handle AND the approval-link
+			// token (a single identifier removes the "which id do I resume with"
+			// ambiguity), and reused reports whether an existing login was
+			// surfaced.
+			id, url, reused, err := oob.BeginOrResume(in.Email)
+			if err != nil {
+				return model.ToolResult{IsError: true, Text: fmt.Sprintf("failed to start out-of-band login: %v", err)}, nil
+			}
+			// Ensure the async handle exists under this id and register the
+			// SSO-specific poll continuation so auth_resume / auth_sso_status
+			// dispatch to it. Both are idempotent for the reused (in-use) case.
+			handles.CreateWithID(id, "pending", map[string]any{"email": in.Email})
+			reg.Begin(id, SSOResumeContinuation(oob, handles, reg))
+
+			if reused {
+				// An existing login is in flight: surface the SAME in-use handle
+				// and approval URL, flagged in_use with an explicit revoke path
+				// (auth_sso_revoke) so the caller can start fresh if desired.
 				return model.NeedsHumanResult(model.NeedsHuman{
 					Reason:     model.ReasonSSOApproval,
 					ActionURL:  url,
@@ -85,30 +94,10 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore
 					Detail:     "A sign-in is already in progress (handle " + id + "). Complete that pending approval, or revoke it first with auth_sso_revoke to start a fresh sign-in.",
 				}), nil
 			}
-
-			// The handle doubles as the OOB session id AND the request id so
-			// every client-facing identifier for this login is the same value:
-			// the resume handle, the approval-link token, and what auth_resume
-			// validates against. A single identifier per login removes the
-			// "which id do I resume with" ambiguity that previously caused
-			// auth_resume to report "unknown handle" when an agent used the
-			// approval-link token (which was a different, request-only id).
-			handle := handles.Create("pending", map[string]any{"email": in.Email})
-			_, url, err := oob.BeginWithID(handle, handle, in.Email)
-			if err != nil {
-				// Do not leave an orphaned handle in the store with no
-				// continuation registered; retire it so a future resume does
-				// not see a live handle with nothing backing it.
-				handles.Delete(handle)
-				return model.ToolResult{IsError: true, Text: fmt.Sprintf("failed to start out-of-band login: %v", err)}, nil
-			}
-			// Register the SSO-specific poll logic under the handle so the
-			// shared auth_resume template dispatches to it.
-			reg.Begin(handle, SSOResumeContinuation(oob, handles, reg))
 			return model.NeedsHumanResult(model.NeedsHuman{
 				Reason:     model.ReasonSSOApproval,
 				ActionURL:  url,
-				Handle:     handle,
+				Handle:     id,
 				ResumeTool: "auth_resume",
 				Detail:     "Ask the user to open the approval URL in their browser and complete sign-in. Then call auth_resume with the handle.",
 			}), nil

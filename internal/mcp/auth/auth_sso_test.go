@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -234,6 +235,44 @@ func TestAuthSSORevokeIdempotent(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, rv.IsError)
 	require.Equal(t, false, rv.StructuredContent.(map[string]any)["revoked"])
+}
+
+// TestAuthSSOConcurrentTriggersConverge pins the atomic check-and-insert in
+// BeginOrResume: many simultaneous auth_sso triggers (the Sign In GUI racing
+// the model) must converge on ONE shared handle, never minting competing
+// logins. Before the fix, the existence check and insert ran in separate lock
+// sections, so concurrent triggers could both observe "none pending" and both
+// insert — the dual-login deadlock.
+func TestAuthSSOConcurrentTriggersConverge(t *testing.T) {
+	oob := newOOBForTest(t)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
+	reg := handoff.NewHandoffRegistry()
+	desc := NewAuthSSODescriptor(oob, handles, reg)
+
+	const n = 16
+	seen := make(chan string, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r, err := desc.Handler(context.Background(), model.ToolRequest{Name: "auth_sso", Arguments: map[string]any{}})
+			if err != nil || r.IsError {
+				return
+			}
+			sc, _ := r.StructuredContent.(map[string]any)
+			if h, _ := sc["handle"].(string); h != "" {
+				seen <- h
+			}
+		}()
+	}
+	wg.Wait()
+	close(seen)
+	uniq := map[string]struct{}{}
+	for h := range seen {
+		uniq[h] = struct{}{}
+	}
+	require.Len(t, uniq, 1, "all concurrent auth_sso triggers must converge on a single shared handle")
 }
 
 // TestAuthSSORevokeRequiresHandle verifies a missing handle fast-fails.

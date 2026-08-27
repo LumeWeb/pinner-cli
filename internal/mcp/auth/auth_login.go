@@ -363,20 +363,30 @@ func (o *OutOfBandLogin) startReaper() {
 	go o.reaper(ctx)
 }
 
-// ActiveLogin returns the currently in-flight (pending) out-of-band login that
-// is compatible with the requested email — the "in use" handle the SSO flow is
-// single-flighted on. It returns the request id (which is also the resume
-// handle) and the approval URL, or ok=false when no compatible login is
-// pending. auth_sso calls this first so a second trigger from the Sign In GUI
-// or the model converges on the SAME handle instead of minting a competing
-// login (the dual-trigger deadlock: only one browser approval can complete, so
-// a second login strands whichever side is polling it). A request that names no
-// account (empty email) may converge on any pending login, because the approval
-// page lets the human enter any account anyway; a specific email only converges
-// on a matching login so distinct accounts are never cross-bound.
-func (o *OutOfBandLogin) ActiveLogin(email string) (id, url string, ok bool) {
+// BeginOrResume atomically starts an out-of-band login, or resumes an
+// already-in-flight one when a compatible login is pending. This is the
+// single-flight primitive that prevents the dual-trigger deadlock (the Sign In
+// GUI and the model both calling auth_sso): only one browser approval can
+// complete, so a second trigger must converge on the SAME existing handle
+// instead of minting a competing login.
+//
+// The existence check and the insert run under ONE o.mu critical section, so
+// two simultaneous triggers cannot both observe "no login pending" and then
+// both insert competing logins (a check-then-act race). It returns the request
+// id (which is also the resume handle), the approval URL, and reused=true when
+// an existing pending login was returned rather than a new one created. A
+// request that names no account (empty email) may converge on any pending
+// login, because the approval page lets the human enter any account anyway; a
+// specific email only converges on a matching login so distinct accounts are
+// never cross-bound.
+func (o *OutOfBandLogin) BeginOrResume(email string) (id, url string, reused bool, err error) {
+	if err := o.start(); err != nil {
+		return "", "", false, err
+	}
+	o.startReaper()
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	// Reuse a compatible pending login if one is in flight.
 	for _, r := range o.requests {
 		r.mu.Lock()
 		pending := r.status == loginPending
@@ -386,10 +396,24 @@ func (o *OutOfBandLogin) ActiveLogin(email string) (id, url string, ok bool) {
 			continue
 		}
 		if email == "" || email == reqEmail {
-			return r.id, o.loginURLLocked(r.id), true
+			o.Logf().Info("out-of-band login reused (already in flight)", zap.String("session", r.sessionID), zap.String("email", email), zap.String("id", r.id))
+			return r.id, o.loginURLLocked(r.id), true, nil
 		}
 	}
-	return "", "", false
+	// No compatible login pending: insert a fresh one under this same lock so a
+	// concurrent trigger cannot also pass the existence check above.
+	requestID := session.RandomID()
+	req := &loginRequest{
+		id:        requestID,
+		csrfToken: session.RandomID(),
+		sessionID: requestID,
+		email:     email,
+		created:   time.Now(),
+		status:    loginPending,
+	}
+	o.requests[requestID] = req
+	o.Logf().Info("out-of-band login started", zap.String("session", requestID), zap.String("email", email), zap.String("id", requestID))
+	return requestID, o.loginURLLocked(requestID), false, nil
 }
 
 // Revoke cancels an in-flight out-of-band login by request id. It removes the
