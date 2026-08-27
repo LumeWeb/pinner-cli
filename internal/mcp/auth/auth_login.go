@@ -363,6 +363,84 @@ func (o *OutOfBandLogin) startReaper() {
 	go o.reaper(ctx)
 }
 
+// BeginOrResume atomically starts an out-of-band login, or resumes an
+// already-in-flight one when a compatible login is pending. This is the
+// single-flight primitive that prevents the dual-trigger deadlock (the Sign In
+// GUI and the model both calling auth_sso): only one browser approval can
+// complete, so a second trigger must converge on the SAME existing handle
+// instead of minting a competing login.
+//
+// The existence check and the insert run under ONE o.mu critical section, so
+// two simultaneous triggers cannot both observe "no login pending" and then
+// both insert competing logins (a check-then-act race). It returns the request
+// id (which is also the resume handle), the approval URL, and reused=true when
+// an existing pending login was returned rather than a new one created. A
+// request that names no account (empty email) may converge on any pending
+// login, because the approval page lets the human enter any account anyway; a
+// specific email only converges on a matching login so distinct accounts are
+// never cross-bound.
+func (o *OutOfBandLogin) BeginOrResume(email string) (id, url string, reused bool, err error) {
+	if err := o.start(); err != nil {
+		return "", "", false, err
+	}
+	o.startReaper()
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	// Reuse a compatible pending login if one is in flight.
+	for _, r := range o.requests {
+		r.mu.Lock()
+		pending := r.status == loginPending
+		reqEmail := r.email
+		r.mu.Unlock()
+		if !pending {
+			continue
+		}
+		if email == "" || email == reqEmail {
+			o.Logf().Info("out-of-band login reused (already in flight)", zap.String("session", r.sessionID), zap.String("email", email), zap.String("id", r.id))
+			return r.id, o.loginURLLocked(r.id), true, nil
+		}
+	}
+	// No compatible login pending: insert a fresh one under this same lock so a
+	// concurrent trigger cannot also pass the existence check above.
+	requestID := session.RandomID()
+	req := &loginRequest{
+		id:        requestID,
+		csrfToken: session.RandomID(),
+		sessionID: requestID,
+		email:     email,
+		created:   time.Now(),
+		status:    loginPending,
+	}
+	o.requests[requestID] = req
+	o.Logf().Info("out-of-band login started", zap.String("session", requestID), zap.String("email", email), zap.String("id", requestID))
+	return requestID, o.loginURLLocked(requestID), false, nil
+}
+
+// Revoke cancels an in-flight out-of-band login by request id. It removes the
+// request from the pending set and records a spent tombstone so a re-opened
+// approval URL renders the branded "no longer active" page instead of a bare
+// 404. It returns whether a pending request was revoked (false for an unknown
+// or already-consumed id). The caller (auth_sso_revoke) additionally retires the
+// resume handle and continuation so a fresh auth_sso can start cleanly.
+func (o *OutOfBandLogin) Revoke(id string) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	r, ok := o.requests[id]
+	if !ok {
+		return false
+	}
+	r.mu.Lock()
+	pending := r.status == loginPending
+	r.mu.Unlock()
+	if !pending {
+		return false
+	}
+	o.Logf().Info("out-of-band login revoked", zap.String("session", r.sessionID), zap.String("email", r.email), zap.String("id", r.id))
+	delete(o.requests, id)
+	o.MarkSpentLocked(id, time.Now(), handoff.ReasonUsed)
+	return true
+}
+
 // PendingOutcome reports the current state of the out-of-band login for a
 // wizard session: the URL the human must open while it is still pending, or a
 // done flag once it has completed. A non-nil err is returned when the login

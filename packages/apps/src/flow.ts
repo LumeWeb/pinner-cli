@@ -33,6 +33,11 @@ export interface FlowConfig {
   /** Delay between polls (ms). */
   pollDelayMs: number;
 
+  // Optional revoke support: a single-flight flow that can already be in-use
+  // (auth_sso) exposes how to cancel the in-progress handle and start fresh.
+  /** Name of the MCP tool that revokes the in-progress flow by handle, if any. */
+  revokeTool?: string;
+
   // Message copy.
   actionLabel: string;
   startErrorMsg: string;
@@ -43,6 +48,9 @@ export interface FlowConfig {
   deadDetailPrefix: string;
   timeoutMsg: string;
   retryWord: string;
+  /** Shown while polling a login that was already in use (reused, not fresh).
+   * Only flow apps that reuse in-use logins (auth_sso) supply it. */
+  inUseMsg?: string;
 }
 
 /** Tool-result shape the flow reads from. */
@@ -90,6 +98,10 @@ export interface FlowContext {
    * flow already-complete (status "done" on start), so the UI shows
    * `alreadyDoneMsg` instead of `doneMsg`. */
   alreadyDone: boolean;
+  /** True when the flow is polling a login that was ALREADY in use (reused by
+   * single-flight start) rather than freshly started. Surfaces the in-use state
+   * and reveals the revoke affordance. */
+  inUse: boolean;
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -113,6 +125,10 @@ export function createFlowMachine(cfg: FlowConfig, callTool: CallTool) {
   const hasHandle = (ctx: FlowContext, ev: any) => !!strOf(ev, "handle");
   const withoutHandle = (ctx: FlowContext, ev: any) => !strOf(ev, "handle");
   const exhausted = (ctx: FlowContext, ev: any) => remainingOf(ev) <= 0;
+  const isInUse = (ctx: FlowContext, ev: any) => {
+    const sc = ev?.data?.structuredContent;
+    return !!(sc && typeof sc === "object" && sc.in_use === true);
+  };
 
   // --- reducers -----------------------------------------------------------
 
@@ -145,17 +161,26 @@ export function createFlowMachine(cfg: FlowConfig, callTool: CallTool) {
     attempts: remainingOf(ev),
   }));
 
-  const armStart = reduce((ctx: FlowContext) => ({ ...ctx, handle: "", url: "", detail: "", attempts: cfg.maxAttempts, alreadyDone: false }));
+  const armStart = reduce((ctx: FlowContext) => ({ ...ctx, handle: "", url: "", detail: "", attempts: cfg.maxAttempts, alreadyDone: false, inUse: false }));
 
-  const reset = reduce((ctx: FlowContext) => ({ ...ctx, handle: "", url: "", detail: "", alreadyDone: false }));
+  const reset = reduce((ctx: FlowContext) => ({ ...ctx, handle: "", url: "", detail: "", alreadyDone: false, inUse: false }));
 
   // Mark that `ok` was reached via an already-complete start hand-off, so the
   // UI renders alreadyDoneMsg ("Already signed in.") rather than doneMsg.
   const markAlreadyDone = reduce((ctx: FlowContext) => ({ ...ctx, alreadyDone: true }));
 
+  // Mark that the current polling flow is polling an ALREADY in-use login
+  // (single-flight start reused an in-flight handle). Reveals the revoke
+  // affordance and renders the in-use message instead of the generic pending.
+  const markInUse = reduce((ctx: FlowContext) => ({ ...ctx, inUse: true }));
+
   // --- invoke fns ----------------------------------------------------------
 
   const startFlow = () => callTool({ name: cfg.startTool, arguments: {} });
+
+  // Revoke the in-progress flow by its handle (single-flight SSO). Only present
+  // when the config supplies a revoke tool (auth_sso).
+  const revokeFlow = (ctx: FlowContext) => callTool({ name: cfg.revokeTool!, arguments: { handle: ctx.handle } });
 
   // A single poll. A transient transport rejection is NOT terminal: return a
   // non-terminal outcome with a decremented budget so the loop retries until
@@ -185,6 +210,10 @@ export function createFlowMachine(cfg: FlowConfig, callTool: CallTool) {
         startFlow,
         transition("done", "ok", guard(hasStatus("done")), markAlreadyDone),
         transition("done", "dead", guard(hasStatus("needs_human")), guard(withoutHandle), setDetail),
+        // A needs_human hand-off flagged in_use reuses an already-in-flight
+        // login: adopt its handle/URL and poll it (single-flight), rather than
+        // treating it as a fresh start. Render it as "in use" with revoke.
+        transition("done", "polling", guard(hasStatus("needs_human")), guard(hasHandle), guard(isInUse), setUrl, setHandle, markInUse),
         transition("done", "polling", guard(hasStatus("needs_human")), guard(hasHandle), setUrl, setHandle),
         transition("done", "error"),
         transition("error", "error"),
@@ -196,6 +225,14 @@ export function createFlowMachine(cfg: FlowConfig, callTool: CallTool) {
         transition("done", "dead", guard(hasStatus("needs_human")), guard(withoutHandle), setDetail),
         transition("done", "timeout", guard(exhausted)),
         transition("done", "polling", setRemaining),
+        transition("revoke", "revoking"),
+        transition("error", "error"),
+      ),
+
+      revoking: invoke(
+        revokeFlow,
+        transition("done", "idle", reset),
+        transition("done", "error"),
         transition("error", "error"),
       ),
 
@@ -204,7 +241,7 @@ export function createFlowMachine(cfg: FlowConfig, callTool: CallTool) {
       error: state(transition("retry", "idle", reset)),
       timeout: state(transition("retry", "idle", reset)),
     },
-    () => ({ url: "", handle: "", detail: "", attempts: cfg.maxAttempts, alreadyDone: false }),
+    () => ({ url: "", handle: "", detail: "", attempts: cfg.maxAttempts, alreadyDone: false, inUse: false }),
   );
 }
 
@@ -218,6 +255,7 @@ export enum FlowState {
   Dead = "dead",
   Error = "error",
   Timeout = "timeout",
+  Revoking = "revoking",
 }
 
 /** All flow states, for iteration / membership checks. */
@@ -229,10 +267,11 @@ export const FLOW_STATES: readonly FlowState[] = [
   FlowState.Dead,
   FlowState.Error,
   FlowState.Timeout,
+  FlowState.Revoking,
 ];
 
 /** States where an out-of-band flow is mid-flight (button disabled). */
-export const FLOW_PENDING: readonly FlowState[] = [FlowState.Starting, FlowState.Polling];
+export const FLOW_PENDING: readonly FlowState[] = [FlowState.Starting, FlowState.Polling, FlowState.Revoking];
 
 /** Terminal flow states (no more polling or user action needed until retry). */
 export const FLOW_TERMINAL: readonly FlowState[] = [

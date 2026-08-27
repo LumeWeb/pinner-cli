@@ -189,8 +189,11 @@ func registerCustomTools(deps customToolDeps) error {
 	authSSO.DirectVisible = true
 	authResume := auth.NewAuthResumeDescriptor(deps.handoffReg, deps.authHandles)
 	authResume.DirectVisible = true
+	authSSORevoke := auth.NewAuthSSORevokeDescriptor(deps.oob, deps.authHandles, deps.handoffReg)
+	authSSORevoke.DirectVisible = true
 	reg.add(customToolSpec{desc: authSSO, index: true})
 	reg.add(customToolSpec{desc: authResume, index: true})
+	reg.add(customToolSpec{desc: authSSORevoke, index: true})
 
 	// auth_sso stays headless (it returns a needs_human URL+handle handoff);
 	// open_sso_signin is the ONLY tool that opens the Sign In app view.

@@ -59,29 +59,45 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore
 				return model.ToolResult{IsError: true, Text: err.Error()}, nil
 			}
 
-			// The handle doubles as the OOB session id AND the request id so
-			// every client-facing identifier for this login is the same value:
-			// the resume handle, the approval-link token, and what auth_resume
-			// validates against. A single identifier per login removes the
-			// "which id do I resume with" ambiguity that previously caused
-			// auth_resume to report "unknown handle" when an agent used the
-			// approval-link token (which was a different, request-only id).
-			handle := handles.Create("pending", map[string]any{"email": in.Email})
-			_, url, err := oob.BeginWithID(handle, handle, in.Email)
+			// Single-flight: begin the out-of-band login atomically, or resume
+			// an already-in-flight one. Two concurrent browser sign-ins
+			// deadlock: a human can only complete one approval, so whichever
+			// side is polling the other login never resolves. BeginOrResume
+			// runs the pending-login existence check and (if none) the insert
+			// under one lock, so simultaneous triggers (the Sign In GUI and the
+			// model) converge on the SAME handle rather than minting competing
+			// logins. The returned id is the resume handle AND the approval-link
+			// token (a single identifier removes the "which id do I resume with"
+			// ambiguity), and reused reports whether an existing login was
+			// surfaced.
+			id, url, reused, err := oob.BeginOrResume(in.Email)
 			if err != nil {
-				// Do not leave an orphaned handle in the store with no
-				// continuation registered; retire it so a future resume does
-				// not see a live handle with nothing backing it.
-				handles.Delete(handle)
 				return model.ToolResult{IsError: true, Text: fmt.Sprintf("failed to start out-of-band login: %v", err)}, nil
 			}
-			// Register the SSO-specific poll logic under the handle so the
-			// shared auth_resume template dispatches to it.
-			reg.Begin(handle, SSOResumeContinuation(oob, handles, reg))
+			// Ensure the async handle exists under this id and register the
+			// SSO-specific poll continuation so auth_resume / auth_sso_status
+			// dispatch to it. Both are idempotent for the reused (in-use) case.
+			handles.CreateWithID(id, "pending", map[string]any{"email": in.Email})
+			reg.Begin(id, SSOResumeContinuation(oob, handles, reg))
+
+			if reused {
+				// An existing login is in flight: surface the SAME in-use handle
+				// and approval URL, flagged in_use with an explicit revoke path
+				// (auth_sso_revoke) so the caller can start fresh if desired.
+				return model.NeedsHumanResult(model.NeedsHuman{
+					Reason:     model.ReasonSSOApproval,
+					ActionURL:  url,
+					Handle:     id,
+					ResumeTool: "auth_resume",
+					InUse:      true,
+					RevokeTool: "auth_sso_revoke",
+					Detail:     "A sign-in is already in progress (handle " + id + "). Complete that pending approval, or revoke it first with auth_sso_revoke to start a fresh sign-in.",
+				}), nil
+			}
 			return model.NeedsHumanResult(model.NeedsHuman{
 				Reason:     model.ReasonSSOApproval,
 				ActionURL:  url,
-				Handle:     handle,
+				Handle:     id,
 				ResumeTool: "auth_resume",
 				Detail:     "Ask the user to open the approval URL in their browser and complete sign-in. Then call auth_resume with the handle.",
 			}), nil
@@ -143,6 +159,66 @@ func SSOResumeContinuation(oob *OutOfBandLogin, handles *session.AsyncHandleStor
 			Text:              "Sign-in complete. Authentication is now configured.",
 			StructuredContent: map[string]any{"status": model.StatusDone, "handle": handle},
 		}, nil
+	}
+}
+
+// authSSORevokeArgs is the argument for auth_sso_revoke: the handle of the
+// in-flight sign-in to cancel.
+type authSSORevokeArgs struct {
+	Handle string `json:"handle"`
+}
+
+// revokeSSOLogin cancels an in-flight sign-in by handle across its three
+// backing stores: the OOB login request, the async handle, and the resume
+// continuation. It is the single teardown both the model-facing auth_sso_revoke
+// and any future app helper share, so revocation always retires all three. It
+// reports whether an OOB login request was actually pending and revoked.
+func revokeSSOLogin(oob *OutOfBandLogin, handles *session.AsyncHandleStore, reg *handoff.HandoffRegistry, handle string) bool {
+	revoked := oob != nil && oob.Revoke(handle)
+	if handles != nil {
+		handles.Delete(handle)
+	}
+	if reg != nil {
+		reg.End(handle)
+	}
+	return revoked
+}
+
+// NewAuthSSORevokeDescriptor returns the auth_sso_revoke tool: cancel an
+// in-flight out-of-band sign-in by handle so a fresh auth_sso can start. It
+// pairs with the single-flight behavior of auth_sso: when auth_sso reports a
+// handle is already in use, the caller can complete that pending approval or
+// revoke it here. Revoking retires the OOB login request (its approval URL
+// becomes a "no longer active" page), the resume handle, and its continuation.
+func NewAuthSSORevokeDescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore, reg *handoff.HandoffRegistry) model.ToolDescriptor {
+	return model.ToolDescriptor{
+		Name:        "auth_sso_revoke",
+		Title:       "Revoke In-Progress Sign-In",
+		Description: "Cancel an in-progress out-of-band sign-in by handle, so a fresh auth_sso can start. Use this when auth_sso reports a handle is already in use (in_use=true) but you or the human want to start a new sign-in instead of completing the pending approval.",
+		Category:    model.CategoryAccount,
+		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback("Cancel an in-progress out-of-band sign-in by handle, so a fresh auth_sso can start. Use when auth_sso reports a handle is already in use.")),
+		InputSchema: toolargs.ToolSchemaFor[authSSORevokeArgs](),
+		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
+			if oob == nil || handles == nil || reg == nil {
+				return model.ToolResult{IsError: true, Text: "Revoking a sign-in is not configured for this server."}, nil
+			}
+			in, err := toolargs.DecodeToolArgs[authSSORevokeArgs](req)
+			if err != nil {
+				return model.ToolResult{IsError: true, Text: err.Error()}, nil
+			}
+			if in.Handle == "" {
+				return model.ToolResult{IsError: true, Text: "handle is required"}, nil
+			}
+			revoked := revokeSSOLogin(oob, handles, reg, in.Handle)
+			return model.ToolResult{
+				Text: "Sign-in revoked. Start a fresh login with auth_sso when ready.",
+				StructuredContent: map[string]any{
+					"status":  model.StatusDone,
+					"handle":  in.Handle,
+					"revoked": revoked,
+				},
+			}, nil
+		},
 	}
 }
 

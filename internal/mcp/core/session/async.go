@@ -79,6 +79,41 @@ func (s *AsyncHandleStore) Create(status string, data map[string]any) string {
 	return id
 }
 
+// CreateWithID ensures a handle with the caller-supplied id exists: creating
+// it if absent, or refreshing an existing entry's expiry (and data) if present.
+// It is the companion to Create for callers that need the handle id to equal a
+// coordinator-generated id (e.g. the OOB login request id, so the resume handle
+// and the approval-link token are the same value). Idempotent and concurrency-
+// safe; like Create it never fails on capacity (it evicts expired items first
+// and otherwise allows the map to grow, bounded by TTL).
+func (s *AsyncHandleStore) CreateWithID(id, status string, data map[string]any) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if it, ok := s.items[id]; ok {
+		it.status = status
+		if data != nil {
+			it.data = data
+		}
+		it.expiresAt = s.now().Add(s.ttl)
+		return id
+	}
+	if len(s.items) >= s.maxLen {
+		for oldID, it := range s.items {
+			if s.now().After(it.expiresAt) {
+				delete(s.items, oldID)
+			}
+		}
+	}
+	now := s.now()
+	s.items[id] = &asyncItem{
+		status:    status,
+		data:      data,
+		createdAt: now,
+		expiresAt: now.Add(s.ttl),
+	}
+	return id
+}
+
 // Get returns the current status and data for a handle. Returns
 // ErrHandleNotFound if no such handle exists, or ErrHandleExpired if it has
 // passed its TTL (the item is removed in that case).

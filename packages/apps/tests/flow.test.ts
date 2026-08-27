@@ -23,13 +23,16 @@ const baseConfig: FlowConfig = {
   deadDetailPrefix: "dead",
   timeoutMsg: "timeout",
   retryWord: "start",
+  inUseMsg: "auth already in progress",
+  revokeTool: "revoke_t",
 };
 
-function needsHuman(handle?: string, url?: string, detail?: string): ToolResult {
+function needsHuman(handle?: string, url?: string, detail?: string, inUse?: boolean): ToolResult {
   const sc: Record<string, unknown> = { status: "needs_human" };
   if (handle) sc.handle = handle;
   if (url) sc.action_url = url;
   if (detail) sc.detail = detail;
+  if (inUse) sc.in_use = true;
   return { structuredContent: sc };
 }
 
@@ -174,6 +177,61 @@ describe("flow machine", () => {
     service = interpret(machine, () => {});
     service.send("start");
     await untilState(service, FlowState.Error);
+  });
+
+  it("start returns in_use hand-off → adopts the existing handle into polling (inUse)", async () => {
+    const gate: { op: "start" | "poll"; resolve: (r: ToolResult) => void }[] = [];
+    async function scriptedCall(req: any): Promise<ToolResult> {
+      calls.push(req);
+      return await new Promise<ToolResult>((resolve) =>
+        gate.push({ op: req.name === "start_t" ? "start" : "poll", resolve }),
+      );
+    }
+    machine = createFlowMachine(baseConfig, scriptedCall);
+    service = interpret(machine, () => {});
+    service.send("start");
+    await untilState(service, FlowState.Starting);
+    // The single-flight start returns the SAME in-use handle+URL (in_use=true).
+    gate.find((g) => g.op === "start")!.resolve(needsHuman("h-inuse", "https://x.test/approve", undefined, true));
+    // It adopts the existing handle and polls it, flagged inUse.
+    await untilState(service, FlowState.Polling);
+    expect((service.context as any).handle).toBe("h-inuse");
+    expect((service.context as any).inUse).toBe(true);
+    // The in-use polling render shows the in-use copy and reveals revoke.
+    const r = renderFlow(FlowState.Polling, { inUse: true }, baseConfig);
+    expect(r.statusMsg).toBe(baseConfig.inUseMsg);
+    expect(r.revoke).toBe(true);
+    // Polling the shared in-use handle resolves to done like any live login.
+    gate.find((g) => g.op === "poll")!.resolve({ structuredContent: { status: "done" } });
+    await untilState(service, FlowState.Ok);
+  });
+
+  it("revoke during an in-use poll calls revokeTool(handle) then returns to idle", async () => {
+    const gate: { op: string; resolve: (r: ToolResult) => void }[] = [];
+    async function scriptedCall(req: any): Promise<ToolResult> {
+      calls.push(req);
+      return await new Promise<ToolResult>((resolve) => gate.push({ op: req.name, resolve }));
+    }
+    machine = createFlowMachine(baseConfig, scriptedCall);
+    service = interpret(machine, () => {});
+    service.send("start");
+    await untilState(service, FlowState.Starting);
+    gate.find((g) => g.op === "start_t")!.resolve(needsHuman("h-inuse", "https://x.test/approve", undefined, true));
+    await untilState(service, FlowState.Polling);
+
+    // robot3 only infers events declared on state() nodes; "revoke" lives on the
+    // polling invoke node so it isn't in the static send union — cast it.
+    service.send("revoke" as never);
+    await untilState(service, FlowState.Revoking);
+    // The revoke call carries the in-use handle.
+    const revokeCall = calls.find((c) => c.name === "revoke_t");
+    expect(revokeCall).toEqual({ name: "revoke_t", arguments: { handle: "h-inuse" } });
+
+    gate.find((g) => g.op === "revoke_t")!.resolve({ structuredContent: { status: "done" } });
+    await untilState(service, FlowState.Idle);
+    // A fresh sign-in can now start.
+    expect((service.context as any).inUse).toBe(false);
+    expect((service.context as any).handle).toBe("");
   });
 
   it("poll transport rejection is NON-terminal: retries until timeout", async () => {
