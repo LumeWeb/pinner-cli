@@ -178,6 +178,62 @@ func TestGrokDetector_NoMatch(t *testing.T) {
 	require.Equal(t, AuthMethod(""), auth)
 }
 
+func TestAiderDeskDetector_MatchByClientInfo(t *testing.T) {
+	d := aiderDeskDetector{}
+
+	// Positive: co-located stdio with aider-desk clientInfo name.
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "aider-desk-client", Version: "1.0.0"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostAiderDesk, host)
+	require.Equal(t, AuthNone, auth)
+
+	// Positive: case-insensitive name match.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "AIDer-Desk-Client"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostAiderDesk, host)
+	require.Equal(t, AuthNone, auth)
+}
+
+func TestAiderDeskDetector_NoMatch(t *testing.T) {
+	d := aiderDeskDetector{}
+
+	// Negative: co-located stdio but unrelated clientInfo name.
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "some-other-client"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: no clientInfo at all.
+	host, auth = d.Match(DetectRequest{CoLocated: true})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: aider-desk name but remote (not co-located) — aider-desk is
+	// always co-located stdio.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "aider-desk-client"},
+		CoLocated:  false,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: aider-desk name but OpenAI tunnel — aider-desk cannot use the
+	// OpenAI tunnel transport.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo:   &ClientInfo{Name: "aider-desk-client"},
+		CoLocated:    false,
+		TunnelOpenAI: true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+}
+
 func TestClaudeDetector_MatchByUserAgent(t *testing.T) {
 	d := claudeDetector{}
 
@@ -400,6 +456,33 @@ func TestRegistry_Detect_GrokOverHTTP(t *testing.T) {
 	require.True(t, prof.Has(FeatRemoteAccess))
 	require.True(t, prof.Has(FeatSourceData))
 	require.True(t, prof.Has(FeatSourceURL))
+}
+
+func TestRegistry_Detect_AiderDeskOverStdio(t *testing.T) {
+	r := NewRegistry()
+
+	req := DetectRequest{
+		ClientInfo:      &ClientInfo{Name: "aider-desk-client", Version: "1.0.0"},
+		ProtocolVersion: "2025-11-25",
+		CoLocated:       true,
+	}
+	prof := r.Detect(req)
+
+	require.Equal(t, HostAiderDesk, prof.HostType)
+	require.Equal(t, TransportStdio, prof.Transport)
+	require.Equal(t, AuthNone, prof.AuthMethod)
+	require.False(t, prof.Remote)
+	// Feature surface is exactly the generic stdio profile, inherited via the
+	// HostGeneric alias.
+	require.Equal(t, ProfileStdioGeneric.Features, prof.Features)
+	require.True(t, prof.Has(FeatSourcePath))
+	require.True(t, prof.Has(FeatSinkLocal))
+	require.True(t, prof.Has(FeatCoLocated))
+	require.False(t, prof.Has(FeatRemoteAccess))
+	require.False(t, prof.Has(FeatMCPApps))
+	// Runtime overlay: clientInfo and protocol version surfaced.
+	require.Equal(t, "aider-desk-client", prof.ClientInfo.Name)
+	require.Equal(t, "2025-11-25", prof.ProtocolVer)
 }
 
 func TestRegistry_Detect_ClaudeWebOverHTTP(t *testing.T) {
@@ -681,6 +764,33 @@ func TestResolveProfile(t *testing.T) {
 	}
 }
 
+// TestResolveProfile_AiderDesk verifies the alias path: an aliased host
+// inherits the target's full profile (features, transport, auth, remote) but
+// keeps its own HostType.
+func TestResolveProfile_AiderDesk(t *testing.T) {
+	got := resolveProfile(HostAiderDesk, TransportStdio, AuthNone)
+
+	require.Equal(t, HostAiderDesk, got.HostType)
+	require.Equal(t, TransportStdio, got.Transport)
+	require.Equal(t, AuthNone, got.AuthMethod)
+	require.False(t, got.Remote)
+	// Feature surface equals the generic stdio profile exactly (alias target).
+	require.Equal(t, ProfileStdioGeneric.Features, got.Features)
+}
+
+// TestProfileAliasDoesNotCorruptTarget locks in that resolving an alias
+// returns a value copy — overriding the alias's HostType must not mutate the
+// shared static target profile.
+func TestProfileAliasDoesNotCorruptTarget(t *testing.T) {
+	before := ProfileStdioGeneric.HostType
+
+	_ = resolveProfile(HostAiderDesk, TransportStdio, AuthNone)
+
+	require.Equal(t, before, ProfileStdioGeneric.HostType,
+		"resolving an alias must not mutate the shared static target profile")
+	require.Equal(t, HostGeneric, ProfileStdioGeneric.HostType)
+}
+
 // ---------------------------------------------------------------------------
 // ProfileForTransport tests
 // ---------------------------------------------------------------------------
@@ -952,12 +1062,15 @@ func TestNewRegistry_DetectorsRegistered(t *testing.T) {
 	r := NewRegistry()
 
 	require.NotNil(t, r)
-	require.Len(t, r.detectors, 4)
-	// Priority order: openai, grok, claude (web), claude-desktop
-	require.IsType(t, openAIDetector{}, r.detectors[0])
-	require.IsType(t, grokDetector{}, r.detectors[1])
-	require.IsType(t, claudeDetector{}, r.detectors[2])
-	require.IsType(t, claudeDesktopDetector{}, r.detectors[3])
+	require.Len(t, r.detectors, 5)
+	// Priority order: aider-desk, openai, grok, claude (web), claude-desktop
+	// Aider-desk runs first because it is stdio-only and does not conflict
+	// with the remote-only openai/grok/claude detectors.
+	require.IsType(t, aiderDeskDetector{}, r.detectors[0])
+	require.IsType(t, openAIDetector{}, r.detectors[1])
+	require.IsType(t, grokDetector{}, r.detectors[2])
+	require.IsType(t, claudeDetector{}, r.detectors[3])
+	require.IsType(t, claudeDesktopDetector{}, r.detectors[4])
 }
 
 func TestNewRegistry_PriorityOrder(t *testing.T) {

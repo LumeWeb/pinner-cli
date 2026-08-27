@@ -129,6 +129,25 @@ var ProfileHTTPGeneric = newProfile(
 	HostGeneric, TransportHTTP, AuthBearer, true,
 )
 
+// profileAliasTargets declares hosts whose static capability surface is
+// identical to another host's, so they can reuse the target's declaration
+// instead of maintaining a duplicate profile. An alias means "X is exactly
+// Y": X presents the same profile as Y but keeps its own HostType, so
+// callers can still distinguish it via HostIs(HostX) without duplicating a
+// feature set that is guaranteed to match Y's.
+//
+// Adding support for a new host that is indistinguishable from an existing
+// one is a one-line alias here plus a detector — no new profile is needed,
+// and the alias cannot drift from its target because it is resolved through
+// resolveProfile (see resolveProfile).
+var profileAliasTargets = map[HostType]HostType{
+	// aider-desk is a co-located stdio client whose capability surface is
+	// exactly the generic stdio profile (co-located, sink-local,
+	// source-path). It is its own HostType so host-specific gating can use
+	// HostIs(HostAiderDesk), but inherits HostGeneric's declaration.
+	HostAiderDesk: HostGeneric,
+}
+
 // ProfileForTransport returns the generic profile for a transport kind.
 // It is used at server startup when only the transport is known (no
 // per-request detection has run yet). For OpenAI tunnel it returns
@@ -151,6 +170,15 @@ func ProfileForTransport(t TransportKind) PlatformProfile {
 // Transport pair. It returns the best matching static profile; the
 // caller overlays runtime signals (headers, tokenInfo, etc.) afterward.
 func resolveProfile(host HostType, transport TransportKind, auth AuthMethod) PlatformProfile {
+	// An aliased host reuses its target's static declaration but keeps its own
+	// HostType. resolveProfile returns a value copy (never the shared static
+	// profile), so overriding HostType here cannot corrupt the target profile.
+	if base, ok := profileAliasTargets[host]; ok {
+		p := resolveProfile(base, transport, auth)
+		p.HostType = host
+		return p
+	}
+
 	switch {
 	case (host == HostOpenAI || host == HostChatGPT) && transport == TransportOpenAI:
 		return ProfileOpenAITunnel

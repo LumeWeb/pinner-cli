@@ -17,6 +17,7 @@ type DetectorRegistry struct {
 func NewRegistry() *DetectorRegistry {
 	return &DetectorRegistry{
 		detectors: []Detector{
+			aiderDeskDetector{},
 			openAIDetector{},
 			grokDetector{},
 			claudeDetector{},
