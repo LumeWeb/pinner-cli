@@ -15,7 +15,7 @@ import (
 // transport wiring, mirroring the production registration shape so the test
 // exercises the exact same routing logic.
 func vaultPutDescriptor(coLocated, remote bool, pathFn LocalPathVaultPutHandler, vu *transfer.VaultHTTPUpload, relayFn VaultPutHandler) model.ToolDescriptor {
-	return NewVaultPutFileDescriptor(coLocated, remote, pathFn, vu, relayFn, nil, 0)
+	return NewVaultPutFileDescriptor(transportFeatures(coLocated, remote), coLocated, remote, pathFn, vu, relayFn, nil, 0)
 }
 
 func TestVaultPutFileDescriptorRequiresVaultPath(t *testing.T) {
@@ -123,7 +123,7 @@ func TestVaultPutFileDescriptorOpenAIData(t *testing.T) {
 func TestVaultPutFileDescriptorOpenAIRelayHonorsMaxBytes(t *testing.T) {
 	// The relayed url/data source must honor the operator-configured relay cap,
 	// not silently fall back to the 512 MiB package default.
-	desc := NewVaultPutFileDescriptor(false, true, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string) (any, error) {
+	desc := NewVaultPutFileDescriptor(transportFeatures(false, true), false, true, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string) (any, error) {
 		t.Fatal("relay must not receive an oversized upload")
 		return nil, nil
 	}, nil, 4) // cap at 4 bytes

@@ -7,6 +7,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
@@ -25,7 +26,7 @@ func TestWireMetaHeadlessPrimitives(t *testing.T) {
 
 	// upload_file: headless primitive. When TransportHTTP is active (not
 	// co-located, not OpenAI tunnel), source.mode=mint.
-	uf := transfer.NewUploadFileDescriptor(false, false, nil, hp, nil, nil, 0)
+	uf := transfer.NewUploadFileDescriptor(hostenv.ProfileOpenAITunnel.Features, false, false, nil, hp, nil, nil, 0)
 	tool := sdk.Tool(uf)
 	if tool.Meta == nil {
 		t.Fatal("upload_file Meta is nil")
@@ -43,7 +44,7 @@ func TestWireMetaHeadlessPrimitives(t *testing.T) {
 
 	// vault_put_file: headless primitive; same requirement.
 	vu := transfer.NewVaultHTTPUpload(nil, 0)
-	vf := vault.NewVaultPutFileDescriptor(false, false, nil, vu, nil, nil, 0)
+	vf := vault.NewVaultPutFileDescriptor(hostenv.ProfileOpenAITunnel.Features, false, false, nil, vu, nil, nil, 0)
 	tool = sdk.Tool(vf)
 	if tool.Meta == nil {
 		t.Fatal("vault_put_file Meta is nil")
@@ -151,46 +152,46 @@ func TestResourceURIOwnershipGate(t *testing.T) {
 		"vault_put_file",
 		"download_file",
 		"vault_get_file",
-		"auth_status",              // raw JSON read
-		"auth_sso",                 // headless needs_human URL+handle handoff
-		"account_password_update",  // headless needs_human URL handoff
-		"account_email_change",     // headless needs_human URL handoff
-		"pins_add",                 // headless op (CREATE pin via CLI op)
-		"pins_list",                // raw JSON read
-		"vault_create",             // headless needs_human URL+handle handoff
-		"vault_restore",            // headless needs_human URL+handle handoff
-		"vault_status",             // raw JSON read
-		"websites_*",               // raw JSON read/Mutate
+		"auth_status",             // raw JSON read
+		"auth_sso",                // headless needs_human URL+handle handoff
+		"account_password_update", // headless needs_human URL handoff
+		"account_email_change",    // headless needs_human URL handoff
+		"pins_add",                // headless op (CREATE pin via CLI op)
+		"pins_list",               // raw JSON read
+		"vault_create",            // headless needs_human URL+handle handoff
+		"vault_restore",           // headless needs_human URL+handle handoff
+		"vault_status",            // raw JSON read
+		"websites_*",              // raw JSON read/Mutate
 	}
 
 	// openLaunchers is the ui:// surface for the user's explicit "open this
 	// app" action — the ONLY tools that carry ui.resourceUri. Each maps the
 	// launcher name to its view URI.
 	openLaunchers := map[string]string{
-		"open_upload_manager":       "ui://uploads/ipfs.html",
-		"open_vault_manager":        "ui://uploads/vault.html",
-		"open_download_manager":     "ui://downloads/ipfs.html",
+		"open_upload_manager":         "ui://uploads/ipfs.html",
+		"open_vault_manager":          "ui://uploads/vault.html",
+		"open_download_manager":       "ui://downloads/ipfs.html",
 		"open_vault_download_manager": "ui://downloads/vault.html",
-		"open_pin_creator":          "ui://pins/create.html",
-		"open_pin_list":             "ui://pins/list.html",
-		"open_vault_browser":        "ui://vault/browser.html",
-		"open_vault_create":         "ui://vault/create.html",
-		"open_vault_restore":        "ui://vault/restore.html",
-		"open_account":              "ui://auth/status.html",
-		"open_sso_signin":           "ui://auth/sso.html",
-		"open_account_password":     "ui://account/password.html",
-		"open_account_email":        "ui://account/email.html",
+		"open_pin_creator":            "ui://pins/create.html",
+		"open_pin_list":               "ui://pins/list.html",
+		"open_vault_browser":          "ui://vault/browser.html",
+		"open_vault_create":           "ui://vault/create.html",
+		"open_vault_restore":          "ui://vault/restore.html",
+		"open_account":                "ui://auth/status.html",
+		"open_sso_signin":             "ui://auth/sso.html",
+		"open_account_password":       "ui://account/password.html",
+		"open_account_email":          "ui://account/email.html",
 	}
 
 	// appOnlyHelpers are the iframe-only helpers registered with
 	// visibility=["app"]; compliant hosts keep them out of the model surface.
 	appOnlyHelpers := map[string]string{
-		"ipfs_upload_submit":  "ui://uploads/ipfs.html",
-		"ipfs_upload_status":  "ui://uploads/ipfs.html",
-		"vault_upload_submit": "ui://uploads/vault.html",
-		"pin_status":          "ui://pins/create.html",
-		"auth_sso_status":     "ui://auth/sso.html",
-		"vault_create_status": "ui://vault/create.html",
+		"ipfs_upload_submit":   "ui://uploads/ipfs.html",
+		"ipfs_upload_status":   "ui://uploads/ipfs.html",
+		"vault_upload_submit":  "ui://uploads/vault.html",
+		"pin_status":           "ui://pins/create.html",
+		"auth_sso_status":      "ui://auth/sso.html",
+		"vault_create_status":  "ui://vault/create.html",
 		"vault_restore_status": "ui://vault/restore.html",
 	}
 

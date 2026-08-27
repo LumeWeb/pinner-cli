@@ -11,6 +11,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 )
@@ -18,7 +19,7 @@ import (
 // stdioFileDesc builds a co-located upload_file descriptor with a path handler
 // so the `source` branch is exercised without any network.
 func stdioFileDesc() model.ToolDescriptor {
-	return transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
+	return transfer.NewUploadFileDescriptor(hostenv.ProfileOpenAITunnel.Features, true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 		return map[string]string{"cid": "QmStdio"}, nil
 	}, nil, nil, nil, 0)
 }
@@ -31,7 +32,7 @@ func stdioFileDesc() model.ToolDescriptor {
 // fetch.
 func openAIFileDesc(t *testing.T) model.ToolDescriptor {
 	t.Helper()
-	return transfer.NewUploadFileDescriptor(true, false, nil, nil, func(ctx context.Context, r io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
+	return transfer.NewUploadFileDescriptor(hostenv.ProfileOpenAITunnel.Features, true, false, nil, nil, func(ctx context.Context, r io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
 		t.Fatal("relay executor must not be invoked for a rejected input")
 		return nil, nil
 	}, nil, 0)
@@ -104,7 +105,7 @@ func TestUploadFileOpenAIMetaCoexistsWithAppUI(t *testing.T) {
 	srv := sdk.NewServer(nil)
 
 	// Real descriptor (carries openai/fileParams in its Meta).
-	desc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
+	desc := transfer.NewUploadFileDescriptor(hostenv.ProfileOpenAITunnel.Features, false, false, nil, cu, nil, nil, 0)
 	catalog.Add(model.ToolEntryFromDescriptor(desc))
 	// Seed the launcher; the app's AttachTo now points at open_upload_manager.
 	seedLauncherForTest(t, srv, catalog, upload.OpenUploadManagerToolName, upload.OpenUploadManagerURI, model.CategoryCore)

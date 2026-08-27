@@ -64,11 +64,11 @@ func TestUploadVaultMatchesTransport(t *testing.T) {
 // MCPTargets so describe_tool / search_tools keep the per-request surface.
 func TestHostServerDescriptorOverride(t *testing.T) {
 	// Startup HTTP descriptor: mint-only, no file handoff.
-	startupUpload := transfer.NewUploadFileDescriptor(false, false, nil, nil, nil, nil, 0)
+	startupUpload := transfer.NewUploadFileDescriptor(transportFeatures(false, false), false, false, nil, nil, nil, nil, 0)
 	require.NotContains(t, startupUpload.Description, "`file`")
 	require.Contains(t, startupUpload.Description, "source.mode=mint")
 
-	startupVault := vault.NewVaultPutFileDescriptor(false, false, nil, nil, nil, nil, 0)
+	startupVault := vault.NewVaultPutFileDescriptor(transportFeatures(false, false), false, false, nil, nil, nil, nil, 0)
 	require.NotContains(t, startupVault.Description, "`file`")
 
 	// Re-resolve both against the OpenAI-HTTP profile (as a dedicated per-host

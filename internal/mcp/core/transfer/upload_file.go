@@ -2,10 +2,13 @@ package transfer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/invopop/jsonschema"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
@@ -105,33 +108,40 @@ func UploadFileTransport(coLocated, tunnelOpenAI bool) TransportKind {
 //
 // It delegates to newUploadFileDescriptor with no HTTP client override, so the
 // OpenAI `file` branch uses Pinner's SSRF-guarded client.
-func NewUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHandler, hp *Upload, relayFn UploadHandler, relayHosts []string, maxRelayBytes int64) model.ToolDescriptor {
-	return newUploadFileDescriptor(coLocated, tunnelOpenAI, pathFn, hp, relayFn, relayHosts, maxRelayBytes, nil)
+func NewUploadFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenAI bool, pathFn UploadFileHandler, hp *Upload, relayFn UploadHandler, relayHosts []string, maxRelayBytes int64) model.ToolDescriptor {
+	return newUploadFileDescriptor(features, coLocated, tunnelOpenAI, pathFn, hp, relayFn, relayHosts, maxRelayBytes, nil)
 }
 
 // newUploadFileDescriptor is the implementation behind NewUploadFileDescriptor.
 // httpClient, when non-nil, overrides the client used to fetch an OpenAI `file`
 // download_url. It is a deliberate trust decision by embedding Go code (tests,
 // internal fetches); production passes nil and uses the SSRF-guarded client.
-func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHandler, hp *Upload, relayFn UploadHandler, relayHosts []string, maxRelayBytes int64, httpClient *http.Client) model.ToolDescriptor {
+func newUploadFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenAI bool, pathFn UploadFileHandler, hp *Upload, relayFn UploadHandler, relayHosts []string, maxRelayBytes int64, httpClient *http.Client) model.ToolDescriptor {
 	transport := UploadFileTransport(coLocated, tunnelOpenAI)
-	return model.ToolDescriptor{
-		Name:        "upload_file",
-		Title:       "Upload a file to Pinner",
-		Description: uploadFileDescription(transport),
-		Category:    model.CategoryCore,
-		// The input schema advertises only the source.mode values valid for this
-		// transport (path for stdio, mint for HTTP/tunnel, url+data for the
-		// OpenAI tunnel), matching capabilities().source_modes so the published
-		// schema never contradicts the advertised modes.
-		InputSchema: RewriteSourceModeEnum(toolargs.ToolSchemaFor[UploadFileInput](), transport),
+	hostFile := features.Has(hostenv.FeatFileHostInput)
+	var meta map[string]any
+	if hostFile {
 		// Advertise the OpenAI file-parameter handoff so a ChatGPT/OpenAI host
 		// knows the top-level `file` argument carries a generated-file
 		// reference (temporary download_url + file_id) it can populate from a
 		// file it owns, without a human file-picker. This metadata is additive:
 		// _meta.ui (MCP Apps), securitySchemes, and any other Pinner metadata
-		// remain intact alongside it.
-		Meta: ChatGPTFileMeta(),
+		// remain intact alongside it. Hosts without FeatFileHostInput (e.g.
+		// Grok) must not advertise it.
+		meta = ChatGPTFileMeta()
+	}
+	return model.ToolDescriptor{
+		Name:        "upload_file",
+		Title:       "Upload a file to Pinner",
+		Description: uploadFileDescription(transport),
+		Category:    model.CategoryCore,
+		// The input schema is compiled from the profile's feature set: the
+		// `file` handoff is present only when FeatFileHostInput, source.mode is
+		// narrowed to the transport's modes, and the mode prose is rewritten
+		// accordingly. This keeps the published schema and the advertised
+		// capabilities derived from one source of truth.
+		InputSchema: uploadFileSchema(features),
+		Meta:        meta,
 		MCPTargets: toolforge.UploadFileTargets,
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[UploadFileInput](request)
@@ -309,6 +319,52 @@ func newUploadFileDescriptor(coLocated, tunnelOpenAI bool, pathFn UploadFileHand
 			}
 		},
 	}
+}
+
+// archiveModeSchemaDesc and wrapSchemaDesc are the shared property copy for the
+// upload_file archive_mode and wrap inputs. They are static (the same wording
+// is correct on every profile); only their presence and the source-mode enum
+// vary by feature.
+const (
+	archiveModeSchemaDesc = "How to treat an archive. convert extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. The archive's directory structure is preserved exactly, so index.html MUST be at the archive root (not inside a wrapper directory). preserve keeps the archive intact as a single file. IMPORTANT: the default depends on the source. Host-file, path, and url/data sources default to convert; the mint (presigned PUT) source defaults to preserve and ONLY converts when archive_mode=convert is passed explicitly. A website ZIP streamed via source.mode=mint therefore MUST pass archive_mode=convert, or it uploads as a raw single-file CID and websites_create will reject it."
+	wrapSchemaDesc   = "Wrap a single file in a directory root so the CID is a directory (required when the upload is a website). When wrap=true and no name is given, HTML content is auto-named index.html so the site resolves at its root. Do NOT set an explicit name like 'starter-site' — it is honored as-is and the page will only be reachable at /starter-site, not /. Only affects single-file uploads; directories and archive-converted uploads are already a directory root."
+)
+
+// UploadSourceSchemaTransform narrows a reflected UploadSource schema's `mode`
+// enum to the profile's supported source modes and rewrites its prose so a host
+// that cannot pass a `file` object (no FeatFileHostInput) is led to the
+// transport source as the only byte path rather than as a fallback. It is
+// shared by every tool that embeds an UploadSource (upload_file, vault_put_file).
+func UploadSourceSchemaTransform(s *jsonschema.Schema, fs hostenv.FeatureSet) {
+	mode, ok := s.Properties.Get("mode")
+	if !ok {
+		return
+	}
+	mode.Enum = SourceModeEnumFromFeatures(fs)
+	if fs.Has(hostenv.FeatFileHostInput) {
+		mode.Description = "Fallback transport. Only use when the host does not already hold the file as a host file accepted by the file parameter. The enum advertises which modes are valid on this transport."
+	} else {
+		mode.Description = "Required on this host: the only byte path. The enum advertises which mode is valid on this transport."
+	}
+}
+
+// uploadFileSchema compiles the upload_file input schema from the tool's
+// feature set. `source` is always present with its mode enum narrowed to the
+// profile's transport modes and its prose adapted to the file-handoff feature;
+// `file` (the OpenAI host-file reference) is present only when
+// FeatFileHostInput. Because presence, enums, and prose are feature-driven, the
+// schema never advertises a handoff the connected host cannot produce and never
+// omits a source mode the transport supports.
+func uploadFileSchema(features hostenv.FeatureSet) json.RawMessage {
+	return toolforge.Schema().
+		Property("file", toolargs.SchemaFor[ChatGPTFileInput](), toolforge.When(hostenv.FeatFileHostInput)).
+		Property("source", toolargs.SchemaFor[UploadSource](), toolforge.Transform(UploadSourceSchemaTransform)).
+		StringProperty("name", "Optional upload name (defaults to the file name).").
+		BoolProperty("wait", "Wait until this upload's own pin operation completes before returning (the upload already pins; this only controls whether the call blocks for it).").
+		StringProperty("archive_mode", archiveModeSchemaDesc, toolforge.Enum("convert", "preserve")).
+		StringProperty("ttl", "Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used with source mode mint.").
+		BoolProperty("wrap", wrapSchemaDesc).
+		RawJSON(features)
 }
 
 // uploadFileDescription resolves the tool description from the forge's

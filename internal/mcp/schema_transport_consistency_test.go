@@ -46,7 +46,7 @@ func sourceModeEnumOf(t *testing.T, tool *mcp.Tool) []string {
 // uploadDescriptorFor builds an upload_file descriptor for the given transport
 // wiring with a do-nothing handler (only the schema is inspected here).
 func uploadDescriptorFor(coLocated, tunnelOpenAI bool) model.ToolDescriptor {
-	return transfer.NewUploadFileDescriptor(coLocated, tunnelOpenAI,
+	return transfer.NewUploadFileDescriptor(transportFeatures(coLocated, tunnelOpenAI), coLocated, tunnelOpenAI,
 		func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 			return map[string]any{"cid": "QmTest"}, nil
 		},
@@ -60,7 +60,7 @@ func uploadDescriptorFor(coLocated, tunnelOpenAI bool) model.ToolDescriptor {
 
 // vaultDescriptorFor builds a vault_put_file descriptor for the given transport.
 func vaultDescriptorFor(coLocated, tunnelOpenAI bool) model.ToolDescriptor {
-	return vault.NewVaultPutFileDescriptor(coLocated, tunnelOpenAI,
+	return vault.NewVaultPutFileDescriptor(transportFeatures(coLocated, tunnelOpenAI), coLocated, tunnelOpenAI,
 		func(ctx context.Context, path, vaultPath, archiveMode string) (any, error) {
 			return map[string]any{"vault_path": vaultPath}, nil
 		},
@@ -154,14 +154,15 @@ func TestRegressionHTTPMintEnum(t *testing.T) {
 	}
 }
 
-// TestFileInputPresentAcrossTransports verifies the direct host file object is
-// a first-class input on every transport (the ChatGPT handoff), so a model
-// never has to fall back to base64/curl on a host that can provide the file.
-func TestFileInputPresentAcrossTransports(t *testing.T) {
+// TestFileInputGatedByHostInput verifies the direct host file object (and the
+// openai/fileParams annotation) is exposed only on hosts that can actually
+// provide a file (FeatFileHostInput = OpenAI tunnel/HTTP), and is absent on
+// generic stdio/HTTP transports that must instead use path/mint/url/data.
+func TestFileInputGatedByHostInput(t *testing.T) {
 	for _, tc := range []struct {
-		coLocated, openAI bool
+		coLocated, openAI, wantFile bool
 	}{
-		{true, false}, {false, false}, {false, true},
+		{true, false, false}, {false, false, false}, {false, true, true},
 	} {
 		tools := listToolsOn(t, uploadDescriptorFor(tc.coLocated, tc.openAI))
 		tool, ok := tools["upload_file"]
@@ -172,9 +173,14 @@ func TestFileInputPresentAcrossTransports(t *testing.T) {
 		require.NoError(t, json.Unmarshal(schemaBytes, &schema))
 		props := schema["properties"].(map[string]any)
 		_, hasFile := props["file"].(map[string]any)
-		require.True(t, hasFile, "upload_file must expose the direct file object across transports")
+		require.Equal(t, tc.wantFile, hasFile,
+			"upload_file file object must match FeatFileHostInput (coLocated=%v openAI=%v)", tc.coLocated, tc.openAI)
 		// The openai/fileParams annotation advertises the file field.
 		b, _ := json.Marshal(tool.Meta["openai/fileParams"])
-		require.JSONEq(t, `["file"]`, string(b))
+		if tc.wantFile {
+			require.JSONEq(t, `["file"]`, string(b))
+		} else {
+			require.Equal(t, "null", string(b))
+		}
 	}
 }

@@ -58,7 +58,7 @@ func buildVaultUploadAppServerEx(t *testing.T, fake *fakeVaultPutHandler) (*mcp.
 	srv := sdk.NewServer(nil)
 	vu := transfer.NewVaultHTTPUpload(fake.Put, 1<<20)
 
-	vaultPutDesc := vault.NewVaultPutFileDescriptor(false, false, nil, vu, fake.Put, nil, 0)
+	vaultPutDesc := vault.NewVaultPutFileDescriptor(transportFeatures(false, false), false, false, nil, vu, fake.Put, nil, 0)
 	catalog.Add(model.ToolEntryFromDescriptor(vaultPutDesc))
 	// Seed the launcher exactly as registerOpenLauncher does in production;
 	// the app's AttachTo now points at open_vault_manager, not vault_put_file.

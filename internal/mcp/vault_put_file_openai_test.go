@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
@@ -18,7 +19,7 @@ import (
 // OpenAI `file` schema, through the actual registration pipeline.
 func TestVaultPutFileOpenAIMetaThroughRegistration(t *testing.T) {
 	srv := sdk.NewServer(nil)
-	desc := vault.NewVaultPutFileDescriptor(false, false, nil, transfer.NewVaultHTTPUpload(nil, 0), nil, nil, 0)
+	desc := vault.NewVaultPutFileDescriptor(hostenv.ProfileOpenAITunnel.Features, false, false, nil, transfer.NewVaultHTTPUpload(nil, 0), nil, nil, 0)
 	require.NoError(t, RegisterOfficialDescriptor(srv, desc))
 
 	cs := connectOfficialClient(t, srv)

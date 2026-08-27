@@ -34,10 +34,10 @@ func TestToolRegistrationsCarryMCPTargets(t *testing.T) {
 	requireMCPTargets(t, NewAgentGuideDescriptor())
 
 	// Transport tools.
-	requireMCPTargets(t, transfer.NewUploadFileDescriptor(true, false, nil, nil, nil, nil, 0))
+	requireMCPTargets(t, transfer.NewUploadFileDescriptor(transportFeatures(true, false), true, false, nil, nil, nil, nil, 0))
 	requireMCPTargets(t, transfer.NewDownloadFileDescriptor(nil, nil, "", 0, false))
 	requireMCPTargets(t, transfer.DataURIUploadDescriptor(nil, 0))
-	requireMCPTargets(t, vault.NewVaultPutFileDescriptor(true, false, nil, nil, nil, nil, 0))
+	requireMCPTargets(t, vault.NewVaultPutFileDescriptor(transportFeatures(true, false), true, false, nil, nil, nil, nil, 0))
 	requireMCPTargets(t, vault.NewVaultGetFileDescriptor(nil, nil, "", 0, false))
 	requireMCPTargets(t, upload.RelayURLUploadDescriptor(nil, nil, 0))
 

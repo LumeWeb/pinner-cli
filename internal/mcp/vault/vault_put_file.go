@@ -2,6 +2,7 @@ package vault
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -73,8 +74,8 @@ type VaultPutFileInput struct {
 // byte is read or written on every source branch, so a directory or traversal
 // destination can never be written regardless of transport. Any vault file
 // path is an allowed destination; there is no single-folder restriction.
-func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVaultPutHandler, vu *transfer.VaultHTTPUpload, relayFn VaultPutHandler, relayHosts []string, maxRelayBytes int64) model.ToolDescriptor {
-	return newVaultPutFileDescriptor(coLocated, tunnelOpenAI, pathFn, vu, relayFn, relayHosts, maxRelayBytes, nil)
+func NewVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenAI bool, pathFn LocalPathVaultPutHandler, vu *transfer.VaultHTTPUpload, relayFn VaultPutHandler, relayHosts []string, maxRelayBytes int64) model.ToolDescriptor {
+	return newVaultPutFileDescriptor(features, coLocated, tunnelOpenAI, pathFn, vu, relayFn, relayHosts, maxRelayBytes, nil)
 }
 
 // newVaultPutFileDescriptor is the implementation behind
@@ -82,24 +83,29 @@ func NewVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 // used to fetch an OpenAI `file` download_url. It is a deliberate trust
 // decision by embedding Go code (tests); production passes nil and uses Pinner's
 // SSRF-guarded client.
-func newVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVaultPutHandler, vu *transfer.VaultHTTPUpload, relayFn VaultPutHandler, relayHosts []string, maxRelayBytes int64, httpClient *http.Client) model.ToolDescriptor {
+func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenAI bool, pathFn LocalPathVaultPutHandler, vu *transfer.VaultHTTPUpload, relayFn VaultPutHandler, relayHosts []string, maxRelayBytes int64, httpClient *http.Client) model.ToolDescriptor {
 	transport := transfer.UploadFileTransport(coLocated, tunnelOpenAI)
+	hostFile := features.Has(hostenv.FeatFileHostInput)
+	var meta map[string]any
+	if hostFile {
+		// Advertise the OpenAI file-parameter handoff so a ChatGPT/OpenAI host
+		// knows the top-level `file` argument carries a generated-file
+		// reference (temporary download_url + file_id) it can populate from a
+		// file it owns, without a human file-picker. This metadata is additive
+		// to any other Pinner metadata. Hosts without FeatFileHostInput (e.g.
+		// Grok) must not advertise it.
+		meta = transfer.ChatGPTFileMeta()
+	}
 	return model.ToolDescriptor{
 		Name:        "vault_put_file",
 		Title:       "Store a file in the Pinner vault",
 		Description: vaultPutFileDescription(transport),
 		Category:    model.CategoryCore,
-		// The input schema advertises only the source.mode values valid for this
-		// transport (path/mint/url+data per transport), matching
-		// capabilities().source_modes so the published schema and the
-		// advertised modes cannot drift.
-		InputSchema: transfer.RewriteSourceModeEnum(toolargs.ToolSchemaFor[VaultPutFileInput](), transport),
-		// Advertise the OpenAI file-parameter handoff so a ChatGPT/OpenAI host
-		// knows the top-level `file` argument carries a generated-file
-		// reference (temporary download_url + file_id) it can populate from a
-		// file it owns, without a human file-picker. This metadata is additive
-		// to any other Pinner metadata.
-		Meta: transfer.ChatGPTFileMeta(),
+		// The input schema is compiled from the profile's feature set (see
+		// vaultPutFileSchema), so file-handoff presence, the source.mode enum,
+		// and the mode prose all follow the connected host.
+		InputSchema: vaultPutFileSchema(features),
+		Meta:        meta,
 		MCPTargets: toolforge.VaultPutFileTargets,
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[VaultPutFileInput](request)
@@ -221,6 +227,21 @@ func newVaultPutFileDescriptor(coLocated, tunnelOpenAI bool, pathFn LocalPathVau
 			}
 		},
 	}
+}
+
+// vaultPutFileSchema compiles the vault_put_file input schema from the tool's
+// feature set (see upload_file's uploadFileSchema for the shared model: the
+// source.mode enum and prose follow the host features, and `file` is present
+// only when FeatFileHostInput).
+func vaultPutFileSchema(features hostenv.FeatureSet) json.RawMessage {
+	return toolforge.Schema().
+		Property("source", toolargs.SchemaFor[transfer.UploadSource](), toolforge.Transform(transfer.UploadSourceSchemaTransform)).
+		Property("file", toolargs.SchemaFor[transfer.ChatGPTFileInput](), toolforge.When(hostenv.FeatFileHostInput)).
+		StringProperty("vault_path", "Vault destination file path (e.g. vault:/docs/f.pdf or vault:/uploads/report.pdf). Required. Must be a file path, not a directory; traversal (.. or .) segments are rejected. Any vault file path is allowed.").
+		StringProperty("archive_mode", "How to treat an archive path ('convert' extracts, 'preserve' keeps intact). Only used for source mode path.", toolforge.Enum("convert", "preserve")).
+		StringProperty("ttl", "Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used with source mode mint.").
+		Required("vault_path").
+		RawJSON(features)
 }
 
 // vaultPutFileDescription resolves the tool description from the forge's

@@ -2,7 +2,6 @@ package transfer
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -59,60 +58,49 @@ type UploadSource struct {
 	Data string         `json:"data,omitempty" jsonschema:"description=RFC 2397 data: URI. Only for mode=data (OpenAI tunnel)."`
 }
 
-// SourceModeEnumValues returns the UploadSource.mode string values that are
-// valid for the given transport, in stable order. It is the single source of
-// truth for both the published tool schema (via RewriteSourceModeEnum) and the
-// advertised capabilities, so a supported mode is never absent from the schema
-// and an unsupported mode is never surfaced to a model.
-func SourceModeEnumValues(t TransportKind) []string {
-	switch t {
-	case TransportStdio:
-		return []string{string(SourcePath)}
-	case TransportHTTP:
-		return []string{string(SourceMint)}
-	case TransportOpenAI:
-		return []string{string(SourceURL), string(SourceData)}
-	default:
-		// Unknown transport: advertise nothing. Production always passes one of
-		// the three known kinds, so this only guards callers that misuse the
-		// function (and matches capabilities' historic nil-for-unknown).
-		return nil
+// SourceModeEnumFromFeatures returns the UploadSource.mode string values a
+// platform profile supports, in canonical order (path, mint, url, data). It is
+// the single source of truth for the published tool schema and the advertised
+// capabilities, driven directly by the profile's feature set
+// (FeatSourcePath/Mint/URL/Data) — the same features that drive capabilities
+// and the toolforge DescBuilder — so a supported mode is never absent from the
+// schema and an unsupported mode is never surfaced to a model.
+func SourceModeEnumFromFeatures(fs hostenv.FeatureSet) []any {
+	var modes []any
+	for _, m := range [...]struct {
+		mode FileSourceMode
+		feat hostenv.Feature
+	}{
+		{SourcePath, hostenv.FeatSourcePath},
+		{SourceMint, hostenv.FeatSourceMint},
+		{SourceURL, hostenv.FeatSourceURL},
+		{SourceData, hostenv.FeatSourceData},
+	} {
+		if fs.Has(m.feat) {
+			modes = append(modes, string(m.mode))
+		}
 	}
+	return modes
 }
 
-// RewriteSourceModeEnum rewrites the nested source.mode enum inside a tool
-// schema that embeds an UploadSource so it advertises only the modes valid for
-// transport t. The toolargs schema reflector (DoNotReference) inlines the
-// UploadSource object as properties.source.properties.mode, which is exactly
-// the shape this walks.
-//
-// Previously the schema was built statically and its enum carried only "path"
-// on every transport (invopop/jsonschema parses jsonschema:"enum=path,mint,..."
-// as just enum=path), so on an HTTP connection capabilities() reported
-// ["mint"] while the published inputSchema still said enum ["path"] — a client
-// could not legally pass mint. Rewriting the enum from the same source of
-// truth as capabilities removes that drift. If the expected shape is not found
-// the schema is returned unchanged so a structural change degrades to
-// "static", never a panic.
-func RewriteSourceModeEnum(schema json.RawMessage, t TransportKind) json.RawMessage {
-	var root map[string]any
-	if err := json.Unmarshal(schema, &root); err != nil {
-		return schema
+// SourceModeEnumValues returns the UploadSource.mode string values valid for a
+// transport. It delegates to SourceModeEnumFromFeatures via the transport's
+// generic profile so capabilities and the schema share one feature-driven
+// source of truth. Unknown transports advertise nothing (nil-for-unknown),
+// since ProfileForTransport degrades them to a generic profile.
+func SourceModeEnumValues(t TransportKind) []string {
+	switch t {
+	case TransportStdio, TransportHTTP, TransportOpenAI:
+		var out []string
+		for _, m := range SourceModeEnumFromFeatures(hostenv.ProfileForTransport(t).Features) {
+			out = append(out, m.(string))
+		}
+		return out
+	default:
+		// Unknown transport: advertise nothing. Production always passes one of
+		// the three known kinds; this guards callers that misuse the function.
+		return nil
 	}
-	source, ok := root["properties"].(map[string]any)["source"].(map[string]any)
-	if !ok {
-		return schema
-	}
-	mode, ok := source["properties"].(map[string]any)["mode"].(map[string]any)
-	if !ok {
-		return schema
-	}
-	mode["enum"] = SourceModeEnumValues(t)
-	out, err := json.Marshal(root)
-	if err != nil {
-		return schema
-	}
-	return out
 }
 
 // Available reports whether the source mode is usable on the given transport.

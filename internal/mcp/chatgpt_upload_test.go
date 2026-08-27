@@ -27,7 +27,7 @@ func TestRegisterOfficialDescriptorRequiresHandler(t *testing.T) {
 
 func TestUploadFileDescriptorStdio(t *testing.T) {
 	var gotPath, gotName, gotArchive string
-	desc := transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(transportFeatures(true, false), true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 		gotPath, gotName, gotArchive = path, name, archiveMode
 		return map[string]string{"cid": "QmStdio"}, nil
 	}, nil, nil, nil, 0)
@@ -46,7 +46,7 @@ func TestUploadFileDescriptorStdio(t *testing.T) {
 }
 
 func TestUploadFileDescriptorStdioRejectsMint(t *testing.T) {
-	desc := transfer.NewUploadFileDescriptor(true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(transportFeatures(true, false), true, false, func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 		t.Fatal("path handler must not be called")
 		return nil, nil
 	}, nil, nil, nil, 0)
@@ -63,7 +63,7 @@ func TestUploadFileDescriptorHTTPMints(t *testing.T) {
 	}, 0)
 	cu := transfer.NewHTTPUpload(mgr, 0)
 	defer cu.Stop(context.Background())
-	desc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
+	desc := transfer.NewUploadFileDescriptor(transportFeatures(false, false), false, false, nil, cu, nil, nil, 0)
 
 	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source": map[string]any{"mode": "mint"},
@@ -94,7 +94,7 @@ func TestUploadFileDescriptorHTTPMintSupportsWrapAndConvert(t *testing.T) {
 	}, 0)
 	cu := transfer.NewHTTPUpload(mgr, 0)
 	defer cu.Stop(context.Background())
-	desc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
+	desc := transfer.NewUploadFileDescriptor(transportFeatures(false, false), false, false, nil, cu, nil, nil, 0)
 	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source":       map[string]any{"mode": "mint"},
 		"archive_mode": "convert",
@@ -121,7 +121,7 @@ func TestUploadFileDescriptorHTTPMintDefaultsToPreserve(t *testing.T) {
 	}, 0)
 	cu := transfer.NewHTTPUpload(mgr, 0)
 	defer cu.Stop(context.Background())
-	desc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
+	desc := transfer.NewUploadFileDescriptor(transportFeatures(false, false), false, false, nil, cu, nil, nil, 0)
 
 	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source": map[string]any{"mode": "mint"},
@@ -152,7 +152,7 @@ func TestUploadFileDescriptorHTTPMintDefaultsToPreserve(t *testing.T) {
 func TestUploadFileDescriptorHTTPRejectsPath(t *testing.T) {
 	cu := transfer.NewHTTPUpload(nil, 0)
 	defer cu.Stop(context.Background())
-	desc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
+	desc := transfer.NewUploadFileDescriptor(transportFeatures(false, false), false, false, nil, cu, nil, nil, 0)
 	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source": map[string]any{"mode": "path", "path": "/etc/passwd"},
 	}})
@@ -161,7 +161,7 @@ func TestUploadFileDescriptorHTTPRejectsPath(t *testing.T) {
 
 func TestUploadFileDescriptorOpenAIRelayData(t *testing.T) {
 	var size int64
-	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(transportFeatures(false, true), false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
 		size = sz
 		return map[string]string{"cid": "QmRelay"}, nil
 	}, nil, 0)
@@ -178,7 +178,7 @@ func TestUploadFileDescriptorOpenAIRelayHonorsMaxBytes(t *testing.T) {
 	// The relayed url/data source must honor the operator-configured relay cap
 	// threaded through the descriptor, not silently fall back to the 512 MiB
 	// package default. A source advertising more than the cap is rejected.
-	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(transportFeatures(false, true), false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
 		t.Fatal("relay must not receive an oversized upload")
 		return nil, nil
 	}, nil, 4) // cap at 4 bytes
@@ -188,7 +188,7 @@ func TestUploadFileDescriptorOpenAIRelayHonorsMaxBytes(t *testing.T) {
 	require.Error(t, err)
 }
 func TestUploadFileDescriptorOpenAIRejectsMint(t *testing.T) {
-	desc := transfer.NewUploadFileDescriptor(false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
+	desc := transfer.NewUploadFileDescriptor(transportFeatures(false, true), false, true, nil, nil, func(ctx context.Context, reader io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
 		t.Fatal("relay must not run for mint")
 		return nil, nil
 	}, nil, 0)

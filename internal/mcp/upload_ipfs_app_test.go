@@ -472,7 +472,7 @@ func buildIPFSUploadSharedServer(t *testing.T) (*mcp.Server, *transfer.Upload, *
 	srv := sdk.NewServer(nil)
 
 	// The real HTTP/tunnel upload_file descriptor (mirrors custom_tools.go).
-	uploadFileDesc := transfer.NewUploadFileDescriptor(false, false, nil, cu, nil, nil, 0)
+	uploadFileDesc := transfer.NewUploadFileDescriptor(transportFeatures(false, false), false, false, nil, cu, nil, nil, 0)
 	catalog.Add(model.ToolEntryFromDescriptor(uploadFileDesc))
 	// Seed the launcher; the app's AttachTo now points at open_upload_manager.
 	seedLauncherForTest(t, srv, catalog, upload.OpenUploadManagerToolName, upload.OpenUploadManagerURI, model.CategoryCore)

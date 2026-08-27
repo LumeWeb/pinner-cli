@@ -321,7 +321,14 @@ func registerCustomTools(deps customToolDeps) error {
 		if deps.coLocated {
 			pathFn = opts.localPathVaultPut
 		}
-		vaultPutDesc := vault.NewVaultPutFileDescriptor(deps.coLocated, deps.tunnelOpenAI, pathFn, deps.vaultUpload, opts.vaultPutHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
+		// The effective features come from the detected host profile when this is
+	// a dedicated per-host server, else from the startup transport's generic
+	// profile. The schema, description, and Meta are all compiled from them.
+	vaultFeatures := hostenv.ProfileForTransport(transfer.UploadFileTransport(deps.coLocated, deps.tunnelOpenAI)).Features
+	if deps.hostProfile != nil {
+		vaultFeatures = deps.hostProfile.Features
+	}
+	vaultPutDesc := vault.NewVaultPutFileDescriptor(vaultFeatures, deps.coLocated, deps.tunnelOpenAI, pathFn, deps.vaultUpload, opts.vaultPutHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
 		// A dedicated per-host server re-resolves the tool description against
 		// the detected host profile (e.g. an OpenAI-over-HTTP host sees the
 		// `file` handoff even though the startup HTTP transport bakes the
@@ -418,7 +425,14 @@ func registerCustomTools(deps customToolDeps) error {
 		if deps.coLocated {
 			pathFn = opts.localPathUpload
 		}
-		uploadFileDesc := transfer.NewUploadFileDescriptor(deps.coLocated, deps.tunnelOpenAI, pathFn, deps.curlUpload, opts.uploadHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
+		// The effective features come from the detected host profile when this is
+	// a dedicated per-host server, else from the startup transport's generic
+	// profile. The schema, description, and Meta are all compiled from them.
+	uploadFeatures := hostenv.ProfileForTransport(transfer.UploadFileTransport(deps.coLocated, deps.tunnelOpenAI)).Features
+	if deps.hostProfile != nil {
+		uploadFeatures = deps.hostProfile.Features
+	}
+	uploadFileDesc := transfer.NewUploadFileDescriptor(uploadFeatures, deps.coLocated, deps.tunnelOpenAI, pathFn, deps.curlUpload, opts.uploadHandler, opts.relayAllowedHosts, opts.maxRelayBytes)
 		// A dedicated per-host server re-resolves the tool description against
 		// the detected host profile (e.g. an OpenAI-over-HTTP host sees the
 		// `file` handoff even though the startup HTTP transport bakes the
