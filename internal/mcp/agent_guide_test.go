@@ -264,12 +264,17 @@ func TestAgentGuideStepsAreFeatureGated(t *testing.T) {
 	}
 }
 
-// TestAgentGuideNamesHostPUTOnMintSteps guards audit-3 requirement: the mint
-// byte path is upload_file -> <host PUT> -> upload_status, and a step chain
-// that ends at upload_file looks complete when it is not (mint stores no
-// bytes). The host PUT (an out-of-band action, not an MCP tool) and the poll
-// must both be named in the ordered upload AND vault_upload step lists on
-// mint transports, and both must be absent on non-mint transports.
+// TestAgentGuideNamesHostPUTOnMintSteps guards the mint completion contract,
+// which is TOOL-SCOPED:
+//   - upload_file mint: upload_file -> <host PUT> -> upload_status. Mint stores
+//     no bytes, so the ordered upload flow must name both the host PUT and the
+//     upload_status poll (a step chain that ends at upload_file looks complete
+//     when it is not).
+//   - vault_put_file mint: vault_put_file -> <host PUT>, and the PUT response
+//     completes the vault write synchronously. The ordered vault_upload flow
+//     must name the host PUT but MUST NOT name upload_status (there is no poll).
+//
+// On non-mint transports both host PUT steps are absent.
 func TestAgentGuideNamesHostPUTOnMintSteps(t *testing.T) {
 	mintProfiles := []*hostenv.PlatformProfile{
 		strPtr(hostenv.ProfileHTTPGeneric),
@@ -378,5 +383,38 @@ func TestAgentGuideWizardGuidanceIndependentOfElicitation(t *testing.T) {
 		require.Contains(t, summary, "websites_wizard", "%s guide must describe the guided wizard path", p.Transport)
 		require.Contains(t, summary, "publish_website flow directly", "%s guide must steer generic publish to publish_website", p.Transport)
 		require.Contains(t, summary, "next_step_schema", "%s guide must describe the wizard JSON loop", p.Transport)
+	}
+}
+
+// TestAgentGuideMintSummaryScopedByTool guards the audit fix that removed the
+// unqualified "all mint operations poll upload_status" rule from the guide
+// summary. The summary must scope the poll to upload_file (asynchronous:
+// <host PUT> then upload_status) and state that vault_put_file mint is
+// synchronous (the PUT response is the completed vault write, no upload_status
+// poll). The per-flow step lists confirm the same split structurally.
+func TestAgentGuideMintSummaryScopedByTool(t *testing.T) {
+	for _, p := range []*hostenv.PlatformProfile{
+		strPtr(hostenv.ProfileOpenAIHTTP),
+		strPtr(hostenv.ProfileHTTPGeneric),
+		strPtr(hostenv.ProfileGrokHTTP),
+	} {
+		guide := buildAgentGuide(p)
+		summary := guide.Summary
+		require.Contains(t, summary, "upload_file is asynchronous", "%s: summary must scope the poll to upload_file", p.Transport)
+		require.Contains(t, summary, "poll upload_status", "%s: summary must keep upload_file's poll", p.Transport)
+		require.Contains(t, summary, "vault_put_file is synchronous", "%s: summary must scope vault mint as synchronous", p.Transport)
+		require.Contains(t, summary, "no upload_status poll", "%s: summary must reject upload_status for vault mint", p.Transport)
+		// The old unqualified rule must be gone.
+		require.NotContains(t, summary, "For source.mode=mint, PUT the file to the returned url and poll upload_status",
+			"%s: unqualified mint poll rule must be removed from the summary", p.Transport)
+
+		// Structural split: upload mint names <host PUT> + upload_status;
+		// vault mint names <host PUT> but never upload_status.
+		up := guideFlowByName(t, guide, "upload")
+		require.True(t, flowStepsContain(up, "<host PUT>"), "%s: upload mint flow must name the host PUT", p.Transport)
+		require.True(t, flowStepsContain(up, "upload_status"), "%s: upload mint flow must name upload_status", p.Transport)
+		vu := guideFlowByName(t, guide, "vault_upload")
+		require.True(t, flowStepsContain(vu, "<host PUT>"), "%s: vault mint flow must name the host PUT", p.Transport)
+		require.False(t, flowStepsContain(vu, "upload_status"), "%s: vault mint flow must not name upload_status", p.Transport)
 	}
 }

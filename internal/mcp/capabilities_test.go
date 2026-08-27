@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -171,6 +172,90 @@ func TestCapabilitiesDescriptionForOpenAIHTTPNoImpossibleModes(t *testing.T) {
 	require.Contains(t, desc, "source_modes", "description must defer to the dynamic source_modes field")
 }
 
+// TestCapabilitiesDescriptionScopesMintCompletionByTool guards the audit fix
+// that removed the generic "all source.mode=mint operations poll upload_status"
+// rule. The mint completion contract is TOOL-SCOPED and wiring-aware:
+//   - upload_file(source.mode=mint) is asynchronous: <host PUT> then poll
+//     upload_status.
+//   - vault_put_file(source.mode=mint, vault_path=...) is synchronous: the PUT
+//     response is the completed vault write, with NO upload_status poll.
+//
+// A contract for a tool that is not wired must not be described, and no
+// sentence may read as applying the upload poll to vault writes. Non-mint
+// transports must not carry any HTTP mint completion copy.
+func TestCapabilitiesDescriptionScopesMintCompletionByTool(t *testing.T) {
+	mintProfiles := []hostenv.PlatformProfile{
+		hostenv.ProfileOpenAIHTTP,
+		hostenv.ProfileHTTPGeneric,
+		hostenv.ProfileGrokHTTP,
+	}
+	for _, p := range mintProfiles {
+		p := p
+		// Both wired: each contract described distinctly, and the old unqualified
+		// sentence is gone.
+		both := capabilitiesDescriptionFor(p, true, true)
+		require.Contains(t, both, "upload_file(source.mode=mint)", "%s: upload_file mint contract must be described", p.Transport)
+		require.Contains(t, both, "poll upload_status", "%s: upload_file mint must require the upload_status poll", p.Transport)
+		require.Contains(t, both, "vault_put_file(source.mode=mint", "%s: vault_put_file mint contract must be described", p.Transport)
+		require.Contains(t, both, "no upload_status", "%s: vault_put_file mint must explicitly reject upload_status", p.Transport)
+		require.NotContains(t, both, "With source.mode=mint", "%s: unqualified generic mint rule must be gone", p.Transport)
+
+		// Upload-only wiring: keep the upload poll contract, never name the vault one.
+		uploadOnly := capabilitiesDescriptionFor(p, true, false)
+		require.Contains(t, uploadOnly, "upload_file(source.mode=mint)", "%s: upload-only wiring keeps upload_file mint copy", p.Transport)
+		require.Contains(t, uploadOnly, "poll upload_status", "%s: upload-only wiring keeps the upload_status poll", p.Transport)
+		require.NotContains(t, uploadOnly, "vault_put_file(source.mode=mint", "%s: upload-only wiring must not name the vault mint contract", p.Transport)
+
+		// Vault-only wiring: keep the sync vault contract, never advertise an upload poll flow.
+		vaultOnly := capabilitiesDescriptionFor(p, false, true)
+		require.Contains(t, vaultOnly, "vault_put_file(source.mode=mint", "%s: vault-only wiring keeps vault_put_file mint copy", p.Transport)
+		require.Contains(t, vaultOnly, "no upload_status", "%s: vault-only wiring keeps the sync no-poll contract", p.Transport)
+		require.NotContains(t, vaultOnly, "upload_file(source.mode=mint", "%s: vault-only wiring must not name the upload mint contract", p.Transport)
+		require.NotContains(t, vaultOnly, "poll upload_status", "%s: vault-only wiring must not advertise an upload poll flow", p.Transport)
+	}
+
+	// Non-mint transports: no HTTP mint completion copy at all.
+	nonMint := []hostenv.PlatformProfile{
+		hostenv.ProfileStdioGeneric,
+		hostenv.ProfileOpenAITunnel,
+	}
+	for _, p := range nonMint {
+		desc := capabilitiesDescriptionFor(p, true, true)
+		require.NotContains(t, desc, "source.mode=mint", "%s: non-mint transport must not advertise mint completion", p.Transport)
+		require.NotContains(t, desc, "upload_status", "%s: non-mint transport must not mention upload_status", p.Transport)
+	}
+}
+
+// TestCapabilitiesDescriptionConcurrentNoSharedBackingMutation guards against a
+// data race in capabilitiesDescriptionFor. It derives from the shared
+// package-level capabilitiesLeadIn builder, and the List/WhenSentence calls
+// append to that builder's segment slice; without Clone, append() reuses spare
+// capacity in the global backing array and concurrent describe_tool calls race
+// on the same indices. Run under -race: this must be clean and the shared
+// builder must remain intact afterwards.
+func TestCapabilitiesDescriptionConcurrentNoSharedBackingMutation(t *testing.T) {
+	// Snapshot the rule count of the shared global before hammering it, to
+	// prove no call grows the global's segment list (append into spare cap).
+	var wg sync.WaitGroup
+	for i := 0; i < 64; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = capabilitiesDescriptionFor(hostenv.ProfileOpenAIHTTP, true, true)
+			_ = capabilitiesDescriptionFor(hostenv.ProfileHTTPGeneric, true, false)
+			_ = capabilitiesDescriptionFor(hostenv.ProfileGrokHTTP, false, true)
+			_ = capabilitiesDescriptionFor(hostenv.ProfileStdioGeneric, true, true)
+		}()
+	}
+	wg.Wait()
+
+	// The shared global must still resolve to its original base copy (mint
+	// completion only ever appears via the wiring clones, never in the base).
+	base := capabilitiesLeadIn.Resolve(hostenv.ProfileOpenAIHTTP)
+	require.NotContains(t, base, "poll upload_status", "shared base builder must not have absorbed a mint completion segment")
+	require.Contains(t, base, "download_sink_modes lists the sinks", "shared base builder must keep its own segments")
+}
+
 func TestCapabilitiesDescriptorIsDirectVisible(t *testing.T) {
 	desc := NewCapabilitiesDescriptor(false, false, false, false, false, false, false, false, false, false, 0, hostenv.FeatureSet{})
 	tool := sdk.Tool(desc)
@@ -188,13 +273,13 @@ func TestSourceModesForAllTransports(t *testing.T) {
 // advertises the filedrop sink when the profile supports it (FeatSinkDrop),
 // so co-located / OpenAI-tunnel hosts are not misled into an unavailable sink.
 func TestCapabilitiesDescDropGated(t *testing.T) {
-	httpDesc := capabilitiesDesc.Resolve(hostenv.ProfileHTTPGeneric)
+	httpDesc := capabilitiesDescriptionFor(hostenv.ProfileHTTPGeneric, true, false)
 	require.Contains(t, httpDesc, "drop", "HTTP profile with a reachable mux must advertise the drop sink")
 
 	for _, p := range []hostenv.PlatformProfile{hostenv.ProfileStdioGeneric, hostenv.ProfileOpenAITunnel} {
-		require.NotContains(t, capabilitiesDesc.Resolve(p), "drop",
-			"%s must not advertise the filedrop sink", p.Transport)
-		require.Contains(t, capabilitiesDesc.Resolve(p), "local", "local sink is always available")
+		desc := capabilitiesDescriptionFor(p, true, false)
+		require.NotContains(t, desc, "drop", "%s must not advertise the filedrop sink", p.Transport)
+		require.Contains(t, desc, "local", "local sink is always available")
 	}
 }
 

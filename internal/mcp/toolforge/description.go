@@ -73,6 +73,18 @@ func Static(text string) DescBuilder {
 	return DescBuilder{segments: []segment{{text: text, sep: ""}}}
 }
 
+// Clone returns a copy of the builder whose segment slice does not share its
+// backing array with the receiver. Composition methods (List/When*/Unless*)
+// append to the segment slice, and append() reuses spare capacity, so deriving
+// a per-request description from a shared package-level builder without
+// cloning can write new segments into the global's backing array and race
+// under concurrent callers. Calling Clone before composing guarantees each
+// derived builder grows its own array and never mutates the shared global.
+func (d DescBuilder) Clone() DescBuilder {
+	d.segments = append([]segment(nil), d.segments...)
+	return d
+}
+
 // Static appends text that is always included, regardless of features.
 // It can be used mid-chain to insert a fixed segment after conditional ones.
 // The default separator (a single space) is prepended when the buffer is

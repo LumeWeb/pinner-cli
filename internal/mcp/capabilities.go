@@ -189,13 +189,17 @@ func CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, down
 // transport and the file-input source modes / file-output sink modes available.
 // It is cheap and safe to expose directly, and is the feature-detection hook
 // for hosts that stage on draft MCP file metadata.
-// capabilitiesDesc is the profile-adapted capabilities description. The
-// "host file first" clause is gated on FeatFileHostInput (only OpenAI/ChatGPT
-// hosts can build a {download_url, file_id} file object), and the mint
-// put+poll contract is surfaced for hosts that reach the presigned HTTP PUT
-// endpoint. Resolving against the calling profile prevents the description
-// from promising a `file` parameter a host (e.g. Grok) cannot fill.
-var capabilitiesDesc = toolforge.Static(
+// capabilitiesLeadIn is the profile-adapted capabilities description body: the
+// intro, the "host file first" routing clause, and the download-sink copy. It
+// deliberately does NOT name any source.mode=mint completion contract — that
+// copy is tool-scoped in capabilitiesDescriptionFor so it can respect
+// registration-time wiring (upload_file mints poll upload_status; vault_put_file
+// mints complete synchronously with no poll). The "host file first" clause is
+// gated on FeatFileHostInput (only OpenAI/ChatGPT hosts can build a
+// {download_url, file_id} file object). Resolving against the calling profile
+// prevents the description from promising a `file` parameter a host (e.g. Grok)
+// cannot fill.
+var capabilitiesLeadIn = toolforge.Static(
 	"Report the running MCP transport and which file-input source modes, upload tools, and file-output sink modes this Pinner MCP server accepts. Read all three fields to pick the right byte route without probing tool descriptions: source_modes lists the source.mode values upload_file/vault_put_file accept on this transport (they are NOT the whole upload surface); upload_tools lists every upload tool registered on this host (upload_file plus any separate relay tools present); download_sink_modes lists the sinks download_file/vault_get_file accept.",
 ).
 	When(hostenv.FeatFileHostInput,
@@ -210,20 +214,32 @@ var capabilitiesDesc = toolforge.Static(
 	Unless(hostenv.FeatFileHostInput,
 		"This client has no `file` parameter it can fill: call upload_file/vault_put_file with a transport-scoped source.",
 	).
-	WhenSentence(hostenv.FeatSourceMint,
-		"With source.mode=mint, mint returns a url + upload_handle but has NOT stored bytes: PUT the agent-local file to the returned url, then poll upload_status until it reports completed.",
-	).
-	ListWhenAny([]hostenv.Feature{hostenv.FeatSourceURL, hostenv.FeatSourceData},
-		toolforge.List(toolforge.ListNumbered).
-			Intro("Pick the byte route in this order:").
-			ItemWhen(hostenv.FeatSourceMint, "a file the agent can read locally → upload_file(source.mode=mint), then the host PUT, then poll upload_status").
-			ItemWhen(hostenv.FeatSourceURL, "bytes already at a public HTTPS URL → upload_url (server fetch; do not download then re-upload)").
-			ItemWhen(hostenv.FeatSourceData, "only raw bytes, no file, no URL → upload_data (an RFC 2397 data: URI) — last resort; never base64-encode a real file"),
-	).
 	StaticSentence("download_file/vault_get_file take a sink: local writes to a path on the MCP server's own disk (not visible to a remote agent)").
 	WhenSentence(hostenv.FeatSinkDrop,
 		"or drop returns a one-time HTTP GET filedrop link to pull from out of band.",
 	)
+
+// capabilitiesByteChooser is the upload byte-route chooser surfaced when
+// upload_file is wired. It names upload_file and the optional upload_url /
+// upload_data relay tools, so it must never render when no IPFS upload tool is
+// available (vault-only wiring) — that gating happens in
+// capabilitiesDescriptionFor. The mint item is upload_file-specific, so its
+// PUT + upload_status tail is correct here and never implies vault mints poll.
+var capabilitiesByteChooser = toolforge.List(toolforge.ListNumbered).
+	Intro("Pick the byte route in this order:").
+	ItemWhen(hostenv.FeatSourceMint, "a file the agent can read locally → upload_file(source.mode=mint), then the host PUT, then poll upload_status").
+	ItemWhen(hostenv.FeatSourceURL, "bytes already at a public HTTPS URL → upload_url (server fetch; do not download then re-upload)").
+	ItemWhen(hostenv.FeatSourceData, "only raw bytes, no file, no URL → upload_data (an RFC 2397 data: URI) — last resort; never base64-encode a real file")
+
+// mintUploadCompletion is the upload_file(source.mode=mint) completion contract.
+// It is emitted only when upload_file is registered.
+const mintUploadCompletion = "upload_file(source.mode=mint) is asynchronous: it returns a url + upload_handle but has NOT stored bytes — PUT the agent-local file to the returned url, then poll upload_status until it reports completed (the returned CID is already pinned; do not call pins_add)."
+
+// mintVaultCompletion is the vault_put_file(source.mode=mint, vault_path=...)
+// completion contract. It is emitted only when vault_put_file is registered.
+// The PUT response is the completed vault write and there is NO upload_status
+// poll: upload_status tracks upload_file's IPFS uploads, not vault writes.
+const mintVaultCompletion = "vault_put_file(source.mode=mint, vault_path=...) is synchronous: it returns a one-time presigned PUT url bound to vault_path — PUT the agent-local file to it, and the PUT response IS the completed vault write. There is no upload_status to poll (upload_status tracks upload_file's IPFS uploads, not vault writes)."
 
 // uploadToolsFor lists the upload tools actually registered on THIS server, in
 // chooser order: upload_file first, then the relay tools. It gates each tool
@@ -254,12 +270,37 @@ func uploadToolsFor(feats hostenv.FeatureSet, uploadFile, relayURLWired, dataURI
 // description is gated on the same combined condition as the report (client can
 // build the file object AND a tool is wired), keeping tools/list and the
 // per-request describe_tool surface consistent with the handler.
+//
+// The source.mode=mint completion contract is TOOL-SCOPED and respects
+// registration-time wiring:
+//   - upload_file(source.mode=mint) is asynchronous: <host PUT> then poll
+//     upload_status — the byte-route chooser and this clause render only when
+//     upload_file is actually wired.
+//   - vault_put_file(source.mode=mint, vault_path=...) is synchronous: the PUT
+//     response IS the completed vault write and there is no upload_status poll
+//     — that clause renders only when vault_put_file is actually wired.
+//
+// Neither tool's clause names the other, so a single sentence can never be
+// read as "every mint operation polls upload_status", and an unwired tool is
+// never advertised.
 func capabilitiesDescriptionFor(profile hostenv.PlatformProfile, uploadFile, vaultPutFile bool) string {
 	if !(uploadFile || vaultPutFile) {
 		profile = profile.CloneFeatures()
 		delete(profile.Features, hostenv.FeatFileHostInput)
 	}
-	return capabilitiesDesc.Resolve(profile)
+	// Clone before composing: capabilitiesLeadIn is a shared package-level
+	// builder and the List/WhenSentence calls below append to its segment
+	// slice. Without Clone, append() would reuse spare capacity in the
+	// global's backing array, letting concurrent describe_tool calls race on
+	// the same indices. Clone copies the slice so each call grows its own array.
+	desc := capabilitiesLeadIn.Clone()
+	if uploadFile {
+		desc = desc.List(capabilitiesByteChooser).WhenSentence(hostenv.FeatSourceMint, mintUploadCompletion)
+	}
+	if vaultPutFile {
+		desc = desc.WhenSentence(hostenv.FeatSourceMint, mintVaultCompletion)
+	}
+	return desc.Resolve(profile)
 }
 
 // capabilitiesTargets resolves the capabilities description per profile for a
