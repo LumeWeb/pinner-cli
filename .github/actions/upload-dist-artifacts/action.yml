@@ -127,40 +127,67 @@ runs:
         project-name: ${{ inputs.project-name }}
         retention-days: ${{ inputs.retention-days }}
 
-    # Each .deb/.rpm is a single file, but upload-artifact's archive: false
-    # only supports a single guaranteed file and the version-wildcarded glob
-    # (_*_) can match more than one, which would hard-fail the step. Keep
-    # these zipped (archive defaults to true) so any number of matches upload
-    # harmlessly; the raw binary and .mcpb above are the direct downloads.
+    # Each .deb/.rpm filename embeds the project version, so its name varies
+    # build to build. Stage each package under a deterministic unique name and
+    # upload with archive: false. Besides keeping them direct (unzipped)
+    # downloads, this avoids the default `artifact.zip` name that archive: true
+    # with no `name` would use, which collides across steps (409).
+    - name: Stage packages (unique names)
+      shell: bash
+      run: |
+        mkdir -p "${{ inputs.dist-path }}/.artifact-staging"
+        # GoReleaser names packages <project>_<version>_<os>_<arch>.<ext>, so the
+        # on-disk filename uses `linux_amd64`; the staged copy uses a cleaner
+        # `linux-amd64` name that is also the upload path below.
+        for spec in "deb:linux_amd64" "deb:linux_arm64" "rpm:linux_amd64" "rpm:linux_arm64"; do
+          ext="${spec%%:*}"; plat="${spec##*:}"   # e.g. deb + linux_amd64
+          # Expect exactly one package per platform. The version-wildcarded
+          # glob could match several (e.g. stale dist/), so require a unique
+          # match instead of silently picking an arbitrary one with head -n1.
+          matches="$(find "${{ inputs.dist-path }}" -maxdepth 1 -type f \
+            -name '${{ inputs.project-name }}_*_'"${plat}"'.'"${ext}"'' 2>/dev/null)"
+          count="$(printf '%s\n' "$matches" | grep -c . || true)"
+          if [ "$count" -eq 0 ]; then
+            echo "::warning::no ${plat} ${ext} package found in dist/; skipping"
+            continue
+          fi
+          if [ "$count" -gt 1 ]; then
+            echo "::warning::expected exactly one ${plat} ${ext} package, found $count; skipping"
+            continue
+          fi
+          staged_plat="${plat//_/-}"              # linux_amd64 -> linux-amd64
+          cp "$matches" "${{ inputs.dist-path }}/.artifact-staging/${{ inputs.project-name }}-${staged_plat}.${ext}"
+        done
+
     - name: Upload Debian package (amd64)
       uses: actions/upload-artifact@v7
       with:
-        path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_amd64.deb
-        archive: true
+        path: ${{ inputs.dist-path }}/.artifact-staging/${{ inputs.project-name }}-linux-amd64.deb
+        archive: false
         if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
 
     - name: Upload Debian package (arm64)
       uses: actions/upload-artifact@v7
       with:
-        path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_arm64.deb
-        archive: true
+        path: ${{ inputs.dist-path }}/.artifact-staging/${{ inputs.project-name }}-linux-arm64.deb
+        archive: false
         if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
 
     - name: Upload RPM package (amd64)
       uses: actions/upload-artifact@v7
       with:
-        path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_amd64.rpm
-        archive: true
+        path: ${{ inputs.dist-path }}/.artifact-staging/${{ inputs.project-name }}-linux-amd64.rpm
+        archive: false
         if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
 
     - name: Upload RPM package (arm64)
       uses: actions/upload-artifact@v7
       with:
-        path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_arm64.rpm
-        archive: true
+        path: ${{ inputs.dist-path }}/.artifact-staging/${{ inputs.project-name }}-linux-arm64.rpm
+        archive: false
         if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
 
