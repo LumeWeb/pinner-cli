@@ -5,12 +5,6 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 )
 
-// sourceURLData returns the two features that co-occur for the OpenAI tunnel
-// relay source (url + data).
-func sourceURLData() []hostenv.Feature {
-	return []hostenv.Feature{hostenv.FeatSourceURL, hostenv.FeatSourceData}
-}
-
 // uploadFileDesc composes the upload_file tool description from a static
 // preamble plus feature-gated segments, replacing the previous 7-way
 // duplication of pre-built complete strings. At resolution time only
@@ -28,7 +22,7 @@ var uploadFileDesc = Static(
 	When(hostenv.FeatSourcePath,
 		"Use source.mode=path with a host-side file/directory/archive path.",
 	).
-	WhenAny(sourceURLData(),
+	WhenTransport(hostenv.TransportOpenAI,
 		"Use source.mode=url (server-fetchable HTTPS URL) or source.mode=data (RFC 2397 data: URI) — the server fetches/decodes and uploads them.",
 	).
 	When(hostenv.FeatFileHostInput,
@@ -40,7 +34,7 @@ var uploadFileDesc = Static(
 	When(hostenv.FeatSourceMint,
 		"Website ZIPs: call upload_file with source.mode=mint and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update.",
 	).
-	WhenAny(sourceURLData(),
+	WhenTransport(hostenv.TransportOpenAI,
 		"If the upload fails with 'context canceled', retry with the same parameters — this is a transient host-side cancellation, not a file rejection. Poll upload_status with the returned handle.",
 	).
 	When(hostenv.FeatSourcePath,
@@ -66,7 +60,7 @@ var vaultPutFileDesc = Static(
 	When(hostenv.FeatSourcePath,
 		"In this co-located stdio mode you may instead set source.mode=path and source.path to a host-side file/directory/archive path; the server reads it directly.",
 	).
-	WhenAny(sourceURLData(),
+	WhenTransport(hostenv.TransportOpenAI,
 		"Over this transport you may instead set source.mode=url (a server-fetchable HTTPS download URL) or source.mode=data (an RFC 2397 data: URI).",
 	).
 	Static("vault_path may be any vault file path (e.g. vault:/docs/f.pdf).")

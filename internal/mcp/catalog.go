@@ -277,7 +277,8 @@ func (c *ToolCatalog) Search(query, category string, limit int) []ToolSummary {
 // pins), so a fresh agent sees the tools it needs to begin.
 func isPrimaryTool(name string) bool {
 	switch name {
-	case "auth_status", "auth_sso", "auth_resume",
+	case "agent_guide",
+		"auth_status", "auth_sso", "auth_resume",
 		"vault_create", "vault_create_resume", "vault_status",
 		"vault_restore", "vault_restore_resume",
 		"pins_add", "pins_list", "pins_status", "pins_rm":

@@ -41,9 +41,11 @@ var dataURIUploadDesc = toolforge.Static(
 		"Do NOT call this tool on this host: this transport has no data: URI relay. Upload bytes with upload_file(source.mode=mint) by PUTting the agent-local file to the returned url, then poll upload_status. Never base64-encode a file as a data URI.",
 	)
 
-// dataURIUploadTargets is the per-profile description target for upload_data,
+// DataURIUploadTargets is the per-profile description target for upload_data,
 // resolved against the calling host profile (via describe_tool/search_tools).
-var dataURIUploadTargets = toolforge.MCPTargets(model.ToolTarget{
+// It is exported so the server can re-resolve a dedicated per-host description
+// on tools/list.
+var DataURIUploadTargets = toolforge.MCPTargets(model.ToolTarget{
 	Visible:  true,
 	DescFunc: dataURIUploadDesc.Resolve,
 })
@@ -67,7 +69,7 @@ func DataURIUploadDescriptor(handler DataURIUploadHandler, maxBytes int64) model
 		Title:       "Upload a file from a data URI",
 		Description: dataURIUploadDescription,
 		Category:    model.CategoryCore,
-		MCPTargets:  dataURIUploadTargets,
+		MCPTargets:  DataURIUploadTargets,
 		InputSchema: toolargs.ToolSchemaFor[DataURIUploadInput](),
 		// x-mcp-file marks the "file" property as a file-valued input per the
 		// draft spec; the SDK's Meta map carries it without a typed field.

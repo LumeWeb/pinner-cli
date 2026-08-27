@@ -228,6 +228,38 @@ func TestAgentGuideStepsAreFeatureGated(t *testing.T) {
 	}
 }
 
+// TestAgentGuideNamesHostPUTOnMintSteps guards audit-3 requirement: the mint
+// byte path is upload_file -> <host PUT> -> upload_status, and a step chain
+// that ends at upload_file looks complete when it is not (mint stores no
+// bytes). The host PUT (an out-of-band action, not an MCP tool) and the poll
+// must both be named in the ordered upload AND vault_upload step lists on
+// mint transports, and both must be absent on non-mint transports.
+func TestAgentGuideNamesHostPUTOnMintSteps(t *testing.T) {
+	mintProfiles := []*hostenv.PlatformProfile{
+		strPtr(hostenv.ProfileHTTPGeneric),
+		strPtr(hostenv.ProfileGrokHTTP),
+		strPtr(hostenv.ProfileOpenAIHTTP),
+	}
+	for _, p := range mintProfiles {
+		for _, flowName := range []string{"upload", "vault_upload"} {
+			f := guideFlowByName(t, buildAgentGuide(p), flowName)
+			require.Contains(t, f.Steps, "<host PUT>", "%s: %s mint flow must name the host PUT", p.Transport, flowName)
+			require.Contains(t, f.Steps, "upload_status", "%s: %s mint flow must name the upload_status poll", p.Transport, flowName)
+		}
+	}
+
+	nonMintProfiles := []*hostenv.PlatformProfile{
+		strPtr(hostenv.ProfileStdioGeneric), // path
+		strPtr(hostenv.ProfileOpenAITunnel), // url/data relay
+	}
+	for _, p := range nonMintProfiles {
+		for _, flowName := range []string{"upload", "vault_upload"} {
+			f := guideFlowByName(t, buildAgentGuide(p), flowName)
+			require.NotContains(t, f.Steps, "<host PUT>", "%s: %s non-mint flow must not name the host PUT", p.Transport, flowName)
+		}
+	}
+}
+
 // TestAgentGuidePublishBranchesPerProfile verifies the publish_website decision
 // tree is stable and complete for every resolved profile, and that each branch
 // carries the rejected/desired-naming distinction a deterministic agent needs.

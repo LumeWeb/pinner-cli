@@ -244,13 +244,16 @@ func TestRegistry_Detect_GrokOverHTTP(t *testing.T) {
 	// wire overlay (UI.SupportsApps()) once the client advertises it.
 	require.False(t, prof.Has(FeatFileHostInput))
 	require.False(t, prof.Has(FeatMCPApps))
-	// Mechanism features are transport-derived: HTTP -> mint + remote, and
-	// never url/data (those are OpenAI-tunnel source modes; Grok's data/url
-	// uploads go through the separately-wired upload_data/upload_url tools).
+	// Mechanism features are transport-derived: HTTP -> mint + remote.
+	// Grok additionally declares FeatSourceData and FeatSourceURL so the
+	// separate upload_data / upload_url relay tools register and carry their
+	// positive description copy. These capability features do NOT flip
+	// upload_file's source.mode enum, which stays bound to the HTTP transport
+	// (mint only) via TransportKindFromFeatures in UploadSourceSchemaTransform.
 	require.True(t, prof.Has(FeatSourceMint))
 	require.True(t, prof.Has(FeatRemoteAccess))
-	require.False(t, prof.Has(FeatSourceData))
-	require.False(t, prof.Has(FeatSourceURL))
+	require.True(t, prof.Has(FeatSourceData))
+	require.True(t, prof.Has(FeatSourceURL))
 }
 
 func TestRegistry_Detect_UnknownOverStdio(t *testing.T) {

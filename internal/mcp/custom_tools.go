@@ -355,12 +355,25 @@ func registerCustomTools(deps customToolDeps) error {
 	}
 
 	// --- upload_url: relay a caller-supplied HTTPS URL (remote HTTP fallback) ---
-	if opts.relayURLUpload != nil {
-		reg.add(customToolSpec{
-			desc:   upload.RelayURLUploadDescriptor(opts.relayURLUpload, opts.relayAllowedHosts, opts.maxRelayBytes),
-			index:  true,
-			direct: true,
-		})
+	// Gated on the effective profile's FeatSourceURL: the URL relay tool is
+	// registered only for a host that its feature set declares support for
+	// (e.g. Grok, the OpenAI tunnel). A host without FeatSourceURL (generic
+	// HTTP) does not get the tool at all — an omitted tool cannot be called,
+	// whereas a visible tool with only a "do not call" sentence still gets
+	// tried. Registration, not copy, is the gate.
+	if opts.relayURLUpload != nil && effectiveFeaturesFor(deps).Has(hostenv.FeatSourceURL) {
+		relayDesc := upload.RelayURLUploadDescriptor(opts.relayURLUpload, opts.relayAllowedHosts, opts.maxRelayBytes)
+		// Re-resolve the baked tools/list description against the effective
+		// profile (the URL relay bakes against generic HTTP, whose no-relay
+		// forbid would otherwise stick on a host that actually registers the
+		// tool). A dedicated per-host server uses the detected host profile; the
+		// startup server (OpenAI tunnel) falls back to its transport profile so
+		// upload_url — like upload_data — carries its usable copy there instead
+		// of misleading a model into avoiding a callable tool.
+		if d, ok := toolforge.ResolveDescription(upload.RelayURLUploadTargets, *effectiveProfileFor(deps)); ok {
+			relayDesc.Description = d
+		}
+		reg.add(customToolSpec{desc: relayDesc, index: true, direct: true})
 	}
 
 	// --- Consolidated download_file: a single sink-aware IPFS download tool. ---
@@ -404,12 +417,21 @@ func registerCustomTools(deps customToolDeps) error {
 	}
 
 	// --- upload_data: SEP-2356 data: URI relay (draft x-mcp-file mode) ---
-	if opts.dataURIUpload != nil {
-		reg.add(customToolSpec{
-			desc:   transfer.DataURIUploadDescriptor(opts.dataURIUpload, opts.maxRelayBytes),
-			index:  true,
-			direct: true,
-		})
+	// Gated on the effective profile's FeatSourceData (mirroring upload_url):
+	// the data: URI relay tool is registered only for a host whose feature set
+	// declares data: support (e.g. Grok, the OpenAI tunnel). A host without
+	// FeatSourceData does not get the tool at all — registration, not a "do not
+	// call" sentence, is the gate.
+	if opts.dataURIUpload != nil && effectiveFeaturesFor(deps).Has(hostenv.FeatSourceData) {
+		dataDesc := transfer.DataURIUploadDescriptor(opts.dataURIUpload, opts.maxRelayBytes)
+		// Re-resolve the baked tools/list description against the effective
+		// profile (mirroring upload_file/vault_put_file/upload_url), so a host
+		// whose feature set registers the data: URI relay carries its usable
+		// copy rather than a "do NOT call this tool" forbid.
+		if d, ok := toolforge.ResolveDescription(transfer.DataURIUploadTargets, *effectiveProfileFor(deps)); ok {
+			dataDesc.Description = d
+		}
+		reg.add(customToolSpec{desc: dataDesc, index: true, direct: true})
 	}
 
 	// --- Consolidated upload_file: a single transport-aware IPFS upload tool. ---
@@ -528,6 +550,34 @@ func uploadFileAvailable(coLocated, localPathWired, curlWired, relayWired, tunne
 		return true
 	}
 	return tunnelOpenAI && relayWired
+}
+
+// effectiveFeaturesFor returns the feature set that determines tool registration
+// for this server. It mirrors the hostProfile-or-transport computation used for
+// the upload_file/vault_put_file feature set (see custom_tools.go): a dedicated
+// per-host server uses the detected host profile's own features, while the
+// startup server falls back to the transport's generic profile. It is the single
+// source of truth for feature-gated tool registration (e.g. upload_data on
+// FeatSourceData, upload_url on FeatSourceURL), so a host either registers a
+// capability-backed tool or omits it entirely — never advertises it and then
+// forbids it in prose.
+func effectiveFeaturesFor(deps customToolDeps) hostenv.FeatureSet {
+	return effectiveProfileFor(deps).Features
+}
+
+// effectiveProfileFor returns the PlatformProfile that determines tool
+// registration and baked-description resolution for this server. It mirrors
+// effectiveFeaturesFor: a dedicated per-host server uses the detected host
+// profile, while the startup server falls back to the transport's generic
+// profile (e.g. the OpenAI tunnel resolves against TransportOpenAI so its tools
+// bake a usable, non-forbid description). Returns a pointer so call sites can
+// re-resolve a tool's MCPTargets against the same profile uniformly.
+func effectiveProfileFor(deps customToolDeps) *hostenv.PlatformProfile {
+	if deps.hostProfile != nil {
+		return deps.hostProfile
+	}
+	p := hostenv.ProfileForTransport(transfer.UploadFileTransport(deps.coLocated, deps.tunnelOpenAI))
+	return &p
 }
 
 // vaultPutFileAvailable reports whether the unified vault_put_file tool has at

@@ -83,6 +83,31 @@ func SourceModeEnumFromFeatures(fs hostenv.FeatureSet) []any {
 	return modes
 }
 
+// TransportKindFromFeatures resolves the transport kind a profile's feature
+// set belongs to. It is the inverse of transportMechanismFeatures: the
+// mechanism source features (path/mint/url/data) pin the transport. It is used
+// by schema transforms so the upload_file/vault_put_file source.mode enum and
+// archive_mode prose stay bound to what the transport's handler actually
+// accepts, even when a host profile also declares capability features for the
+// separate upload_data/upload_url tools (e.g. Grok gains FeatSourceData and
+// FeatSourceURL to register those tools, but its upload_file handler is still
+// transport-bound to mint on HTTP). Precedence: stdio (path) > HTTP (mint) >
+// OpenAI tunnel (url/data). A profile must declare exactly one mechanism
+// source path; this resolves consistently even if a capability feature
+// co-occurs with the transport's mechanism feature.
+func TransportKindFromFeatures(fs hostenv.FeatureSet) TransportKind {
+	switch {
+	case fs.Has(hostenv.FeatSourcePath):
+		return TransportStdio
+	case fs.Has(hostenv.FeatSourceMint):
+		return TransportHTTP
+	case fs.Has(hostenv.FeatSourceURL) || fs.Has(hostenv.FeatSourceData):
+		return TransportOpenAI
+	default:
+		return TransportHTTP
+	}
+}
+
 // SourceModeEnumValues returns the UploadSource.mode string values valid for a
 // transport. It delegates to SourceModeEnumFromFeatures via the transport's
 // generic profile so capabilities and the schema share one feature-driven

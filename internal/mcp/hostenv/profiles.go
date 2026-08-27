@@ -61,8 +61,20 @@ var ProfileOpenAIHTTP = newProfile(
 // advertised Apps support on the wire, so it is set only by the live overlay
 // (requestCaps / UI.SupportsApps()) when the initialize client capabilities
 // actually negotiate it.
+//
+// FeatSourceData and FeatSourceURL ARE declared: Grok supports the separate
+// upload_data (RFC 2397 data: URI) and upload_url (server-fetch URL) relay
+// tools. Declaring them gates those tools' registration (see custom_tools.go)
+// and drives their positive description copy. It does NOT flip upload_file's
+// source.mode enum: that enum stays bound to the HTTP transport (mint only)
+// via TransportKindFromFeatures in UploadSourceSchemaTransform, because
+// upload_file's own handler on HTTP rejects url/data modes — the separate
+// tools are the data/url byte path.
 var ProfileGrokHTTP = newProfile(
-	nil,
+	FeatureSet{
+		FeatSourceData: true,
+		FeatSourceURL:  true,
+	},
 	HostGrok, TransportHTTP, AuthOAuth, true,
 )
 

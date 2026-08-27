@@ -238,7 +238,12 @@ func vaultPutFileSchema(features hostenv.FeatureSet) json.RawMessage {
 		Property("source", toolargs.SchemaFor[transfer.UploadSource](), toolforge.Transform(transfer.UploadSourceSchemaTransform)).
 		Property("file", toolargs.SchemaFor[transfer.ChatGPTFileInput](), toolforge.When(hostenv.FeatFileHostInput)).
 		StringProperty("vault_path", "Vault destination file path (e.g. vault:/docs/f.pdf or vault:/uploads/report.pdf). Required. Must be a file path, not a directory; traversal (.. or .) segments are rejected. Any vault file path is allowed.").
-		StringProperty("archive_mode", "How to treat an archive path ('convert' extracts, 'preserve' keeps intact). Only used for source mode path.", toolforge.Enum("convert", "preserve")).
+		// archive_mode is only meaningful for source.mode=path (co-located
+		// stdio): the mint and url/data branches stream raw bytes with no
+		// in-band archive contract. Declaring it solely for FeatSourcePath
+		// keeps its "source mode path" prose off a mint-only host (e.g. Grok),
+		// where the dead transport name would reactivate the wrong source.
+		StringProperty("archive_mode", "How to treat an archive path ('convert' extracts the archive contents, 'preserve' keeps the archive intact as a single file).", toolforge.Enum("convert", "preserve"), toolforge.When(hostenv.FeatSourcePath)).
 		StringProperty("ttl", "Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used with source mode mint.").
 		Required("vault_path").
 		RawJSON(features)

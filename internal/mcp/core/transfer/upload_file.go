@@ -340,28 +340,40 @@ func UploadSourceSchemaTransform(s *jsonschema.Schema, fs hostenv.FeatureSet) {
 	if !ok {
 		return
 	}
-	mode.Enum = SourceModeEnumFromFeatures(fs)
+	// The source.mode enum is pinned to the transport, never to capability
+	// features. A host may declare FeatSourceData/FeatSourceURL to register
+	// the separate upload_data/upload_url tools, but upload_file's own handler
+	// is transport-bound (mint on HTTP), so the enum must not advertise a mode
+	// the handler would reject. Deriving from the transport via
+	// TransportKindFromFeatures keeps the enum honest even when a capability
+	// feature co-occurs with the transport's mechanism feature.
+	mode.Enum = SourceModeEnumFromFeatures(hostenv.ProfileForTransport(TransportKindFromFeatures(fs)).Features)
 	if fs.Has(hostenv.FeatFileHostInput) {
 		mode.Description = "Fallback transport. Only use when the host does not already hold the file as a host file accepted by the file parameter. The enum advertises which modes are valid on this transport."
 	} else {
 		mode.Description = "Required on this host: the only byte path. The enum advertises which mode is valid on this transport."
 	}
-	// Drop sibling payload fields whose source mode the host cannot accept. The
-	// reflected UploadSource object publishes path/url/data on every profile;
-	// on a mint-only host (e.g. Grok) those dead OpenAI/ChatGPT fields are
-	// bindable training data even though the mode enum has narrowed. Removing
-	// them keeps the schema honest: a model cannot hand the server a
-	// path/url/data it would have to bind with no valid mode.
+	// Drop sibling payload fields whose source mode upload_file's handler cannot
+	// accept on the resolved transport. The reflected UploadSource object
+	// publishes path/url/data on every profile; on a mint-only transport
+	// (HTTP) those dead OpenAI/ChatGPT fields are bindable training data even
+	// though the mode enum has narrowed. This is transport-derived, not
+	// feature-derived: a host like Grok declares FeatSourceURL/FeatSourceData
+	// to register the separate upload_data/upload_url tools, but those do NOT
+	// give upload_file a url/data branch — its HTTP handler rejects them. So
+	// the sibling fields follow the enum (transport), keeping the schema a
+	// model cannot hand a mode it would have to bind with no valid handler.
+	t := TransportKindFromFeatures(fs)
 	for _, p := range [...]struct {
-		name string
-		feat hostenv.Feature
+		field string
+		ts    TransportKind // the transport whose handler accepts this field
 	}{
-		{"path", hostenv.FeatSourcePath},
-		{"url", hostenv.FeatSourceURL},
-		{"data", hostenv.FeatSourceData},
+		{"path", TransportStdio},
+		{"url", TransportOpenAI},
+		{"data", TransportOpenAI},
 	} {
-		if !fs.Has(p.feat) {
-			s.Properties.Delete(p.name)
+		if t != p.ts {
+			s.Properties.Delete(p.field)
 		}
 	}
 }
@@ -401,12 +413,25 @@ var mintOnlyArchiveModeDesc = toolforge.Static(
 // Grok) those other-source defaults are dead copy, so it is replaced by
 // mintOnlyArchiveModeDesc (which keeps the preserve-for-mint warning).
 func archiveModeSchemaTransform(s *jsonschema.Schema, fs hostenv.FeatureSet) {
-	hasMint := fs.Has(hostenv.FeatSourceMint)
-	otherSource := fs.Has(hostenv.FeatFileHostInput) || fs.Has(hostenv.FeatSourcePath) || fs.Has(hostenv.FeatSourceURL) || fs.Has(hostenv.FeatSourceData)
-	if hasMint && !otherSource {
-		// A Features-only profile is enough for resolution — the segments are
-		// unconditional sentences, so only the feature set feeds matches().
-		s.Description = mintOnlyArchiveModeDesc.Resolve(hostenv.PlatformProfile{Features: fs})
+	// The archive_mode copy is pinned to the transport's actual sources, not
+	// to capability features. A host may declare FeatSourceData/FeatSourceURL
+	// to register the separate upload_data/upload_url tools, but those do not
+	// change upload_file's own archive contract; on a mint-only HTTP transport
+	// the full other-source-default prose would be dead copy. Keeping this
+	// transport-derived means Grok (mint-only on upload_file) still gets the
+	// mint preserve/convert warning after it gains the data/url capability
+	// features, without those features flipping the upload_file archive copy.
+	hasMint := TransportKindFromFeatures(fs) == TransportHTTP
+	if hasMint {
+		// A mint-only upload_file has no in-band file/path/url/data branch.
+		hasFile := fs.Has(hostenv.FeatFileHostInput)
+		otherSource := hasFile
+		if !otherSource {
+			// A Features-only profile is enough for resolution — the segments
+			// are unconditional sentences, so only the feature set feeds
+			// matches().
+			s.Description = mintOnlyArchiveModeDesc.Resolve(hostenv.PlatformProfile{Features: fs})
+		}
 	}
 }
 

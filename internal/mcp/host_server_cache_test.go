@@ -45,15 +45,20 @@ func TestHostServerUploadVaultPresentation(t *testing.T) {
 }
 
 // TestUploadVaultMatchesTransport verifies the "reuse startup server" gate:
-// the startup HTTP transport (mint-only) already matches Grok / generic HTTP
-// hosts, so only hosts that change the upload/vault presentation (OpenAI-HTTP)
-// trigger a dedicated per-host server.
+// the startup HTTP transport (mint-only, no relay features) already matches
+// generic HTTP, so only hosts that change the upload/vault presentation or
+// register feature-gated relay tools (OpenAI-HTTP, Grok) trigger a dedicated
+// per-host server.
 func TestUploadVaultMatchesTransport(t *testing.T) {
 	httpT := hostenv.TransportHTTP
 	require.False(t, uploadVaultMatchesTransport(hostenv.ProfileOpenAIHTTP, httpT),
 		"OpenAI-HTTP changes the upload/vault presentation and needs a dedicated server")
-	require.True(t, uploadVaultMatchesTransport(hostenv.ProfileGrokHTTP, httpT),
-		"Grok-HTTP matches the startup mint-only presentation; reuse the startup server")
+	// Grok declares FeatSourceData/FeatSourceURL to register upload_data and
+	// upload_url. The startup server bakes the generic-HTTP feature set (no
+	// data/url), so reusing it would silently drop those tools; Grok must get
+	// its own server so the relay tools are actually registered for it.
+	require.False(t, uploadVaultMatchesTransport(hostenv.ProfileGrokHTTP, httpT),
+		"Grok-HTTP registers feature-gated relay tools and needs a dedicated server")
 	require.True(t, uploadVaultMatchesTransport(hostenv.ProfileHTTPGeneric, httpT),
 		"Generic-HTTP matches the startup mint-only presentation; reuse the startup server")
 }

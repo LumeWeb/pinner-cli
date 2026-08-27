@@ -167,7 +167,20 @@ func uploadVaultMatchesTransport(profile hostenv.PlatformProfile, transport host
 	baseUpload, _ := toolforge.ResolveDescription(toolforge.UploadFileTargets, base)
 	baseVault, _ := toolforge.ResolveDescription(toolforge.VaultPutFileTargets, base)
 	uploadDesc, vaultDesc := resolveHostUploadVault(profile)
-	return uploadDesc == baseUpload && vaultDesc == baseVault
+	if uploadDesc != baseUpload || vaultDesc != baseVault {
+		return false
+	}
+	// The startup server registers feature-gated relay tools (upload_url on
+	// FeatSourceURL, upload_data on FeatSourceData) from the transport's
+	// generic profile. A host whose capability features declare those relay
+	// features must get a dedicated server so the relay tools are actually
+	// registered for it — reusing the startup server would bake the
+	// generic-HTTP feature set (no data/url) and silently drop the tools.
+	// The upload_file/vault_put_file descriptions are transport-bound, so they
+	// would compare equal here; the relay-feature check is what forces Grok
+	// (which declares FeatSourceData/FeatSourceURL) onto its own server.
+	return base.Features.Has(hostenv.FeatSourceURL) == profile.Features.Has(hostenv.FeatSourceURL) &&
+		base.Features.Has(hostenv.FeatSourceData) == profile.Features.Has(hostenv.FeatSourceData)
 }
 
 // mcpServerFlags returns the flags for the `mcp` command. Env-backed flags

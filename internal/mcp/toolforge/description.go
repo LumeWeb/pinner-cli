@@ -227,6 +227,27 @@ func (d DescBuilder) UnlessHostSep(sep string, h hostenv.HostType, text string) 
 	return d.predSep(sep, hostenv.HostIs(h), text, true)
 }
 
+// WhenTransport appends text included only when the profile's transport
+// matches t. It gates on the transport alone, independent of declared features
+// — e.g. upload_file's url/data source-mode copy only fires on the OpenAI
+// tunnel (whose handler accepts url/data), not on an HTTP host that carries
+// FeatSourceData/FeatSourceURL purely to register the separate upload_data/
+// upload_url tools.
+func (d DescBuilder) WhenTransport(t hostenv.TransportKind, text string) DescBuilder {
+	return d.predSep(SepSpace, hostenv.TransportIs(t), text)
+}
+
+// WhenTransportSep is WhenTransport with a custom separator prepended when the
+// buffer is non-empty.
+func (d DescBuilder) WhenTransportSep(sep string, t hostenv.TransportKind, text string) DescBuilder {
+	return d.predSep(sep, hostenv.TransportIs(t), text)
+}
+
+// UnlessTransport appends text included only when the profile's transport is NOT t.
+func (d DescBuilder) UnlessTransport(t hostenv.TransportKind, text string) DescBuilder {
+	return d.predSep(SepSpace, hostenv.TransportIs(t), text, true)
+}
+
 // predSep appends a predicate-gated segment.
 func (d DescBuilder) predSep(sep string, pred hostenv.Predicate, text string, negate ...bool) DescBuilder {
 	return DescBuilder{segments: append(d.segments, segment{pred: pred, text: text, negate: len(negate) > 0 && negate[0], sep: sep})}
