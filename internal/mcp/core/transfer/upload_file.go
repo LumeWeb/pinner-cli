@@ -330,12 +330,51 @@ const (
 	wrapSchemaDesc        = "Wrap a single file in a directory root so the CID is a directory (required when the upload is a website). When wrap=true and no name is given, HTML content is auto-named index.html so the site resolves at its root. Do NOT set an explicit name like 'starter-site' — it is honored as-is and the page will only be reachable at /starter-site, not /. Only affects single-file uploads; directories and archive-converted uploads are already a directory root."
 )
 
+// sourceFallbackDesc is the mode.copy for hosts that accept a host-provided
+// `file` object (OpenAI/ChatGPT) where the source is only a fallback.
+const sourceFallbackDesc = "Fallback transport. Only use when the host does not already hold the file as a host file accepted by the file parameter. The enum advertises which modes are valid on this transport."
+
+// uploadSourceModeDesc is upload_file's mint-only mode copy: tool-scoped (only
+// what THIS tool's source.mode accepts), never a claim the host has no other
+// upload tool. The separate upload_url / upload_data relay tools exist on hosts
+// that register them (FeatSourceURL/FeatSourceData) and are named as siblings.
+var uploadSourceModeDesc = toolforge.Static("Only source.mode this tool accepts on this transport.").
+	When(hostenv.FeatSourceURL, "For a public HTTPS URL use the separate upload_url tool.").
+	When(hostenv.FeatSourceData, "For inline data: bytes with no file and no URL use the separate upload_data tool.")
+
+// vaultSourceModeDesc is vault_put_file's mint-only mode copy. upload_url /
+// upload_data are IPFS relays, not vault writes, so on a mint-only host a
+// public URL or inline bytes are not vault sources: the agent must materialize
+// them to a local file first, then mint + PUT — never send the agent to the
+// sibling relays.
+var vaultSourceModeDesc = toolforge.Static("Only source.mode this tool accepts on this transport.").
+	WhenAny([]hostenv.Feature{hostenv.FeatSourceURL, hostenv.FeatSourceData},
+		"A public URL or inline bytes are not vault sources here — write them to an agent-local file first, then vault_put_file source.mode=mint and PUT it to the returned url. Do not use upload_url / upload_data: those pin to IPFS and do not write the vault.")
+
 // UploadSourceSchemaTransform narrows a reflected UploadSource schema's `mode`
 // enum to the profile's supported source modes and rewrites its prose so a host
 // that cannot pass a `file` object (no FeatFileHostInput) is led to the
 // transport source as the only byte path rather than as a fallback. It is
 // shared by every tool that embeds an UploadSource (upload_file, vault_put_file).
 func UploadSourceSchemaTransform(s *jsonschema.Schema, fs hostenv.FeatureSet) {
+	sourceSchemaTransform(s, fs, false)
+}
+
+// VaultSourceSchemaTransform is UploadSourceSchemaTransform for vault_put_file.
+// The byte-route sibling pointer differs for a vault: on a mint-only host a
+// public URL or inline bytes are NOT vault sources — pointing the agent at
+// upload_url / upload_data would pin to IPFS and NOT write the vault. So the
+// mint-only copy steers those bytes to a local file + mint + PUT instead.
+func VaultSourceSchemaTransform(s *jsonschema.Schema, fs hostenv.FeatureSet) {
+	sourceSchemaTransform(s, fs, true)
+}
+
+// sourceSchemaTransform implements the UploadSource mode enum narrow + prose for
+// both upload_file and vault_put_file; vault selects the vault-specific sibling
+// guidance on mint-only hosts. The mode prose is composed with the toolforge
+// DescBuilder (the same DSL used for tool descriptions), not by string
+// concatenation, so the feature gating stays declarative.
+func sourceSchemaTransform(s *jsonschema.Schema, fs hostenv.FeatureSet, vault bool) {
 	mode, ok := s.Properties.Get("mode")
 	if !ok {
 		return
@@ -348,20 +387,14 @@ func UploadSourceSchemaTransform(s *jsonschema.Schema, fs hostenv.FeatureSet) {
 	// TransportKindFromFeatures keeps the enum honest even when a capability
 	// feature co-occurs with the transport's mechanism feature.
 	mode.Enum = SourceModeEnumFromFeatures(hostenv.ProfileForTransport(TransportKindFromFeatures(fs)).Features)
+	// Resolve the mode copy against a profile carrying the relevant features.
+	prof := hostenv.PlatformProfile{Features: fs}
 	if fs.Has(hostenv.FeatFileHostInput) {
-		mode.Description = "Fallback transport. Only use when the host does not already hold the file as a host file accepted by the file parameter. The enum advertises which modes are valid on this transport."
+		mode.Description = sourceFallbackDesc
+	} else if vault {
+		mode.Description = vaultSourceModeDesc.Resolve(prof)
 	} else {
-		// The copy is tool-scoped (only what THIS tool's source.mode accepts),
-		// never a claim that the host has no other upload tool: the separate
-		// upload_url / upload_data relay tools may still exist and are named
-		// here only when the profile registers them (FeatSourceURL/FeatSourceData).
-		mode.Description = "Only source.mode this tool accepts on this transport."
-		if fs.Has(hostenv.FeatSourceURL) {
-			mode.Description += " For a public HTTPS URL use the separate upload_url tool."
-		}
-		if fs.Has(hostenv.FeatSourceData) {
-			mode.Description += " For inline data: bytes with no file and no URL use the separate upload_data tool."
-		}
+		mode.Description = uploadSourceModeDesc.Resolve(prof)
 	}
 	// Drop sibling payload fields whose source mode upload_file's handler cannot
 	// accept on the resolved transport. The reflected UploadSource object

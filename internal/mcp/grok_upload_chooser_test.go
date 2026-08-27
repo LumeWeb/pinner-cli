@@ -14,6 +14,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
+	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
 // grokUploadDescriptor builds an upload_file descriptor using Grok's profile
@@ -88,7 +89,7 @@ func TestCapabilitiesNamesRelayTools(t *testing.T) {
 	grok := capabilitiesDesc.Resolve(hostenv.ProfileGrokHTTP)
 	require.Contains(t, grok, "upload_url")
 	require.Contains(t, grok, "upload_data")
-	require.Contains(t, grok, "source_modes describe only what upload_file/vault_put_file's source.mode accepts")
+	require.Contains(t, grok, "Pick the byte route in this order:")
 	require.Contains(t, grok, "public HTTPS URL")
 	require.Contains(t, grok, "RFC 2397 data: URI")
 	require.Contains(t, grok, "public HTTPS URL → upload_url")
@@ -280,4 +281,37 @@ func TestVaultByteRouteTransportGated(t *testing.T) {
 	require.True(t, sawURL, "tunnel vault guide must offer the URL branch")
 	require.True(t, sawData, "tunnel vault guide must offer the data branch")
 	require.Contains(t, tunnelVault.Detail, "via its own url/data source", "tunnel vault detail may claim url/data via vault_put_file")
+}
+
+// TestVaultSourceModeCopyIsVaultSpecific locks in audit 8: vault_put_file's
+// source.mode copy must NOT point the agent at upload_url / upload_data (those
+// pin to IPFS and do not write the vault). On a mint-only host like Grok it
+// steers a public URL or inline bytes to an agent-local file + mint + PUT.
+// upload_file keeps ITS sibling pointer (the relay tools are uploads).
+func TestVaultSourceModeCopyIsVaultSpecific(t *testing.T) {
+	mkVault := func(features hostenv.FeatureSet) model.ToolDescriptor {
+		return vault.NewVaultPutFileDescriptor(features, false, false,
+			func(ctx context.Context, path, vaultPath, archiveMode string) (any, error) {
+				return map[string]any{"vault_path": vaultPath}, nil
+			},
+			transfer.NewVaultHTTPUpload(nil, 0),
+			func(ctx context.Context, r io.Reader, sz int64, vaultPath string) (any, error) {
+				return map[string]any{"vault_path": vaultPath}, nil
+			},
+			nil, 0,
+		)
+	}
+
+	grokVault := listToolsOn(t, mkVault(hostenv.ProfileGrokHTTP.Features))["vault_put_file"]
+	require.NotNil(t, grokVault, "vault_put_file must be registered")
+	grokDesc := sourceModeDescriptionOf(t, grokVault.InputSchema)
+	require.Contains(t, grokDesc, "Do not use upload_url / upload_data", "vault copy must forbid the IPFS-only relays")
+	require.Contains(t, grokDesc, "write them to an agent-local file first", "Grok vault copy must give the materialize-then-PUT path")
+	require.NotContains(t, grokDesc, "For a public HTTPS URL use the separate upload_url tool", "upload_file's sibling pointer must not leak onto vault_put_file")
+
+	// upload_file keeps its sibling pointer (upload_url/data ARE uploads).
+	uploadTool := listToolsOn(t, grokUploadDescriptor())["upload_file"]
+	require.NotNil(t, uploadTool)
+	uploadDesc := sourceModeDescriptionOf(t, uploadTool.InputSchema)
+	require.Contains(t, uploadDesc, "For a public HTTPS URL use the separate upload_url tool")
 }

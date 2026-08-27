@@ -106,7 +106,7 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 		// and the mode prose all follow the connected host.
 		InputSchema: vaultPutFileSchema(features),
 		Meta:        meta,
-		MCPTargets: toolforge.VaultPutFileTargets,
+		MCPTargets:  toolforge.VaultPutFileTargets,
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[VaultPutFileInput](request)
 			if err != nil {
@@ -235,7 +235,7 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 // only when FeatFileHostInput).
 func vaultPutFileSchema(features hostenv.FeatureSet) json.RawMessage {
 	return toolforge.Schema().
-		Property("source", toolargs.SchemaFor[transfer.UploadSource](), toolforge.Transform(transfer.UploadSourceSchemaTransform)).
+		Property("source", toolargs.SchemaFor[transfer.UploadSource](), toolforge.Transform(transfer.VaultSourceSchemaTransform)).
 		Property("file", toolargs.SchemaFor[transfer.ChatGPTFileInput](), toolforge.When(hostenv.FeatFileHostInput)).
 		StringProperty("vault_path", "Vault destination file path (e.g. vault:/docs/f.pdf or vault:/uploads/report.pdf). Required. Must be a file path, not a directory; traversal (.. or .) segments are rejected. Any vault file path is allowed.").
 		// archive_mode is only meaningful for source.mode=path (co-located
