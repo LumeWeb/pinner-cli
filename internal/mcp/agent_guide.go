@@ -198,36 +198,43 @@ var (
 
 // byteRouteDecision composes the "where are the bytes?" chooser as a guide
 // Decision so the flow's steps (not just its detail) can produce a CID from any
-// source the host actually registers. Each branch is feature-gated, so a model
-// that follows steps first lands on the correct tool chain (host file, local
-// path, mint + PUT, upload_url, or upload_data) instead of assuming upload_file.
+// source the host actually registers. Each branch is feature-gated and ends with
+// real upload tools — every step resolves to a genuine tool, so the guide's
+// "steps are real tools" invariant holds.
 //
 // The branches are intentionally the union of every profile's route; each host
 // resolves to only the branches its features enable, so uploaded bytes always
-// have a matching, non-invented chain.
-func byteRouteDecision() *toolforge.GuideDecisionBuilder {
+// have a matching, non-invented chain. next, when non-nil, is attached to every
+// branch as a nested decision (used by publish_website to chain the byte route
+// to the domain/websites_create choice).
+func byteRouteDecision(next *toolforge.GuideDecisionBuilder) *toolforge.GuideDecisionBuilder {
 	return toolforge.Decision("Where are the bytes?",
 		toolforge.Branch("a file already on the host (user attachment or host-provided file)").
 			WhenFeature(hostenv.FeatFileHostInput).
 			Steps("upload_file").
-			Detail(toolforge.Static("Pass the host file reference via the file argument; the host runtime fetches and uploads it. Do not base64-encode, mint a presigned URL, or build a download_url/file_id yourself.")),
+			Detail(toolforge.Static("Pass the host file reference via the file argument; the host runtime fetches and uploads it. Do not base64-encode, mint a presigned URL, or build a download_url/file_id yourself.")).
+			Next(next),
 		toolforge.Branch("a local file/directory path on a co-located host").
 			WhenFeature(hostenv.FeatSourcePath).
 			Steps("upload_file").
-			Detail(toolforge.Static("Use source.mode=path with the host-side file/directory/archive path; the server reads it directly.")),
+			Detail(toolforge.Static("Use source.mode=path with the host-side file/directory/archive path; the server reads it directly.")).
+			Next(next),
 		toolforge.Branch("a file the agent can read locally (sandbox / generated / agent-local file)").
 			WhenFeature(hostenv.FeatSourceMint).
 			Steps("upload_file").
 			StepWhen(hostenv.FeatSourceMint, "<host PUT>", "upload_status").
-			Detail(toolforge.Static("Mint has NOT stored bytes when upload_file returns: PUT the agent-local file to the returned url (curl -sS -T <file> \"<url>\"), then poll upload_status until completed — the completed CID is already pinned; do not call pins_add.")),
+			Detail(toolforge.Static("Mint has NOT stored bytes when upload_file returns: PUT the agent-local file to the returned url (curl -sS -T <file> \"<url>\"), then poll upload_status until completed — the completed CID is already pinned; do not call pins_add.")).
+			Next(next),
 		toolforge.Branch("bytes already at a public HTTPS URL (user handed a URL)").
 			WhenFeature(hostenv.FeatSourceURL).
 			Steps("upload_url").
-			Detail(toolforge.Static("upload_url server-fetches the public HTTPS URL and pins it; do not download then re-upload.")),
+			Detail(toolforge.Static("upload_url server-fetches the public HTTPS URL and pins it; do not download then re-upload.")).
+			Next(next),
 		toolforge.Branch("only raw inline bytes, with no file and no URL").
 			WhenFeature(hostenv.FeatSourceData).
 			Steps("upload_data").
-			Detail(toolforge.Static("upload_data is a last resort (RFC 2397 data: URI); never base64-encode a real or host-provided file into it.")),
+			Detail(toolforge.Static("upload_data is a last resort (RFC 2397 data: URI); never base64-encode a real or host-provided file into it.")).
+			Next(next),
 	)
 }
 
@@ -263,22 +270,31 @@ func vaultByteRouteDecision() *toolforge.GuideDecisionBuilder {
 	)
 }
 
-// byteRouteChooserStepFor is the publish_website step label that means "obtain
-// a CID via the upload flow's byte-route chooser" rather than a single tool. It
-// follows the guide's existing non-tool step precedent (<host PUT>) and keeps a
-// branch from forcing every site through upload_file. The label is resolved per
-// profile so it only names the upload tools that host actually registers — a
-// generic-HTTP (mint-only) or stdio (path-only) host must never be steered to
-// an upload_url/upload_data it does not have.
-func byteRouteChooserStepFor(p hostenv.PlatformProfile) string {
-	tools := []string{string(UploadToolFile)}
-	if p.Features.Has(hostenv.FeatSourceURL) {
-		tools = append(tools, string(UploadToolURL))
-	}
-	if p.Features.Has(hostenv.FeatSourceData) {
-		tools = append(tools, string(UploadToolData))
-	}
-	return "byte-route chooser (" + strings.Join(tools, "|") + ")"
+// publishDomainDecision is the publish_website choice of how to deploy the
+// already-uploaded site: a generic platform subdomain, an explicit label, or a
+// custom domain. It is nested under the byte-route decision (byteRouteDecision)
+// so a model first obtains a CID via real upload tools, then chooses the
+// deployment shape. Every step here is a real tool.
+func publishDomainDecision() *toolforge.GuideDecisionBuilder {
+	return toolforge.Decision("Does the user have a domain or subdomain label preference?",
+		toolforge.Branch("No — generic request (e.g. \"create me a website\", \"publish this\", \"host this\")").
+			Steps("websites_create", "websites_validate").
+			Detail(publishCidLead.Then(htmlRootClause).
+				Static("Call websites_create with only {\"cid\": \"<cid>\"} — no domain, no label, no platform. The platform auto-generates a subdomain and manages DNS. Do NOT invent a label or call websites_platform_domain_availability. Do not infer a desire for custom naming from a generic request to create or publish a website.").
+				Then(validateAfterCreateClause).
+				Then(reconcileNoSleep).
+				Then(siteBundleUpload())),
+		toolforge.Branch("Yes — user explicitly supplied or requested a specific label (e.g. \"call it acme\", \"use myapp\")").
+			Steps("websites_platform_domains_list", "websites_platform_domain_availability", "websites_create", "websites_validate").
+			Detail(publishCidLead.Then(htmlRootClause).
+				Static("List platform roots with websites_platform_domains_list, then check the label is claimable with websites_platform_domain_availability <label>, then call websites_create with {\"cid\": \"<cid>\", \"platform\": true, \"label\": \"<label>\"}. Only use this branch when the user explicitly named a label — never invent one to perform the availability step.").
+				Then(validateAfterCreateClause).
+				Then(reconcilePlain)),
+		toolforge.Branch("Yes — user owns a custom domain (e.g. example.com)").
+			Steps("websites_create", "websites_validate").
+			Detail(publishCidLead.Then(htmlRootClause).
+				Static("Call websites_create with {\"cid\": \"<cid>\", \"website\": \"<domain>\"}. The domain is used directly as a custom domain (not a platform subdomain). Read pinner://websites/<domain>/dns-requirements for DNS records to publish. If dns_hosting=true (managed), DNS is reconciled asynchronously — validation may report the old CID right after the update; that is reconciliation lag, not failure, so re-call websites_validate without starting a new flow. If self-managed, publish the _dnslink TXT and validation TXT before calling websites_validate.")),
+	)
 }
 
 // buildAgentGuide constructs the AgentGuide declaratively with the platform
@@ -315,7 +331,7 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 			// PUT> + upload_status) lives inside the mint branch; <host PUT> is
 			// an out-of-band action, not an MCP tool, but naming it keeps the
 			// chain from looking complete at the mint response.
-			Decision(byteRouteDecision()).
+			Decision(byteRouteDecision(nil)).
 			Detail(uploadDetailDesc)).
 		Flow(toolforge.Flow("vault_upload", "Store a file in a vault").
 			Steps("capabilities").
@@ -334,25 +350,11 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 			Steps("pins_add", "pins_list", "pins_status", "pins_rm").
 			Detail(toolforge.Static("pins_add imports content already on IPFS by external CID; it is NOT for use after an upload tool (which already pins). pins_status takes one cid; pins_rm requires confirm and exactly one of cids or all."))).
 		Flow(toolforge.Flow("publish_website", "Publish a website").
-			Decision(toolforge.Decision("Does the user have a domain or subdomain label preference?",
-				toolforge.Branch("No — generic request (e.g. \"create me a website\", \"publish this\", \"host this\")").
-					Steps(byteRouteChooserStepFor(p), "websites_create", "websites_validate").
-					Detail(publishCidLead.Then(htmlRootClause).
-						Static("Call websites_create with only {\"cid\": \"<cid>\"} — no domain, no label, no platform. The platform auto-generates a subdomain and manages DNS. Do NOT invent a label or call websites_platform_domain_availability. Do not infer a desire for custom naming from a generic request to create or publish a website.").
-						Then(validateAfterCreateClause).
-						Then(reconcileNoSleep).
-						Then(siteBundleUpload())),
-				toolforge.Branch("Yes — user explicitly supplied or requested a specific label (e.g. \"call it acme\", \"use myapp\")").
-					Steps(byteRouteChooserStepFor(p), "websites_platform_domains_list", "websites_platform_domain_availability", "websites_create", "websites_validate").
-					Detail(publishCidLead.Then(htmlRootClause).
-						Static("List platform roots with websites_platform_domains_list, then check the label is claimable with websites_platform_domain_availability <label>, then call websites_create with {\"cid\": \"<cid>\", \"platform\": true, \"label\": \"<label>\"}. Only use this branch when the user explicitly named a label — never invent one to perform the availability step.").
-						Then(validateAfterCreateClause).
-						Then(reconcilePlain)),
-				toolforge.Branch("Yes — user owns a custom domain (e.g. example.com)").
-					Steps(byteRouteChooserStepFor(p), "websites_create", "websites_validate").
-					Detail(publishCidLead.Then(htmlRootClause).
-						Static("Call websites_create with {\"cid\": \"<cid>\", \"website\": \"<domain>\"}. The domain is used directly as a custom domain (not a platform subdomain). Read pinner://websites/<domain>/dns-requirements for DNS records to publish. If dns_hosting=true (managed), DNS is reconciled asynchronously — validation may report the old CID right after the update; that is reconciliation lag, not failure, so re-call websites_validate without starting a new flow. If self-managed, publish the _dnslink TXT and validation TXT before calling websites_validate.")),
-			))).
+			// The byte route comes first (real upload tools produce the CID),
+			// then the domain/websites_create choice is nested under each branch.
+			// Every step here is a real tool, so the guide's "steps resolve to
+			// real tools" invariant holds on every host.
+			Decision(byteRouteDecision(publishDomainDecision()))).
 		Flow(toolforge.Flow("update_website", "Update an existing website").
 			Steps("websites_get", "websites_update", "websites_validate").
 			Detail(toolforge.Static("Update a deployed website's content without recreating it. 1) websites_get <domain> first to capture the current target_type and dns_hosting_enabled — never guess them. 2) If the new CID is external, pins_add it first; updating an unpinned CID returns CidNotPinned. 3) websites_update <domain> with the new cid (target-type is inherited when omitted; change it only when intentionally switching IPFS<->IPNS). 4) websites_validate. If DNS hosting is managed, validation may report the old CID right after the update — that is reconciliation lag, not failure; re-call websites_validate without starting a new flow."))).

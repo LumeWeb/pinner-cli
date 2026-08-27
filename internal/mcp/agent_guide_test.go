@@ -297,8 +297,9 @@ func TestAgentGuideNamesHostPUTOnMintSteps(t *testing.T) {
 }
 
 // TestAgentGuidePublishBranchesPerProfile verifies the publish_website decision
-// tree is stable and complete for every resolved profile, and that each branch
-// carries the rejected/desired-naming distinction a deterministic agent needs.
+// tree is stable and complete for every resolved profile: the outer byte-route
+// decision leads with real upload tools (never a fabricated step), and it nests
+// the generic/label/custom-domain decision a deterministic agent needs.
 func TestAgentGuidePublishBranchesPerProfile(t *testing.T) {
 	for _, p := range []*hostenv.PlatformProfile{
 		strPtr(hostenv.ProfileStdioGeneric),
@@ -308,9 +309,16 @@ func TestAgentGuidePublishBranchesPerProfile(t *testing.T) {
 	} {
 		pub := guideFlowByName(t, buildAgentGuide(p), "publish_website")
 		require.NotNil(t, pub.Decision, "publish_website must be a decision flow for %s", p.Transport)
-		require.Len(t, pub.Decision.Branches, 3, "publish_website must keep the generic/label/custom-domain branches for %s", p.Transport)
+		require.NotEmpty(t, pub.Decision.Branches, "publish_website must lead with the byte-route decision for %s", p.Transport)
+		var domain *GuideDecision
 		for _, br := range pub.Decision.Branches {
-			require.GreaterOrEqual(t, len(br.Steps), 2, "each publish branch must list an ordered tool chain")
+			// Every byte-route branch lists at least one REAL tool.
+			require.NotEmpty(t, br.Steps, "each byte-route branch must list at least one real tool")
+			if domain == nil && br.Next != nil {
+				domain = br.Next
+			}
 		}
+		require.NotNil(t, domain, "publish_website must nest the domain decision for %s", p.Transport)
+		require.Len(t, domain.Branches, 3, "publish_website must keep the generic/label/custom-domain branches for %s", p.Transport)
 	}
 }

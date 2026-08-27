@@ -214,29 +214,18 @@ func TestAgentGuideByteRouteChooserInSteps(t *testing.T) {
 	require.True(t, flowStepsContain(vault, "vault_put_file"))
 	require.True(t, flowStepsContain(vault, "<host PUT>"))
 
-	// publish_website branches start from the per-profile byte-route chooser,
-	// not upload_file. On Grok the label names all three upload tools.
-	wantChooser := byteRouteChooserStepFor(hostenv.ProfileGrokHTTP)
+	// publish_website leads with the byte-route decision (real upload tools),
+	// then nests the domain decision. Every step must be a real tool, so the
+	// publish flow never names a fabricated chooser.
 	pub := guideFlowByName(t, grok, "publish_website")
-	require.NotNil(t, pub.Decision)
-	sawChooser := false
-	for _, br := range pub.Decision.Branches {
-		require.NotEmpty(t, br.Steps)
-		require.Equal(t, wantChooser, br.Steps[0], "publish branch must start from the byte-route chooser: %s", br.When)
-		if br.Steps[0] == wantChooser {
-			sawChooser = true
-		}
-	}
-	require.True(t, sawChooser, "at least one publish branch starts from the byte-route chooser")
-
-	// A mint-only / stdio host must NOT be steered at upload_url / upload_data.
-	genericLabel := byteRouteChooserStepFor(hostenv.ProfileHTTPGeneric)
-	require.Equal(t, "byte-route chooser (upload_file)", genericLabel)
-	require.NotContains(t, genericLabel, "upload_url")
-	require.NotContains(t, genericLabel, "upload_data")
-	stdioLabel := byteRouteChooserStepFor(hostenv.ProfileStdioGeneric)
-	require.NotContains(t, stdioLabel, "upload_url")
-	require.NotContains(t, stdioLabel, "upload_data")
+	require.NotNil(t, pub.Decision, "publish_website must carry a byte-route decision")
+	require.True(t, flowStepsContain(pub, "upload_file"))
+	require.True(t, flowStepsContain(pub, "upload_url"))
+	require.True(t, flowStepsContain(pub, "upload_data"))
+	require.True(t, flowStepsContain(pub, "websites_create"))
+	require.True(t, flowStepsContain(pub, "websites_validate"))
+	// No fabricated non-tool step may leak into guide steps.
+	require.False(t, flowStepsContain(pub, "byte-route chooser"))
 }
 
 // TestCapabilitiesLeadInNamesThreeFields locks in audit 6 item 1: the
