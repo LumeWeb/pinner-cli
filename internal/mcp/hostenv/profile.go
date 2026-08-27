@@ -9,11 +9,13 @@ import (
 type HostType string
 
 const (
-	HostUnknown  HostType = "unknown"
-	HostOpenAI   HostType = "openai"
-	HostChatGPT  HostType = "chatgpt"
-	HostGrok      HostType = "grok"
-	HostGeneric  HostType = "generic"
+	HostUnknown       HostType = "unknown"
+	HostOpenAI        HostType = "openai"
+	HostChatGPT       HostType = "chatgpt"
+	HostGrok          HostType = "grok"
+	HostClaude        HostType = "claude"
+	HostClaudeDesktop HostType = "claude-desktop"
+	HostGeneric       HostType = "generic"
 )
 
 // TransportKind is the MCP transport the server runs under. It decides

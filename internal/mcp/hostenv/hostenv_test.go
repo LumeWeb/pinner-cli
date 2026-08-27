@@ -178,6 +178,148 @@ func TestGrokDetector_NoMatch(t *testing.T) {
 	require.Equal(t, AuthMethod(""), auth)
 }
 
+func TestClaudeDetector_MatchByUserAgent(t *testing.T) {
+	d := claudeDetector{}
+
+	// Positive: UA contains "claude-user", no token → bearer auth
+	host, auth := d.Match(DetectRequest{UserAgent: "Claude-User"})
+	require.Equal(t, HostClaude, host)
+	require.Equal(t, AuthBearer, auth)
+}
+
+func TestClaudeDetector_MatchByUserAgentWithToken(t *testing.T) {
+	d := claudeDetector{}
+
+	// Positive: UA contains "claude-user", token present → oauth auth
+	host, auth := d.Match(DetectRequest{UserAgent: "Claude-User", TokenInfo: newTokenInfo()})
+	require.Equal(t, HostClaude, host)
+	require.Equal(t, AuthOAuth, auth)
+}
+
+func TestClaudeDetector_MatchByClientInfo(t *testing.T) {
+	d := claudeDetector{}
+
+	// Positive: clientInfo vendor token "anthropic" → Claude Web
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "Anthropic/ClaudeAI", Version: "1.0.0"},
+	})
+	require.Equal(t, HostClaude, host)
+	require.Equal(t, AuthBearer, auth)
+
+	// Negative (disambiguation): Desktop's "claude-ai" must NOT match Web —
+	// Web requires the "anthropic" vendor token.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "claude-ai", Version: "0.1.0"},
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+}
+
+func TestClaudeDetector_MatchByHeader(t *testing.T) {
+	d := claudeDetector{}
+
+	h := http.Header{}
+	h.Set("X-Anthropic-Client", "ClaudeAI")
+	host, auth := d.Match(DetectRequest{Headers: h})
+	require.Equal(t, HostClaude, host)
+	require.Equal(t, AuthBearer, auth)
+
+	h2 := http.Header{}
+	h2.Set("X-Anthropic-Version", "2026-07-28")
+	host, auth = d.Match(DetectRequest{Headers: h2})
+	require.Equal(t, HostClaude, host)
+	require.Equal(t, AuthBearer, auth)
+}
+
+// TestClaudeDetector_NarrowUA guards the intentionally-narrow Web UA match: a
+// remote UA that merely contains "claude" (but not "claude-user") must not
+// classify the client as Claude Web.
+func TestClaudeDetector_NarrowUA(t *testing.T) {
+	d := claudeDetector{}
+
+	host, auth := d.Match(DetectRequest{UserAgent: "claude-connector/1.0"})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+}
+
+func TestClaudeDetector_NoMatch(t *testing.T) {
+	d := claudeDetector{}
+
+	// Unrelated signals
+	host, auth := d.Match(DetectRequest{UserAgent: "some-random-client/2.0.0"})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Claude Web is always remote — co-located is handled by claudeDesktopDetector.
+	host, auth = d.Match(DetectRequest{UserAgent: "Claude-User", CoLocated: true})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Claude Web never uses the OpenAI tunnel.
+	host, auth = d.Match(DetectRequest{UserAgent: "Claude-User", TunnelOpenAI: true})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+}
+
+func TestClaudeDesktopDetector_MatchByClientInfo(t *testing.T) {
+	d := claudeDesktopDetector{}
+
+	// Positive: co-located with the exact "claude-ai" name → host + AuthNone
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "claude-ai", Version: "0.1.0"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostClaudeDesktop, host)
+	require.Equal(t, AuthNone, auth)
+
+	// Case/whitespace-insensitive exact match
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "  Claude-AI  "},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostClaudeDesktop, host)
+	require.Equal(t, AuthNone, auth)
+}
+
+func TestClaudeDesktopDetector_NoMatch(t *testing.T) {
+	d := claudeDesktopDetector{}
+
+	// Not co-located (remote HTTP) → that is Claude Web's detector.
+	host, auth := d.Match(DetectRequest{ClientInfo: &ClientInfo{Name: "claude-ai"}})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Co-located but the exact name is required — "Claude Desktop" is not "claude-ai".
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "Claude Desktop"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Co-located but OpenAI tunnel → Desktop never uses the tunnel.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo:   &ClientInfo{Name: "claude-ai"},
+		CoLocated:    true,
+		TunnelOpenAI: true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Co-located, unrelated clientInfo
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "some-other-tool"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Co-located, no clientInfo at all
+	host, auth = d.Match(DetectRequest{CoLocated: true})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+}
+
 // ---------------------------------------------------------------------------
 // Registry Detect tests
 // ---------------------------------------------------------------------------
@@ -254,6 +396,59 @@ func TestRegistry_Detect_GrokOverHTTP(t *testing.T) {
 	require.True(t, prof.Has(FeatRemoteAccess))
 	require.True(t, prof.Has(FeatSourceData))
 	require.True(t, prof.Has(FeatSourceURL))
+}
+
+func TestRegistry_Detect_ClaudeWebOverHTTP(t *testing.T) {
+	r := NewRegistry()
+
+	req := DetectRequest{
+		ClientInfo:   &ClientInfo{Name: "Anthropic/ClaudeAI", Version: "1.0.0"},
+		UserAgent:    "Claude-User",
+		TokenInfo:    newTokenInfo(),
+		CoLocated:    false,
+		TunnelOpenAI: false,
+	}
+	prof := r.Detect(req)
+
+	require.Equal(t, ProfileClaudeHTTP.HostType, prof.HostType)
+	require.Equal(t, ProfileClaudeHTTP.Transport, prof.Transport)
+	// Wire token present → detected auth is oauth.
+	require.Equal(t, AuthOAuth, prof.AuthMethod)
+	require.True(t, prof.Remote)
+	require.Equal(t, "Claude-User", prof.UserAgent)
+	require.Equal(t, "Anthropic/ClaudeAI", prof.ClientInfo.Name)
+	// Claude Web: MCP Apps + the base64 upload_data relay (FeatSourceData).
+	require.True(t, prof.Has(FeatMCPApps))
+	require.True(t, prof.Has(FeatSourceData))
+	// It does NOT get the OpenAI file-host / url relay, nor a co-located path.
+	require.False(t, prof.Has(FeatFileHostInput))
+	require.False(t, prof.Has(FeatSourceURL))
+	require.False(t, prof.Has(FeatSourcePath))
+	require.False(t, prof.Has(FeatCoLocated))
+}
+
+func TestRegistry_Detect_ClaudeDesktopOverStdio(t *testing.T) {
+	r := NewRegistry()
+
+	req := DetectRequest{
+		ClientInfo: &ClientInfo{Name: "claude-ai", Version: "0.1.0"},
+		CoLocated:  true,
+	}
+	prof := r.Detect(req)
+
+	require.Equal(t, ProfileClaudeDesktopStdio.HostType, prof.HostType)
+	require.Equal(t, ProfileClaudeDesktopStdio.Transport, prof.Transport)
+	require.Equal(t, AuthNone, prof.AuthMethod)
+	require.False(t, prof.Remote)
+	require.Equal(t, "claude-ai", prof.ClientInfo.Name)
+	// Desktop is co-located with full local file access + MCP Apps.
+	require.True(t, prof.Has(FeatSourcePath))
+	require.True(t, prof.Has(FeatSinkLocal))
+	require.True(t, prof.Has(FeatCoLocated))
+	require.True(t, prof.Has(FeatMCPApps))
+	// Desktop is NOT the network-restricted Web: no data-only gate.
+	require.False(t, prof.Has(FeatSourceData))
+	require.False(t, prof.Has(FeatRemoteAccess))
 }
 
 func TestRegistry_Detect_UnknownOverStdio(t *testing.T) {
@@ -418,6 +613,20 @@ func TestResolveProfile(t *testing.T) {
 			transport: TransportHTTP,
 			auth:      AuthOAuth,
 			want:      ProfileGrokHTTP,
+		},
+		{
+			name:      "claude over http",
+			host:      HostClaude,
+			transport: TransportHTTP,
+			auth:      AuthOAuth,
+			want:      ProfileClaudeHTTP,
+		},
+		{
+			name:      "claude desktop over stdio",
+			host:      HostClaudeDesktop,
+			transport: TransportStdio,
+			auth:      AuthNone,
+			want:      ProfileClaudeDesktopStdio,
 		},
 		{
 			name:      "generic over stdio",
@@ -585,6 +794,10 @@ func TestPlatformProfile_IsHost(t *testing.T) {
 
 	require.True(t, ProfileOpenAITunnel.IsHost(HostChatGPT))
 	require.True(t, ProfileOpenAIHTTP.IsHost(HostOpenAI))
+	require.True(t, ProfileClaudeHTTP.IsHost(HostClaude))
+	require.False(t, ProfileClaudeHTTP.IsHost(HostClaudeDesktop))
+	require.True(t, ProfileClaudeDesktopStdio.IsHost(HostClaudeDesktop))
+	require.False(t, ProfileClaudeDesktopStdio.IsHost(HostClaude))
 
 	require.True(t, ProfileHTTPGeneric.IsHost(HostGeneric))
 }
@@ -735,10 +948,12 @@ func TestNewRegistry_DetectorsRegistered(t *testing.T) {
 	r := NewRegistry()
 
 	require.NotNil(t, r)
-	require.Len(t, r.detectors, 2)
-	// Priority order: openai, grok
+	require.Len(t, r.detectors, 4)
+	// Priority order: openai, grok, claude (web), claude-desktop
 	require.IsType(t, openAIDetector{}, r.detectors[0])
 	require.IsType(t, grokDetector{}, r.detectors[1])
+	require.IsType(t, claudeDetector{}, r.detectors[2])
+	require.IsType(t, claudeDesktopDetector{}, r.detectors[3])
 }
 
 func TestNewRegistry_PriorityOrder(t *testing.T) {
