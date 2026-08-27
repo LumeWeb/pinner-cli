@@ -201,14 +201,14 @@ func (b *GuideDecisionBuilder) resolve(p hostenv.PlatformProfile, sub func(strin
 
 // GuideBranchBuilder declares one path through a GuideDecision.
 type GuideBranchBuilder struct {
-	when        string
-	gates       []gatedStep
-	detail      DescBuilder
-	hasDetail   bool
-	next        *GuideDecisionBuilder
-	branchWhen  hostenv.Feature   // whole-branch feature gate (optional)
-	branchUnls  hostenv.Feature   // whole-branch feature gate (optional)
-	branchPred  hostenv.Predicate // whole-branch platform predicate (optional, wins over features)
+	when       string
+	gates      []gatedStep
+	detail     DescBuilder
+	hasDetail  bool
+	next       *GuideDecisionBuilder
+	branchWhen hostenv.Feature   // whole-branch feature gate (optional)
+	branchUnls hostenv.Feature   // whole-branch feature gate (optional)
+	branchPred hostenv.Predicate // whole-branch platform predicate (optional, wins over features)
 }
 
 // Branch starts a new branch for the given natural-language condition.
@@ -272,6 +272,15 @@ func (b *GuideBranchBuilder) WhenHost(h hostenv.HostType) *GuideBranchBuilder {
 // UnlessHost includes the branch only when the profile's host does NOT match h.
 func (b *GuideBranchBuilder) UnlessHost(h hostenv.HostType) *GuideBranchBuilder {
 	b.branchPred = hostenv.Not(hostenv.HostIs(h))
+	return b
+}
+
+// WhenTransport includes the branch only when the profile's transport matches
+// t. Use it to gate a branch on the transport (e.g. vault_put_file's url/data
+// source modes, which only exist on the OpenAI tunnel) rather than on a
+// capability feature that a host may declare for a DIFFERENT tool.
+func (b *GuideBranchBuilder) WhenTransport(t hostenv.TransportKind) *GuideBranchBuilder {
+	b.branchPred = hostenv.TransportIs(t)
 	return b
 }
 

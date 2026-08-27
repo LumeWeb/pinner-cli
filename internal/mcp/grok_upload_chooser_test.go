@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -242,4 +243,41 @@ func TestCapabilitiesLeadInNamesThreeFields(t *testing.T) {
 	require.Contains(t, generic, "upload_tools lists every upload tool registered on this host")
 	require.NotContains(t, generic, "upload_url", "generic HTTP has no relay tools")
 	require.NotContains(t, generic, "upload_data", "generic HTTP has no relay tools")
+}
+
+// TestVaultByteRouteTransportGated locks in audit 7: vault_put_file's url/data
+// source exists ONLY on the OpenAI tunnel transport. A mint-only host like Grok
+// must not be told it can vault a URL or raw bytes via vault_put_file (its
+// vault_put_file is mint-only), and must not be sent to the IPFS-only
+// upload_url/upload_data as a "vault" path. Schema, detail, and decision must
+// agree.
+func TestVaultByteRouteTransportGated(t *testing.T) {
+	// Grok (HTTP, mint-only): only the mint vault branch; no url/data claim.
+	grok := buildAgentGuide(strPtr(hostenv.ProfileGrokHTTP))
+	grokVault := guideFlowByName(t, grok, "vault_upload")
+	require.NotNil(t, grokVault.Decision)
+	for _, br := range grokVault.Decision.Branches {
+		require.Contains(t, br.Steps[0], "vault_put_file", "Grok vault branches must all use vault_put_file")
+		require.NotContains(t, br.When, "public HTTPS URL", "Grok vault_put_file is mint-only; no URL branch")
+		require.NotContains(t, br.When, "raw inline bytes", "Grok vault_put_file is mint-only; no data branch")
+	}
+	require.Contains(t, grokVault.Detail, "materialize them to an agent-local file first", "Grok vault detail must give the mint materialize path")
+	require.NotContains(t, grokVault.Detail, "via its own url/data source", "Grok must not claim vault_put_file url/data")
+
+	// OpenAI tunnel: vault_put_file HAS url/data source modes, so those branches exist.
+	tunnel := buildAgentGuide(strPtr(hostenv.ProfileOpenAITunnel))
+	tunnelVault := guideFlowByName(t, tunnel, "vault_upload")
+	require.NotNil(t, tunnelVault.Decision)
+	sawURL, sawData := false, false
+	for _, br := range tunnelVault.Decision.Branches {
+		if strings.Contains(br.When, "public HTTPS URL") {
+			sawURL = true
+		}
+		if strings.Contains(br.When, "raw inline bytes") {
+			sawData = true
+		}
+	}
+	require.True(t, sawURL, "tunnel vault guide must offer the URL branch")
+	require.True(t, sawData, "tunnel vault guide must offer the data branch")
+	require.Contains(t, tunnelVault.Detail, "via its own url/data source", "tunnel vault detail may claim url/data via vault_put_file")
 }
