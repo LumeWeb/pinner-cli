@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -127,4 +129,120 @@ func TestAuthSSONotConfigured(t *testing.T) {
 	require.NoError(t, err)
 	sc := requireHandoff(t, result)
 	assert.Equal(t, model.ReasonInteractiveOnly, sc["reason"])
+}
+
+// TestAuthSSOSingleFlightReusesInUseHandle pins the fix for the dual-trigger
+// deadlock: when a second auth_sso fires while a login is already in flight
+// (e.g. the model started one and the GUI's start button fires again), it must
+// return the SAME in-use handle + approval URL instead of minting a competing
+// login that strands the first. Both callers converge on one handle, and one
+// browser approval completes both.
+func TestAuthSSOSingleFlightReusesInUseHandle(t *testing.T) {
+	oob := newOOBForTest(t)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
+	reg := handoff.NewHandoffRegistry()
+	desc := NewAuthSSODescriptor(oob, handles, reg)
+
+	first, err := desc.Handler(context.Background(), model.ToolRequest{
+		Name: "auth_sso", Arguments: map[string]any{"email": ""},
+	})
+	require.NoError(t, err)
+	firstSC := requireHandoff(t, first)
+	firstHandle := firstSC["handle"].(string)
+	firstURL := firstSC["action_url"].(string)
+
+	// A second trigger — the GUI's start tool firing while the model's login is
+	// still pending — must NOT create a second login.
+	second, err := desc.Handler(context.Background(), model.ToolRequest{
+		Name: "auth_sso", Arguments: map[string]any{"email": ""},
+	})
+	require.NoError(t, err)
+	secondSC := requireHandoff(t, second)
+	assert.Equal(t, firstHandle, secondSC["handle"], "second auth_sso must reuse the in-use handle")
+	assert.Equal(t, firstURL, secondSC["action_url"], "second auth_sso must reuse the same approval URL")
+	// The in-use hand-off tells both sides the login is shared and how to revoke.
+	assert.Equal(t, true, secondSC["in_use"], "reused hand-off must be flagged in_use")
+	assert.Equal(t, "auth_sso_revoke", secondSC["revoke_tool"], "reused hand-off must name the revoke tool")
+
+	// Only ONE OOB login request exists on the server: approving the (single)
+	// URL resolves BOTH pollers to done.
+	resume := NewAuthResumeDescriptor(reg, handles)
+	done, err := resume.Handler(context.Background(), model.ToolRequest{
+		Name: "auth_resume", Arguments: map[string]any{"handle": firstHandle},
+	})
+	require.NoError(t, err)
+	requireHandoff(t, done) // pending before approval
+	rec := doLogin(t, oob, firstURL, testOrigin(oob), "")
+	require.Equal(t, 200, rec.Code)
+
+	resolved, err := resume.Handler(context.Background(), model.ToolRequest{
+		Name: "auth_resume", Arguments: map[string]any{"handle": firstHandle},
+	})
+	require.NoError(t, err)
+	require.Equal(t, model.StatusDone, resolved.StructuredContent.(map[string]any)["status"])
+}
+
+// TestAuthSSORevokeLetsFreshLoginStart verifies auth_sso_revoke cancels the
+// in-use login (its approval URL becomes spent, the handle/continuation are
+// retired) so a subsequent auth_sso actually starts a NEW login with a
+// different handle instead of reusing the revoked one.
+func TestAuthSSORevokeLetsFreshLoginStart(t *testing.T) {
+	oob := newOOBForTest(t)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
+	reg := handoff.NewHandoffRegistry()
+	start := NewAuthSSODescriptor(oob, handles, reg)
+
+	first, err := start.Handler(context.Background(), model.ToolRequest{Name: "auth_sso", Arguments: map[string]any{"email": ""}})
+	require.NoError(t, err)
+	firstSC := requireHandoff(t, first)
+	firstHandle := firstSC["handle"].(string)
+
+	// Revoke the in-flight login.
+	revoke := NewAuthSSORevokeDescriptor(oob, handles, reg)
+	rv, err := revoke.Handler(context.Background(), model.ToolRequest{
+		Name: "auth_sso_revoke", Arguments: map[string]any{"handle": firstHandle},
+	})
+	require.NoError(t, err)
+	require.False(t, rv.IsError)
+	rvSC := rv.StructuredContent.(map[string]any)
+	require.Equal(t, model.StatusDone, rvSC["status"])
+	require.Equal(t, true, rvSC["revoked"], "an in-flight login must report revoked=true")
+
+	// The revoked registration URL is no longer actionable.
+	spent := httptest.NewRecorder()
+	oob.loginPage(spent, httptest.NewRequest(http.MethodGet, firstSC["action_url"].(string), nil))
+	require.Equal(t, http.StatusGone, spent.Code)
+
+	// A fresh auth_sso now starts a NEW login (different handle).
+	second, err := start.Handler(context.Background(), model.ToolRequest{Name: "auth_sso", Arguments: map[string]any{"email": ""}})
+	require.NoError(t, err)
+	secondSC := requireHandoff(t, second)
+	require.NotEqual(t, firstHandle, secondSC["handle"], "after revoke, auth_sso must start a fresh login")
+	require.NotEqual(t, true, secondSC["in_use"], "fresh login must not be flagged in_use")
+}
+
+// TestAuthSSORevokeIdempotent verifies revoking an unknown handle is a safe
+// no-op (revoked=false), not an error, so a stale revoke call never fails.
+func TestAuthSSORevokeIdempotent(t *testing.T) {
+	oob := newOOBForTest(t)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
+	reg := handoff.NewHandoffRegistry()
+	revoke := NewAuthSSORevokeDescriptor(oob, handles, reg)
+	rv, err := revoke.Handler(context.Background(), model.ToolRequest{
+		Name: "auth_sso_revoke", Arguments: map[string]any{"handle": "does-not-exist"},
+	})
+	require.NoError(t, err)
+	require.False(t, rv.IsError)
+	require.Equal(t, false, rv.StructuredContent.(map[string]any)["revoked"])
+}
+
+// TestAuthSSORevokeRequiresHandle verifies a missing handle fast-fails.
+func TestAuthSSORevokeRequiresHandle(t *testing.T) {
+	oob := newOOBForTest(t)
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
+	revoke := NewAuthSSORevokeDescriptor(oob, handles, handoff.NewHandoffRegistry())
+	rv, err := revoke.Handler(context.Background(), model.ToolRequest{Name: "auth_sso_revoke", Arguments: map[string]any{}})
+	require.NoError(t, err)
+	require.True(t, rv.IsError)
+	require.Contains(t, rv.Text, "handle is required")
 }

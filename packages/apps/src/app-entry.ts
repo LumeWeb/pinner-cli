@@ -53,6 +53,8 @@ export interface AppEntryOptions {
     startBtn: HTMLElement & { disabled?: boolean };
     urlEl: HTMLElement;
     statusEl: HTMLElement;
+    /** Optional revoke button shown while polling an in-use (reused) login. */
+    revokeBtn?: (HTMLElement & { disabled?: boolean; hidden?: boolean }) | null;
   };
 }
 
@@ -65,12 +67,14 @@ export interface FlowRender {
   statusMsg: string | null;
   /** Whether the flow is mid-flight (starting/polling) — disables the button. */
   pending: boolean;
+  /** Whether the revoke button should be visible (polling an in-use login). */
+  revoke: boolean;
 }
 
 /** Map a flow state + context onto the status/button readout. */
 export function renderFlow(
   state: FlowState,
-  ctx: { detail?: string; alreadyDone?: boolean },
+  ctx: { detail?: string; alreadyDone?: boolean; inUse?: boolean },
   cfg: FlowConfig,
 ): FlowRender {
   switch (state) {
@@ -79,22 +83,43 @@ export function renderFlow(
         statusState: StatusClass.Ok,
         statusMsg: ctx.alreadyDone ? cfg.alreadyDoneMsg : cfg.doneMsg,
         pending: false,
+        revoke: false,
       };
     case FlowState.Dead:
       return {
         statusState: StatusClass.Error,
         statusMsg: ctx.detail || cfg.deadDetailPrefix,
         pending: false,
+        revoke: false,
       };
     case FlowState.Error:
-      return { statusState: StatusClass.Error, statusMsg: cfg.startErrorMsg, pending: false };
+      return {
+        statusState: StatusClass.Error,
+        statusMsg: cfg.startErrorMsg,
+        pending: false,
+        revoke: false,
+      };
     case FlowState.Timeout:
-      return { statusState: StatusClass.Info, statusMsg: cfg.timeoutMsg, pending: false };
+      return {
+        statusState: StatusClass.Info,
+        statusMsg: cfg.timeoutMsg,
+        pending: false,
+        revoke: false,
+      };
     case FlowState.Starting:
+    case FlowState.Revoking:
+      return { statusState: StatusClass.Pending, statusMsg: cfg.pendingMsg, pending: true, revoke: false };
     case FlowState.Polling:
-      return { statusState: StatusClass.Pending, statusMsg: cfg.pendingMsg, pending: true };
+      return {
+        // A reused (already in-use) login is still a live approval; surface it
+        // as such and reveal the revoke affordance so the human can start fresh.
+        statusState: StatusClass.Pending,
+        statusMsg: ctx.inUse ? (cfg.inUseMsg ?? cfg.pendingMsg) : cfg.pendingMsg,
+        pending: true,
+        revoke: !!ctx.inUse && !!cfg.revokeTool,
+      };
     default:
-      return { statusState: null, statusMsg: null, pending: false };
+      return { statusState: null, statusMsg: null, pending: false, revoke: false };
   }
 }
 
@@ -110,12 +135,15 @@ export function runAppEntry(opts: AppEntryOptions) {
     const btn = opts.elements.startBtn;
     const urlEl = opts.elements.urlEl;
     const statusEl = opts.elements.statusEl;
+    const revokeBtn = opts.elements.revokeBtn;
 
     const r = renderFlow(stateName, ctx, opts.config);
     // During an in-flight run the button is disabled (no concurrent runs). On a
     // terminal state it is re-enabled so the user can click "retry" / start
     // again.
     if (btn) btn.disabled = r.pending;
+    // The revoke button is revealed only while polling an already in-use login.
+    if (revokeBtn) revokeBtn.hidden = !r.revoke;
     // Stamp the status readout whenever a real state resolves (incl. empty
     // messages — e.g. an empty deadDetailPrefix/doneMsg still clears the text
     // and sets the class), matching the pre-refactor unconditional write. Idle
@@ -141,6 +169,16 @@ export function runAppEntry(opts: AppEntryOptions) {
     });
   }
 
+  // Revoking an in-use login cancels it, then the machine returns to idle so a
+  // fresh sign-in can start.
+  if (opts.elements.revokeBtn) {
+    opts.elements.revokeBtn.addEventListener("click", () => {
+      if (currentFlowState(service) === FlowState.Polling) {
+        service.send("revoke");
+      }
+    });
+  }
+
   return {
     start: () => service.send("start"),
     get state(): FlowState {
@@ -155,6 +193,9 @@ export type FlowElementIds = {
   startBtn: string;
   urlEl: string;
   statusEl: string;
+  /** Optional revoke button element id (only flow apps that reuse in-use
+   * logins, e.g. auth_sso, supply one). */
+  revokeBtn?: string;
 };
 
 /** Messages + defaults a flow app entry contributes on top of FlowConfig core. */
@@ -169,6 +210,8 @@ export type FlowCopy = Pick<
   | "deadDetailPrefix"
   | "timeoutMsg"
   | "retryWord"
+  | "inUseMsg"
+  | "revokeTool"
 >;
 
 /** Core, non-copy FlowConfig fields a flow app entry supplies. */
@@ -199,6 +242,10 @@ export function mountFlowApp(def: FlowAppEntry, root: Document, callTool?: CallT
         startBtn: byId<HTMLElement & { disabled?: boolean }>(root, def.ids.startBtn)!,
         urlEl: byId<HTMLElement>(root, def.ids.urlEl)!,
         statusEl: statusEl!,
+        revokeBtn: byId<HTMLElement & { disabled?: boolean; hidden?: boolean }>(
+          root,
+          def.ids.revokeBtn ?? "",
+        ),
       },
     });
   return mountApp({ name: def.name, statusEl, wire, callTool });
