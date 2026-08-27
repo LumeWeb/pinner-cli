@@ -42,9 +42,15 @@ func (claudeDetector) Match(req DetectRequest) (HostType, AuthMethod) {
 	if req.ClientInfo != nil && strings.Contains(strings.ToLower(req.ClientInfo.Name), clientNameAnthropic) {
 		return HostClaude, authFromToken(req.TokenInfo)
 	}
-	// Check for Anthropic-specific HTTP headers.
+	// Check for Anthropic-specific HTTP headers, but only as corroboration:
+	// X-Anthropic-Version is a generic protocol-negotiation header that an
+	// Anthropic SDK or relay can emit on a non-Claude-Web connection, so a bare
+	// header must never classify the call. Trust the header only when combined
+	// with the Claude-Web User-Agent or the "anthropic" clientInfo vendor token.
 	if req.Headers != nil {
-		if req.Headers.Get(headerXAnthropicClient) != "" || req.Headers.Get(headerXAnthropicVersion) != "" {
+		if (req.Headers.Get(headerXAnthropicClient) != "" || req.Headers.Get(headerXAnthropicVersion) != "") &&
+			(strings.Contains(strings.ToLower(req.UserAgent), userAgentClaude) ||
+				(req.ClientInfo != nil && strings.Contains(strings.ToLower(req.ClientInfo.Name), clientNameAnthropic))) {
 			return HostClaude, authFromToken(req.TokenInfo)
 		}
 	}
