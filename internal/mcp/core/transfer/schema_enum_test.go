@@ -140,6 +140,40 @@ func TestUploadFileSchemaMintOnlyDropsDeadSources(t *testing.T) {
 	require.NotNil(t, oProps.Data, "OpenAI tunnel keeps source.data")
 }
 
+// TestArchiveModeDescriptionNamesOnlyAcceptedRoutes regresses audit F-004: on
+// every profile, upload_file's archive_mode.description must name only the byte
+// sources that profile actually accepts, and must never reintroduce a transport
+// source (path/url/data/mint) its source.mode enum rejects. HTTP+host-file names
+// host-file + mint; Grok (HTTP no file) stays mint-only; stdio names only path;
+// the OpenAI tunnel names host-file + url/data (never path or mint).
+func TestArchiveModeDescriptionNamesOnlyAcceptedRoutes(t *testing.T) {
+	specs := []struct {
+		name  string
+		fs    hostenv.FeatureSet
+		in    []string
+		notIn []string
+	}{
+		{name: "openai-http", fs: hostenv.ProfileOpenAIHTTP.Features, in: []string{"host-file source", "mint"}, notIn: []string{"path source", "url/data source"}},
+		{name: "grok-http", fs: hostenv.ProfileGrokHTTP.Features, in: []string{"mint", "preserve (the default for the mint source)"}, notIn: []string{"host-file source", "path source", "url/data source"}},
+		{name: "stdio", fs: hostenv.ProfileStdioGeneric.Features, in: []string{"path source"}, notIn: []string{"mint", "url/data source", "host-file source"}},
+		{name: "openai-tunnel", fs: hostenv.ProfileOpenAITunnel.Features, in: []string{"host-file source", "url/data source"}, notIn: []string{"path source", "mint"}},
+	}
+	for _, spec := range specs {
+		spec := spec
+		t.Run(spec.name, func(t *testing.T) {
+			var s uploadFileSchemaShape
+			require.NoError(t, json.Unmarshal(uploadFileSchema(spec.fs), &s))
+			desc := s.Properties.ArchiveMode.Description
+			for _, want := range spec.in {
+				require.Contains(t, desc, want, "%s: archive_mode must name %q", spec.name, want)
+			}
+			for _, banned := range spec.notIn {
+				require.NotContains(t, desc, banned, "%s: archive_mode must not name %q", spec.name, banned)
+			}
+		})
+	}
+}
+
 // TestSourceModeEnumValuesContract verifies SourceModeEnumValues stays the
 // source of truth for the per-transport enum (derived from the transport's
 // generic profile features).

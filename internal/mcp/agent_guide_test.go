@@ -225,12 +225,12 @@ func strPtr(p hostenv.PlatformProfile) *hostenv.PlatformProfile { return &p }
 // must instead say it has no file parameter and lead with mint + PUT + poll.
 func TestAgentGuideSummaryNeverPrefersFileForGrok(t *testing.T) {
 	grok := buildAgentGuide(strPtr(hostenv.ProfileGrokHTTP))
-	require.NotContains(t, grok.Summary, "prefer the `file` parameter when your host has one")
+	require.NotContains(t, grok.Summary, "prefer the `file` parameter")
 	require.Contains(t, grok.Summary, "no `file` parameter")
 	require.Contains(t, grok.Summary, "upload_data", "Grok must be told not to call upload_data")
 
 	openai := buildAgentGuide(strPtr(hostenv.ProfileOpenAITunnel))
-	require.Contains(t, openai.Summary, "prefer the `file` parameter when your host has one")
+	require.Contains(t, openai.Summary, "prefer the `file` parameter")
 	require.NotContains(t, openai.Summary, "no `file` parameter")
 }
 
@@ -277,11 +277,13 @@ func TestAgentGuideNamesHostPUTOnMintSteps(t *testing.T) {
 		strPtr(hostenv.ProfileOpenAIHTTP),
 	}
 	for _, p := range mintProfiles {
-		for _, flowName := range []string{"upload", "vault_upload"} {
-			f := guideFlowByName(t, buildAgentGuide(p), flowName)
-			require.True(t, flowStepsContain(f, "<host PUT>"), "%s: %s mint flow must name the host PUT", p.Transport, flowName)
-			require.True(t, flowStepsContain(f, "upload_status"), "%s: %s mint flow must name the upload_status poll", p.Transport, flowName)
-		}
+		up := guideFlowByName(t, buildAgentGuide(p), "upload")
+		require.True(t, flowStepsContain(up, "<host PUT>"), "%s: upload mint flow must name the host PUT", p.Transport)
+		require.True(t, flowStepsContain(up, "upload_status"), "%s: upload mint flow must name the upload_status poll", p.Transport)
+
+		vu := guideFlowByName(t, buildAgentGuide(p), "vault_upload")
+		require.True(t, flowStepsContain(vu, "<host PUT>"), "%s: vault mint flow must name the host PUT", p.Transport)
+		require.False(t, flowStepsContain(vu, "upload_status"), "%s: vault mint flow must NOT name upload_status (vault mint is synchronous — the PUT response is the result)", p.Transport)
 	}
 
 	nonMintProfiles := []*hostenv.PlatformProfile{
@@ -320,5 +322,61 @@ func TestAgentGuidePublishBranchesPerProfile(t *testing.T) {
 		}
 		require.NotNil(t, domain, "publish_website must nest the domain decision for %s", p.Transport)
 		require.Len(t, domain.Branches, 3, "publish_website must keep the generic/label/custom-domain branches for %s", p.Transport)
+	}
+}
+
+// TestAgentGuideSandboxFilesRouteToFileNotMint regresses audit F-002. On a host
+// with both FeatFileHostInput and mint (OpenAI HTTP, host_file_first), an
+// assistant-generated sandbox file must route to the `file` parameter; the mint
+// branch must be requalified so it never claims to cover "sandbox / generated /
+// agent-local" files (which host_file_first requires on `file`).
+func TestAgentGuideSandboxFilesRouteToFileNotMint(t *testing.T) {
+	p := hostenv.ProfileOpenAIHTTP
+	guide := buildAgentGuide(strPtr(p))
+	for _, flowName := range []string{"upload", "vault_upload"} {
+		f := guideFlowByName(t, guide, flowName)
+		require.NotNil(t, f.Decision, "%s must expose a byte-route decision", flowName)
+		var fileBranch, mintBranch *GuideBranch
+		for i := range f.Decision.Branches {
+			b := &f.Decision.Branches[i]
+			switch {
+			case strings.Contains(b.When, "assistant-generated sandbox file"):
+				fileBranch = b
+			case strings.Contains(b.When, "cannot provide through `file`"):
+				mintBranch = b
+			}
+		}
+		// The host-file branch must exist and explicitly take assistant-generated
+		// sandbox files, ending at the real file-route tool.
+		require.NotNil(t, fileBranch, "%s must expose a host-file branch naming assistant-generated sandbox files", flowName)
+		wantStep := "upload_file"
+		if flowName == "vault_upload" {
+			wantStep = "vault_put_file"
+		}
+		require.Contains(t, fileBranch.Steps, wantStep, "%s host-file branch must end at %s", flowName, wantStep)
+		// The mint branch must be requalified to the handoff-unavailable case and
+		// explicitly exclude user/assistant-generated files (host_file_first).
+		require.NotNil(t, mintBranch, "%s must expose a requalified mint-only branch", flowName)
+		require.Contains(t, strings.ToLower(mintBranch.When), "cannot provide through `file`", "mint branch must require the file handoff to be unavailable")
+		require.Contains(t, mintBranch.When, "not a host/user/assistant-generated file", "mint branch must explicitly exclude generated files")
+	}
+}
+
+// TestAgentGuideWizardGuidanceIndependentOfElicitation regresses audit F-005:
+// the wizard is an in-band next_step_schema loop, not MCP elicitation, so the
+// guide must describe the guided websites_wizard path even on profiles WITHOUT
+// FeatElicitation, while still steering generic autonomous publish to
+// publish_website.
+func TestAgentGuideWizardGuidanceIndependentOfElicitation(t *testing.T) {
+	for _, p := range []*hostenv.PlatformProfile{
+		strPtr(hostenv.ProfileGrokHTTP),
+		strPtr(hostenv.ProfileHTTPGeneric),
+		strPtr(hostenv.ProfileStdioGeneric),
+	} {
+		require.False(t, p.Has(hostenv.FeatElicitation), "%s must lack FeatElicitation for this test", p.Transport)
+		summary := buildAgentGuide(p).Summary
+		require.Contains(t, summary, "websites_wizard", "%s guide must describe the guided wizard path", p.Transport)
+		require.Contains(t, summary, "publish_website flow directly", "%s guide must steer generic publish to publish_website", p.Transport)
+		require.Contains(t, summary, "next_step_schema", "%s guide must describe the wizard JSON loop", p.Transport)
 	}
 }

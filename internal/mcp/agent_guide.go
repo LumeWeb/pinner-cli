@@ -119,7 +119,7 @@ var vaultUploadDetailDesc = toolforge.Static(
 		"Use a transport-scoped source ({{SOURCES}}) plus the destination vault_path.",
 	).
 	When(hostenv.FeatSourceMint,
-		"When using source.mode=mint, mint returns a url + upload_handle but has NOT stored bytes: (1) put the agent-local file to the returned url, (2) poll upload_status with the returned upload_handle, (3) the completed CID is the vaulted object.",
+		"When using source.mode=mint + vault_path, mint returns a one-time presigned PUT url bound to vault_path (it has NOT stored bytes yet). PUT the agent-local file to the returned url; the vault write is synchronous, so the PUT response carries the completed vault write directly — there is no upload_status to poll.",
 	).
 	WhenSentence(hostenv.FeatSourceMint,
 		"On this mint-only transport there is no direct vault path for a public URL or inline bytes: materialize them to an agent-local file first, then vault_put_file(source.mode=mint) + PUT. The separate upload_url / upload_data tools are IPFS-only, not vault writes — do not invent a 'vault a CID' step.",
@@ -176,20 +176,21 @@ var guideSummary = toolforge.Static(
 	).
 	StaticList("then publish the resulting directory CID.").
 	When(hostenv.FeatFileHostInput,
-		"Follow the byte path capabilities reports: prefer the `file` parameter when your host has one; otherwise use a transport-scoped source (for source.mode=mint, PUT the file to the returned url and poll upload_status). Do NOT invent an OpenAI download_url/file_id or base64-encode a file as a data URI.",
+		"Follow the byte path capabilities reports: when file_input_policy is host_file_first, prefer the `file` parameter (user attachments AND assistant-generated sandbox files) over a transport source; otherwise use a transport-scoped source ({{SOURCES}}). Do NOT invent an OpenAI download_url/file_id or base64-encode a file as a data URI.",
 	).
 	Unless(hostenv.FeatFileHostInput,
-		"This host has no `file` parameter it can fill: PUT your agent-local file to the returned Mint url and poll upload_status. Do NOT invent a file_id or OpenAI download_url, and do NOT base64-encode a file as upload_data.",
+		"This host has no `file` parameter it can fill: use a transport-scoped source ({{SOURCES}}). Do NOT invent a file_id or OpenAI download_url, and do NOT base64-encode a file as upload_data.",
+	).
+	When(hostenv.FeatSourceMint,
+		"For source.mode=mint, PUT the file to the returned url and poll upload_status.",
+	).
+	When(hostenv.FeatSourcePath,
+		"For source.mode=path, point the source at the host-side file/directory/archive path — the server reads it directly, so there is no PUT.",
 	).
 	WhenAll([]hostenv.Feature{hostenv.FeatSourceMint, hostenv.FeatSourceURL, hostenv.FeatSourceData},
 		"Byte route order is in the upload flow: a local file → mint + PUT, a public HTTPS URL → upload_url, raw bytes → upload_data.",
 	).
-	WhenSentence(hostenv.FeatElicitation,
-		"Once a wizard session is active, stay in it: always call the returned next_step_schema via the wizard step tool — do not abandon the wizard to rediscover low-level tools. For guided, interactive website onboarding (human-in-the-loop, step-by-step DNS setup), use the website-onboarding prompt and the websites_wizard tools instead of the publish_website flow.",
-	).
-	UnlessSentence(hostenv.FeatElicitation,
-		"For autonomous website publishing after an upload, run the publish_website flow directly rather than starting a wizard.",
-	)
+	StaticSentence("For autonomous website publishing after an upload, run the publish_website flow directly. For explicitly requested guided website onboarding (human-in-the-loop, step-by-step DNS setup), use the website-onboarding prompt and the websites_wizard tools (websites_wizard_start → websites_wizard_step) instead. Once a wizard session is active, stay in it: always call the returned next_step_schema via the wizard step tool — do not abandon the wizard to rediscover low-level tools.")
 
 // guideArchiveInvariant and guideCIDStructure are the two operational website
 // rules every agent must honor. Kept as named fragments so branch guidance can
@@ -212,7 +213,7 @@ var (
 // to the domain/websites_create choice).
 func byteRouteDecision(next *toolforge.GuideDecisionBuilder) *toolforge.GuideDecisionBuilder {
 	return toolforge.Decision("Where are the bytes?",
-		toolforge.Branch("a file already on the host (user attachment or host-provided file)").
+		toolforge.Branch("a file on the host — a user attachment, OR a file the host runtime itself created (assistant-generated sandbox file)").
 			WhenFeature(hostenv.FeatFileHostInput).
 			Steps("upload_file").
 			Detail(toolforge.Static("Pass the host file reference via the file argument; the host runtime fetches and uploads it. Do not base64-encode, mint a presigned URL, or build a download_url/file_id yourself.")).
@@ -222,7 +223,7 @@ func byteRouteDecision(next *toolforge.GuideDecisionBuilder) *toolforge.GuideDec
 			Steps("upload_file").
 			Detail(toolforge.Static("Use source.mode=path with the host-side file/directory/archive path; the server reads it directly.")).
 			Next(next),
-		toolforge.Branch("a file the agent can read locally (sandbox / generated / agent-local file)").
+		toolforge.Branch("agent-local bytes the host runtime cannot provide through `file` (not a host/user/assistant-generated file)").
 			WhenFeature(hostenv.FeatSourceMint).
 			Steps("upload_file").
 			StepWhen(hostenv.FeatSourceMint, "<host PUT>", "upload_status").
@@ -249,7 +250,7 @@ func byteRouteDecision(next *toolforge.GuideDecisionBuilder) *toolforge.GuideDec
 // the IPFS-only upload_url / upload_data tools.
 func vaultByteRouteDecision() *toolforge.GuideDecisionBuilder {
 	return toolforge.Decision("Where are the bytes for the vault?",
-		toolforge.Branch("a file already on the host (user attachment or host-provided file)").
+		toolforge.Branch("a file on the host — a user attachment, OR a file the host runtime itself created (assistant-generated sandbox file)").
 			WhenFeature(hostenv.FeatFileHostInput).
 			Steps("vault_put_file").
 			Detail(toolforge.Static("Pass the host file reference via the file argument; the vault stores its bytes at vault_path.")),
@@ -257,11 +258,13 @@ func vaultByteRouteDecision() *toolforge.GuideDecisionBuilder {
 			WhenFeature(hostenv.FeatSourcePath).
 			Steps("vault_put_file").
 			Detail(toolforge.Static("Use source.mode=path with the host-side path and the destination vault_path; the server reads it directly.")),
-		toolforge.Branch("a file the agent can read locally").
+		toolforge.Branch("agent-local bytes the host runtime cannot provide through `file` (not a host/user/assistant-generated file)").
 			WhenFeature(hostenv.FeatSourceMint).
 			Steps("vault_put_file").
-			StepWhen(hostenv.FeatSourceMint, "<host PUT>", "upload_status").
-			Detail(toolforge.Static("vault_put_file with source.mode=mint + vault_path: PUT the agent-local file to the returned url, poll upload_status, and the completed object is stored at vault_path — there is no separate 'vault a CID' step.")),
+			StepWhen(hostenv.FeatSourceMint, "<host PUT>").
+			Detail(toolforge.Static("vault_put_file with source.mode=mint + vault_path mints a one-time presigned PUT url bound to vault_path; it has not stored bytes yet.").
+				StaticSentence("PUT the agent-local file to the returned url.").
+				StaticSentence("The vault write is synchronous: the PUT response carries the completed vault write directly — there is no upload_status to poll and no separate 'vault a CID' step.")),
 		toolforge.Branch("bytes already at a public HTTPS URL").
 			// vault_put_file's url source exists ONLY on the OpenAI tunnel
 			// transport. Gate on the transport, not FeatSourceURL: Grok declares

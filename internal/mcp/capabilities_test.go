@@ -157,6 +157,20 @@ func TestCapabilitiesDescriptorSerializes(t *testing.T) {
 	require.Contains(t, res.Text, `"source_modes":`)
 }
 
+// TestCapabilitiesDescriptionForOpenAIHTTPNoImpossibleModes regresses audit
+// F-003: the OpenAI HTTP profile is mint-only, so its capabilities description
+// must not advertise path, url, or data as legal source.mode values — a mode its
+// schema rejects. The copy must instead point at the dynamic `source_modes`
+// field so it can never drift from the served enum.
+func TestCapabilitiesDescriptionForOpenAIHTTPNoImpossibleModes(t *testing.T) {
+	desc := capabilitiesDescriptionFor(hostenv.ProfileOpenAIHTTP, true, true)
+	require.NotContains(t, desc, "source.mode=path")
+	require.NotContains(t, desc, "source.mode=url")
+	require.NotContains(t, desc, "source.mode=data")
+	require.NotContains(t, desc, "url/data")
+	require.Contains(t, desc, "source_modes", "description must defer to the dynamic source_modes field")
+}
+
 func TestCapabilitiesDescriptorIsDirectVisible(t *testing.T) {
 	desc := NewCapabilitiesDescriptor(false, false, false, false, false, false, false, false, false, false, 0, hostenv.FeatureSet{})
 	tool := sdk.Tool(desc)

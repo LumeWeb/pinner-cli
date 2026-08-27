@@ -182,7 +182,7 @@ func pinsAdd(d PinsDeps) catalog.Operation {
 		Name:        "pins_add",
 		Title:       "Add a pin",
 		Summary:     "Pin existing content by CID",
-		Description: "Import and pin content that already exists on IPFS by its CID. Use only for existing EXTERNAL IPFS CIDs: do NOT call this after upload_data, upload_file, or upload_url, which already create and pin their uploaded content. Supply concrete CIDs in the cids field. wait defaults to true (blocks until confirmed, can time out on large/queued batches); pass wait=false to submit and return immediately, then poll pins_status with the returned name/pin id.",
+		Description: "Import and pin content that already exists on IPFS by its CID. Use only for existing EXTERNAL IPFS CIDs: do NOT call this after a Pinner upload operation, which already creates and pins its uploaded content. Supply concrete CIDs in the cids field. wait defaults to true (blocks until confirmed, can time out on large/queued batches); pass wait=false to submit and return immediately, then poll pins_status with the returned name/pin id.",
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
