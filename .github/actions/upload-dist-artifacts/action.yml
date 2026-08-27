@@ -127,14 +127,16 @@ runs:
         project-name: ${{ inputs.project-name }}
         retention-days: ${{ inputs.retention-days }}
 
-    # Each .deb/.rpm is a single file, so upload with archive: false for a
-    # direct download (not wrapped in a zip). The package filename already
-    # encodes the platform, so no staging is needed for a unique name.
+    # Each .deb/.rpm is a single file, but upload-artifact's archive: false
+    # only supports a single guaranteed file and the version-wildcarded glob
+    # (_*_) can match more than one, which would hard-fail the step. Keep
+    # these zipped (archive defaults to true) so any number of matches upload
+    # harmlessly; the raw binary and .mcpb above are the direct downloads.
     - name: Upload Debian package (amd64)
       uses: actions/upload-artifact@v7
       with:
         path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_amd64.deb
-        archive: false
+        archive: true
         if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
 
@@ -142,7 +144,7 @@ runs:
       uses: actions/upload-artifact@v7
       with:
         path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_arm64.deb
-        archive: false
+        archive: true
         if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
 
@@ -150,7 +152,7 @@ runs:
       uses: actions/upload-artifact@v7
       with:
         path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_amd64.rpm
-        archive: false
+        archive: true
         if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
 
@@ -158,7 +160,7 @@ runs:
       uses: actions/upload-artifact@v7
       with:
         path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_arm64.rpm
-        archive: false
+        archive: true
         if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
 

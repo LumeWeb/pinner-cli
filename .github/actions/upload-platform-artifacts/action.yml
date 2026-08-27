@@ -84,6 +84,10 @@ runs:
       uses: actions/upload-artifact@v7
       with:
         path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_${{ inputs.os }}_${{ inputs.arch }}.${{ inputs.os == 'windows' && 'zip' || 'tar.gz' }}
-        archive: false
+        # Version-wildcarded glob can match more than one file, and archive:
+        # false only supports a single guaranteed file (it would hard-fail on
+        # multiple matches). Keep this zipped; the raw binary and .mcpb above
+        # stay direct downloads via their exact staged/mcpb paths.
+        archive: true
         if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
