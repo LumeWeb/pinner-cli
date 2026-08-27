@@ -207,9 +207,6 @@ var capabilitiesDesc = toolforge.Static(
 	WhenSentence(hostenv.FeatSourceMint,
 		"With source.mode=mint, mint returns a url + upload_handle but has NOT stored bytes: PUT the agent-local file to the returned url, then poll upload_status until it reports completed.",
 	).
-	WhenAny([]hostenv.Feature{hostenv.FeatSourceURL, hostenv.FeatSourceData},
-		"source_modes describe only what upload_file/vault_put_file's source.mode accepts; this host also exposes separate top-level relay tools.",
-	).
 	ListWhenAny([]hostenv.Feature{hostenv.FeatSourceURL, hostenv.FeatSourceData},
 		toolforge.List(toolforge.ListNumbered).
 			Intro("Pick the byte route in this order:").
