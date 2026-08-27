@@ -182,7 +182,7 @@ var guideSummary = toolforge.Static(
 		"This host has no `file` parameter it can fill: use a transport-scoped source ({{SOURCES}}). Do NOT invent a file_id or OpenAI download_url, and do NOT base64-encode a file as upload_data.",
 	).
 	When(hostenv.FeatSourceMint,
-		"For source.mode=mint, PUT the file to the returned url and poll upload_status.",
+		"For source.mode=mint, completion differs by tool: upload_file is asynchronous — PUT the agent-local file to the returned url, then poll upload_status; vault_put_file is synchronous — PUT the file and the PUT response is the completed vault write, so there is no upload_status poll (see the upload and vault_upload flows).",
 	).
 	When(hostenv.FeatSourcePath,
 		"For source.mode=path, point the source at the host-side file/directory/archive path — the server reads it directly, so there is no PUT.",
