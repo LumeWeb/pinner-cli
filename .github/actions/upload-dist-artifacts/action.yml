@@ -127,32 +127,39 @@ runs:
         project-name: ${{ inputs.project-name }}
         retention-days: ${{ inputs.retention-days }}
 
+    # Each .deb/.rpm is a single file, so upload with archive: false for a
+    # direct download (not wrapped in a zip). The package filename already
+    # encodes the platform, so no staging is needed for a unique name.
     - name: Upload Debian package (amd64)
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
-        name: ${{ inputs.name }}-deb-amd64
         path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_amd64.deb
+        archive: false
+        if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
 
     - name: Upload Debian package (arm64)
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
-        name: ${{ inputs.name }}-deb-arm64
         path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_arm64.deb
+        archive: false
+        if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
 
     - name: Upload RPM package (amd64)
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
-        name: ${{ inputs.name }}-rpm-amd64
         path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_amd64.rpm
+        archive: false
+        if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
 
     - name: Upload RPM package (arm64)
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
-        name: ${{ inputs.name }}-rpm-arm64
         path: ${{ inputs.dist-path }}/${{ inputs.project-name }}_*_linux_arm64.rpm
+        archive: false
+        if-no-files-found: warn
         retention-days: ${{ inputs.retention-days }}
 
     - name: Upload logs
