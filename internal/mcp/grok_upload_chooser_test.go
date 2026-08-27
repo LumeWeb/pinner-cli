@@ -149,3 +149,28 @@ func TestAgentGuideUploadDetailNamesRelayTools(t *testing.T) {
 	require.Contains(t, text, "RFC 2397 data: URI")
 	require.Contains(t, text, "public HTTPS URL → upload_url")
 }
+
+// TestCapabilitiesUploadToolsListsRelayTools locks in audit 5 item 2: the
+// capabilities JSON exposes upload_tools so a structured/JSON-only reader sees
+// every upload route (not just source_modes=["mint"]). The list follows the
+// chooser order and reflects the CALLING profile's registered relay tools.
+func TestCapabilitiesUploadToolsListsRelayTools(t *testing.T) {
+	run := func(caps *model.RequestCaps) CapabilityReport {
+		desc := NewCapabilitiesDescriptor(false, false, true, false, false, false, false, false, 0)
+		res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}, Caps: caps})
+		require.NoError(t, err)
+		return res.StructuredContent.(CapabilityReport)
+	}
+
+	grokProf := hostenv.ProfileGrokHTTP.CloneFeatures()
+	require.Equal(t, []UploadToolCapability{UploadToolFile, UploadToolURL, UploadToolData},
+		run(&model.RequestCaps{Profile: &grokProf}).UploadTools)
+
+	genericProf := hostenv.ProfileHTTPGeneric.CloneFeatures()
+	require.Equal(t, []UploadToolCapability{UploadToolFile},
+		run(&model.RequestCaps{Profile: &genericProf}).UploadTools)
+
+	openaiProf := hostenv.ProfileOpenAITunnel.CloneFeatures()
+	require.Equal(t, []UploadToolCapability{UploadToolFile, UploadToolURL, UploadToolData},
+		run(&model.RequestCaps{Profile: &openaiProf}).UploadTools)
+}
