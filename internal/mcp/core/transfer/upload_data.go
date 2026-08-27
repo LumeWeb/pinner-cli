@@ -17,7 +17,7 @@ import (
 // The File field has no omitempty tag, so the jsonschema reflector marks it
 // required (matching the wizard step-input convention).
 type DataURIUploadInput struct {
-	File string `json:"file" jsonschema:"format=uri,description=RFC 2397 data: URI in the SEP-2356 x-mcp-file wire form: data:;name=<name>;size=<n>;base64,<base64 payload>. The bytes do not enter the model context; the host supplies this value from a user-attached file."`
+	File string `json:"file" jsonschema:"format=uri,description=RFC 2397 data: URI with a base64-encoded payload, e.g. data:;base64,<base64 payload> or data:text/plain;base64,<base64 payload>; optional ;name=<name>;size=<n> parameters are accepted but not required. The payload must be base64. The bytes do not enter the model context; the host supplies this value from a user-attached file."`
 	Name string `json:"name,omitempty" jsonschema:"description=Optional upload name (defaults to the data URI name, else 'upload')."`
 	Wait bool   `json:"wait,omitempty" jsonschema:"description=Wait until this upload's own pin operation completes before returning (the upload already pins; this only controls whether the call blocks for it)."`
 	Wrap bool   `json:"wrap,omitempty" jsonschema:"description=Wrap the single file in a directory root so the resulting CID is a directory. Required when the upload is a website (a website must be a directory, not a bare file). When wrap=true and no name is given, HTML content is auto-named index.html so the site resolves at its root. Do NOT set an explicit name like 'starter-site' — it is honored as-is and the page will only be reachable at /starter-site, not /. True only affects single-file uploads; directory uploads are already a directory root."`

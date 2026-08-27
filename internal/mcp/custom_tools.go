@@ -504,8 +504,14 @@ func registerCustomTools(deps customToolDeps) error {
 		opts.ipfsDownload != nil,
 		opts.vaultGet != nil,
 		deps.downloadDrop != nil,
-		opts.dataURIUpload != nil, // the data: URI upload tool carries the draft x-mcp-file metadata
+		opts.relayURLUpload != nil, // upload_url relay tool wiring (gates upload_tools + URL registration)
+		opts.dataURIUpload != nil,  // upload_data relay tool wiring (gates upload_tools + data registration)
+		opts.dataURIUpload != nil,  // the data: URI upload tool carries the draft x-mcp-file metadata
 		opts.maxRelayBytes,
+		// The registration-time effective feature set, so upload_tools is gated
+		// on the same features that decided relay tool registration — never the
+		// per-request wire profile.
+		effectiveFeaturesFor(deps),
 	)
 	if deps.hostProfile != nil {
 		capDesc.Description = capabilitiesDescriptionFor(*deps.hostProfile, uploadWired, vaultWired)

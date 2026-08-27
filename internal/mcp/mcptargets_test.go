@@ -30,7 +30,7 @@ func requireMCPTargets(t *testing.T, desc model.ToolDescriptor) {
 // without a profile-aware target list.
 func TestToolRegistrationsCarryMCPTargets(t *testing.T) {
 	// Direct/meta tools (not catalog-indexed) must still declare MCPTargets.
-	requireMCPTargets(t, NewCapabilitiesDescriptor(false, false, true, true, true, true, true, true, 1<<20))
+	requireMCPTargets(t, NewCapabilitiesDescriptor(false, false, true, true, true, true, true, true, true, true, 1<<20, hostenv.ProfileOpenAITunnel.Features))
 	requireMCPTargets(t, NewAgentGuideDescriptor())
 
 	// Transport tools.

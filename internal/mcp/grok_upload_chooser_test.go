@@ -149,3 +149,47 @@ func TestAgentGuideUploadDetailNamesRelayTools(t *testing.T) {
 	require.Contains(t, text, "RFC 2397 data: URI")
 	require.Contains(t, text, "public HTTPS URL → upload_url")
 }
+
+// TestCapabilitiesUploadToolsListsRelayTools locks in audit 5 item 2: the
+// capabilities JSON exposes upload_tools so a structured/JSON-only reader sees
+// every upload route (not just source_modes=["mint"]). The list follows the
+// chooser order and reflects what THIS server actually REGISTERED — a relay
+// tool appears only when BOTH the registration-time effective feature set
+// declares the feature AND the relay handler is wired (matching custom_tools.go
+// registration). It is gated on the registration features, never the per-request
+// wire profile, so a server that registered no relay tools never advertises them.
+func TestCapabilitiesUploadToolsListsRelayTools(t *testing.T) {
+	run := func(relayFeatures hostenv.FeatureSet, wired bool) func(*model.RequestCaps) CapabilityReport {
+		return func(caps *model.RequestCaps) CapabilityReport {
+			desc := NewCapabilitiesDescriptor(false, false, true, false, false, false, false, wired, wired, false, 0, relayFeatures)
+			res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}, Caps: caps})
+			require.NoError(t, err)
+			return res.StructuredContent.(CapabilityReport)
+		}
+	}
+
+	grokReg := hostenv.ProfileGrokHTTP.Features // dedicated Grok server registered with Grok features
+	grokReq := &model.RequestCaps{Profile: &hostenv.ProfileGrokHTTP}
+	require.Equal(t, []UploadToolCapability{UploadToolFile, UploadToolURL, UploadToolData},
+		run(grokReg, true)(grokReq).UploadTools)
+	// Same registration features, handlers NOT wired → no relay tools advertised.
+	require.Equal(t, []UploadToolCapability{UploadToolFile},
+		run(grokReg, false)(grokReq).UploadTools)
+
+	// REGRESSION: a generic startup HTTP server (no host profile) registered
+	// relay tools against transport-derived features — which lack url/data — so
+	// even when a REQUEST is detected as Grok, upload_tools must not claim the
+	// unregistered relay tools.
+	genericReg := hostenv.ProfileHTTPGeneric.Features
+	require.Equal(t, []UploadToolCapability{UploadToolFile},
+		run(genericReg, true)(grokReq).UploadTools,
+		"registration features (not the wire profile) gate upload_tools")
+
+	// Generic request + generic registration + wired → only upload_file.
+	require.Equal(t, []UploadToolCapability{UploadToolFile},
+		run(genericReg, true)(&model.RequestCaps{Profile: &hostenv.ProfileHTTPGeneric}).UploadTools)
+
+	// OpenAI tunnel registration + wired → all three relay tools.
+	require.Equal(t, []UploadToolCapability{UploadToolFile, UploadToolURL, UploadToolData},
+		run(hostenv.ProfileOpenAITunnel.Features, true)(&model.RequestCaps{Profile: &hostenv.ProfileOpenAITunnel}).UploadTools)
+}

@@ -32,6 +32,18 @@ const (
 	CapabilityDraftXFile FileInputCapability = "x-mcp-file"
 )
 
+// UploadToolCapability enumerates the top-level upload tools registered on a
+// host. Unlike SourceModes (which list only what upload_file's source.mode
+// accepts), these are the actual tools bytes can be passed through, including
+// the separate relay tools a profile gates on.
+type UploadToolCapability string
+
+const (
+	UploadToolFile UploadToolCapability = "upload_file" // primary tool (mint/path/url-data source)
+	UploadToolURL  UploadToolCapability = "upload_url"  // server-fetch a public HTTPS URL
+	UploadToolData UploadToolCapability = "upload_data" // inline RFC 2397 data: URI
+)
+
 // FileOutputCapability enumerates the ways a host can receive a downloaded
 // file's bytes (the sink side, mirror of FileInputCapability).
 type FileOutputCapability string
@@ -64,6 +76,13 @@ type CapabilityReport struct {
 	// reflected here. A mode is never a claim that upload_file has a `file`
 	// argument (see HostFileInput).
 	SourceModes []FileInputCapability `json:"source_modes"`
+	// UploadTools are the top-level upload tools registered on this host, in
+	// the order a model should try them for the byte routes they serve
+	// (upload_file, then any relay tools the profile registers). It complements
+	// SourceModes: SourceModes lists only what upload_file/vault_put_file's
+	// source.mode accepts; UploadTools lists every way bytes can enter Pinner,
+	// including the separate upload_url / upload_data relay tools.
+	UploadTools []UploadToolCapability `json:"upload_tools,omitempty"`
 	// DownloadSinkModes are the valid DownloadSink mode values for Transport.
 	// Host-local write ("local") is always offered because the server's disk is
 	// always local to it; "drop" (filedrop GET) is added only when a reachable
@@ -183,7 +202,7 @@ var capabilitiesDesc = toolforge.Static(
 		"The upload_file/vault_put_file tools take a transport-scoped source (mint, path, or url/data) OR a host-provided `file` argument. A host-provided file (a temporary download_url + file_id object) is always preferred when available, regardless of source_modes. file_input_policy=host_file_first is a machine-readable invariant: when set, an agent MUST pass any file already supplied or created by the host through the file parameter (user-uploaded attachments AND assistant-generated sandbox files) and must NOT base64-encode, create a data URI, or mint a presigned URL when file can be used.",
 	).
 	Unless(hostenv.FeatFileHostInput,
-		"This client has no `file` parameter it can fill; source_modes ARE the byte path. Call upload_file/vault_put_file with a transport-scoped source.",
+		"This client has no `file` parameter it can fill: call upload_file/vault_put_file with a transport-scoped source.",
 	).
 	WhenSentence(hostenv.FeatSourceMint,
 		"With source.mode=mint, mint returns a url + upload_handle but has NOT stored bytes: PUT the agent-local file to the returned url, then poll upload_status until it reports completed.",
@@ -202,6 +221,29 @@ var capabilitiesDesc = toolforge.Static(
 	WhenSentence(hostenv.FeatSinkDrop,
 		"or drop returns a one-time HTTP GET filedrop link to pull from out of band.",
 	)
+
+// uploadToolsFor lists the upload tools actually registered on THIS server, in
+// chooser order: upload_file first, then the relay tools. It gates each tool
+// on the EXACT condition custom_tools.go uses to register it — the handler must
+// be wired AND the registration-time effective feature set must declare the
+// feature (relayURLWired&&FeatSourceURL / dataURIWired&&FeatSourceData) — so
+// the capabilities JSON never advertises a tool that was not registered. feats
+// is the registration-time effectiveFeaturesFor(deps), NOT the per-request
+// wire profile, so a startup server that registered no relay tools for a host
+// never claims them even if a later request detects that host.
+func uploadToolsFor(feats hostenv.FeatureSet, uploadFile, relayURLWired, dataURIWired bool) []UploadToolCapability {
+	var out []UploadToolCapability
+	if uploadFile {
+		out = append(out, UploadToolFile)
+	}
+	if relayURLWired && feats.Has(hostenv.FeatSourceURL) {
+		out = append(out, UploadToolURL)
+	}
+	if dataURIWired && feats.Has(hostenv.FeatSourceData) {
+		out = append(out, UploadToolData)
+	}
+	return out
+}
 
 // capabilitiesDescriptionFor resolves the capabilities description against
 // profile, clearing FeatFileHostInput when no file-capable upload/vault tool is
@@ -228,7 +270,7 @@ func capabilitiesTargets(uploadFile, vaultPutFile bool) []model.ToolTarget {
 	})
 }
 
-func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, draftXFile bool, maxBytes int64) model.ToolDescriptor {
+func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, relayURLWired, dataURIWired, draftXFile bool, maxBytes int64, relayFeatures hostenv.FeatureSet) model.ToolDescriptor {
 	// The baked tools/list description is resolved for the startup transport's
 	// generic profile; describe_tool re-resolves it against the actual profile
 	// via the wiring-aware targets.
@@ -267,6 +309,12 @@ func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile
 			if !report.HostFileInput {
 				report.FileInputPolicy = ""
 			}
+			// upload_tools reflects THIS server's registered tools, gated on the
+			// registration-time effective feature set (relayFeatures) — never the
+			// per-request wire profile. A server that registered no relay tools
+			// for a host therefore never advertises them, keeping the report
+			// identical to what tools/list actually exposed on this server.
+			report.UploadTools = uploadToolsFor(relayFeatures, report.UploadFile, relayURLWired, dataURIWired)
 			// Text carries the same canonical JSON as StructuredContent so a
 			// text-only MCP client still sees the source/sink mode data instead
 			// of an unhelpful stub ("Pinner capabilities.").

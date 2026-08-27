@@ -415,7 +415,7 @@ var mintOnlyArchiveModeDesc = toolforge.Static(
 	"convert extracts an archive and uploads its contents as a directory DAG (index.html must be at the archive root).",
 ).
 	StaticSentence("preserve (the default for the mint source) keeps the archive intact as a single file.").
-	StaticSentence("On this mint-only host, pass archive_mode=convert for a website ZIP or it uploads as a raw single-file CID that websites_create will reject.")
+	StaticSentence("For source.mode=mint, pass archive_mode=convert for a website ZIP or it uploads as a raw single-file CID that websites_create will reject.")
 
 // archiveModeSchemaTransform trims the archive_mode copy to what the host's
 // sources actually support. The full copy explains per-source defaults (host

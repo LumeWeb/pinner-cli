@@ -11,6 +11,12 @@ import (
 // participates in the same feature-gated, per-profile resolution as the
 // schemas and descriptions. Splice fragments together with DescBuilder.Then.
 
+// publishCidLead is the host-agnostic lead for every publish_website branch:
+// the CID may come from ANY upload tool the chooser picks (upload_file mint +
+// PUT, upload_url for a public URL, upload_data for raw bytes), not only
+// upload_file. publish_website consumes whatever CID was produced.
+var publishCidLead = toolforge.Static("First obtain a CID via the upload flow's byte-route chooser, then websites_create consumes it directly regardless of which upload tool produced the CID.")
+
 // htmlRootClause is the publish_website guidance about wrap/auto-naming.
 // Wrapped HTML uploads are auto-named to index.html so a site resolves at its
 // root; an explicit name moves it under /name. Identical across every publish
