@@ -1111,6 +1111,85 @@ func TestRegistry_Detect_ClaudeDesktopOverStdio(t *testing.T) {
 	require.False(t, prof.Has(FeatRemoteAccess))
 }
 
+func TestKiroDetector_MatchByClientInfo(t *testing.T) {
+	d := kiroDetector{}
+
+	// Positive: co-located stdio clientInfo name "Q DEV CLI" → HostKiro, AuthNone
+	host, auth := d.Match(DetectRequest{
+		CoLocated:  true,
+		ClientInfo: &ClientInfo{Name: "Q DEV CLI", Version: "1.0.0"},
+	})
+	require.Equal(t, HostKiro, host)
+	require.Equal(t, AuthNone, auth)
+
+	// Positive: case-insensitive / whitespace-tolerant name match
+	host, auth = d.Match(DetectRequest{
+		CoLocated:  true,
+		ClientInfo: &ClientInfo{Name: "  q dev cli "},
+	})
+	require.Equal(t, HostKiro, host)
+	require.Equal(t, AuthNone, auth)
+}
+
+func TestKiroDetector_NoMatch(t *testing.T) {
+	d := kiroDetector{}
+
+	// Negative: co-located but wrong clientInfo name
+	host, auth := d.Match(DetectRequest{
+		CoLocated:  true,
+		ClientInfo: &ClientInfo{Name: "some-client", Version: "1.0.0"},
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: correct name but not co-located (remote) — Kiro is stdio-only
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "Q DEV CLI", Version: "1.0.0"},
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: correct name but OpenAI tunnel
+	host, auth = d.Match(DetectRequest{
+		CoLocated:    true,
+		TunnelOpenAI: true,
+		ClientInfo:   &ClientInfo{Name: "Q DEV CLI", Version: "1.0.0"},
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: no clientInfo at all
+	host, auth = d.Match(DetectRequest{CoLocated: true})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+}
+
+func TestRegistry_Detect_KiroOverStdio(t *testing.T) {
+	r := NewRegistry()
+
+	req := DetectRequest{
+		CoLocated:       true,
+		ClientInfo:      &ClientInfo{Name: "Q DEV CLI", Version: "1.0.0"},
+		ProtocolVersion: "2025-11-25",
+	}
+	prof := r.Detect(req)
+
+	require.Equal(t, HostKiro, prof.HostType)
+	require.Equal(t, TransportStdio, prof.Transport)
+	require.Equal(t, AuthNone, prof.AuthMethod)
+	require.False(t, prof.Remote)
+	// Runtime overlay
+	require.Equal(t, "Q DEV CLI", prof.ClientInfo.Name)
+	require.Equal(t, "1.0.0", prof.ClientInfo.Version)
+	require.Equal(t, "2025-11-25", prof.ProtocolVer)
+	// Mechanism features are the stdio set, matching the observed payload.
+	require.True(t, prof.Has(FeatSourcePath))
+	require.True(t, prof.Has(FeatSinkLocal))
+	require.True(t, prof.Has(FeatCoLocated))
+	require.False(t, prof.Has(FeatRemoteAccess))
+	require.False(t, prof.Has(FeatMCPApps))
+}
+
 func TestKiloDetector_MatchByClientInfo(t *testing.T) {
 	d := kiloDetector{}
 
@@ -1940,13 +2019,13 @@ func TestNewRegistry_DetectorsRegistered(t *testing.T) {
 	r := NewRegistry()
 
 	require.NotNil(t, r)
-	require.Len(t, r.detectors, 14)
+	require.Len(t, r.detectors, 15)
 	// Priority order: aider-desk, goose, devin, cline, codex, copilot-cli,
-	// openai, grok, kilo, claude (web), claude-desktop, opencode, antigravity,
-	// kimi. The stdio-only detectors (aider-desk, goose, devin, cline, codex,
-	// copilot-cli) run first because they do not conflict with the remote-only
-	// openai/grok/claude detectors; kilo, opencode, antigravity and kimi are
-	// the co-located stdio editors/agents.
+	// openai, grok, kilo, kiro, claude (web), claude-desktop, opencode,
+	// antigravity, kimi. The stdio-only detectors (aider-desk, goose, devin,
+	// cline, codex, copilot-cli) run first because they do not conflict with
+	// the remote-only openai/grok/claude detectors; kilo, kiro, opencode,
+	// antigravity and kimi are the co-located stdio editors/agents.
 	require.IsType(t, aiderDeskDetector{}, r.detectors[0])
 	require.IsType(t, gooseDetector{}, r.detectors[1])
 	require.IsType(t, devinDetector{}, r.detectors[2])
@@ -1956,11 +2035,12 @@ func TestNewRegistry_DetectorsRegistered(t *testing.T) {
 	require.IsType(t, openAIDetector{}, r.detectors[6])
 	require.IsType(t, grokDetector{}, r.detectors[7])
 	require.IsType(t, kiloDetector{}, r.detectors[8])
-	require.IsType(t, claudeDetector{}, r.detectors[9])
-	require.IsType(t, claudeDesktopDetector{}, r.detectors[10])
-	require.IsType(t, opencodeDetector{}, r.detectors[11])
-	require.IsType(t, antigravityDetector{}, r.detectors[12])
-	require.IsType(t, kimiDetector{}, r.detectors[13])
+	require.IsType(t, kiroDetector{}, r.detectors[9])
+	require.IsType(t, claudeDetector{}, r.detectors[10])
+	require.IsType(t, claudeDesktopDetector{}, r.detectors[11])
+	require.IsType(t, opencodeDetector{}, r.detectors[12])
+	require.IsType(t, antigravityDetector{}, r.detectors[13])
+	require.IsType(t, kimiDetector{}, r.detectors[14])
 }
 
 func TestNewRegistry_PriorityOrder(t *testing.T) {
