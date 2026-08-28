@@ -30,6 +30,7 @@ func NewRegistry() *DetectorRegistry {
 			claudeDesktopDetector{},
 			opencodeDetector{},
 			antigravityDetector{},
+			kimiDetector{},
 		},
 	}
 }

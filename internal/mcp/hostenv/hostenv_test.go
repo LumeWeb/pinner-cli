@@ -286,6 +286,60 @@ func TestAntigravityDetector_NoMatch(t *testing.T) {
 	require.Equal(t, AuthMethod(""), auth)
 }
 
+func TestKimiDetector_MatchByClientInfo(t *testing.T) {
+	d := kimiDetector{}
+
+	// Positive: co-located stdio with clientInfo name "kimi-code"
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "kimi-code", Version: "0.0.0"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostKimi, host)
+	require.Equal(t, AuthNone, auth)
+
+	// Positive: case-insensitive, whitespace-tolerant
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "  Kimi-Code "},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostKimi, host)
+	require.Equal(t, AuthNone, auth)
+}
+
+func TestKimiDetector_NoMatch(t *testing.T) {
+	d := kimiDetector{}
+
+	// Negative: unrelated clientInfo
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "some-client", Version: "1.0.0"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: no clientInfo at all
+	host, auth = d.Match(DetectRequest{CoLocated: true})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: kimi clientInfo but remote HTTP — Kimi is stdio-only
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "kimi-code"},
+		CoLocated:  false,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: kimi clientInfo but OpenAI tunnel
+	host, auth = d.Match(DetectRequest{
+		ClientInfo:   &ClientInfo{Name: "kimi-code"},
+		CoLocated:    false,
+		TunnelOpenAI: true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+}
+
 func TestAiderDeskDetector_MatchByClientInfo(t *testing.T) {
 	d := aiderDeskDetector{}
 
@@ -1132,6 +1186,31 @@ func TestRegistry_Detect_OpenCodeOverStdio(t *testing.T) {
 	require.False(t, prof.Has(FeatMCPApps))
 }
 
+func TestRegistry_Detect_KimiOverStdio(t *testing.T) {
+	r := NewRegistry()
+
+	req := DetectRequest{
+		ClientInfo:      &ClientInfo{Name: "kimi-code", Version: "0.0.0"},
+		ProtocolVersion: "2025-11-25",
+		CoLocated:       true,
+	}
+	prof := r.Detect(req)
+
+	require.Equal(t, HostKimi, prof.HostType)
+	require.Equal(t, TransportStdio, prof.Transport)
+	require.Equal(t, AuthNone, prof.AuthMethod)
+	require.False(t, prof.Remote)
+	// Runtime overlay
+	require.Equal(t, "kimi-code", prof.ClientInfo.Name)
+	require.Equal(t, "0.0.0", prof.ClientInfo.Version)
+	require.Equal(t, "2025-11-25", prof.ProtocolVer)
+	// Stdio mechanism features (matches the profile declaration)
+	require.True(t, prof.Has(FeatSourcePath))
+	require.True(t, prof.Has(FeatSinkLocal))
+	require.True(t, prof.Has(FeatCoLocated))
+	require.False(t, prof.Has(FeatMCPApps))
+}
+
 func TestRegistry_Detect_UnknownOverStdio(t *testing.T) {
 	r := NewRegistry()
 
@@ -1525,6 +1604,20 @@ func TestResolveProfile_OpenCode(t *testing.T) {
 	require.Equal(t, ProfileStdioGeneric.Features, got.Features)
 }
 
+// TestResolveProfile_Kimi verifies the Kimi alias path: an aliased host
+// inherits the target's full profile (features, transport, auth, remote) but
+// keeps its own HostType.
+func TestResolveProfile_Kimi(t *testing.T) {
+	got := resolveProfile(HostKimi, TransportStdio, AuthNone)
+
+	require.Equal(t, HostKimi, got.HostType)
+	require.Equal(t, TransportStdio, got.Transport)
+	require.Equal(t, AuthNone, got.AuthMethod)
+	require.False(t, got.Remote)
+	// Feature surface equals the generic stdio profile exactly (alias target).
+	require.Equal(t, ProfileStdioGeneric.Features, got.Features)
+}
+
 // TestProfileAliasDoesNotCorruptTarget locks in that resolving an alias
 // returns a value copy — overriding the alias's HostType must not mutate the
 // shared static target profile.
@@ -1811,13 +1904,13 @@ func TestNewRegistry_DetectorsRegistered(t *testing.T) {
 	r := NewRegistry()
 
 	require.NotNil(t, r)
-	require.Len(t, r.detectors, 13)
+	require.Len(t, r.detectors, 14)
 	// Priority order: aider-desk, goose, devin, cline, codex, copilot-cli,
-	// openai, grok, kilo, claude (web), claude-desktop, opencode, antigravity.
-	// The stdio-only detectors (aider-desk, goose, devin, cline, codex,
+	// openai, grok, kilo, claude (web), claude-desktop, opencode, antigravity,
+	// kimi. The stdio-only detectors (aider-desk, goose, devin, cline, codex,
 	// copilot-cli) run first because they do not conflict with the remote-only
-	// openai/grok/claude detectors; kilo, opencode and antigravity are the
-	// co-located stdio editors/agents.
+	// openai/grok/claude detectors; kilo, opencode, antigravity and kimi are
+	// the co-located stdio editors/agents.
 	require.IsType(t, aiderDeskDetector{}, r.detectors[0])
 	require.IsType(t, gooseDetector{}, r.detectors[1])
 	require.IsType(t, devinDetector{}, r.detectors[2])
@@ -1831,6 +1924,7 @@ func TestNewRegistry_DetectorsRegistered(t *testing.T) {
 	require.IsType(t, claudeDesktopDetector{}, r.detectors[10])
 	require.IsType(t, opencodeDetector{}, r.detectors[11])
 	require.IsType(t, antigravityDetector{}, r.detectors[12])
+	require.IsType(t, kimiDetector{}, r.detectors[13])
 }
 
 func TestNewRegistry_PriorityOrder(t *testing.T) {

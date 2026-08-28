@@ -30,6 +30,7 @@ const (
 	HostCopilotCLI  HostType = "copilot-cli"
 	HostGoose       HostType = "goose"
 	HostAntigravity HostType = "antigravity"
+	HostKimi        HostType = "kimi"
 	HostGeneric     HostType = "generic"
 )
 
