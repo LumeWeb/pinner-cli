@@ -216,6 +216,13 @@ var profileAliasTargets = map[HostType]HostType{
 	// declaration.
 	HostGoose: HostStdioApps,
 
+	// Claude Code (clientInfo name "claude-code") is a co-located stdio client
+	// that renders MCP Apps UI — exactly the generic stdio+MCP-Apps surface
+	// shared with Claude Desktop and Goose. It is its own HostType so
+	// host-specific gating can use HostIs(HostClaudeCode), but inherits the
+	// shared ProfileStdioMCPApps declaration.
+	HostClaudeCode: HostStdioApps,
+
 	// Antigravity (Google IDE) is a co-located stdio client (clientInfo name
 	// "antigravity-client") whose capability surface is exactly the generic
 	// stdio profile (co-located, sink-local, source-path). It is its own
