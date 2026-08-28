@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -12,6 +14,15 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.lumeweb.com/pinner-cli/internal/service"
 )
+
+// defaultLocalhostPort is the deterministic port a no-tunnel (localhost) HTTP
+// install pins so the written agent config has a stable, reachable URL. It is
+// derived from the product name "pin" by concatenating its ASCII code points
+// (112105110) and reducing modulo 65536 (the valid TCP port range): 38550. A
+// fixed port is required because the server otherwise binds port 0 (an
+// OS-assigned free port), which the install cannot know ahead of time to
+// reference in the agent config.
+const defaultLocalhostPort = 38550
 
 // CollectHTTPInstall populates (creating if needed) the MCP service env file
 // from flags (bootstrap) or the interactive wizard, optionally installs and
@@ -97,6 +108,16 @@ func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 		return nil, false, err
 	}
 
+	// Resolve a deterministically-derivable MCP_PUBLIC_URL BEFORE the managed
+	// service starts. This pins MCP_PORT to the defaultLocalhostPort on a
+	// no-tunnel (localhost) install and persists it, so the service binds the
+	// same port the agent config references — running it here (rather than
+	// after Start) guarantees the still-unknown port is fixed first. For a
+	// named cloudflared/ngrok domain it derives the public URL in either mode;
+	// it is a no-op when the URL is already set, no domain is configured, or
+	// the tunnel is dynamic (no stable URL).
+	resolveServicePublicURL(envFile, env)
+
 	serviceSideEffect := false
 	if wantService {
 		svc, err := newManagedService(cmd, envFile, provider)
@@ -115,29 +136,48 @@ func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 		}
 	}
 
-	// Derive MCP_PUBLIC_URL from a named MCP_DOMAIN for BOTH managed and
-	// one-shot installs: a named cloudflared/ngrok tunnel has a deterministic
-	// public URL regardless of --service, so the HTTP install should resolve it
-	// in either mode. resolveServicePublicURL is a no-op when the URL is already
-	// set, no domain is configured, or the tunnel is dynamic (no stable URL).
-	resolveServicePublicURL(envFile, env)
-
 	return env, serviceSideEffect, nil
 }
 
 // resolveServicePublicURL fills MCP_PUBLIC_URL in env (and persists it to
 // envFile) when it is empty but deterministically derivable from the provider's
-// configured hostname. Only custom/named domains yield a stable URL; dynamic
-// (randomly assigned) tunnels leave MCP_PUBLIC_URL unset so the caller surfaces
-// the limitation without writing a wrong URL.
+// configuration. Three cases:
+//
+//   - Custom/named tunnel domain: MCP_PUBLIC_URL = https://<bare host>.
+//   - Localhost (empty provider): MCP_PUBLIC_URL = http://<host>:<port>, and
+//     MCP_PORT is pinned to defaultLocalhostPort when unset so the running
+//     service binds the same port the agent config references.
+//
+// Dynamic (randomly assigned) tunnels leave MCP_PUBLIC_URL unset so the caller
+// surfaces the limitation without writing a wrong URL.
 func resolveServicePublicURL(envFile string, env ServiceEnvironment) {
 	if strings.TrimSpace(env["MCP_PUBLIC_URL"]) != "" {
 		return
 	}
-	host := ""
-	switch tunnel.TunnelProvider(env["MCP_TUNNEL_PROVIDER"]) {
+	provider := tunnel.TunnelProvider(env["MCP_TUNNEL_PROVIDER"])
+	var host, port string
+	switch provider {
 	case tunnel.TunnelProviderCloudflared, tunnel.TunnelProviderNgrok:
 		host = strings.TrimSpace(env["MCP_DOMAIN"])
+	case "": // localhost (no tunnel)
+		host = strings.TrimSpace(env["MCP_HOST"])
+		if host == "" {
+			host = "127.0.0.1"
+		}
+		port = strings.TrimSpace(env["MCP_PORT"])
+		if port == "" || port == "0" {
+			// Pin the deterministic default port and persist it so the managed
+			// service binds port defaultLocalhostPort, matching the URL written
+			// to the agent config. Without this the server binds port 0 (the
+			// OS-assigned free-port sentinel) and the agent config would point
+			// at a never-open port — the derived URL would become
+			// http://<host>:0, which can never be connected to. An explicit
+			// --port 0 ("pick a free port") therefore falls back to the default
+			// on a localhost install, which has no deterministic free-port
+			// discovery path.
+			port = strconv.Itoa(defaultLocalhostPort)
+			env["MCP_PORT"] = port
+		}
 	}
 	if host == "" {
 		return
@@ -146,7 +186,11 @@ func resolveServicePublicURL(envFile string, env ServiceEnvironment) {
 	if host == "" {
 		return
 	}
-	env["MCP_PUBLIC_URL"] = "https://" + host
+	if provider == "" {
+		env["MCP_PUBLIC_URL"] = "http://" + net.JoinHostPort(host, port)
+	} else {
+		env["MCP_PUBLIC_URL"] = "https://" + host
+	}
 	if err := service.WriteEnvironment(envFile, env); err != nil {
 		// Non-fatal: the resolved env is still returned to the caller even if
 		// persisting it back fails; a stale file is recovered on the next run.
