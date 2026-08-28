@@ -13,6 +13,7 @@ const (
 	HostOpenAI        HostType = "openai"
 	HostChatGPT       HostType = "chatgpt"
 	HostGrok          HostType = "grok"
+	HostOpenCode      HostType = "opencode"
 	HostKilo          HostType = "kilo"
 	HostClaude        HostType = "claude"
 	HostClaudeDesktop HostType = "claude-desktop"
