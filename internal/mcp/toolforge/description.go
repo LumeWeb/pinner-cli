@@ -123,6 +123,13 @@ func (d DescBuilder) WhenAny(feats []hostenv.Feature, text string) DescBuilder {
 	return DescBuilder{segments: append(d.segments, segment{require: feats, text: text, any: true, sep: defaultSep})}
 }
 
+// WhenAnySentence appends text that starts a new sentence (". ") when the
+// profile has at least one of feats. It mirrors WhenSentence for the
+// multi-feature (any) case.
+func (d DescBuilder) WhenAnySentence(feats []hostenv.Feature, text string) DescBuilder {
+	return d.WhenAnySep(SepSentence, feats, text)
+}
+
 // WhenAnySep is WhenAny with a custom separator prepended when the buffer is
 // non-empty.
 func (d DescBuilder) WhenAnySep(sep string, feats []hostenv.Feature, text string) DescBuilder {

@@ -281,6 +281,28 @@ func TestVaultByteRouteTransportGated(t *testing.T) {
 	require.True(t, sawURL, "tunnel vault guide must offer the URL branch")
 	require.True(t, sawData, "tunnel vault guide must offer the data branch")
 	require.Contains(t, tunnelVault.Detail, "via its own url/data source", "tunnel vault detail may claim url/data via vault_put_file")
+
+	// Grok registers upload_url/upload_data, so the vault detail names them as
+	// IPFS-only tools the agent must not confuse with vault writes.
+	require.Contains(t, grokVault.Detail, "upload_url", "Grok has relay tools; vault detail must name them as IPFS-only")
+	require.Contains(t, grokVault.Detail, "upload_data", "Grok has relay tools; vault detail must name them as IPFS-only")
+
+	// Generic HTTP (mint-only, no relay tools): vault detail must NOT name
+	// upload_url/upload_data — those tools don't exist on this host.
+	generic := buildAgentGuide(strPtr(hostenv.ProfileHTTPGeneric))
+	genericVault := guideFlowByName(t, generic, "vault_upload")
+	require.NotNil(t, genericVault.Decision)
+	require.Contains(t, genericVault.Detail, "materialize them to an agent-local file first", "generic HTTP vault detail must give the mint materialize path")
+	require.NotContains(t, genericVault.Detail, "upload_url", "generic HTTP has no relay tools; vault detail must not name them")
+	require.NotContains(t, genericVault.Detail, "upload_data", "generic HTTP has no relay tools; vault detail must not name them")
+
+	// Claude HTTP has FeatSourceData but NOT FeatSourceURL: vault detail must
+	// name upload_data (registered) but NOT upload_url (not registered).
+	claude := buildAgentGuide(strPtr(hostenv.ProfileClaudeHTTP))
+	claudeVault := guideFlowByName(t, claude, "vault_upload")
+	require.NotNil(t, claudeVault.Decision)
+	require.NotContains(t, claudeVault.Detail, "upload_url", "Claude HTTP has no upload_url tool; vault detail must not name it")
+	require.Contains(t, claudeVault.Detail, "upload_data", "Claude HTTP has upload_data; vault detail must name it as IPFS-only")
 }
 
 // TestVaultSourceModeCopyIsVaultSpecific locks in audit 8: vault_put_file's

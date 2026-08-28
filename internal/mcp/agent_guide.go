@@ -122,7 +122,13 @@ var vaultUploadDetailDesc = toolforge.Static(
 		"When using source.mode=mint + vault_path, mint returns a one-time presigned PUT url bound to vault_path (it has NOT stored bytes yet). PUT the agent-local file to the returned url; the vault write is synchronous, so the PUT response carries the completed vault write directly — there is no upload_status to poll.",
 	).
 	WhenSentence(hostenv.FeatSourceMint,
-		"On this mint-only transport there is no direct vault path for a public URL or inline bytes: materialize them to an agent-local file first, then vault_put_file(source.mode=mint) + PUT. The separate upload_url / upload_data tools are IPFS-only, not vault writes — do not invent a 'vault a CID' step.",
+		"On this mint-only transport there is no direct vault path for a public URL or inline bytes: materialize them to an agent-local file first, then vault_put_file(source.mode=mint) + PUT.",
+	).
+	When(hostenv.FeatSourceURL,
+		"The separate upload_url tool is IPFS-only, not a vault write — do not invent a 'vault a CID' step.",
+	).
+	When(hostenv.FeatSourceData,
+		"The separate upload_data tool is IPFS-only, not a vault write — do not invent a 'vault a CID' step.",
 	).
 	WhenTransportSep(toolforge.SepSentence, hostenv.TransportOpenAI,
 		"The separate upload_url / upload_data tools pin to IPFS and are NOT vault writes: over this tunnel transport vault_put_file takes public-URL or raw-inline bytes via its own url/data source plus the destination vault_path. Do not invent a 'vault a CID' step.",
