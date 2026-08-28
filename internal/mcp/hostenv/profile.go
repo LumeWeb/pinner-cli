@@ -16,6 +16,7 @@ const (
 	HostClaude        HostType = "claude"
 	HostClaudeDesktop HostType = "claude-desktop"
 	HostAiderDesk     HostType = "aider-desk"
+	HostDevin         HostType = "devin"
 	HostGeneric       HostType = "generic"
 )
 

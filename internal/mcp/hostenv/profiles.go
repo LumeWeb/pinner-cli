@@ -146,6 +146,12 @@ var profileAliasTargets = map[HostType]HostType{
 	// source-path). It is its own HostType so host-specific gating can use
 	// HostIs(HostAiderDesk), but inherits HostGeneric's declaration.
 	HostAiderDesk: HostGeneric,
+
+	// devin (the Cognition agent harness) is a co-located stdio client whose
+	// capability surface is exactly the generic stdio profile as well. It is
+	// its own HostType so host-specific gating can use HostIs(HostDevin),
+	// but inherits HostGeneric's declaration.
+	HostDevin: HostGeneric,
 }
 
 // ProfileForTransport returns the generic profile for a transport kind.
