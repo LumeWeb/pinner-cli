@@ -316,7 +316,7 @@ func RunMcpInstallWizard(ctx context.Context, cmd mcpInstallFlagGetter, ui Insta
 		// step renders "Seeded from --..."), and skips itself for non-http
 		// installs. The collector still resolves the public URL afterwards via
 		// the Resolve public URL step.
-		w.tunnelSteps = buildMcpTunnelSteps(realCmd)
+		w.tunnelSteps = buildMcpTunnelSteps(realCmd, w.ui)
 
 		// Restart the managed service after the operator replaces the MCP
 		// password so the running endpoint reloads the new MCP_AUTH_TOKEN from
@@ -380,7 +380,7 @@ func effectiveManagedService(serviceFlagExplicitlySet, useService bool) bool {
 // a mid-config error removes a freshly-written partial env file (the secret
 // just typed), while the collector's validation-failure cleanup removes an
 // invalid file it created (via EnvFileCreated threaded through collectHTTP).
-func buildMcpTunnelSteps(realCmd *cli.Command) []wizard.Step[*InstallState] {
+func buildMcpTunnelSteps(realCmd *cli.Command, ui InstallUI) []wizard.Step[*InstallState] {
 	// Resolved once, closed over by every wrapped step so they share the same
 	// service env file and config manager on one s.Service.
 	svcInit := func(s *InstallState) *mcpadapter.ServiceInstallState {
@@ -501,18 +501,19 @@ func buildMcpTunnelSteps(realCmd *cli.Command) []wizard.Step[*InstallState] {
 	return []wizard.Step[*InstallState]{
 		wrap("Tunnel provider", tunnelStepAt(inner, 0), tunnelProviderSeeded, nil, nil, nil),
 		// The config step prompts for provider credentials + the shared auth
-		// token into s.Service. On a HEADLESS re-run against a pre-existing
-		// (even partial) env file it is skipped: it cannot prompt, and the
-		// collector reuses the on-disk config via the flag reconcile. On a
-		// FRESH install it runs to collect creds. On an INTERACTIVE re-run it
-		// must NOT skip: the operator is reconfiguring, so it prompts with the
-		// persisted values as editable defaults and the collector's success
-		// path reconciles the kept-or-changed values onto the file. The seeded
-		// predicates keep the step un-seeded on interactive env-file re-runs so
-		// the host renders it as a prompting step, not "Seeded".
+		// token into s.Service, and (via its postExecute) asks the operator
+		// about OAuth in the same step. On a HEADLESS re-run against a
+		// pre-existing (even partial) env file it is skipped: it cannot prompt,
+		// and the collector reuses the on-disk config via the flag reconcile.
+		// On a FRESH install it runs to collect creds. On an INTERACTIVE
+		// re-run it must NOT skip: the operator is reconfiguring, so it prompts
+		// with the persisted values as editable defaults and the collector's
+		// success path reconciles the kept-or-changed values onto the file. The
+		// seeded predicates keep the step un-seeded on interactive env-file
+		// re-runs so the host renders it as a prompting step, not "Seeded".
 		wrap("Tunnel-specific configuration", tunnelStepAt(inner, 1), tunnelConfigSeeded,
 			func(s *InstallState) bool { return configStepSkipIfHeadlessReRun(realCmd, s) },
-			nil, nil),
+			nil, promptOAuthPostExecute(realCmd, ui)),
 		// The env-write step NEVER skips for http (only for a non-http install
 		// or a tapped serviceEnvErr). On the FRESH path it writes the env from
 		// the service state and (via preWrite) sets EnvFileCreated + applies
@@ -641,6 +642,43 @@ func tunnelConfigSeeded(_ context.Context, s *InstallState) ([]string, bool) {
 		return []string{s.tunnelSeedSource}, true
 	}
 	return nil, false
+}
+
+// promptOAuthPostExecute asks the operator about OAuth as part of the
+// "Tunnel-specific configuration" step, running right after that step collects
+// the provider's credentials. OAuth belongs to the same tunnel/service
+// configuration, so it lives in this step rather than a separate top-level
+// step. It always prompts on interactive http installs — defaulting to the
+// assumed value (a persisted MCP_OAUTH decision or the secure default-on) —
+// so the handshake is never silently assumed. It is skipped when the
+// credential collection failed, in non-interactive mode (flag/env driven), or
+// when --oauth was explicitly supplied (an explicit operator decision).
+func promptOAuthPostExecute(realCmd *cli.Command, ui InstallUI) func(context.Context, *InstallState, *mcpadapter.ServiceInstallState, error) error {
+	return func(ctx context.Context, s *InstallState, svc *mcpadapter.ServiceInstallState, runErr error) error {
+		if runErr != nil {
+			// The config step failed; surface that error and do not ask about OAuth.
+			return nil
+		}
+		if s == nil || s.Transport != install.TransportHTTP {
+			return nil
+		}
+		if s.NonInteractive || realCmd.IsSet("oauth") {
+			// --oauth / MCP_OAUTH already decided OAuth; the secure default runs otherwise.
+			return nil
+		}
+		assumed := true // secure default-on for a public remote endpoint
+		if svc != nil && svc.OAuth != nil {
+			assumed = *svc.OAuth // honor a persisted/env decision as the prompt's default
+		}
+		enabled, err := ui.ConfirmOAuth(assumed)
+		if err != nil {
+			return err
+		}
+		if svc != nil {
+			svc.OAuth = &enabled
+		}
+		return nil
+	}
 }
 
 // tunnelStepAt returns the i-th step of a ServiceInstallSteps slice for wrapping.

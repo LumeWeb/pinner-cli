@@ -60,12 +60,15 @@ type MockInstallUI struct {
 	SelectTransportErr    error
 	ConfirmHTTPResult     bool
 	ConfirmHTTPErr        error
+	ConfirmOAuthResult    bool
+	ConfirmOAuthErr       error
 	SetMCPPasswordResult  string
 	SetMCPPasswordErr     error
 
 	ReportWrittenCalls  []writtenReport
 	ReportBuildCalls    []buildReport
 	SetMCPPasswordCalls []string // current values passed to each call
+	ConfirmOAuthCalls   []bool   // assumed values passed to each call
 }
 
 type writtenReport struct {
@@ -121,6 +124,14 @@ func (m *MockInstallUI) SetMCPPassword(current string) (string, error) {
 	defer m.mu.Unlock()
 	m.SetMCPPasswordCalls = append(m.SetMCPPasswordCalls, current)
 	return m.SetMCPPasswordResult, m.SetMCPPasswordErr
+}
+
+func (m *MockInstallUI) ConfirmOAuth(assumed bool) (bool, error) {
+	m.RecordCall("ConfirmOAuth")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ConfirmOAuthCalls = append(m.ConfirmOAuthCalls, assumed)
+	return m.ConfirmOAuthResult, m.ConfirmOAuthErr
 }
 
 func (m *MockInstallUI) ReportWritten(agent install.AgentKey, path string, local bool) error {
@@ -597,7 +608,7 @@ func TestMcpInstallTunnelStepsThenCollector(t *testing.T) {
 // the collected values with no user decision).
 func TestMcpInstallBuildTunnelStepsProducesVisibleSteps(t *testing.T) {
 	cmd := NewMcpInstallCommand()
-	steps := buildMcpTunnelSteps(cmd)
+	steps := buildMcpTunnelSteps(cmd, NewPTermInstallUI("", ""))
 	if len(steps) != 3 {
 		t.Fatalf("buildMcpTunnelSteps returned %d steps, want 3 (provider, config, env write)", len(steps))
 	}
@@ -814,7 +825,7 @@ func TestMcpInstallEnvWriteNeverSkipsOnHttp(t *testing.T) {
 		t.Fatalf("set --env-file: %v", err)
 	}
 
-	steps := buildMcpTunnelSteps(cmd)
+	steps := buildMcpTunnelSteps(cmd, NewPTermInstallUI("", ""))
 	if len(steps) != 3 {
 		t.Fatalf("buildMcpTunnelSteps returned %d steps, want 3", len(steps))
 	}
@@ -1824,5 +1835,116 @@ func TestMcpInstallHTTPPasswordRequired(t *testing.T) {
 
 	if _, err := w.Run(ctx); err == nil {
 		t.Fatalf("expected an error when no MCP password is provided, got nil")
+	}
+}
+
+// TestMcpInstallPromptOAuthPostExecuteInteractiveHttp asks about OAuth on an
+// interactive http install, defaulting to the secure default-on (true) and
+// recording the operator's decision into the service state.
+func TestMcpInstallPromptOAuthPostExecuteInteractiveHttp(t *testing.T) {
+	ui := newMockInstallUI()
+	ui.ConfirmOAuthResult = true
+	provider := promptOAuthPostExecute(NewMcpInstallCommand(), ui)
+
+	svc := &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok}
+	s := &InstallState{Transport: install.TransportHTTP}
+	if err := provider(context.Background(), s, svc, nil); err != nil {
+		t.Fatalf("prompt OAuth failed: %v", err)
+	}
+	if len(ui.ConfirmOAuthCalls) != 1 {
+		t.Fatalf("ConfirmOAuth calls = %d, want 1", len(ui.ConfirmOAuthCalls))
+	}
+	if ui.ConfirmOAuthCalls[0] != true {
+		t.Errorf("ConfirmOAuth assumed = %v, want true (secure default-on)", ui.ConfirmOAuthCalls[0])
+	}
+	if svc.OAuth == nil || !*svc.OAuth {
+		t.Errorf("svc.OAuth = %v, want &true from operator decision", svc.OAuth)
+	}
+	if !ui.WasCalled("ConfirmOAuth") {
+		t.Errorf("ConfirmOAuth must be prompted on interactive http install")
+	}
+}
+
+// TestMcpInstallPromptOAuthUsesPersistedDefault verifies that a persisted
+// MCP_OAUTH=false becomes the prompt's assumed default (still asked, but
+// defaulting to the operator's prior opt-out).
+func TestMcpInstallPromptOAuthUsesPersistedDefault(t *testing.T) {
+	ui := newMockInstallUI()
+	ui.ConfirmOAuthResult = false
+	provider := promptOAuthPostExecute(NewMcpInstallCommand(), ui)
+
+	optOut := false
+	svc := &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, OAuth: &optOut}
+	s := &InstallState{Transport: install.TransportHTTP}
+	if err := provider(context.Background(), s, svc, nil); err != nil {
+		t.Fatalf("prompt OAuth failed: %v", err)
+	}
+	if len(ui.ConfirmOAuthCalls) != 1 {
+		t.Fatalf("ConfirmOAuth calls = %d, want 1 (always asked)", len(ui.ConfirmOAuthCalls))
+	}
+	if ui.ConfirmOAuthCalls[0] != false {
+		t.Errorf("ConfirmOAuth assumed = %v, want false (persisted opt-out as default)", ui.ConfirmOAuthCalls[0])
+	}
+	if svc.OAuth == nil || *svc.OAuth {
+		t.Errorf("svc.OAuth = %v, want &false", svc.OAuth)
+	}
+}
+
+// TestMcpInstallPromptOAuthSkipsWhenExplicit is a table test for the cases
+// where the OAuth prompt must NOT ask: stdin-style (non-http) installs, a
+// non-interactive run (flag/env-driven), an explicit --oauth switch (an
+// operator decision), and a failed tunnel-config step (surface that error).
+func TestMcpInstallPromptOAuthSkipsWhenExplicit(t *testing.T) {
+	tests := []struct {
+		name       string
+		state      func() *InstallState
+		svc        *mcpadapter.ServiceInstallState
+		runErr     error
+		optOutFlag bool // whether to pre-set --oauth=false on the command
+	}{
+		{
+			name:  "stdio transport needs no OAuth",
+			state: func() *InstallState { return &InstallState{Transport: install.TransportStdio} },
+			svc:   &mcpadapter.ServiceInstallState{},
+		},
+		{
+			name:       "non-interactive http is flag-driven",
+			state:      func() *InstallState { return &InstallState{Transport: install.TransportHTTP, NonInteractive: true} },
+			svc:        &mcpadapter.ServiceInstallState{},
+		},
+		{
+			name:       "explicit --oauth flag decides it",
+			state:      func() *InstallState { return &InstallState{Transport: install.TransportHTTP} },
+			svc:        &mcpadapter.ServiceInstallState{},
+			optOutFlag: true,
+		},
+		{
+			name:       "tunnel-config step failed surfaces that error",
+			state:      func() *InstallState { return &InstallState{Transport: install.TransportHTTP} },
+			svc:        &mcpadapter.ServiceInstallState{},
+			runErr:     fmt.Errorf("tunnel config failed"),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ui := newMockInstallUI()
+			ui.ConfirmOAuthResult = true
+			cmd := NewMcpInstallCommand()
+			if tc.optOutFlag {
+				if err := cmd.Set("oauth", "false"); err != nil {
+					t.Fatalf("set --oauth: %v", err)
+				}
+			}
+			provider := promptOAuthPostExecute(cmd, ui)
+			if err := provider(context.Background(), tc.state(), tc.svc, tc.runErr); err != nil {
+				t.Fatalf("prompt OAuth failed: %v", err)
+			}
+			if ui.WasCalled("ConfirmOAuth") {
+				t.Errorf("ConfirmOAuth must not be called for %s", tc.name)
+			}
+			if tc.svc.OAuth != nil {
+				t.Errorf("svc.OAuth = %v, want nil (not decided by prompt)", *tc.svc.OAuth)
+			}
+		})
 	}
 }
