@@ -316,9 +316,9 @@ func TestClineDetector_MatchByClientInfo(t *testing.T) {
 	require.Equal(t, HostCline, host)
 	require.Equal(t, AuthNone, auth)
 
-	// Positive: name containing "cline" (case-insensitive).
+	// Positive: exact match is case-insensitive.
 	host, auth = d.Match(DetectRequest{
-		ClientInfo: &ClientInfo{Name: "Cline"},
+		ClientInfo: &ClientInfo{Name: "  @CLINE/CORE  "},
 		CoLocated:  true,
 	})
 	require.Equal(t, HostCline, host)
@@ -331,6 +331,16 @@ func TestClineDetector_NoMatch(t *testing.T) {
 	// Negative: co-located stdio but unrelated clientInfo name.
 	host, auth := d.Match(DetectRequest{
 		ClientInfo: &ClientInfo{Name: "some-client"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: co-located stdio and a name that merely CONTAINS "cline" but is
+	// not the exact "@cline/core" product token (e.g. a different co-located
+	// client). This prevents misclassification of unrelated clients.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "decline-mcp"},
 		CoLocated:  true,
 	})
 	require.Equal(t, HostUnknown, host)
