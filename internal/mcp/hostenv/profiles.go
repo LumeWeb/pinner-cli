@@ -101,16 +101,19 @@ var ProfileClaudeHTTP = newProfile(
 	HostClaude, TransportHTTP, AuthOAuth, true,
 )
 
-// ProfileClaudeDesktopStdio is Anthropic's Claude Desktop client running over
-// co-located stdio (clientInfo name "claude-ai"). Unlike Claude Web it shares
-// the host filesystem, so it gets full local file access via the stdio
-// transport mechanisms (source-path uploads, sink-local downloads) plus MCP
-// Apps — no network-restriction notice.
-var ProfileClaudeDesktopStdio = newProfile(
+// ProfileStdioMCPApps is the generic profile for a co-located stdio client
+// that also renders MCP Apps UI. It is the shared declaration (alias target)
+// for every concrete stdio host that presents exactly this surface — Claude
+// Desktop and Goose — so the capability set lives in one place and both hosts
+// inherit it through resolveProfile (see profileAliasTargets). Such a host
+// shares the local filesystem (source-path uploads, sink-local downloads) plus
+// MCP Apps, with no network-restriction notice. HostStdioApps is the synthetic
+// host backing the declaration; it is never detected directly.
+var ProfileStdioMCPApps = newProfile(
 	FeatureSet{
 		FeatMCPApps: true,
 	},
-	HostClaudeDesktop, TransportStdio, AuthNone, false,
+	HostStdioApps, TransportStdio, AuthNone, false,
 )
 
 // ProfileStdioGeneric is the fallback for any unidentified client over
@@ -175,6 +178,19 @@ var profileAliasTargets = map[HostType]HostType{
 	// sink-local, source-path). It is its own HostType so host-specific gating
 	// can use HostIs(HostOpenCode), but inherits HostGeneric's declaration.
 	HostOpenCode: HostGeneric,
+
+	// Claude Desktop (clientInfo name "claude-ai") is a co-located stdio client
+	// that renders MCP Apps UI — exactly the generic stdio+MCP-Apps surface. It
+	// is its own HostType so host-specific gating can use HostIs(HostClaudeDesktop),
+	// but inherits the shared ProfileStdioMCPApps declaration.
+	HostClaudeDesktop: HostStdioApps,
+
+	// Goose (clientInfo name "goose-app") is a co-located stdio client that
+	// renders MCP Apps UI — exactly the generic stdio+MCP-Apps surface shared
+	// with Claude Desktop. It is its own HostType so host-specific gating can
+	// use HostIs(HostGoose), but inherits the shared ProfileStdioMCPApps
+	// declaration.
+	HostGoose: HostStdioApps,
 }
 
 // ProfileForTransport returns the generic profile for a transport kind.
@@ -217,8 +233,8 @@ func resolveProfile(host HostType, transport TransportKind, auth AuthMethod) Pla
 		return ProfileGrokHTTP
 	case host == HostClaude && transport == TransportHTTP:
 		return ProfileClaudeHTTP
-	case host == HostClaudeDesktop && transport == TransportStdio:
-		return ProfileClaudeDesktopStdio
+	case host == HostStdioApps && transport == TransportStdio:
+		return ProfileStdioMCPApps
 	case transport == TransportStdio:
 		return ProfileStdioGeneric
 	case transport == TransportHTTP:

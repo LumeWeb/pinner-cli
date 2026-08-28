@@ -288,6 +288,62 @@ func TestAiderDeskDetector_NoMatch(t *testing.T) {
 	require.Equal(t, AuthMethod(""), auth)
 }
 
+func TestGooseDetector_MatchByClientInfo(t *testing.T) {
+	d := gooseDetector{}
+
+	// Positive: co-located stdio with the Goose clientInfo name.
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "goose-app", Version: "1.48.0"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostGoose, host)
+	require.Equal(t, AuthNone, auth)
+
+	// Positive: case-insensitive name match.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "Goose-App"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostGoose, host)
+	require.Equal(t, AuthNone, auth)
+}
+
+func TestGooseDetector_NoMatch(t *testing.T) {
+	d := gooseDetector{}
+
+	// Negative: co-located stdio but unrelated clientInfo name.
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "some-other-client"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: no clientInfo at all.
+	host, auth = d.Match(DetectRequest{CoLocated: true})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: Goose name but remote (not co-located) — Goose is always
+	// co-located stdio.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "goose-app"},
+		CoLocated:  false,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: Goose name but OpenAI tunnel — Goose cannot use the OpenAI
+	// tunnel transport.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo:   &ClientInfo{Name: "goose-app"},
+		CoLocated:    false,
+		TunnelOpenAI: true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+}
+
 func TestDevinDetector_MatchByClientInfo(t *testing.T) {
 	d := devinDetector{}
 
@@ -742,6 +798,34 @@ func TestRegistry_Detect_AiderDeskOverStdio(t *testing.T) {
 	require.Equal(t, "2025-11-25", prof.ProtocolVer)
 }
 
+func TestRegistry_Detect_GooseOverStdio(t *testing.T) {
+	r := NewRegistry()
+
+	req := DetectRequest{
+		ClientInfo:      &ClientInfo{Name: "goose-app", Version: "1.48.0"},
+		ProtocolVersion: "2025-11-25",
+		CoLocated:       true,
+	}
+	prof := r.Detect(req)
+
+	require.Equal(t, HostGoose, prof.HostType)
+	require.Equal(t, TransportStdio, prof.Transport)
+	require.Equal(t, AuthNone, prof.AuthMethod)
+	require.False(t, prof.Remote)
+	// Feature surface is exactly the shared stdio+MCP-Apps profile (MCP Apps +
+	// stdio mechanisms), inherited via the HostStdioApps alias — the same
+	// surface Claude Desktop presents.
+	require.Equal(t, ProfileStdioMCPApps.Features, prof.Features)
+	require.True(t, prof.Has(FeatSourcePath))
+	require.True(t, prof.Has(FeatSinkLocal))
+	require.True(t, prof.Has(FeatCoLocated))
+	require.True(t, prof.Has(FeatMCPApps))
+	require.False(t, prof.Has(FeatRemoteAccess))
+	// Runtime overlay: clientInfo and protocol version surfaced.
+	require.Equal(t, "goose-app", prof.ClientInfo.Name)
+	require.Equal(t, "2025-11-25", prof.ProtocolVer)
+}
+
 func TestRegistry_Detect_DevinOverStdio(t *testing.T) {
 	r := NewRegistry()
 
@@ -807,8 +891,11 @@ func TestRegistry_Detect_ClaudeDesktopOverStdio(t *testing.T) {
 	}
 	prof := r.Detect(req)
 
-	require.Equal(t, ProfileClaudeDesktopStdio.HostType, prof.HostType)
-	require.Equal(t, ProfileClaudeDesktopStdio.Transport, prof.Transport)
+	// The static ProfileStdioMCPApps declaration carries the synthetic
+	// HostStdioApps host; the resolved profile keeps the concrete detected
+	// host type (Claude Desktop) while inheriting ProfileStdioMCPApps.
+	require.Equal(t, HostClaudeDesktop, prof.HostType)
+	require.Equal(t, ProfileStdioMCPApps.Transport, prof.Transport)
 	require.Equal(t, AuthNone, prof.AuthMethod)
 	require.False(t, prof.Remote)
 	require.Equal(t, "claude-ai", prof.ClientInfo.Name)
@@ -1148,13 +1235,6 @@ func TestResolveProfile(t *testing.T) {
 			want:      ProfileClaudeHTTP,
 		},
 		{
-			name:      "claude desktop over stdio",
-			host:      HostClaudeDesktop,
-			transport: TransportStdio,
-			auth:      AuthNone,
-			want:      ProfileClaudeDesktopStdio,
-		},
-		{
 			name:      "generic over stdio",
 			host:      HostGeneric,
 			transport: TransportStdio,
@@ -1215,6 +1295,35 @@ func TestResolveProfile_AiderDesk(t *testing.T) {
 	require.False(t, got.Remote)
 	// Feature surface equals the generic stdio profile exactly (alias target).
 	require.Equal(t, ProfileStdioGeneric.Features, got.Features)
+}
+
+// TestResolveProfile_Goose verifies the Goose alias path: an aliased host
+// inherits the target's full profile (features, transport, auth, remote) but
+// keeps its own HostType.
+func TestResolveProfile_Goose(t *testing.T) {
+	got := resolveProfile(HostGoose, TransportStdio, AuthNone)
+
+	require.Equal(t, HostGoose, got.HostType)
+	require.Equal(t, TransportStdio, got.Transport)
+	require.Equal(t, AuthNone, got.AuthMethod)
+	require.False(t, got.Remote)
+	// Feature surface equals the shared stdio+MCP-Apps profile exactly (alias target).
+	require.Equal(t, ProfileStdioMCPApps.Features, got.Features)
+}
+
+// TestResolveProfile_ClaudeDesktop verifies the Claude Desktop alias path: it
+// shares the same generic stdio+MCP-Apps declaration as Goose (both target
+// HostStdioApps) but keeps its own HostType.
+func TestResolveProfile_ClaudeDesktop(t *testing.T) {
+	got := resolveProfile(HostClaudeDesktop, TransportStdio, AuthNone)
+
+	require.Equal(t, HostClaudeDesktop, got.HostType)
+	require.Equal(t, TransportStdio, got.Transport)
+	require.Equal(t, AuthNone, got.AuthMethod)
+	require.False(t, got.Remote)
+	// Both Claude Desktop and Goose resolve to the same shared declaration.
+	require.Equal(t, ProfileStdioMCPApps.Features, got.Features)
+	require.Equal(t, resolveProfile(HostGoose, TransportStdio, AuthNone).Features, got.Features)
 }
 
 // TestResolveProfile_Devin verifies the Devin alias path: an aliased host
@@ -1388,8 +1497,10 @@ func TestPlatformProfile_IsHost(t *testing.T) {
 	require.True(t, ProfileOpenAIHTTP.IsHost(HostOpenAI))
 	require.True(t, ProfileClaudeHTTP.IsHost(HostClaude))
 	require.False(t, ProfileClaudeHTTP.IsHost(HostClaudeDesktop))
-	require.True(t, ProfileClaudeDesktopStdio.IsHost(HostClaudeDesktop))
-	require.False(t, ProfileClaudeDesktopStdio.IsHost(HostClaude))
+	// ProfileStdioMCPApps is the shared declaration for the synthetic
+	// HostStdioApps alias target — not Claude Desktop directly.
+	require.True(t, ProfileStdioMCPApps.IsHost(HostStdioApps))
+	require.False(t, ProfileStdioMCPApps.IsHost(HostClaude))
 
 	require.True(t, ProfileHTTPGeneric.IsHost(HostGeneric))
 }
@@ -1540,22 +1651,23 @@ func TestNewRegistry_DetectorsRegistered(t *testing.T) {
 	r := NewRegistry()
 
 	require.NotNil(t, r)
-	require.Len(t, r.detectors, 10)
-	// Priority order: aider-desk, devin, cline, codex, openai, grok, kilo,
-	// claude (web), claude-desktop, opencode. The stdio-only detectors
-	// (aider-desk, devin, cline, codex) run first because they do not conflict
-	// with the remote-only openai/grok/claude detectors; kilo and opencode are
-	// the co-located stdio editors/agents.
+	require.Len(t, r.detectors, 11)
+	// Priority order: aider-desk, goose, devin, cline, codex, openai, grok,
+	// kilo, claude (web), claude-desktop, opencode. The stdio-only detectors
+	// (aider-desk, goose, devin, cline, codex) run first because they do not
+	// conflict with the remote-only openai/grok/claude detectors; kilo and
+	// opencode are the co-located stdio editors/agents.
 	require.IsType(t, aiderDeskDetector{}, r.detectors[0])
-	require.IsType(t, devinDetector{}, r.detectors[1])
-	require.IsType(t, clineDetector{}, r.detectors[2])
-	require.IsType(t, codexDetector{}, r.detectors[3])
-	require.IsType(t, openAIDetector{}, r.detectors[4])
-	require.IsType(t, grokDetector{}, r.detectors[5])
-	require.IsType(t, kiloDetector{}, r.detectors[6])
-	require.IsType(t, claudeDetector{}, r.detectors[7])
-	require.IsType(t, claudeDesktopDetector{}, r.detectors[8])
-	require.IsType(t, opencodeDetector{}, r.detectors[9])
+	require.IsType(t, gooseDetector{}, r.detectors[1])
+	require.IsType(t, devinDetector{}, r.detectors[2])
+	require.IsType(t, clineDetector{}, r.detectors[3])
+	require.IsType(t, codexDetector{}, r.detectors[4])
+	require.IsType(t, openAIDetector{}, r.detectors[5])
+	require.IsType(t, grokDetector{}, r.detectors[6])
+	require.IsType(t, kiloDetector{}, r.detectors[7])
+	require.IsType(t, claudeDetector{}, r.detectors[8])
+	require.IsType(t, claudeDesktopDetector{}, r.detectors[9])
+	require.IsType(t, opencodeDetector{}, r.detectors[10])
 }
 
 func TestNewRegistry_PriorityOrder(t *testing.T) {

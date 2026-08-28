@@ -115,7 +115,7 @@ func TestAgentGuideModesMatchProfile(t *testing.T) {
 		},
 		{
 			name:     "claude desktop advertises only path",
-			profile:  strPtr(hostenv.ProfileClaudeDesktopStdio),
+			profile:  strPtr(hostenv.ProfileStdioMCPApps),
 			mustHave: []string{"source.mode=path"},
 			mustNot:  []string{"source.mode=mint", "source.mode=url/data"},
 		},
@@ -149,7 +149,7 @@ func TestAgentGuideClaudeWebNoticeScoped(t *testing.T) {
 	require.Contains(t, strings.Join(web.Rules, "\n"), "Host capability notice (Claude Web)")
 	require.Contains(t, strings.Join(web.Rules, "\n"), "upload_data")
 
-	desktop := buildAgentGuide(&hostenv.ProfileClaudeDesktopStdio)
+	desktop := buildAgentGuide(&hostenv.ProfileStdioMCPApps)
 	require.NotContains(t, strings.Join(desktop.Rules, "\n"), "Host capability notice (Claude Web)")
 
 	generic := buildAgentGuide(&hostenv.ProfileHTTPGeneric)
