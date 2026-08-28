@@ -169,6 +169,12 @@ var profileAliasTargets = map[HostType]HostType{
 	// sink-local, source-path). It is its own HostType so host-specific gating
 	// can use HostIs(HostKilo), but inherits HostGeneric's declaration.
 	HostKilo: HostGeneric,
+
+	// OpenCode is a co-located stdio client (clientInfo name "opencode") whose
+	// capability surface is exactly the generic stdio profile (co-located,
+	// sink-local, source-path). It is its own HostType so host-specific gating
+	// can use HostIs(HostOpenCode), but inherits HostGeneric's declaration.
+	HostOpenCode: HostGeneric,
 }
 
 // ProfileForTransport returns the generic profile for a transport kind.
