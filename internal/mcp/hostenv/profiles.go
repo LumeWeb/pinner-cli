@@ -191,6 +191,13 @@ var profileAliasTargets = map[HostType]HostType{
 	// use HostIs(HostGoose), but inherits the shared ProfileStdioMCPApps
 	// declaration.
 	HostGoose: HostStdioApps,
+
+	// Antigravity (Google IDE) is a co-located stdio client (clientInfo name
+	// "antigravity-client") whose capability surface is exactly the generic
+	// stdio profile (co-located, sink-local, source-path). It is its own
+	// HostType so host-specific gating can use HostIs(HostAntigravity), but
+	// inherits HostGeneric's declaration.
+	HostAntigravity: HostGeneric,
 }
 
 // ProfileForTransport returns the generic profile for a transport kind.
