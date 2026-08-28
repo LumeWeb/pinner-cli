@@ -1844,7 +1844,7 @@ func TestMcpInstallHTTPPasswordRequired(t *testing.T) {
 func TestMcpInstallPromptOAuthPostExecuteInteractiveHttp(t *testing.T) {
 	ui := newMockInstallUI()
 	ui.ConfirmOAuthResult = true
-	provider := promptOAuthPostExecute(NewMcpInstallCommand(), ui)
+	provider := promptOAuthPostExecute(ui)
 
 	svc := &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok}
 	s := &InstallState{Transport: install.TransportHTTP}
@@ -1871,7 +1871,7 @@ func TestMcpInstallPromptOAuthPostExecuteInteractiveHttp(t *testing.T) {
 func TestMcpInstallPromptOAuthUsesPersistedDefault(t *testing.T) {
 	ui := newMockInstallUI()
 	ui.ConfirmOAuthResult = false
-	provider := promptOAuthPostExecute(NewMcpInstallCommand(), ui)
+	provider := promptOAuthPostExecute(ui)
 
 	optOut := false
 	svc := &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok, OAuth: &optOut}
@@ -1896,11 +1896,11 @@ func TestMcpInstallPromptOAuthUsesPersistedDefault(t *testing.T) {
 // operator decision), and a failed tunnel-config step (surface that error).
 func TestMcpInstallPromptOAuthSkipsWhenExplicit(t *testing.T) {
 	tests := []struct {
-		name       string
-		state      func() *InstallState
-		svc        *mcpadapter.ServiceInstallState
-		runErr     error
-		optOutFlag bool // whether to pre-set --oauth=false on the command
+		name      string
+		state     func() *InstallState
+		svc       *mcpadapter.ServiceInstallState
+		runErr    error
+		cmdOAuth  bool // whether a literal --oauth appears on the command line
 	}{
 		{
 			name:  "stdio transport needs no OAuth",
@@ -1913,10 +1913,10 @@ func TestMcpInstallPromptOAuthSkipsWhenExplicit(t *testing.T) {
 			svc:        &mcpadapter.ServiceInstallState{},
 		},
 		{
-			name:       "explicit --oauth flag decides it",
-			state:      func() *InstallState { return &InstallState{Transport: install.TransportHTTP} },
-			svc:        &mcpadapter.ServiceInstallState{},
-			optOutFlag: true,
+			name:     "explicit --oauth on the command line decides it",
+			state:    func() *InstallState { return &InstallState{Transport: install.TransportHTTP} },
+			svc:      &mcpadapter.ServiceInstallState{},
+			cmdOAuth: true,
 		},
 		{
 			name:       "tunnel-config step failed surfaces that error",
@@ -1929,13 +1929,12 @@ func TestMcpInstallPromptOAuthSkipsWhenExplicit(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ui := newMockInstallUI()
 			ui.ConfirmOAuthResult = true
-			cmd := NewMcpInstallCommand()
-			if tc.optOutFlag {
-				if err := cmd.Set("oauth", "false"); err != nil {
-					t.Fatalf("set --oauth: %v", err)
-				}
+			if tc.cmdOAuth {
+				prevArgs := os.Args
+				os.Args = append(prevArgs, "--oauth=false")
+				defer func() { os.Args = prevArgs }()
 			}
-			provider := promptOAuthPostExecute(cmd, ui)
+			provider := promptOAuthPostExecute(ui)
 			if err := provider(context.Background(), tc.state(), tc.svc, tc.runErr); err != nil {
 				t.Fatalf("prompt OAuth failed: %v", err)
 			}
@@ -1946,5 +1945,54 @@ func TestMcpInstallPromptOAuthSkipsWhenExplicit(t *testing.T) {
 				t.Errorf("svc.OAuth = %v, want nil (not decided by prompt)", *tc.svc.OAuth)
 			}
 		})
+	}
+}
+
+// TestMcpInstallPromptOAuthEnvVarDoesNotSuppress is the regression guard for
+// the env-sourcing bug: urfave/cli v3 marks a flag IsSet when it is sourced
+// from its declared env var (MCP_OAUTH). A persisted/inherited MCP_OAUTH value
+// is NOT an operator decision for this run, so it must never suppress the
+// OAuth question — it becomes the prompt's default instead.
+func TestMcpInstallPromptOAuthEnvVarDoesNotSuppress(t *testing.T) {
+	t.Setenv("MCP_OAUTH", "true")
+
+	ui := newMockInstallUI()
+	ui.ConfirmOAuthResult = true
+	svc := &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok}
+	s := &InstallState{Transport: install.TransportHTTP}
+
+	provider := promptOAuthPostExecute(ui)
+	if err := provider(context.Background(), s, svc, nil); err != nil {
+		t.Fatalf("prompt OAuth failed: %v", err)
+	}
+
+	if !ui.WasCalled("ConfirmOAuth") {
+		t.Errorf("ConfirmOAuth must still be prompted when MCP_OAUTH is env-sourced, got suppressed")
+	}
+	if len(ui.ConfirmOAuthCalls) != 1 || ui.ConfirmOAuthCalls[0] != true {
+		t.Errorf("ConfirmOAuth assumed = %v, want true (env value folded as the default)", ui.ConfirmOAuthCalls)
+	}
+}
+
+// TestMcpInstallOAuthFlagSetOnCmdLine directly guards oauthFlagSetOnCmdLine:
+// a literal --oauth token is detected, while a clean argv (or an env-only
+// source, which never appears in argv) is not.
+func TestMcpInstallOAuthFlagSetOnCmdLine(t *testing.T) {
+	prev := os.Args
+	t.Cleanup(func() { os.Args = prev })
+
+	os.Args = []string{"pinner", "mcp", "install", "--oauth"}
+	if !oauthFlagSetOnCmdLine() {
+		t.Errorf("expected a literal --oauth to be detected on the command line")
+	}
+
+	os.Args = []string{"pinner", "mcp", "install", "--oauth=false"}
+	if !oauthFlagSetOnCmdLine() {
+		t.Errorf("expected --oauth=false to be detected on the command line")
+	}
+
+	os.Args = []string{"pinner", "mcp", "install"}
+	if oauthFlagSetOnCmdLine() {
+		t.Errorf("expected no --oauth to be detected for a clean argv")
 	}
 }

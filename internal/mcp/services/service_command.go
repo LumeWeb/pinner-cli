@@ -80,6 +80,12 @@ const (
 	servicePortFlag        = "port"
 )
 
+// ServiceOAuthFlagName is the exported name of the --oauth flag, the single
+// source of truth for command-line detection of an explicit OAuth decision
+// (distinct from an env-sourced MCP_OAUTH value, which IsSet cannot tell apart
+// from a CLI flag).
+const ServiceOAuthFlagName = serviceOAuthFlag
+
 // managedServiceFlags returns the tunnel/environment flags for the service
 // command. Each flag declares its environment fallback via Sources so the CLI
 // framework resolves flag -> env automatically, with no ad-hoc env parsing.
