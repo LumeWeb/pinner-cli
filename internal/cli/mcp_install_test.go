@@ -492,6 +492,42 @@ func TestMcpInstallHTTPCompositeWritesRemoteEntry(t *testing.T) {
 	}
 }
 
+// TestMcpInstallOAuthSuppressesAuthHeader guards the Claude Code install flaw:
+// on an OAuth-protected http endpoint the agent config must NOT carry an
+// Authorization Bearer header. In OAuth mode /mcp only accepts tokens issued
+// through the handshake (MCP_AUTH_TOKEN becomes the login-page secret), so a
+// static Bearer header makes clients like Claude Code treat the server as
+// basic auth and skip OAuth. OAuth off (or undecided) still writes the header.
+func TestMcpInstallOAuthSuppressesAuthHeader(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+	ui := newMockInstallUI()
+
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: true,
+		Service: &mcpadapter.ServiceInstallState{
+			OAuth: new(true), // the secure OAuth default-on for an http endpoint
+		},
+	}
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
+	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "test-auth-token")
+	ui.SetMCPPasswordResult = "test-auth-token"
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+
+	entry := readGlobalJSON(t, root, install.AgentClaudeCode)
+	if _, hasHeaders := entry["headers"]; hasHeaders {
+		t.Errorf("OAuth http entry must NOT carry an Authorization header, got:\n%v", entry)
+	}
+}
+
 func TestMcpInstallHTTPCompositeSkipsStdioOnlyAgent(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
