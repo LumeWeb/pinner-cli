@@ -36,6 +36,7 @@ func (s agentSpec) localKey() string {
 var transformTable = map[string]transformFunc{
 	"standard":    transformStandard,
 	"cursor":      transformCursor,
+	"fx":          transformFx,
 	"gemini":      transformGemini,
 	"codex":       transformCodex,
 	"opencode":    transformOpenCode,

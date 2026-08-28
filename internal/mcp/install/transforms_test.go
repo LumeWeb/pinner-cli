@@ -539,3 +539,45 @@ func TestTransformMCPorterStandard(t *testing.T) {
 		"args":    []string{"mcp"},
 	})
 }
+
+func TestTransformFxRemote(t *testing.T) {
+	cfg := McpServerConfig{Type: TransportHTTP, URL: "https://example.com/mcp", Headers: map[string]string{"Authorization": "Bearer x"}}
+	got := transformRunner(t, AgentFx, "server", cfg, false)
+	assertMapEqual(t, "fx-remote", got, map[string]any{
+		"type":    "http",
+		"url":     "https://example.com/mcp",
+		"enabled": true,
+		"headers": map[string]string{"Authorization": "Bearer x"},
+	})
+}
+
+func TestTransformFxRemoteSSE(t *testing.T) {
+	cfg := McpServerConfig{Type: TransportSSE, URL: "https://example.com/sse"}
+	got := transformRunner(t, AgentFx, "server", cfg, false)
+	assertMapEqual(t, "fx-remote-sse", got, map[string]any{
+		"type":    "sse",
+		"url":     "https://example.com/sse",
+		"enabled": true,
+	})
+}
+
+func TestTransformFxLocal(t *testing.T) {
+	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp", "serve"}, Env: map[string]string{"K": "v"}}
+	got := transformRunner(t, AgentFx, "server", cfg, false)
+	assertMapEqual(t, "fx-local", got, map[string]any{
+		"type":        "local",
+		"command":     []string{"pinner", "mcp", "serve"},
+		"enabled":     true,
+		"environment": map[string]string{"K": "v"},
+	})
+}
+
+func TestTransformFxLocalOmitsEnvironment(t *testing.T) {
+	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp", "serve"}}
+	got := transformRunner(t, AgentFx, "server", cfg, false)
+	assertMapEqual(t, "fx-local-noenv", got, map[string]any{
+		"type":    "local",
+		"command": []string{"pinner", "mcp", "serve"},
+		"enabled": true,
+	})
+}

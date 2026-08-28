@@ -8,7 +8,7 @@ import (
 
 // allAgentKeys is the ordered set of supported agents.
 var allAgentKeys = []AgentKey{
-	AgentClaudeCode, AgentClaudeDesktop, AgentVSCode, AgentCursor,
+	AgentClaudeCode, AgentClaudeDesktop, AgentVSCode, AgentCursor, AgentFx,
 	AgentCodex, AgentGeminiCLI, AgentOpenCode, AgentZed,
 	AgentAntigravity, AgentCline, AgentClineCLI, AgentGoose,
 	AgentGitHubCopilotCLI, AgentGrokBuild, AgentKiloCode, AgentKimiCode,
@@ -62,6 +62,17 @@ var agentSpecs = map[AgentKey]agentSpec{
 		format:             FormatJSON,
 		transports:         []Transport{TransportStdio, TransportHTTP, TransportSSE},
 		transformName:      "cursor",
+	},
+	AgentFx: {
+		key:                AgentFx,
+		displayName:        "fx",
+		configPath:         func() string { return filepath.Join(homeDir(), ".fx", "mcp.json") },
+		localConfigPath:    "",
+		projectDetectPaths: nil,
+		configKey:          "mcp",
+		format:             FormatJSON,
+		transports:         []Transport{TransportStdio, TransportHTTP, TransportSSE},
+		transformName:      "fx",
 	},
 	AgentCodex: {
 		key:                AgentCodex,
