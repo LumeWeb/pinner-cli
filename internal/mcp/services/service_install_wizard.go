@@ -44,6 +44,12 @@ type ServiceInstallState struct {
 	// nil means undecided; &N (including &0, the "pick a free port" sentinel) is
 	// an explicit decision. MCP_PORT is persisted only when non-nil.
 	Port *int
+	// DevTools mirrors the `pinner mcp` serve --dev-tools switch. Tri-state like
+	// OAuth: nil means undecided; &true/&false is an explicit decision. The
+	// serializer persists MCP_DEV_TOOLS only when non-nil, so an undecided
+	// install omits the key (leaving the runtime default) while an explicit
+	// opt-in/opt-out is preserved across re-runs.
+	DevTools *bool
 
 	// EnvFileCreated reports that the env file at EnvFile was freshly written
 	// by this install run. A host wizard (mcp install) sets it in the flattened
@@ -322,6 +328,13 @@ func seedServiceFromFlagsAndEnv(cmd *cli.Command, s *ServiceInstallState, _ stri
 		v := true
 		s.OAuth = &v
 	}
+	if cmd.IsSet(serviceDevToolsFlag) {
+		v := cmd.Bool(serviceDevToolsFlag)
+		s.DevTools = &v
+	} else if strings.EqualFold(cmd.String(serviceDevToolsFlag), "true") {
+		v := true
+		s.DevTools = &v
+	}
 	if cmd.IsSet(servicePortFlag) {
 		n := cmd.Int(servicePortFlag)
 		s.Port = &n
@@ -373,6 +386,9 @@ func serviceInstallStateToEnv(s *ServiceInstallState) ServiceEnvironment {
 	// a legitimate decision (opt-out / --port 0) and is written verbatim.
 	if s.OAuth != nil {
 		env["MCP_OAUTH"] = strconv.FormatBool(*s.OAuth)
+	}
+	if s.DevTools != nil {
+		env["MCP_DEV_TOOLS"] = strconv.FormatBool(*s.DevTools)
 	}
 	if s.Port != nil {
 		env["MCP_PORT"] = strconv.Itoa(*s.Port)

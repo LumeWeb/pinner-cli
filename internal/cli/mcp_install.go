@@ -816,6 +816,20 @@ func seedServiceFromEnvFile(envFile string, s *mcpadapter.ServiceInstallState) {
 			s.OAuth = &v
 		}
 	}
+	// Fold a persisted MCP_DEV_TOOLS back in ONLY when DevTools was not decided
+	// this run (s.DevTools == nil), mirroring the MCP_OAUTH handling above so
+	// an explicit --dev-tools/--no-dev-tools wins and an undecided re-run keeps
+	// whatever the persisted env file already carries.
+	if s.DevTools == nil {
+		switch strings.TrimSpace(env["MCP_DEV_TOOLS"]) {
+		case "true":
+			v := true
+			s.DevTools = &v
+		case "false":
+			v := false
+			s.DevTools = &v
+		}
+	}
 }
 
 func dedupeAgents(agents []install.AgentKey) []install.AgentKey {

@@ -78,6 +78,10 @@ const (
 	servicePublicURLFlag   = "public-url"
 	serviceHostFlag        = "host"
 	servicePortFlag        = "port"
+	// serviceDevToolsFlag mirrors the `pinner mcp` serve --dev-tools switch
+	// (MCP_DEV_TOOLS), so a managed install can persist it into the service env
+	// file and the running server starts with dev introspection tools enabled.
+	serviceDevToolsFlag = "dev-tools"
 )
 
 // ServiceOAuthFlagName is the exported name of the --oauth flag, the single
@@ -105,6 +109,7 @@ func managedServiceFlags() []cli.Flag {
 		&cli.StringFlag{Name: servicePublicURLFlag, Usage: "Public base URL advertised in OAuth discovery metadata", Sources: cli.EnvVars("MCP_PUBLIC_URL")},
 		&cli.StringFlag{Name: serviceHostFlag, Usage: "Local bind host for the HTTP transport", Sources: cli.EnvVars("MCP_HOST")},
 		&cli.IntFlag{Name: servicePortFlag, Value: 0, Usage: "Local bind port for the HTTP transport (0 picks a free port)", Sources: cli.EnvVars("MCP_PORT")},
+		&cli.BoolFlag{Name: serviceDevToolsFlag, Usage: "Enable developer introspection tools (dev_host_env, dev_profile, dev_request) and capture the raw wire snapshot of the connected host; persisted as MCP_DEV_TOOLS in the service env file", Sources: cli.EnvVars("MCP_DEV_TOOLS")},
 	}
 }
 
@@ -414,6 +419,9 @@ func explicitServiceEnvFromFlags(cmd *cli.Command) (service.Environment, error) 
 		} else {
 			env["MCP_OAUTH"] = "false"
 		}
+	}
+	if cmd.IsSet(serviceDevToolsFlag) {
+		env["MCP_DEV_TOOLS"] = strconv.FormatBool(cmd.Bool(serviceDevToolsFlag))
 	}
 	if cmd.IsSet(servicePortFlag) {
 		env["MCP_PORT"] = strconv.Itoa(cmd.Int(servicePortFlag))

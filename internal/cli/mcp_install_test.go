@@ -1426,6 +1426,30 @@ func TestSeedServiceFromEnvFile_PreservesPersistedOAuthWhenUnset(t *testing.T) {
 	}
 }
 
+// TestSeedServiceFromEnvFile_FoldsDevTools guards that MCP_DEV_TOOLS persisted
+// in an existing env file is folded back into s.DevTools, so a managed-service
+// install honors it (the service file is the running server's env source). An
+// explicitly-set s.DevTools this run wins.
+func TestSeedServiceFromEnvFile_FoldsDevTools(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "mcp.env")
+	writeEnv(t, envFile, partialEnv+"MCP_DEV_TOOLS=true\n")
+
+	// Undecided --dev-tools this run: the persisted value must be folded in.
+	s := &mcpadapter.ServiceInstallState{}
+	seedServiceFromEnvFile(envFile, s)
+	if s.DevTools == nil || !*s.DevTools {
+		t.Error("persisted MCP_DEV_TOOLS=true must be folded back into s.DevTools")
+	}
+
+	// Explicit --no-dev-tools this run (non-nil) must win over the persisted true.
+	s2 := &mcpadapter.ServiceInstallState{DevTools: new(false)}
+	seedServiceFromEnvFile(envFile, s2)
+	if s2.DevTools == nil || *s2.DevTools {
+		t.Error("an explicit --no-dev-tools must override a persisted MCP_DEV_TOOLS=true")
+	}
+}
+
 // TestSeedServiceFromEnvFile_FoldsPort guards that MCP_PORT persisted in an
 // existing env file (e.g. from an earlier run where the operator set --port) is
 // folded back into s.Port, so a re-run's "Write service environment file" step
