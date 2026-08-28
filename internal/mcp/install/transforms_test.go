@@ -278,7 +278,7 @@ func TestTransformOpenCodeRemote(t *testing.T) {
 	})
 }
 
-func TestTransformZedRemoteSourceCustom(t *testing.T) {
+func TestTransformZedRemote(t *testing.T) {
 	cfg := McpServerConfig{
 		Type:    TransportHTTP,
 		URL:     "https://example.com/mcp",
@@ -286,18 +286,15 @@ func TestTransformZedRemoteSourceCustom(t *testing.T) {
 	}
 	got := transformRunner(t, AgentZed, "server", cfg, false)
 	assertMapEqual(t, "zed-remote", got, map[string]any{
-		"source":  "custom",
-		"type":    "http",
 		"url":     "https://example.com/mcp",
 		"headers": map[string]string{"Authorization": "Bearer x"},
 	})
 }
 
-func TestTransformZedLocalSourceCustom(t *testing.T) {
+func TestTransformZedLocal(t *testing.T) {
 	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp", "serve"}}
 	got := transformRunner(t, AgentZed, "server", cfg, true)
 	assertMapEqual(t, "zed-local", got, map[string]any{
-		"source":  "custom",
 		"command": "pinner",
 		"args":    []string{"mcp", "serve"},
 	})
