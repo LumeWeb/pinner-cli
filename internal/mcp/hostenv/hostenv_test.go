@@ -1354,6 +1354,90 @@ func TestRegistry_Detect_KiloOverStdio(t *testing.T) {
 	require.False(t, prof.Has(FeatMCPApps))
 }
 
+func TestFxDetector_MatchByClientInfo(t *testing.T) {
+	d := fxDetector{}
+
+	// Positive: co-located stdio clientInfo name "fx" → HostFX, AuthNone
+	host, auth := d.Match(DetectRequest{
+		CoLocated:  true,
+		ClientInfo: &ClientInfo{Name: "fx", Version: "0.0.6"},
+	})
+	require.Equal(t, HostFX, host)
+	require.Equal(t, AuthNone, auth)
+
+	// Positive: case-insensitive / whitespace-tolerant name match
+	host, auth = d.Match(DetectRequest{
+		CoLocated:  true,
+		ClientInfo: &ClientInfo{Name: "  FX "},
+	})
+	require.Equal(t, HostFX, host)
+	require.Equal(t, AuthNone, auth)
+}
+
+func TestFxDetector_NoMatch(t *testing.T) {
+	d := fxDetector{}
+
+	// Negative: co-located but wrong clientInfo name (substring "fx" must not
+	// match — fx is matched exactly like the short-token kilo detector).
+	host, auth := d.Match(DetectRequest{
+		CoLocated:  true,
+		ClientInfo: &ClientInfo{Name: "reflex", Version: "1.0.0"},
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: correct name but not co-located (remote) — fx is stdio-only
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "fx", Version: "0.0.6"},
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: correct name but OpenAI tunnel
+	host, auth = d.Match(DetectRequest{
+		CoLocated:    true,
+		TunnelOpenAI: true,
+		ClientInfo:   &ClientInfo{Name: "fx", Version: "0.0.6"},
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: no clientInfo at all
+	host, auth = d.Match(DetectRequest{CoLocated: true})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+}
+
+func TestRegistry_Detect_FxOverStdio(t *testing.T) {
+	r := NewRegistry()
+
+	req := DetectRequest{
+		CoLocated:       true,
+		ClientInfo:      &ClientInfo{Name: "fx", Version: "0.0.6"},
+		ProtocolVersion: "2026-07-28",
+	}
+	prof := r.Detect(req)
+
+	require.Equal(t, HostFX, prof.HostType)
+	require.Equal(t, TransportStdio, prof.Transport)
+	require.Equal(t, AuthNone, prof.AuthMethod)
+	require.False(t, prof.Remote)
+	// Feature surface is exactly the generic stdio profile, inherited via the
+	// HostGeneric alias.
+	require.Equal(t, ProfileStdioGeneric.Features, prof.Features)
+	// Mechanism features are the stdio set, matching the observed payload.
+	require.True(t, prof.Has(FeatSourcePath))
+	require.True(t, prof.Has(FeatSinkLocal))
+	require.True(t, prof.Has(FeatSinkDrop))
+	require.True(t, prof.Has(FeatCoLocated))
+	require.False(t, prof.Has(FeatRemoteAccess))
+	require.False(t, prof.Has(FeatMCPApps))
+	// Runtime overlay
+	require.Equal(t, "fx", prof.ClientInfo.Name)
+	require.Equal(t, "0.0.6", prof.ClientInfo.Version)
+	require.Equal(t, "2026-07-28", prof.ProtocolVer)
+}
+
 func TestRegistry_Detect_OpenCodeOverStdio(t *testing.T) {
 	r := NewRegistry()
 
@@ -1915,6 +1999,21 @@ func TestResolveProfile_Kimi(t *testing.T) {
 	require.Equal(t, ProfileStdioGeneric.Features, got.Features)
 }
 
+// TestResolveProfile_Fx verifies the fx alias path: an aliased host inherits
+// the target's full profile (features, transport, auth, remote) but keeps its
+// own HostType.
+func TestResolveProfile_Fx(t *testing.T) {
+	got := resolveProfile(HostFX, TransportStdio, AuthNone)
+
+	require.Equal(t, HostFX, got.HostType)
+	require.Equal(t, TransportStdio, got.Transport)
+	require.Equal(t, AuthNone, got.AuthMethod)
+	require.False(t, got.Remote)
+	// Feature surface equals the generic stdio profile exactly (alias target).
+	require.Equal(t, ProfileStdioGeneric.Features, got.Features)
+	require.True(t, got.Has(FeatSinkDrop))
+}
+
 // TestProfileAliasDoesNotCorruptTarget locks in that resolving an alias
 // returns a value copy — overriding the alias's HostType must not mutate the
 // shared static target profile.
@@ -2201,31 +2300,32 @@ func TestNewRegistry_DetectorsRegistered(t *testing.T) {
 	r := NewRegistry()
 
 	require.NotNil(t, r)
-	require.Len(t, r.detectors, 17)
+	require.Len(t, r.detectors, 18)
 	// Priority order: aider-desk, goose, devin, cline, codex, copilot-cli,
-	// openai, grok, kilo, kiro, claude-code, claude (web), claude-desktop,
+	// fx, openai, grok, kilo, kiro, claude-code, claude (web), claude-desktop,
 	// opencode, antigravity, kimi, zed. The stdio-only detectors (aider-desk,
-	// goose, devin, cline, codex, copilot-cli) run first because they do not
-	// conflict with the remote-only openai/grok/claude detectors; kilo, kiro,
-	// claude-code, opencode, antigravity, kimi and zed are the co-located
-	// stdio editors/agents.
+	// goose, devin, cline, codex, copilot-cli, fx) run first because they do
+	// not conflict with the remote-only openai/grok/claude detectors; kilo,
+	// kiro, claude-code, opencode, antigravity, kimi and zed are the
+	// co-located stdio editors/agents.
 	require.IsType(t, aiderDeskDetector{}, r.detectors[0])
 	require.IsType(t, gooseDetector{}, r.detectors[1])
 	require.IsType(t, devinDetector{}, r.detectors[2])
 	require.IsType(t, clineDetector{}, r.detectors[3])
 	require.IsType(t, codexDetector{}, r.detectors[4])
 	require.IsType(t, copilotDetector{}, r.detectors[5])
-	require.IsType(t, openAIDetector{}, r.detectors[6])
-	require.IsType(t, grokDetector{}, r.detectors[7])
-	require.IsType(t, kiloDetector{}, r.detectors[8])
-	require.IsType(t, kiroDetector{}, r.detectors[9])
-	require.IsType(t, claudeCodeDetector{}, r.detectors[10])
-	require.IsType(t, claudeDetector{}, r.detectors[11])
-	require.IsType(t, claudeDesktopDetector{}, r.detectors[12])
-	require.IsType(t, opencodeDetector{}, r.detectors[13])
-	require.IsType(t, antigravityDetector{}, r.detectors[14])
-	require.IsType(t, kimiDetector{}, r.detectors[15])
-	require.IsType(t, zedDetector{}, r.detectors[16])
+	require.IsType(t, fxDetector{}, r.detectors[6])
+	require.IsType(t, openAIDetector{}, r.detectors[7])
+	require.IsType(t, grokDetector{}, r.detectors[8])
+	require.IsType(t, kiloDetector{}, r.detectors[9])
+	require.IsType(t, kiroDetector{}, r.detectors[10])
+	require.IsType(t, claudeCodeDetector{}, r.detectors[11])
+	require.IsType(t, claudeDetector{}, r.detectors[12])
+	require.IsType(t, claudeDesktopDetector{}, r.detectors[13])
+	require.IsType(t, opencodeDetector{}, r.detectors[14])
+	require.IsType(t, antigravityDetector{}, r.detectors[15])
+	require.IsType(t, kimiDetector{}, r.detectors[16])
+	require.IsType(t, zedDetector{}, r.detectors[17])
 }
 
 func TestNewRegistry_PriorityOrder(t *testing.T) {
