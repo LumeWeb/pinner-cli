@@ -242,6 +242,12 @@ var profileAliasTargets = map[HostType]HostType{
 	// source-path). It is its own HostType so host-specific gating can use
 	// HostIs(HostZed), but inherits HostGeneric's declaration.
 	HostZed: HostGeneric,
+
+	// fx (fx.sh) is a co-located stdio client (clientInfo name "fx") whose
+	// capability surface is exactly the generic stdio profile (co-located,
+	// sink-local, source-path). It is its own HostType so host-specific gating
+	// can use HostIs(HostFX), but inherits HostGeneric's declaration.
+	HostFX: HostGeneric,
 }
 
 // ProfileForTransport returns the generic profile for a transport kind.
