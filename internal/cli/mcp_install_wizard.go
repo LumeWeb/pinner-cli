@@ -246,10 +246,11 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 		// Internal plumbing: resolving/finalizing the endpoint from the already
 		// collected config is never a user-facing decision — hide it like
 		// Resolve Binary. Execution is unaffected; only the step list rendering
-		// drops it.
+		// drops it. Applicable only to a remote (http) install; dropped (never
+		// numbered or skipped) on stdio.
 		Hidden_: true,
-		SkipFunc: func(s *InstallState) bool {
-			return s.Transport != install.TransportHTTP || !anySupportsTransport(s.Agents, install.TransportHTTP)
+		ApplicableFunc: func(s *InstallState) bool {
+			return !httpTunnelSkipped(s)
 		},
 		ExecuteFunc: func(ctx context.Context, s *InstallState) error {
 			// If the env-write step staged a failure (e.g. reconcile of explicit
@@ -271,13 +272,16 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 	// "AuthToken" field in the tunnel-specific configuration step, so this step
 	// is skipped (hasTunnelProvider) — never prompting for the same secret
 	// twice. Skipped in non-interactive mode (--non-interactive; token sourced
-	// from flags/env) and for non-http transports (stdio needs no credential).
+	// from flags/env). The prompt only applies to a remote (http) transport —
+	// stdio needs no credential, so the step is dropped there entirely (it is
+	// not numbered and never shows a "skipped" banner).
 	steps = append(steps, wizard.StepFunc[*InstallState]{
 		Name_: "MCP Password",
+		ApplicableFunc: func(s *InstallState) bool {
+			return !httpTunnelSkipped(s)
+		},
 		SkipFunc: func(s *InstallState) bool {
 			return s.NonInteractive ||
-				s.Transport != install.TransportHTTP ||
-				!anySupportsTransport(s.Agents, install.TransportHTTP) ||
 				// Context-dependent single ask: on a tunnel install the shared
 				// auth token was already collected by the tunnel-specific
 				// configuration step (the shared "AuthToken" field), so asking
@@ -310,9 +314,9 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 		wizard.StepFunc[*InstallState]{
 			Name_:   "Resolve Binary",
 			Hidden_: true, // internal plumbing: resolving the local binary to launch is never a user-facing step
-			SkipFunc: func(s *InstallState) bool {
-				// Only needed for stdio installs.
-				return s.Transport != "" && s.Transport != install.TransportStdio
+			// Only needed for stdio installs; dropped (not applicable) for http.
+			ApplicableFunc: func(s *InstallState) bool {
+				return s.Transport == "" || s.Transport == install.TransportStdio
 			},
 			ExecuteFunc: func(_ context.Context, s *InstallState) error {
 				path, err := resolveBinary()

@@ -32,7 +32,7 @@ func TestDelegate_RunsNestedFlow(t *testing.T) {
 
 	expected := []string{
 		"ShowWelcome",
-		"ShowStepProgress(1,1,Install MCP)",
+		"ShowStepProgress(1,Install MCP)",
 		"ShowCompletion",
 	}
 	require.True(t, mock.VerifyCalls(expected))
@@ -127,7 +127,7 @@ func TestDelegate_ComposesWithSkip(t *testing.T) {
 
 	steps := []Step[*string]{
 		StepFunc[*string]{
-			Name_:   "Skip-Guard",
+			Name_:    "Skip-Guard",
 			SkipFunc: func(*string) bool { return true },
 		},
 		Delegate[*string]("Install MCP", func(_ context.Context, _ *string) error {

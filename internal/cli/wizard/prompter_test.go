@@ -60,7 +60,7 @@ func TestRun_HiddenStepExecutesButDoesNotRender(t *testing.T) {
 	// the "of N" total.
 	expected := []string{
 		"ShowWelcome",
-		"ShowStepProgress(1,1,Visible)",
+		"ShowStepProgress(1,Visible)",
 		"ShowCompletion",
 	}
 	require.True(t, mock.VerifyCalls(expected), "hidden steps must not render any progress/skipped banner")

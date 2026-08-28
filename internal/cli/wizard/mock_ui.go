@@ -92,8 +92,8 @@ func (m *MockUI) errorIfSet() error {
 	return nil
 }
 
-func (m *MockUI) ShowStepProgress(_ context.Context, current, total int, stepName string) error {
-	m.RecordCall(fmt.Sprintf("ShowStepProgress(%d,%d,%s)", current, total, stepName))
+func (m *MockUI) ShowStepProgress(_ context.Context, current int, stepName string) error {
+	m.RecordCall(fmt.Sprintf("ShowStepProgress(%d,%s)", current, stepName))
 	return m.errorIfSet()
 }
 

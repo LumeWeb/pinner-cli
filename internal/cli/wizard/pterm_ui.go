@@ -37,8 +37,10 @@ func (p *PTermUI) ShowWelcome() error {
 	return err
 }
 
-func (p *PTermUI) ShowStepProgress(_ context.Context, current, total int, stepName string) error {
-	pterm.DefaultSection.Printf("Step %d of %d: %s\n", current, total, stepName)
+func (p *PTermUI) ShowStepProgress(_ context.Context, current int, stepName string) error {
+	// Steps that are not applicable to the configuration are dropped before
+	// numbering, so current is a gap-free ordinal over the steps actually shown.
+	pterm.DefaultSection.Printf("Step %d: %s\n", current, stepName)
 	return nil
 }
 
