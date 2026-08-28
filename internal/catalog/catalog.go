@@ -1197,6 +1197,13 @@ func inputSchemaFromArgs(name string, args []OperationArg) json.RawMessage {
 	props := make(map[string]any, len(args))
 	for _, a := range args {
 		p := map[string]any{"type": jsonType(a.Type)}
+		// A string-slice arg renders as a JSON Schema "array". Every array type
+		// must declare its element schema or strict hosts (e.g. AWS Bedrock and
+		// several MCP validators) reject the tool at registration with "array
+		// type must have items". Only ArgTypeStringSlice maps to "array" today.
+		if a.Type == ArgTypeStringSlice {
+			p["items"] = map[string]any{"type": "string"}
+		}
 		// Advertise allowed values for an enum-constrained arg, so a model on
 		// the MCP surface gets the guidance instead of guessing (which would
 		// only be rejected at dispatch).
@@ -1241,15 +1248,13 @@ func inputSchemaFromArgs(name string, args []OperationArg) json.RawMessage {
 	if len(required) > 0 {
 		sch["required"] = required
 	}
-	// Exactly-one-of selector groups: each group of args sharing a
-	// SelectionGroup name is advertised as a oneOf of per-member
-	// required+value alternatives, so the model supplies exactly one of them
-	// (never several). The runtime gate (enforceSelectionGroups) enforces the
-	// same contract from the same SelectionGroup field; this schema clause is
-	// guidance that lets a model avoid guessing before dispatch.
-	if oneOf := selectionGroupOneOf(args); len(oneOf) > 0 {
-		sch["oneOf"] = oneOf
-	}
+	// NOTE: exactly-one-of SelectionGroup members are deliberately NOT expressed
+	// as a root-level JSON Schema oneOf: several hosting surfaces (AWS Bedrock,
+	// Copilot, and other MCP/model gateways) implement only a subset of JSON
+	// Schema and reject oneOf/anyOf/allOf at the top level of input_schema. The
+	// XOR contract is instead enforced at dispatch by enforceSelectionGroups
+	// (feeding ErrSelector), which is the authoritative gate.
+	//
 	// If we fail to marshal (cannot happen for these fixed types), fall back
 	// to an empty object schema rather than returning nil.
 	raw, err := json.Marshal(sch)
@@ -1257,118 +1262,6 @@ func inputSchemaFromArgs(name string, args []OperationArg) json.RawMessage {
 		raw = []byte(`{"type":"object","properties":{}}`)
 	}
 	return raw
-}
-
-// selectionGroupOneOf builds value-aware JSON Schema oneOf clauses for args
-// grouped by SelectionGroup. It expresses exactly-one-of over group members
-// while honoring each member's type semantics (JSON Schema "required" is
-// presence-based, so it must be refined for members whose "selected" state is
-// not mere presence):
-//
-//   - A bool member is only "selected" when it is true, so the other branch
-//     forbids it via {const:true} (allowing an explicit false), and the member's
-//     own branch requires {const:true}.
-//   - A string-slice member is only "selected" when non-empty (mirroring the
-//     runtime selectorMemberSelected len>0 checks), so the other branch forbids
-//     it via {required, properties:{minItems:1}} (an empty array is NOT
-//     selected) and the member's own branch requires {minItems:1}.
-//   - A scalar member (string, int, ...) is selected by mere presence, so the
-//     other branch forbids it with not:{required:[...]}.
-//
-// For a group {cids[] (slice), all (bool)} this yields:
-//
-//	[{required:[cids], properties:{cids:{minItems:1}},
-//	  not:{anyOf:[{required:[all], properties:{all:{const:true}}}]}},
-//	 {required:[all], properties:{all:{const:true}},
-//	  not:{anyOf:[{required:[cids], properties:{cids:{minItems:1}}}]}}]
-//
-// so {cids:[...]}, {all:true}, and {cids:[], all:true} (empty cids is unpin-all,
-// matching the runtime) all validate, while {cids:[...], all:true} matches zero
-// branches. For groups with 3+ members every "other" constraint is accumulated
-// under a single not:{anyOf:[...]} so exactly-one is enforced across all
-// members. This is schema guidance for the model; the runtime gate
-// (enforceSelectionGroups, feeding ErrSelector) enforces the same contract from
-// the same SelectionGroup field at dispatch.
-func selectionGroupOneOf(args []OperationArg) []any {
-	groups := make(map[string][]OperationArg)
-	order := []string{}
-	for _, a := range args {
-		if a.SelectionGroup == "" {
-			continue
-		}
-		if _, ok := groups[a.SelectionGroup]; !ok {
-			order = append(order, a.SelectionGroup)
-		}
-		groups[a.SelectionGroup] = append(groups[a.SelectionGroup], a)
-	}
-	if len(order) == 0 {
-		return nil
-	}
-	var clauses []any
-	for _, g := range order {
-		members := groups[g]
-		if len(members) < 2 {
-			continue // a single-member group has no XOR to express
-		}
-		for _, m := range members {
-			clause := map[string]any{"required": []string{m.Name}}
-			var nots []any
-			for _, o := range members {
-				if o.Name == m.Name {
-					// A member is only "selected" when it holds a meaningful
-					// value: bools are selected as true, slices as non-empty
-					// (matching the runtime's selectorMemberSelected). Pair that
-					// value constraint with the presence requirement above.
-					if sel := selectionConstraint(o); sel != nil {
-						clause["properties"] = map[string]any{o.Name: sel}
-					}
-					continue
-				}
-				if sel := selectionConstraint(o); sel != nil {
-					// Forbid the other member being SELECTED. JSON Schema
-					// "properties" is vacuous when the key is absent, so pair
-					// the value constraint with "required": for bools true is
-					// selected (absent or false is fine); for slices an empty
-					// array is NOT selected (so cids:[] alongside all:true is
-					// valid unpin-all, matching the runtime).
-					nots = append(nots, map[string]any{
-						"required":   []string{o.Name},
-						"properties": map[string]any{o.Name: sel},
-					})
-				} else {
-					// Scalar other: mere presence selects it, so forbid it.
-					nots = append(nots, map[string]any{"required": []string{o.Name}})
-				}
-			}
-			// Accumulate every "other" constraint under a single not:{anyOf:...}
-			// so a 3+ member group forbids all other members, not just the last.
-			if len(nots) > 0 {
-				clause["not"] = map[string]any{"anyOf": nots}
-			}
-			clauses = append(clauses, clause)
-		}
-	}
-	return clauses
-}
-
-// selectionConstraint returns the JSON Schema constraint that marks the arg as
-// "selected", or nil for scalar args (which are selected by mere presence).
-// Bools are selected as true (their explicit false is a valid "not selected"
-// value); string slices are selected only when non-empty, mirroring the runtime
-// selectorMemberSelected checks the catalogop handlers use.
-func selectionConstraint(a OperationArg) map[string]any {
-	switch a.Type {
-	case ArgTypeBool:
-		return map[string]any{"const": true}
-	case ArgTypeNullableBool:
-		// Selected only when true (its nil/false are valid "not selected"
-		// values), mirroring selectorMemberSelected.
-		return map[string]any{"const": true}
-	case ArgTypeStringSlice:
-		return map[string]any{"minItems": 1}
-	default:
-		return nil
-	}
 }
 
 // jsonType maps an ArgType to its JSON Schema "type". Slices become "array";

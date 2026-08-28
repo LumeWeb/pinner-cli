@@ -474,10 +474,12 @@ func TestAgentRequiredMcpOnly(t *testing.T) {
 	}
 }
 
-// TestInputSchemaEmitsSelectionGroupOneOf pins the schema advertisement: args
-// sharing a SelectionGroup are advertised as a JSON Schema oneOf so the model
-// supplies exactly one of them, mirroring the runtime gate (ErrSelector).
-func TestInputSchemaEmitsSelectionGroupOneOf(t *testing.T) {
+// TestInputSchemaArraysHaveItems pins the JSON Schema requirement that every
+// array-typed property declares its element schema (items). Hosting surfaces
+// (AWS Bedrock and several MCP validators) reject tools whose input_schema has
+// an array without items, so a string-slice arg must always render as
+// {"type":"array","items":{"type":"string"}}.
+func TestInputSchemaArraysHaveItems(t *testing.T) {
 	c := NewCatalog()
 	if err := c.Add(NewOperation(OperationSpec{
 		Name: "pins.rm", Title: "Remove pins", Summary: "remove pins",
@@ -487,7 +489,7 @@ func TestInputSchemaEmitsSelectionGroupOneOf(t *testing.T) {
 			{Name: "confirm", Type: ArgTypeBool, Required: true},
 			{Name: "cids", Type: ArgTypeStringSlice, SelectionGroup: "cids_or_all"},
 			{Name: "all", Type: ArgTypeBool, SelectionGroup: "cids_or_all"},
-			{Name: "status", Type: ArgTypeString},
+			{Name: "meta", Type: ArgTypeStringSlice},
 		},
 		Handler: &captureHandler{},
 	})); err != nil {
@@ -502,70 +504,72 @@ func TestInputSchemaEmitsSelectionGroupOneOf(t *testing.T) {
 	if err := json.Unmarshal(td.InputSchema, &sch); err != nil {
 		t.Fatalf("InputSchema not valid JSON: %v", err)
 	}
-	oneOf, ok := sch["oneOf"].([]any)
-	if !ok {
-		t.Fatalf("schema oneOf missing or not a list: %#v", sch["oneOf"])
+	if bad := assertArraysHaveItems(sch, ""); len(bad) > 0 {
+		t.Fatalf("array-typed properties missing items: %v (schema %#v)", bad, sch)
 	}
-	if len(oneOf) != 2 {
-		t.Fatalf("oneOf has %d clauses, want 2 (cids XOR all): %#v", len(oneOf), oneOf)
-	}
-	// Value-aware clauses: cids branch forbids all:{const:true} (so explicit
-	// all:false alongside cids is valid); all branch requires all:{const:true}.
-	cidsClause := oneOf[0].(map[string]any)
-	allClause := oneOf[1].(map[string]any)
-	if !contains(toStrings(cidsClause["required"]), "cids") {
-		t.Fatalf("first clause must require cids: %#v", cidsClause)
-	}
-	// The cids branch itself must require a NON-EMPTY array (matching the
-	// runtime selectorMemberSelected len>0): an empty but present [] does not
-	// select cids.
-	cidsMin := cidsClause["properties"].(map[string]any)["cids"].(map[string]any)
-	if cidsMin["minItems"] != float64(1) {
-		t.Fatalf("cids branch must require cids:{minItems:1}, got %#v", cidsMin)
-	}
-	cidsNot := cidsClause["not"].(map[string]any)
-	cidsAnyOf := cidsNot["anyOf"].([]any)
-	cidsForbid := cidsAnyOf[0].(map[string]any)
-	// The bool forbid must pair presence with the const, so an absent `all`
-	// (normal cids-only call) is not vacuous-caught: require all present-true.
-	if !contains(toStrings(cidsForbid["required"]), "all") {
-		t.Fatalf("cids branch bool-forbid must require all presence (avoid vacuum): %#v", cidsForbid)
-	}
-	allConst := cidsForbid["properties"].(map[string]any)["all"].(map[string]any)
-	if allConst["const"] != true {
-		t.Fatalf("cids branch must forbid all:{const:true}, got %#v", allConst)
-	}
-	if !contains(toStrings(allClause["required"]), "all") {
-		t.Fatalf("second clause must require all: %#v", allClause)
-	}
-	allProps := allClause["properties"].(map[string]any)["all"].(map[string]any)
-	if allProps["const"] != true {
-		t.Fatalf("all branch must require all:{const:true}, got %#v", allProps)
-	}
-	// The all-branch's forbid of cids must require a NON-EMPTY cids, so
-	// {cids:[], all:true} is a valid unpin-all (empty cids is not selected),
-	// matching the runtime.
-	allNot := allClause["not"].(map[string]any)
-	allAnyOf := allNot["anyOf"].([]any)
-	allCidsForbid := allAnyOf[0].(map[string]any)
-	allCidsMin := allCidsForbid["properties"].(map[string]any)["cids"].(map[string]any)
-	if allCidsMin["minItems"] != float64(1) {
-		t.Fatalf("all branch cids-forbid must require cids:{minItems:1}, got %#v", allCidsMin)
-	}
-	// The exclusive args must NOT be in top-level required (neither is individually required).
-	if req, ok := sch["required"].([]any); ok {
-		for _, r := range req {
-			if r == "cids" || r == "all" {
-				t.Fatalf("exclusive arg %v must not be in top-level required", r)
-			}
+	// The cids/meta array properties must carry a string items schema.
+	for _, prop := range []string{"cids", "meta"} {
+		ps, ok := sch["properties"].(map[string]any)[prop].(map[string]any)
+		if !ok {
+			t.Fatalf("property %s missing from schema", prop)
+		}
+		if ps["type"] != "array" {
+			t.Fatalf("property %s expected type array, got %#v", prop, ps["type"])
+		}
+		items, ok := ps["items"].(map[string]any)
+		if !ok || items["type"] != "string" {
+			t.Fatalf("property %s must emit items:{\"type\":\"string\"}, got %#v", prop, ps["items"])
 		}
 	}
 }
 
-// TestInputSchemaSelectionGroupOneOfAccumulates pins the 3+ member case: each
-// branch's "not" must aggregate constraints for ALL other members (under
-// not:{anyOf:[...]}), not just the last one, so exactly-one XOR holds.
-func TestInputSchemaSelectionGroupOneOfAccumulates(t *testing.T) {
+// assertArraysHaveItems recursively walks a JSON Schema and returns the dotted
+// paths of every type:array node that lacks an items schema. It descends into
+// properties and items so nested schemas are covered as well.
+func assertArraysHaveItems(node any, path string) []string {
+	switch v := node.(type) {
+	case map[string]any:
+		if v["type"] == "array" {
+			if _, ok := v["items"]; !ok {
+				key := "schema"
+				if path != "" {
+					key = path
+				}
+				return []string{key}
+			}
+		}
+		var out []string
+		if props, ok := v["properties"].(map[string]any); ok {
+			for k, p := range props {
+				pth := k
+				if path != "" {
+					pth = path + "." + k
+				}
+				out = append(out, assertArraysHaveItems(p, pth)...)
+			}
+		}
+		if it, ok := v["items"]; ok {
+			out = append(out, assertArraysHaveItems(it, path+".items")...)
+		}
+		return out
+	case []any:
+		var out []string
+		for _, e := range v {
+			out = append(out, assertArraysHaveItems(e, path)...)
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+// TestInputSchemaNoRootCombinator pins the compatibility policy: a generated
+// MCP tool input schema must never carry oneOf/anyOf/allOf at the root. Several
+// hosts (AWS Bedrock, Copilot, and other model gateways) implement only a
+// subset of JSON Schema and reject combinators at the top level of
+// input_schema. Exactly-one-of SelectionGroup members are enforced at dispatch
+// by enforceSelectionGroups, not advertised as a root-level schema oneOf.
+func TestInputSchemaNoRootCombinator(t *testing.T) {
 	c := NewCatalog()
 	if err := c.Add(NewOperation(OperationSpec{
 		Name: "pick.one", Title: "Pick one", Summary: "pick one",
@@ -589,22 +593,15 @@ func TestInputSchemaSelectionGroupOneOfAccumulates(t *testing.T) {
 	if err := json.Unmarshal(td.InputSchema, &sch); err != nil {
 		t.Fatalf("InputSchema not valid JSON: %v", err)
 	}
-	oneOf, ok := sch["oneOf"].([]any)
-	if !ok {
-		t.Fatalf("schema oneOf missing or not a list: %#v", sch["oneOf"])
+	// The SelectionGroup schema must still emit items for its slice member.
+	if bad := assertArraysHaveItems(sch, ""); len(bad) > 0 {
+		t.Fatalf("array-typed properties missing items: %v (schema %#v)", bad, sch)
 	}
-	if len(oneOf) != 3 {
-		t.Fatalf("oneOf has %d clauses, want 3 (one per member): %#v", len(oneOf), oneOf)
-	}
-	// The branch for "a" must forbid both other members via a 2-element anyOf.
-	aClause := oneOf[0].(map[string]any)
-	if !contains(toStrings(aClause["required"]), "a") {
-		t.Fatalf("clause 0 must require a: %#v", aClause)
-	}
-	aNot := aClause["not"].(map[string]any)
-	aAnyOf := aNot["anyOf"].([]any)
-	if len(aAnyOf) != 2 {
-		t.Fatalf("a branch must forbid 2 other members via anyOf of length 2, got %#v", aNot)
+	// And it must not advertise the group as a root-level combinator.
+	for _, k := range []string{"oneOf", "anyOf", "allOf"} {
+		if _, ok := sch[k]; ok {
+			t.Fatalf("root-level %q must not appear (incompatible with strict hosts); got %#v", k, sch[k])
+		}
 	}
 }
 
