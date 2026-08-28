@@ -18,6 +18,7 @@ func NewRegistry() *DetectorRegistry {
 	return &DetectorRegistry{
 		detectors: []Detector{
 			aiderDeskDetector{},
+			gooseDetector{},
 			devinDetector{},
 			clineDetector{},
 			codexDetector{},

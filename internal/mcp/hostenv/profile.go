@@ -17,10 +17,17 @@ const (
 	HostKilo          HostType = "kilo"
 	HostClaude        HostType = "claude"
 	HostClaudeDesktop HostType = "claude-desktop"
+
+	// HostStdioApps is a synthetic host representing any co-located stdio
+	// client that also renders MCP Apps UI. It is the alias target shared by
+	// the concrete stdio hosts that present this surface (Claude Desktop,
+	// Goose); it is never detected directly.
+	HostStdioApps     HostType = "stdio-apps"
 	HostAiderDesk     HostType = "aider-desk"
 	HostDevin         HostType = "devin"
 	HostCline         HostType = "cline"
 	HostCodex         HostType = "codex"
+	HostGoose         HostType = "goose"
 	HostGeneric       HostType = "generic"
 )
 
