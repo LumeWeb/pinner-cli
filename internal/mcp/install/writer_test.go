@@ -422,7 +422,6 @@ func TestDotNotationConfigKey(t *testing.T) {
 	}
 	servers := readServerMap(t, FormatJSON, path, "nested.servers")
 	assertMapEqual(t, "dot-entry", servers["srv"].(map[string]any), map[string]any{
-		"source":  "custom",
 		"command": "pinner",
 		"args":    []string(nil),
 	})

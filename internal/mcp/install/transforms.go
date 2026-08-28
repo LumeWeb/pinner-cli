@@ -108,16 +108,15 @@ func transformOpenCode(_ string, cfg McpServerConfig, local bool) any {
 	return entry
 }
 
-// transformZed converts into Zed's context_servers entry shape.
+// transformZed converts into Zed's context_servers entry shape. Zed
+// determines local vs remote from which fields are present, so no discriminator
+// is emitted.
 //
-// Remote: {source:"custom", type (http default), url, headers?}
-// Local:  {source:"custom", command, args, env?}
+// Remote: {url, headers?}
+// Local:  {command, args, env?}
 func transformZed(_ string, cfg McpServerConfig, local bool) any {
-	entry := map[string]any{
-		"source": "custom",
-	}
+	entry := map[string]any{}
 	if cfg.IsRemote() {
-		entry["type"] = transportType(cfg)
 		entry["url"] = cfg.URL
 		if len(cfg.Headers) > 0 {
 			entry["headers"] = cfg.Headers
