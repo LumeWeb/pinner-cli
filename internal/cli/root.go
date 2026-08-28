@@ -360,7 +360,7 @@ For more help on any command: pinner <command> --help`,
 				}
 				return result, nil
 			}
-			vaultPutHandler = func(ctx context.Context, reader io.Reader, size int64, path string) (any, error) {
+			vaultPutHandler = func(ctx context.Context, reader io.Reader, size int64, path string, meta map[string]any) (any, error) {
 				profile, err := vault.ResolveProfile("")
 				if err != nil {
 					return nil, err
@@ -370,7 +370,14 @@ For more help on any command: pinner <command> --help`,
 					return nil, err
 				}
 				defer vaultSvc.Close()
-				return vaultSvc.Put(ctx, reader, size, path, nil)
+				// Stamp the receiving profile onto the metadata the tool handler
+				// built (src/host + caller KV); profile is resolved here where
+				// service construction happens, not in the tool surface.
+				if meta == nil {
+					meta = map[string]any{}
+				}
+				meta[vault.MetaKeyProfile] = profile
+				return vaultSvc.Put(ctx, reader, size, path, meta)
 			}
 
 			// vaultGet is the vault_get_file sink executor: it streams a single
@@ -422,7 +429,7 @@ For more help on any command: pinner <command> --help`,
 			// archive is extracted to a temp dir and then written per-file
 			// the same way. The vault service is built here, where profile
 			// resolution and service construction are available.
-			localPathVaultPut = func(ctx context.Context, path, vaultPath, archiveMode string) (any, error) {
+			localPathVaultPut = func(ctx context.Context, path, vaultPath, archiveMode string, meta map[string]any) (any, error) {
 				// Operator-set per-tool cap, applied to every entry (single
 				// file, directory tree, or archive) so no local-path surface
 				// bypasses the same limit enforced on the other upload tools.
@@ -440,11 +447,21 @@ For more help on any command: pinner <command> --help`,
 					return nil, err
 				}
 				defer vaultSvc.Close()
-				put := func(ctx context.Context, r io.Reader, size int64, vp string) (any, error) {
-					return vaultSvc.Put(ctx, r, size, vp, nil)
+				// Stamp the receiving profile onto the tool-handler-built
+				// metadata (src/host + caller KV), then thread the same map to
+				// every per-file write so a directory/archive lands uniformly.
+				if meta == nil {
+					meta = map[string]any{}
+				}
+				meta[vault.MetaKeyProfile] = profile
+				put := func(ctx context.Context, r io.Reader, size int64, vp string, _ map[string]any) (any, error) {
+					// The profile-stamped metadata is captured in `meta`; the
+					// per-file VaultPutFunc signature carries it too (DirToVault
+					// threads it) so the closure stays drop-in compatible.
+					return vaultSvc.Put(ctx, r, size, vp, meta)
 				}
 				if info.IsDir() {
-					return mcpvault.DirToVault(ctx, path, vaultPath, put, maxBytes)
+					return mcpvault.DirToVault(ctx, path, vaultPath, meta, put, maxBytes)
 				}
 				// Regular file (or unknown). In convert mode, sniff for an
 				// archive and materialize its contents to a temp dir, then
@@ -474,7 +491,7 @@ For more help on any command: pinner <command> --help`,
 						if err := materializeArchive(ctx, path, tmp); err != nil {
 							return nil, err
 						}
-						return mcpvault.DirToVault(ctx, tmp, vaultPath, put, maxBytes)
+						return mcpvault.DirToVault(ctx, tmp, vaultPath, meta, put, maxBytes)
 					}
 				}
 				// Not an archive (or preserve mode): put the file as a single
@@ -489,7 +506,7 @@ For more help on any command: pinner <command> --help`,
 					return nil, err
 				}
 				defer f.Close()
-				return vaultSvc.Put(ctx, f, info.Size(), vaultPath, nil)
+				return vaultSvc.Put(ctx, f, info.Size(), vaultPath, meta)
 			}
 
 			// Wire the resource factory with the services we just built.
@@ -561,11 +578,11 @@ For more help on any command: pinner <command> --help`,
 			}
 			return uploadHandler(ctx, reader, size, name, wait, archiveMode, wrap)
 		}),
-		mcpadapter.WithVaultPutHandler(func(ctx context.Context, reader io.Reader, size int64, path string) (any, error) {
+		mcpadapter.WithVaultPutHandler(func(ctx context.Context, reader io.Reader, size int64, path string, meta map[string]any) (any, error) {
 			if vaultPutHandler == nil {
 				return nil, notInitErr("vault upload")
 			}
-			return vaultPutHandler(ctx, reader, size, path)
+			return vaultPutHandler(ctx, reader, size, path, meta)
 		}),
 		mcpadapter.WithIPFSDownload(func(ctx context.Context, ipfsPath string, w io.Writer) error {
 			if ipfsDownload == nil {
@@ -633,11 +650,11 @@ For more help on any command: pinner <command> --help`,
 		// server is co-located with the caller's files (stdio/local); the
 		// handler homes the file-vs-directory-vs-archive decision via the
 		// vault service + ipfs-content.
-		mcpadapter.WithLocalPathVaultPut(func(ctx context.Context, path, vaultPath, archiveMode string) (any, error) {
+		mcpadapter.WithLocalPathVaultPut(func(ctx context.Context, path, vaultPath, archiveMode string, meta map[string]any) (any, error) {
 			if localPathVaultPut == nil {
 				return nil, notInitErr("local path vault")
 			}
-			return localPathVaultPut(ctx, path, vaultPath, archiveMode)
+			return localPathVaultPut(ctx, path, vaultPath, archiveMode, meta)
 		}),
 		// Honor the configured max_mcp_upload_size (default 1 GiB when unset)
 		// as the per-tool file-upload cap for the relay URL, data URI, the

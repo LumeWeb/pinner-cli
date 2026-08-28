@@ -8,6 +8,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
+	corevault "go.lumeweb.com/pinner-cli/internal/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 
@@ -75,7 +76,11 @@ func vaultUploadSubmitDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescrip
 			// mint validates the destination (file path, inside the uploads
 			// scope, no traversal) before minting, refusing to mint a PUT
 			// endpoint that could write anywhere else in the vault.
-			url, err := vu.Mint(in.VaultPath, ttl)
+			var hostType string
+			if req.Caps != nil && req.Caps.Profile != nil {
+				hostType = string(req.Caps.Profile.HostType)
+			}
+			url, err := vu.Mint(in.VaultPath, ttl, corevault.StampedMetadata("mcp", hostType, "", nil))
 			if err != nil {
 				return model.ToolResult{}, err
 			}

@@ -61,11 +61,11 @@ func uploadDescriptorFor(coLocated, tunnelOpenAI bool) model.ToolDescriptor {
 // vaultDescriptorFor builds a vault_put_file descriptor for the given transport.
 func vaultDescriptorFor(coLocated, tunnelOpenAI bool) model.ToolDescriptor {
 	return vault.NewVaultPutFileDescriptor(transportFeatures(coLocated, tunnelOpenAI), coLocated, tunnelOpenAI,
-		func(ctx context.Context, path, vaultPath, archiveMode string) (any, error) {
+		func(ctx context.Context, path, vaultPath, archiveMode string, _ map[string]any) (any, error) {
 			return map[string]any{"vault_path": vaultPath}, nil
 		},
 		transfer.NewVaultHTTPUpload(nil, 0),
-		func(ctx context.Context, r io.Reader, sz int64, vaultPath string) (any, error) {
+		func(ctx context.Context, r io.Reader, sz int64, vaultPath string, _ map[string]any) (any, error) {
 			return map[string]any{"vault_path": vaultPath}, nil
 		},
 		nil, 0,

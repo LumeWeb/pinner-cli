@@ -7,8 +7,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	corevault "go.lumeweb.com/pinner-cli/internal/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 )
 
 // vaultPutDescriptor builds a unified vault_put_file descriptor for a given
@@ -19,7 +21,7 @@ func vaultPutDescriptor(coLocated, remote bool, pathFn LocalPathVaultPutHandler,
 }
 
 func TestVaultPutFileDescriptorRequiresVaultPath(t *testing.T) {
-	desc := vaultPutDescriptor(true, false, func(ctx context.Context, path, vaultPath, archiveMode string) (any, error) {
+	desc := vaultPutDescriptor(true, false, func(ctx context.Context, path, vaultPath, archiveMode string, _ map[string]any) (any, error) {
 		t.Fatal("handler must not run without vault_path")
 		return nil, nil
 	}, nil, nil)
@@ -31,7 +33,7 @@ func TestVaultPutFileDescriptorRequiresVaultPath(t *testing.T) {
 
 func TestVaultPutFileDescriptorStdioPath(t *testing.T) {
 	var gotPath, gotVaultPath, gotMode string
-	desc := vaultPutDescriptor(true, false, func(ctx context.Context, path, vaultPath, archiveMode string) (any, error) {
+	desc := vaultPutDescriptor(true, false, func(ctx context.Context, path, vaultPath, archiveMode string, _ map[string]any) (any, error) {
 		gotPath, gotVaultPath, gotMode = path, vaultPath, archiveMode
 		return map[string]any{"vault_path": vaultPath}, nil
 	}, nil, nil)
@@ -51,7 +53,7 @@ func TestVaultPutFileDescriptorStdioPath(t *testing.T) {
 }
 
 func TestVaultPutFileDescriptorStdioRejectsMint(t *testing.T) {
-	desc := vaultPutDescriptor(true, false, func(ctx context.Context, path, vaultPath, archiveMode string) (any, error) {
+	desc := vaultPutDescriptor(true, false, func(ctx context.Context, path, vaultPath, archiveMode string, _ map[string]any) (any, error) {
 		t.Fatal("path handler must not run for mint")
 		return nil, nil
 	}, nil, nil)
@@ -104,7 +106,7 @@ func TestVaultPutFileDescriptorHTTPRejectsPath(t *testing.T) {
 func TestVaultPutFileDescriptorOpenAIData(t *testing.T) {
 	var gotVaultPath string
 	var size int64
-	desc := vaultPutDescriptor(false, true, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string) (any, error) {
+	desc := vaultPutDescriptor(false, true, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string, _ map[string]any) (any, error) {
 		size = sz
 		gotVaultPath = vaultPath
 		return map[string]any{"vault_path": vaultPath}, nil
@@ -123,7 +125,7 @@ func TestVaultPutFileDescriptorOpenAIData(t *testing.T) {
 func TestVaultPutFileDescriptorOpenAIRelayHonorsMaxBytes(t *testing.T) {
 	// The relayed url/data source must honor the operator-configured relay cap,
 	// not silently fall back to the 512 MiB package default.
-	desc := NewVaultPutFileDescriptor(transportFeatures(false, true), false, true, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string) (any, error) {
+	desc := NewVaultPutFileDescriptor(transportFeatures(false, true), false, true, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string, _ map[string]any) (any, error) {
 		t.Fatal("relay must not receive an oversized upload")
 		return nil, nil
 	}, nil, 4) // cap at 4 bytes
@@ -167,10 +169,10 @@ func TestVaultPutFileRejectsUnsafePathOnEverySourceBranch(t *testing.T) {
 	stdio := vaultPutDescriptor(true, false, noopPathFn, nil, nil)
 	vu := transfer.NewVaultHTTPUpload(nil, 0)
 	defer vu.Stop(context.Background())
-	http := vaultPutDescriptor(false, false, nil, vu, func(ctx context.Context, r io.Reader, sz int64, vaultPath string) (any, error) {
+	http := vaultPutDescriptor(false, false, nil, vu, func(ctx context.Context, r io.Reader, sz int64, vaultPath string, _ map[string]any) (any, error) {
 		return map[string]any{"stored": true}, nil
 	})
-	openai := vaultPutDescriptor(false, true, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string) (any, error) {
+	openai := vaultPutDescriptor(false, true, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string, _ map[string]any) (any, error) {
 		return map[string]any{"stored": true}, nil
 	})
 
@@ -224,7 +226,7 @@ func TestVaultPutFileRejectsUnsafePathOnEverySourceBranch(t *testing.T) {
 
 // noopPathFn is a successful no-op LocalPathVaultPutHandler used where a
 // branch's handler must be reached to prove path validation passed.
-func noopPathFn(ctx context.Context, path, vaultPath, archiveMode string) (any, error) {
+func noopPathFn(ctx context.Context, path, vaultPath, archiveMode string, _ map[string]any) (any, error) {
 	return map[string]any{"stored": true}, nil
 }
 
@@ -237,19 +239,19 @@ func TestVaultPutFileAnyFolderAcrossAllBranches(t *testing.T) {
 		args map[string]any
 	}{
 		{
-			desc: vaultPutDescriptor(true, false, noopPathFn, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string) (any, error) {
+			desc: vaultPutDescriptor(true, false, noopPathFn, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string, _ map[string]any) (any, error) {
 				return map[string]any{"stored": true}, nil
 			}),
 			args: map[string]any{"source": map[string]any{"mode": "path", "path": "/tmp/host/report.pdf"}},
 		},
 		{
-			desc: vaultPutDescriptor(false, false, nil, transfer.NewVaultHTTPUpload(nil, 0), func(ctx context.Context, r io.Reader, sz int64, vaultPath string) (any, error) {
+			desc: vaultPutDescriptor(false, false, nil, transfer.NewVaultHTTPUpload(nil, 0), func(ctx context.Context, r io.Reader, sz int64, vaultPath string, _ map[string]any) (any, error) {
 				return map[string]any{"stored": true}, nil
 			}),
 			args: map[string]any{"source": map[string]any{"mode": "mint"}},
 		},
 		{
-			desc: vaultPutDescriptor(false, true, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string) (any, error) {
+			desc: vaultPutDescriptor(false, true, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string, _ map[string]any) (any, error) {
 				return map[string]any{"stored": true}, nil
 			}),
 			args: map[string]any{"source": map[string]any{"mode": "data", "data": "data:;name=x.pdf;size=2;base64,aGk="}},
@@ -264,4 +266,36 @@ func TestVaultPutFileAnyFolderAcrossAllBranches(t *testing.T) {
 		require.NoError(t, err, "vault:/docs/f.pdf must be accepted")
 		require.False(t, res.IsError)
 	}
+}
+
+// TestVaultPutFileStampsMetadata verifies the stdio path handler receives the
+// auto-stamped write-context metadata the tool handler builds: src=mcp, host
+// from the request's detected profile, plus caller-supplied agent and KV. It
+// does NOT include profile (the CLI closure stamps that), so the caller-supplied
+// metadata is asserted to carry src + host + agent + kind.
+func TestVaultPutFileStampsMetadata(t *testing.T) {
+	var got map[string]any
+	desc := vaultPutDescriptor(true, false, func(ctx context.Context, path, vaultPath, archiveMode string, meta map[string]any) (any, error) {
+		got = meta
+		return map[string]any{"vault_path": vaultPath}, nil
+	}, nil, nil)
+
+	req := model.ToolRequest{
+		Arguments: map[string]any{
+			"source":     map[string]any{"mode": "path", "path": "/tmp/x.bin"},
+			"vault_path": "vault:/docs/x.bin",
+			"agent":      "orchestrator-a",
+			"metadata":   map[string]any{"kind": "artifact", "project": "reports"},
+		},
+		Caps: &model.RequestCaps{Profile: &hostenv.PlatformProfile{HostType: hostenv.HostCodex}},
+	}
+	_, err := desc.Handler(context.Background(), req)
+	require.NoError(t, err)
+
+	require.Equal(t, "mcp", got[corevault.MetaKeySrc])
+	require.Equal(t, string(hostenv.HostCodex), got[corevault.MetaKeyHost])
+	require.Equal(t, "orchestrator-a", got["agent"])
+	require.Equal(t, "artifact", got["kind"])
+	require.Equal(t, "reports", got["project"])
+	require.NotContains(t, got, corevault.MetaKeyProfile, "profile is stamped by the CLI closure, not the tool handler")
 }

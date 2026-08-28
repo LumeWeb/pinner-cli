@@ -315,10 +315,18 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
 	}
+	// Project the well-known write-context keys onto the normalized search
+	// columns (source/host/agent) from the metadata map being stamped. The
+	// object's sealed metadata remains the durable source; these columns are
+	// the local searchable cache, reconciled on sync-down like tags.
+	recSource, recHost, recAgent := WriteContextColumns(metadata)
 	rec := File{
 		UUID:          fileID,
 		Name:          vp.Name,
 		DirectoryID:   dirID,
+		Source:        recSource,
+		Host:          recHost,
+		Agent:         recAgent,
 		// A freshly-minted path inserts as is_current=true so the partial
 		// unique index idx_files_live_name_dir (which only constrains
 		// is_current=1) still fires when a concurrent writer claims the same
@@ -646,6 +654,15 @@ func (s *vaultService) Search(_ context.Context, f SearchFilter) ([]SearchItem, 
 	if !f.Since.IsZero() {
 		q = q.Where("files.created_at >= ?", f.Since)
 	}
+	if f.Source != "" {
+		q = q.Where("files.source = ?", f.Source)
+	}
+	if f.Host != "" {
+		q = q.Where("files.host = ?", f.Host)
+	}
+	if f.Agent != "" {
+		q = q.Where("files.agent = ?", f.Agent)
+	}
 
 	// Bound results so a metadata search over a large vault never loads every
 	// match into memory at once; the tag/path assembly below is batched so a
@@ -726,6 +743,9 @@ func (s *vaultService) Search(_ context.Context, f SearchFilter) ([]SearchItem, 
 			UpdatedAt:     rec.UpdatedAt.Format(time.RFC3339),
 			Tags:          tagsByID[rec.ID],
 			Metadata:      metaOut,
+			Source:        rec.Source,
+			Host:          rec.Host,
+			Agent:         rec.Agent,
 		})
 	}
 	return items, nil
@@ -802,6 +822,9 @@ func (s *vaultService) Stat(ctx context.Context, vaultPath string) (*StatResult,
 		UpdatedAt:     record.UpdatedAt.Format(time.RFC3339),
 		Metadata:      metaOut,
 		Tags:          tags,
+		Source:        record.Source,
+		Host:          record.Host,
+		Agent:         record.Agent,
 	}, nil
 }
 
@@ -1577,6 +1600,10 @@ func upsertFromMeta(tx *gorm.DB, existing *File, meta FileMetadata, objectKey st
 		if err == nil {
 			existing.Metadata = datatypes.JSON(metaJSON)
 		}
+		// Reconcile the normalized write-context columns from the object's
+		// sealed metadata (same cache-as-remote pattern as tags), so a synced
+		// copy reconstructs src/host/agent on every device.
+		existing.Source, existing.Host, existing.Agent = WriteContextColumns(meta.Metadata)
 	}
 	// Drop is_current before the save: the row may be switching (name, dir) groups
 	// via a rename, and saving it as current in a new group it doesn't own yet
@@ -1704,6 +1731,10 @@ func (s *vaultService) adoptPreflight(ctx context.Context, obj *siastorage.Objec
 		Status:        FileStatusOK,
 		UpdatedAt:     time.Now().UTC(),
 	}
+	// Re-derive the normalized write-context columns from the caller's metadata
+	// map (carried forward into rec.Metadata above) so the adopted row keeps the
+	// same source/host/agent projection as the overwrite branch and the object.
+	rec.Source, rec.Host, rec.Agent = WriteContextColumns(fileMeta.Metadata)
 	// Carry forward the prior row's created-at (stable identity's birth time).
 	// The winner's prior ObjectKey is intentionally NOT carried: the adopted
 	// object re-pin below stamps the new content, and the winner's old row

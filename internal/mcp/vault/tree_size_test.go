@@ -77,7 +77,7 @@ func TestDirToVaultCapsEntries(t *testing.T) {
 	})
 
 	var got []string
-	res, err := DirToVault(context.Background(), dir, "vault:/docs", recordingPut(t, &got), 40)
+	res, err := DirToVault(context.Background(), dir, "vault:/docs", nil, recordingPut(t, &got), 40)
 	if err == nil {
 		t.Fatalf("expected DirToVault to reject aggregate oversize tree, got %d files", res.Total)
 	}

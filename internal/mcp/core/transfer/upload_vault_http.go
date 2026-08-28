@@ -42,11 +42,15 @@ type VaultHTTPUpload struct {
 	tokens  map[string]vaultHTTPToken
 	maxByte int64
 	now     func() time.Time
-	put     func(ctx context.Context, r io.Reader, size int64, vaultPath string) (any, error)
+	put     func(ctx context.Context, r io.Reader, size int64, vaultPath string, metadata map[string]any) (any, error)
 }
 
 type vaultHTTPToken struct {
 	vaultPath string
+	// metadata is the auto-stamped write context + caller KV sealed into the
+	// object when the minted PUT lands. It is captured at mint time (the tool
+	// call) and drained into the vault write when the out-of-band PUT arrives.
+	metadata  map[string]any
 	expiresAt time.Time
 }
 
@@ -54,7 +58,7 @@ type vaultHTTPToken struct {
 // authenticated vault write (same signature as VaultPutHandler) that a
 // minted PUT drains into; a nil put makes mint() register tokens but reject
 // the actual write, keeping the coordinator constructible for tests.
-func NewVaultHTTPUpload(put func(ctx context.Context, r io.Reader, size int64, vaultPath string) (any, error), maxBytes int64) *VaultHTTPUpload {
+func NewVaultHTTPUpload(put func(ctx context.Context, r io.Reader, size int64, vaultPath string, metadata map[string]any) (any, error), maxBytes int64) *VaultHTTPUpload {
 	if maxBytes <= 0 {
 		maxBytes = ieo.EffectiveRelayMaxBytes(0)
 	}
@@ -117,7 +121,7 @@ func (vu *VaultHTTPUpload) MaxBytes() int64 { return vu.maxByte }
 // a PUT to the minted endpoint can never write anywhere else in the vault. It
 // ensures the loopback listener is running in stdio mode so the URL is always
 // reachable.
-func (vu *VaultHTTPUpload) Mint(vaultPath string, ttl time.Duration) (string, error) {
+func (vu *VaultHTTPUpload) Mint(vaultPath string, ttl time.Duration, metadata map[string]any) (string, error) {
 	if err := ValidateVaultFilePath(vaultPath); err != nil {
 		return "", err
 	}
@@ -136,7 +140,7 @@ func (vu *VaultHTTPUpload) Mint(vaultPath string, ttl time.Duration) (string, er
 			delete(vu.tokens, t)
 		}
 	}
-	vu.tokens[token] = vaultHTTPToken{vaultPath: vaultPath, expiresAt: now.Add(ttl)}
+	vu.tokens[token] = vaultHTTPToken{vaultPath: vaultPath, metadata: metadata, expiresAt: now.Add(ttl)}
 	vu.mu.Unlock()
 	return vu.loopback.URLFor("vault-upload", token), nil
 }
@@ -186,7 +190,7 @@ func (vu *VaultHTTPUpload) putHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	vaultPath, ok := vu.claim(token)
+	vaultPath, metadata, ok := vu.claim(token)
 	if !ok {
 		http.Error(w, "invalid, expired, or already-used vault-upload endpoint", http.StatusNotFound)
 		return
@@ -203,7 +207,7 @@ func (vu *VaultHTTPUpload) putHandler(w http.ResponseWriter, r *http.Request) {
 	// the request context but bound by a transfer budget like the relay path.
 	transferCtx, cancel := context.WithTimeout(r.Context(), SyncUploadBudget(r.ContentLength))
 	defer cancel()
-	result, err := vu.put(transferCtx, r.Body, r.ContentLength, vaultPath)
+	result, err := vu.put(transferCtx, r.Body, r.ContentLength, vaultPath, metadata)
 	if err != nil {
 		status := http.StatusInternalServerError
 		var tooLarge *http.MaxBytesError
@@ -223,15 +227,15 @@ func (vu *VaultHTTPUpload) putHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // claim atomically validates and consumes a one-time vault-upload token. It
-// reports the bound vault path and false if the token is unknown, expired, or
-// already used.
-func (vu *VaultHTTPUpload) claim(token string) (string, bool) {
+// reports the bound vault path and its mint-time metadata, and false if the
+// token is unknown, expired, or already used.
+func (vu *VaultHTTPUpload) claim(token string) (string, map[string]any, bool) {
 	vu.mu.Lock()
 	defer vu.mu.Unlock()
 	tkn, ok := vu.tokens[token]
 	if !ok || vu.now().After(tkn.expiresAt) {
-		return "", false
+		return "", nil, false
 	}
 	delete(vu.tokens, token)
-	return tkn.vaultPath, true
+	return tkn.vaultPath, tkn.metadata, true
 }

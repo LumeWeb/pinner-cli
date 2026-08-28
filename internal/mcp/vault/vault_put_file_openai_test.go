@@ -20,7 +20,7 @@ import (
 // reach its validation but any accidental network fetch or write would be a bug.
 func openaiVaultDesc(t *testing.T, coLocated bool, httpClient *http.Client) model.ToolDescriptor {
 	t.Helper()
-	return newVaultPutFileDescriptor(hostenv.ProfileOpenAITunnel.Features, coLocated, false, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string) (any, error) {
+	return newVaultPutFileDescriptor(hostenv.ProfileOpenAITunnel.Features, coLocated, false, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string, _ map[string]any) (any, error) {
 		t.Fatal("vault relay must not be invoked for a rejected input")
 		return nil, nil
 	}, []string{"127.0.0.1"}, 0, httpClient)
@@ -124,7 +124,7 @@ func TestVaultPutFileOpenAIFetch(t *testing.T) {
 
 	var gotBytes []byte
 	var gotVaultPath string
-	desc := newVaultPutFileDescriptor(transportFeatures(false, false), false, false, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string) (any, error) {
+	desc := newVaultPutFileDescriptor(transportFeatures(false, false), false, false, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string, _ map[string]any) (any, error) {
 		b, err := io.ReadAll(r)
 		require.NoError(t, err)
 		gotBytes = b
@@ -158,7 +158,7 @@ func TestVaultPutFileOpenAIFetchWorksOnEveryTransport(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	var gotBytes []byte
-	desc := newVaultPutFileDescriptor(transportFeatures(true, false), true, false, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string) (any, error) {
+	desc := newVaultPutFileDescriptor(transportFeatures(true, false), true, false, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string, _ map[string]any) (any, error) {
 		b, _ := io.ReadAll(r)
 		gotBytes = b
 		return map[string]any{"vault_path": vaultPath}, nil

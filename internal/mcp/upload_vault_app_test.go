@@ -26,7 +26,7 @@ type fakeVaultPutHandler struct {
 	err          error
 }
 
-func (f *fakeVaultPutHandler) Put(ctx context.Context, r io.Reader, _ int64, vaultPath string) (any, error) {
+func (f *fakeVaultPutHandler) Put(ctx context.Context, r io.Reader, _ int64, vaultPath string, _ map[string]any) (any, error) {
 	buf, _ := io.ReadAll(r)
 	f.gotVaultPath = vaultPath
 	f.gotBody = string(buf)

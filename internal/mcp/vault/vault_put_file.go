@@ -9,6 +9,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/invopop/jsonschema"
+
+	corevault "go.lumeweb.com/pinner-cli/internal/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
@@ -22,14 +25,17 @@ import (
 
 // VaultPutHandler is the authenticated vault write executor. It writes bytes
 // from a reader into the encrypted vault at the given destination path via the
-// existing authenticated vault service.
-type VaultPutHandler func(context.Context, io.Reader, int64, string) (any, error)
+// existing authenticated vault service. metadata carries the caller-supplied KV
+// plus the auto-stamped write-context keys (src, host, profile) built by the
+// tool handler; the CLI closure stamps profile before invoking VaultService.Put.
+type VaultPutHandler func(context.Context, io.Reader, int64, string, map[string]any) (any, error)
 
 // LocalPathVaultPutHandler writes a host-side file, directory, or archive into
 // the encrypted vault. It homes the file-vs-dir-vs-archive decision in the CLI
 // layer where the vault service lives (the same split as upload_file's
-// path mode / LocalPathUploadHandler).
-type LocalPathVaultPutHandler func(ctx context.Context, path, vaultPath, archiveMode string) (any, error)
+// path mode / LocalPathUploadHandler). metadata is threaded to every
+// per-file vault write, mirroring VaultPutHandler.
+type LocalPathVaultPutHandler func(ctx context.Context, path, vaultPath, archiveMode string, metadata map[string]any) (any, error)
 
 // VaultPutFileInput is the typed argument shape for the unified vault_put_file
 // tool. The caller supplies a single transport-scoped `source` plus a vault
@@ -58,6 +64,15 @@ type VaultPutFileInput struct {
 	// TTL is the presigned endpoint lifetime for source mode mint (e.g. 5m).
 	// Only used in HTTP/tunnel mode.
 	TTL string `json:"ttl,omitempty" jsonschema:"description=Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used with source mode mint."`
+	// Agent is an identifier for the creating agent (e.g. an orchestrator
+	// name). It is stored as metadata alongside the auto-stamped write-context
+	// keys — never as a tag.
+	Agent string `json:"agent,omitempty" jsonschema:"description=Identifier for the creating agent (e.g. an orchestrator name). Stored as vault metadata (not a tag)."`
+	// Metadata is caller-supplied key-value pairs (e.g. kind, project, role).
+	// Reserved write-context keys (src, host, profile) are auto-stamped by the
+	// environment and cannot be overridden here. Tags must NOT be passed here;
+	// the tool has no tagging surface — tags stay conceptually separate.
+	Metadata map[string]any `json:"metadata,omitempty" jsonschema:"description=Caller-supplied metadata key-value pairs (e.g. kind, project, role). Reserved keys (src, host, profile) are auto-stamped and cannot be overridden. Not for tags."`
 }
 
 // NewVaultPutFileDescriptor builds the unified, transport-aware vault_put_file
@@ -138,6 +153,24 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 				return model.ToolResult{}, errors.New("provide exactly one upload source")
 			}
 
+			// Build the metadata the vault write seals into the object. The
+			// environment stamps src=mcp and, when the request carries a
+			// detected host profile, host=<host type>. The CLI closure stamps
+			// profile. Caller-supplied KV (agent, kind, project, ...) is merged
+			// on top; the reserved write-context keys are never overridable.
+			callerKV := in.Metadata
+			if in.Agent != "" {
+				if callerKV == nil {
+					callerKV = map[string]any{}
+				}
+				callerKV["agent"] = in.Agent
+			}
+			var hostType string
+			if request.Caps != nil && request.Caps.Profile != nil {
+				hostType = string(request.Caps.Profile.HostType)
+			}
+			metadata := corevault.StampedMetadata("mcp", hostType, "", callerKV)
+
 			// OpenAI/host-provided generated-file handoff. The host passes a
 			// temporary download_url + file_id; Pinner fetches/streams the bytes
 			// through the same authenticated vault write executor the relay
@@ -153,7 +186,7 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 				defer body.Close()
 				writeCtx, cancel := context.WithTimeout(ctx, transfer.SyncUploadBudget(size))
 				defer cancel()
-				result, err := relayFn(writeCtx, body, size, in.VaultPath)
+				result, err := relayFn(writeCtx, body, size, in.VaultPath, metadata)
 				return toolargs.WrapResult(result, err, "Stored in the vault.")
 			}
 
@@ -170,7 +203,7 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 				if pathFn == nil {
 					return model.ToolResult{}, errors.New("local path vault handler is not configured")
 				}
-				result, err := pathFn(ctx, src.Path, in.VaultPath, in.ArchiveMode)
+				result, err := pathFn(ctx, src.Path, in.VaultPath, in.ArchiveMode, metadata)
 				return toolargs.WrapResult(result, err, "Stored in the vault.")
 			case transfer.TransportHTTP:
 				if src.Mode != transfer.SourceMint {
@@ -189,7 +222,7 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 						ttl = d
 					}
 				}
-				url, merr := vu.Mint(in.VaultPath, ttl)
+				url, merr := vu.Mint(in.VaultPath, ttl, metadata)
 				if merr != nil {
 					return model.ToolResult{}, merr
 				}
@@ -222,7 +255,7 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 				defer body.Close()
 				writeCtx, cancel := context.WithTimeout(ctx, transfer.SyncUploadBudget(size))
 				defer cancel()
-				result, err := relayFn(writeCtx, body, size, in.VaultPath)
+				result, err := relayFn(writeCtx, body, size, in.VaultPath, metadata)
 				return toolargs.WrapResult(result, err, "Stored in the vault.")
 			}
 		},
@@ -245,6 +278,14 @@ func vaultPutFileSchema(features hostenv.FeatureSet) json.RawMessage {
 		// where the dead transport name would reactivate the wrong source.
 		StringProperty("archive_mode", "How to treat an archive path ('convert' extracts the archive contents, 'preserve' keeps the archive intact as a single file).", toolforge.Enum("convert", "preserve"), toolforge.When(hostenv.FeatSourcePath)).
 		StringProperty("ttl", "Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used with source mode mint.").
+		StringProperty("agent", "Identifier for the creating agent (e.g. an orchestrator name). Stored as vault metadata — never as a tag.").
+		Property("metadata", &jsonschema.Schema{
+			Type:        "object",
+			Description: "Caller-supplied metadata key-value pairs (e.g. kind, project, role). Reserved keys (src, host, profile) are auto-stamped and cannot be overridden. Not for tags.",
+			AdditionalProperties: &jsonschema.Schema{
+				Description: "Arbitrary caller-supplied metadata value.",
+			},
+		}).
 		Required("vault_path").
 		RawJSON(features)
 }

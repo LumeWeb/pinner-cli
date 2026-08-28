@@ -491,17 +491,20 @@ type VaultSearchResult struct {
 }
 
 type vaultItem struct {
-	Path string   `json:"path"`
-	Size int64    `json:"size,omitempty"`
-	Tags []string `json:"tags,omitempty"`
+	Path   string   `json:"path"`
+	Size   int64    `json:"size,omitempty"`
+	Tags   []string `json:"tags,omitempty"`
+	Source string   `json:"source,omitempty"`
+	Host   string   `json:"host,omitempty"`
+	Agent  string   `json:"agent,omitempty"`
 }
 
 func vaultSearch(d VaultDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "vault_search",
 		Title:       "Search vault files",
-		Summary:     "Search vault files by name, tag, or status",
-		Description: "Search the vault for live files matching the given filters, combined with AND semantics. Supports a name substring (case-insensitive), one or more tags (a file must have ALL of them), a directory prefix, a status filter (ok/pending/lost), and a created-since timestamp. Metadata-first; no full-text engine. Results return the full vault paths, newest-first. Read-only.",
+		Summary:     "Search vault files by name, tag, status, or write context",
+		Description: "Search the vault for live files matching the given filters, combined with AND semantics. Supports a name substring (case-insensitive), one or more tags (a file must have ALL of them), a directory prefix, a status filter (ok/pending/lost), a created-since timestamp, and write-context filters (source=mcp|cli, host, agent). Metadata-first; no full-text engine. Results return the full vault paths, newest-first. Read-only.",
 		Category:    "vault",
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
@@ -512,6 +515,9 @@ func vaultSearch(d VaultDeps) catalog.Operation {
 			{Name: "dir", Type: catalog.ArgTypeString, Help: "Restrict to files under this vault directory", AgentHelp: "A vault directory to restrict results to (inclusive)."},
 			{Name: "status", Type: catalog.ArgTypeString, Enum: []string{"ok", "pending", "lost"}, Help: "Only files with this status"},
 			{Name: "since", Type: catalog.ArgTypeString, Help: "Only files created at/after this time (RFC3339, e.g. 2026-08-01T00:00:00Z)"},
+			{Name: "source", Type: catalog.ArgTypeString, Enum: []string{"mcp", "cli"}, Help: "Only files written by this frontend (mcp|cli)"},
+			{Name: "host", Type: catalog.ArgTypeString, Help: "Only files written from this host platform (e.g. claude-desktop)"},
+			{Name: "agent", Type: catalog.ArgTypeString, Help: "Only files whose creator agent matches"},
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to the active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
@@ -525,6 +531,9 @@ func vaultSearch(d VaultDeps) catalog.Operation {
 				Tags:   catalog.StrSliceArg(input, "tag"),
 				Dir:    catalog.StrArg(input, "dir", ""),
 				Status: status,
+				Source: catalog.StrArg(input, "source", ""),
+				Host:   catalog.StrArg(input, "host", ""),
+				Agent:  catalog.StrArg(input, "agent", ""),
 			}
 			if sinceStr := catalog.StrArg(input, "since", ""); sinceStr != "" {
 				since, err := time.Parse(time.RFC3339, sinceStr)
@@ -553,7 +562,7 @@ func vaultSearch(d VaultDeps) catalog.Operation {
 			detail := make(map[string]vaultItem, len(items))
 			for _, it := range items {
 				paths = append(paths, it.Path)
-				detail[it.Path] = vaultItem{Path: it.Path, Size: it.Size, Tags: it.Tags}
+				detail[it.Path] = vaultItem{Path: it.Path, Size: it.Size, Tags: it.Tags, Source: it.Source, Host: it.Host, Agent: it.Agent}
 			}
 			return &VaultSearchResult{Query: f.Name, Count: len(items), Results: paths, Detail: detail}, nil
 		}),

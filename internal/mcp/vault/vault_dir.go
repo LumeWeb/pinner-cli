@@ -28,17 +28,17 @@ type DirToVaultPutResult struct {
 
 // VaultPutFunc is the injectable per-file write used by DirToVault. It mirrors
 // the vault.VaultService.Put shape so the real implementation wires straight
-// in: put(ctx, reader, size, vaultPath) -> objectID.
+// in: put(ctx, reader, size, vaultPath, metadata) -> objectID.
 //
 // It is exported so the CLI layer (internal/cli) can drive DirToVault with a
 // real vault service-backed implementation surfaced through the MCP adapter.
-type VaultPutFunc func(ctx context.Context, reader io.Reader, size int64, vaultPath string) (any, error)
+type VaultPutFunc func(ctx context.Context, reader io.Reader, size int64, vaultPath string, metadata map[string]any) (any, error)
 
 // DirToVault walks the local directory rooted at dir and writes one vault
 // object per file, mapping each to dstBase/<relpath> (vault path grammar).
 // Directories are skipped (vault has no empty-dir objects); only regular
 // files are written. put is called once per file with an opened reader.
-func DirToVault(ctx context.Context, dir string, dstBase string, put VaultPutFunc, caps ...int64) (*DirToVaultPutResult, error) {
+func DirToVault(ctx context.Context, dir string, dstBase string, metadata map[string]any, put VaultPutFunc, caps ...int64) (*DirToVaultPutResult, error) {
 	// maxBytes caps the per-entry size when walking a directory/archive tree.
 	// A non-positive value means "no cap". The local-path vault handlers pass
 	// the operator-set max_mcp_upload_size here so a directory or archive
@@ -111,9 +111,11 @@ func DirToVault(ctx context.Context, dir string, dstBase string, put VaultPutFun
 		}
 		defer f.Close()
 		// fs.WalkDir paths already use "/" separators, which matches the vault
-		// path grammar, so the vault path is base + "/" + relpath.
+		// path grammar, so the vault path is base + "/" + relpath. The
+		// metadata map (auto-stamped write context + caller KV) is threaded to
+		// every per-file write so a directory lands with uniform metadata.
 		vaultPath := base + "/" + p
-		obj, perr := put(ctx, f, fi.Size(), vaultPath)
+		obj, perr := put(ctx, f, fi.Size(), vaultPath, metadata)
 		if perr != nil {
 			return perr
 		}

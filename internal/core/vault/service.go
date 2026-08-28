@@ -182,6 +182,12 @@ type StatResult struct {
 	// Tags are the file's first-class tags (normalized, most-recently used not
 	// ranked here; they surface the live set). Empty when the file has none.
 	Tags []string `json:"tags,omitempty"`
+	// Source, Host, Agent are the normalized write-context columns (which
+	// frontend/host/creator wrote the object). Empty when the object carries
+	// no write-context metadata.
+	Source string `json:"source,omitempty"`
+	Host   string `json:"host,omitempty"`
+	Agent  string `json:"agent,omitempty"`
 }
 
 // SearchFilter narrows a vault search. All fields are ANDed; empty fields are
@@ -200,6 +206,14 @@ type SearchFilter struct {
 	Status string
 	// Since restricts to files created at or after this time (UTC). Zero = any.
 	Since time.Time
+	// Source restricts to files written by a given frontend ("mcp" | "cli").
+	// Empty = any.
+	Source string
+	// Host restricts to files written from a given host platform (e.g.
+	// "claude-desktop", "codex"). Empty = any.
+	Host string
+	// Agent restricts to files whose creator agent matches. Empty = any.
+	Agent string
 }
 
 // SearchItem is one file result from Search. It carries a full vault path and
@@ -216,6 +230,12 @@ type SearchItem struct {
 	UpdatedAt     string         `json:"updated_at,omitempty"`
 	Tags          []string       `json:"tags,omitempty"`
 	Metadata      map[string]any `json:"metadata,omitempty"`
+	// Source, Host, Agent are the normalized write-context columns (which
+	// frontend/host/creator wrote the object), surfaced for filtering/filtering
+	// feedback. Empty when the object carries no write-context metadata.
+	Source string `json:"source,omitempty"`
+	Host   string `json:"host,omitempty"`
+	Agent  string `json:"agent,omitempty"`
 }
 
 // VerifyResult is the output of Verify.
