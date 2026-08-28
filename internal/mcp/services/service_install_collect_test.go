@@ -357,17 +357,18 @@ func TestCollectHTTPInstallOneShotResolvesNamedDomainURL(t *testing.T) {
 	require.Equal(t, "https://mcp.example.com", reloaded["MCP_PUBLIC_URL"])
 }
 
-// TestTunnelProviderChoiceLabelsDefaultIsNgrok guards the tunnel provider select
-// defaults and copy: ngrok must be listed FIRST so the interactive select
-// highlights it as the default — not cloudflared. It also verifies every
-// option's leading token (before " - ") parses back to a valid provider, so the
-// select -> parse round-trip can never silently fail, and that the descriptions
-// are end-user friendly (no internal jargon like "embedded" / "external binary").
-func TestTunnelProviderChoiceLabelsDefaultIsNgrok(t *testing.T) {
+// TestTunnelProviderChoiceLabelsDefaultIsLocalhost guards the tunnel provider
+// select defaults and copy: localhost must be listed FIRST so the interactive
+// select highlights it as the default — the simplest path needs no tunnel. It
+// also verifies every option's leading token (before " - ") parses back to a
+// valid provider or the localhost marker, so the select -> parse round-trip can
+// never silently fail, and that the descriptions are end-user friendly (no
+// internal jargon like "embedded" / "external binary").
+func TestTunnelProviderChoiceLabelsDefaultIsLocalhost(t *testing.T) {
 	labels := tunnelProviderChoiceLabels()
 	require.NotEmpty(t, labels, "must present at least one provider")
-	require.True(t, strings.HasPrefix(labels[0], "ngrok - "),
-		"ngrok must be the first (default) provider option, got %q", labels[0])
+	require.True(t, strings.HasPrefix(labels[0], "localhost - "),
+		"localhost must be the first (default) provider option, got %q", labels[0])
 
 	jargon := []string{"embedded", "external binary"}
 	for _, label := range labels {
@@ -380,6 +381,12 @@ func TestTunnelProviderChoiceLabelsDefaultIsNgrok(t *testing.T) {
 		token := label[:sep]
 		prov, err := parseTunnelProvider(token)
 		require.NoError(t, err, "option token %q should parse to a valid provider", token)
+		// localhost is the marker for "no tunnel": it parses to the empty
+		// provider without error, which is the expected (not failure) case.
+		if token == "localhost" {
+			require.Equal(t, tunnel.TunnelProvider(""), prov, "localhost token must map to the empty (no-tunnel) provider")
+			continue
+		}
 		require.NotEqual(t, tunnel.TunnelProvider(""), prov, "option token %q must map to a known provider", token)
 	}
 }

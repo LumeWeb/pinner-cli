@@ -513,7 +513,7 @@ func buildMcpTunnelSteps(realCmd *cli.Command, ui InstallUI) []wizard.Step[*Inst
 		// re-runs so the host renders it as a prompting step, not "Seeded".
 		wrap("Tunnel-specific configuration", tunnelStepAt(inner, 1), tunnelConfigSeeded,
 			func(s *InstallState) bool { return configStepSkipIfHeadlessReRun(realCmd, s) },
-			nil, promptOAuthPostExecute(ui)),
+			nil, nil),
 		// The env-write step NEVER skips for http (only for a non-http install
 		// or a tapped serviceEnvErr). On the FRESH path it writes the env from
 		// the service state and (via preWrite) sets EnvFileCreated + applies
@@ -642,64 +642,6 @@ func tunnelConfigSeeded(_ context.Context, s *InstallState) ([]string, bool) {
 		return []string{s.tunnelSeedSource}, true
 	}
 	return nil, false
-}
-
-// promptOAuthPostExecute asks the operator about OAuth as part of the
-// "Tunnel-specific configuration" step, running right after that step collects
-// the provider's credentials. OAuth belongs to the same tunnel/service
-// configuration, so it lives in this step rather than a separate top-level
-// step. It always prompts on interactive http installs — defaulting to the
-// assumed value (a persisted MCP_OAUTH decision or the secure default-on) —
-// so the handshake is never silently assumed. It is skipped when the
-// credential collection failed, in non-interactive mode (flag/env driven), or
-// when --oauth was explicitly passed on the command line (an explicit operator
-// decision).
-func promptOAuthPostExecute(ui InstallUI) func(context.Context, *InstallState, *mcpadapter.ServiceInstallState, error) error {
-	return func(ctx context.Context, s *InstallState, svc *mcpadapter.ServiceInstallState, runErr error) error {
-		if runErr != nil {
-			// The config step failed; surface that error and do not ask about OAuth.
-			return nil
-		}
-		if s == nil || s.Transport != install.TransportHTTP {
-			return nil
-		}
-		if s.NonInteractive || oauthFlagSetOnCmdLine() {
-			// An explicit --oauth switch decided OAuth this run; a persisted
-			// MCP_OAUTH env value is inherited configuration and is instead
-			// offered as the prompt's default below (never suppresses it).
-			return nil
-		}
-		assumed := true // secure default-on for a public remote endpoint
-		if svc != nil && svc.OAuth != nil {
-			assumed = *svc.OAuth // honor a persisted/env decision as the prompt's default
-		}
-		enabled, err := ui.ConfirmOAuth(assumed)
-		if err != nil {
-			return err
-		}
-		if svc != nil {
-			svc.OAuth = &enabled
-		}
-		return nil
-	}
-}
-
-// oauthFlagSetOnCmdLine reports whether --oauth was passed explicitly on the
-// command line. It scans the raw process arguments because
-// (*cli.Command).IsSet("oauth") is also true when the flag is sourced from the
-// MCP_OAUTH env var (BoolFlag declares Sources: MCP_OAUTH), and urfave/cli v3
-// exposes no CLI-vs-env distinction. A persisted MCP_OAUTH env value is
-// inherited configuration, not an operator decision for this run, so it must
-// not suppress the OAuth prompt — it is offered as the prompt's default
-// instead. Only a literal --oauth token on the command line counts.
-func oauthFlagSetOnCmdLine() bool {
-	flag := "--" + mcpadapter.ServiceOAuthFlagName
-	for _, a := range os.Args {
-		if a == flag || strings.HasPrefix(a, flag+"=") {
-			return true
-		}
-	}
-	return false
 }
 
 // tunnelStepAt returns the i-th step of a ServiceInstallSteps slice for wrapping.

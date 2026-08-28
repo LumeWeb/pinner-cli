@@ -51,6 +51,8 @@ func parseTunnelProvider(raw string) (tunnel.TunnelProvider, error) {
 	switch tunnel.TunnelProvider(strings.ToLower(strings.TrimSpace(raw))) {
 	case tunnel.TunnelProviderOpenAI, tunnel.TunnelProviderNgrok, tunnel.TunnelProviderCloudflared:
 		return tunnel.TunnelProvider(strings.ToLower(strings.TrimSpace(raw))), nil
+	case "localhost":
+		return "", nil
 	case "":
 		return "", errors.New("MCP_TUNNEL_PROVIDER is required in the service environment file")
 	default:
@@ -261,7 +263,14 @@ func validateServiceEnvironment(envFile string, nonInteractive bool) (tunnel.Tun
 	if err != nil {
 		return "", err
 	}
-	provider, err := parseTunnelProvider(env["MCP_TUNNEL_PROVIDER"])
+	providerRaw := strings.TrimSpace(env["MCP_TUNNEL_PROVIDER"])
+	if providerRaw == "" {
+		// No tunnel provider: localhost mode. No tunnel credentials
+		// are required, and the server auto-generates an OAuth
+		// secret at runtime when --oauth is set.
+		return "", nil
+	}
+	provider, err := parseTunnelProvider(providerRaw)
 	if err != nil {
 		return "", err
 	}

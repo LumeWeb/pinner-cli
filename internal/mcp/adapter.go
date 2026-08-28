@@ -10,6 +10,8 @@ package mcp
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -701,7 +703,16 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 	var oauth *auth.OAuthServer
 	if enableOAuth {
 		if authToken == "" {
-			return fmt.Errorf("--oauth requires --auth-token: the login page authenticates with the shared secret")
+			if tun != nil || publicURL != "" {
+				return fmt.Errorf("--oauth requires --auth-token: the login page authenticates with the shared secret")
+			}
+			generated, err := generateOAuthSecret()
+			if err != nil {
+				return fmt.Errorf("generate oauth secret: %w", err)
+			}
+			authToken = generated
+			fmt.Printf("OAuth enabled. Your login secret is: %s\n", authToken)
+			fmt.Println("Enter this secret on the authorize page when prompted by your MCP client.")
 		}
 		store, err := oauthstore.Open(oauthStorePath(), 30*24*time.Hour)
 		if err != nil {
@@ -993,6 +1004,16 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 	}
 	shutdown(context.Background())
 	return nil
+}
+
+// generateOAuthSecret returns a random 32-byte hex string suitable for use
+// as the shared OAuth login secret on a localhost server with no tunnel.
+func generateOAuthSecret() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // corsHandler wraps next with CORS middleware that reflects the request Origin
