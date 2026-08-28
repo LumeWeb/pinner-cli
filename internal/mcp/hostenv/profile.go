@@ -18,6 +18,7 @@ const (
 	HostKiro          HostType = "kiro"
 	HostClaude        HostType = "claude"
 	HostClaudeDesktop HostType = "claude-desktop"
+	HostClaudeCode    HostType = "claude-code"
 
 	// HostStdioApps is a synthetic host representing any co-located stdio
 	// client that also renders MCP Apps UI. It is the alias target shared by

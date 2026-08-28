@@ -27,6 +27,7 @@ func NewRegistry() *DetectorRegistry {
 			grokDetector{},
 			kiloDetector{},
 			kiroDetector{},
+			claudeCodeDetector{},
 			claudeDetector{},
 			claudeDesktopDetector{},
 			opencodeDetector{},
