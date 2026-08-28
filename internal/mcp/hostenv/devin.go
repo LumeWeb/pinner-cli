@@ -2,11 +2,10 @@ package hostenv
 
 import "strings"
 
-// clientNameDevin is the clientInfo.name product token the Devin harness
-// sends. Devin's harness is built on the official Rust rmcp MCP SDK and does
-// not override its client identity (rmcp's with_client_info), so the SDK's
-// own service name, "rmcp", leaks through as clientInfo.name. If a future
-// Devin build overrides it to "devin", that is accepted as well.
+// clientNameDevin is the exact clientInfo.name the Devin harness sends.
+// Devin's harness is built on the official Rust rmcp MCP SDK and does not
+// override its client identity (rmcp's with_client_info), so the SDK's own
+// default service name, "rmcp", leaks through as clientInfo.name.
 const clientNameDevin = "rmcp"
 
 // devinDetector matches the Devin harness (Cognition) as a co-located stdio
@@ -25,7 +24,12 @@ func (devinDetector) Match(req DetectRequest) (HostType, AuthMethod) {
 		return HostUnknown, ""
 	}
 	name := strings.ToLower(strings.TrimSpace(req.ClientInfo.Name))
-	if strings.Contains(name, clientNameDevin) || strings.Contains(name, "devin") {
+	// "rmcp" is the generic Rust MCP SDK default service name shared by every
+	// rmcp-based client, so only an EXACT match is accepted — a substring
+	// match would misclassify any other Rust MCP client as Devin. A "devin"
+	// identity (should a future Devin build override its clientInfo) is
+	// Devin-specific and safe to match anywhere.
+	if name == clientNameDevin || strings.Contains(name, "devin") {
 		return HostDevin, AuthNone
 	}
 	return HostUnknown, ""

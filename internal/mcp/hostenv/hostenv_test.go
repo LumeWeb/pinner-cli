@@ -259,8 +259,19 @@ func TestDevinDetector_MatchByClientInfo(t *testing.T) {
 func TestDevinDetector_NoMatch(t *testing.T) {
 	d := devinDetector{}
 
-	// Negative: co-located stdio but unrelated clientInfo name.
+	// Negative: co-located stdio with a name that merely CONTAINS "rmcp" but
+	// is not the exact rmcp SDK default. "rmcp" is the generic Rust MCP SDK
+	// default, so a substring match would misclassify every other rmcp-based
+	// client as Devin — only the exact default may match.
 	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "rmcp-client", Version: "1.0.0"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: co-located stdio but unrelated clientInfo name.
+	host, auth = d.Match(DetectRequest{
 		ClientInfo: &ClientInfo{Name: "some-rust-tool"},
 		CoLocated:  true,
 	})
