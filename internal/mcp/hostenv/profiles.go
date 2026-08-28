@@ -84,6 +84,35 @@ var ProfileGrokHTTP = newProfile(
 	HostGrok, TransportHTTP, AuthOAuth, true,
 )
 
+// ProfileClaudeHTTP is Anthropic's Claude Web client (clientInfo name
+// "Anthropic/ClaudeAI", User-Agent "Claude-User") connecting over HTTP +
+// OAuth. Claude Web grants the agent no network egress (no curl) and no
+// OpenAI-style file references, so its only real byte path is the base64
+// upload_data relay — declared via FeatSourceData (which registers the
+// upload_data tool; it does NOT flip upload_file's transport-bound mint
+// source). It supports MCP Apps UI. Downloads are effectively not
+// deliverable to the user: mint is unusable without curl, sink=drop needs an
+// out-of-band fetch, and sink=local writes to the server's unreachable disk.
+var ProfileClaudeHTTP = newProfile(
+	FeatureSet{
+		FeatSourceData: true,
+		FeatMCPApps:    true,
+	},
+	HostClaude, TransportHTTP, AuthOAuth, true,
+)
+
+// ProfileClaudeDesktopStdio is Anthropic's Claude Desktop client running over
+// co-located stdio (clientInfo name "claude-ai"). Unlike Claude Web it shares
+// the host filesystem, so it gets full local file access via the stdio
+// transport mechanisms (source-path uploads, sink-local downloads) plus MCP
+// Apps — no network-restriction notice.
+var ProfileClaudeDesktopStdio = newProfile(
+	FeatureSet{
+		FeatMCPApps: true,
+	},
+	HostClaudeDesktop, TransportStdio, AuthNone, false,
+)
+
 // ProfileStdioGeneric is the fallback for any unidentified client over
 // stdio. It assumes co-located filesystem access but no host-specific
 // capability features.
@@ -129,6 +158,10 @@ func resolveProfile(host HostType, transport TransportKind, auth AuthMethod) Pla
 		return ProfileOpenAIHTTP
 	case host == HostGrok && transport == TransportHTTP:
 		return ProfileGrokHTTP
+	case host == HostClaude && transport == TransportHTTP:
+		return ProfileClaudeHTTP
+	case host == HostClaudeDesktop && transport == TransportStdio:
+		return ProfileClaudeDesktopStdio
 	case transport == TransportStdio:
 		return ProfileStdioGeneric
 	case transport == TransportHTTP:

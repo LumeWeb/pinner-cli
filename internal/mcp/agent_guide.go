@@ -324,6 +324,14 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 		Summary(guideSummary).
 		Rule(guideArchiveInvariant).
 		Rule(guideCIDStructure).
+		// Claude Web (host "claude") has no network egress and no file
+		// references, so its transport-derived mint/sink capabilities are
+		// unusable: the only working upload is the base64 upload_data relay,
+		// and downloads cannot be delivered to the user. Scoped to the Web
+		// host only — Claude Desktop (a different HostType) is co-located
+		// with full local file access and must NOT get this notice.
+		RuleWhenHost(hostenv.HostClaude,
+			"Host capability notice (Claude Web): this agent has no network egress (no curl) and no file references, so the ONLY working upload is upload_data (RFC 2397 base64 data: URI passed in the tool args). upload_file's source.mode=mint and the sink=drop download link both require the agent to curl or fetch out of band, which this host cannot do, and sink=local writes to the MCP server's own unreachable disk — so warn the user before offering a download that the content cannot be delivered to them.").
 		Flow(toolforge.Flow("auth", "Authenticate").
 			Steps("auth_status", "auth_sso", "auth_resume", "auth_status").
 			Detail(toolforge.Static("Run auth_status; if unauthenticated, call auth_sso and poll auth_resume with the returned handle until the human completes the browser sign-in."))).

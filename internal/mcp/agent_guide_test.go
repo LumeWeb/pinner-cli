@@ -107,6 +107,18 @@ func TestAgentGuideModesMatchProfile(t *testing.T) {
 			mustHave: []string{"source.mode=mint"},
 			mustNot:  []string{"source.mode=path", "source.mode=url/data"},
 		},
+		{
+			name:     "claude web advertises mint transport source",
+			profile:  strPtr(hostenv.ProfileClaudeHTTP),
+			mustHave: []string{"source.mode=mint"},
+			mustNot:  []string{"source.mode=path", "source.mode=url/data"},
+		},
+		{
+			name:     "claude desktop advertises only path",
+			profile:  strPtr(hostenv.ProfileClaudeDesktopStdio),
+			mustHave: []string{"source.mode=path"},
+			mustNot:  []string{"source.mode=mint", "source.mode=url/data"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -127,6 +139,21 @@ func TestAgentGuideModesMatchProfile(t *testing.T) {
 			require.NotNil(t, pub.Decision, "publish_website must be a decision flow")
 		})
 	}
+}
+
+// TestAgentGuideClaudeWebNoticeScoped ensures the Claude Web network-
+// restriction rule is surfaced only for the Web host and absent for Claude
+// Desktop (co-located, full local file access) and generic HTTP hosts.
+func TestAgentGuideClaudeWebNoticeScoped(t *testing.T) {
+	web := buildAgentGuide(&hostenv.ProfileClaudeHTTP)
+	require.Contains(t, strings.Join(web.Rules, "\n"), "Host capability notice (Claude Web)")
+	require.Contains(t, strings.Join(web.Rules, "\n"), "upload_data")
+
+	desktop := buildAgentGuide(&hostenv.ProfileClaudeDesktopStdio)
+	require.NotContains(t, strings.Join(desktop.Rules, "\n"), "Host capability notice (Claude Web)")
+
+	generic := buildAgentGuide(&hostenv.ProfileHTTPGeneric)
+	require.NotContains(t, strings.Join(generic.Rules, "\n"), "Host capability notice (Claude Web)")
 }
 
 // segHasToken reports whether any active segment text contains tok.
