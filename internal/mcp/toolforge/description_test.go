@@ -141,6 +141,14 @@ func TestWhenSentence(t *testing.T) {
 	require.Equal(t, "pinned", d.Resolve(profileWith()))
 }
 
+func TestWhenAnySentence(t *testing.T) {
+	d := Static("pinned").WhenAnySentence([]hostenv.Feature{hostenv.FeatSourceURL, hostenv.FeatSourceData}, "use the relay tools.")
+	for _, f := range []hostenv.Feature{hostenv.FeatSourceURL, hostenv.FeatSourceData} {
+		require.Equal(t, "pinned. use the relay tools.", d.Resolve(profileWith(f)))
+	}
+	require.Equal(t, "pinned", d.Resolve(profileWith()))
+}
+
 func TestStaticSentence(t *testing.T) {
 	d := Static("pinned").StaticSentence("site bundles become directory DAGs.")
 	require.Equal(t, "pinned. site bundles become directory DAGs.", d.Resolve(hostenv.PlatformProfile{}))

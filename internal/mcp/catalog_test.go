@@ -52,6 +52,21 @@ func TestBuildInstructionsEmbedsCount(t *testing.T) {
 	require.Contains(t, got, "upload_file -> websites_create")
 }
 
+// TestInstructionsDoNotClaimSetupWizardAcceptsCredentials locks in P2-02:
+// the MCP server instructions must not claim setup wizard tools "accept
+// credentials" — the wizard's own input structs (SetupAuthInput,
+// SetupConfigInput, SetupCompletionInput) contain no password/secret/token
+// field. The real reason they're off the curated list is progressive-disclosure
+// curation, not a credential safeguard. This test keeps the copy and the schema
+// from drifting apart again.
+func TestInstructionsDoNotClaimSetupWizardAcceptsCredentials(t *testing.T) {
+	got := buildInstructions(42)
+	require.NotContains(t, got, "accept credentials",
+		"instructions must not claim setup wizard tools accept credentials")
+	require.Contains(t, got, "search_tools",
+		"instructions must note setup wizard tools are reachable via search_tools")
+}
+
 // TestEnumStringFlagEmitsEnum verifies that a flag built with EnumStringFlag
 // gets its enum emitted into the MCP input schema, while a plain string flag
 // does not.
