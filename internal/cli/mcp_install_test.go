@@ -1742,13 +1742,17 @@ func TestMcpInstallHTTPPasswordRestartFailureRollsBack(t *testing.T) {
 // restart fails AND the env-file rollback write also fails, the wizard must
 // report the restore failure so the on-disk/state disagreement is not masked.
 func TestMcpInstallHTTPPasswordRestoreFailureSurfaced(t *testing.T) {
-	// This test forces a failed restore-write by making the env file's
-	// directory unwritable (os.Chmod on a dir). Windows does not honor POSIX
-	// directory write bits, so the trigger is POSIX-only; the production
+	// This test forces a failed restore-write by swapping the env file for a
+	// symlink inside the restart hook, so the follow-up WriteEnvironment call
+	// is rejected (it refuses to replace a symlinked env file). A symlink is
+	// used instead of chmodding the directory read-only because that trick is
+	// ineffective when the suite runs as root (root bypasses directory write
+	// bits); the symlink refusal is privilege-independent. Windows can't create
+	// unprivileged symlinks, so the trigger is POSIX-only; the production
 	// surfacing behavior itself is OS-independent and covered by the
 	// restart-failure rollback test on all platforms.
 	if runtime.GOOS == "windows" {
-		t.Skip("dir-permission write-failure trigger is POSIX-only")
+		t.Skip("symlink write-failure trigger is POSIX-only")
 	}
 	ctx := context.Background()
 	root := t.TempDir()
@@ -1777,15 +1781,18 @@ func TestMcpInstallHTTPPasswordRestoreFailureSurfaced(t *testing.T) {
 	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
 	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "inherited-token")
 	ui.SetMCPPasswordResult = "operator-chosen-password"
-	// The restart fails AND renders the env file's directory read-only so the
-	// follow-up restore write fails too — both errors must be reported, not
-	// masked. (WriteEnvironment writes atomically via temp+rename, so chmodding
-	// the file itself would not block it; the directory must be unwritable.)
-	envDir := filepath.Dir(envFile)
-	t.Cleanup(func() { _ = os.Chmod(envDir, 0o700) }) // let TempDir cleanup remove it
+	// The restart fails AND swaps the env file for a symlink so the follow-up
+	// restore write fails too — both errors must be reported, not masked.
+	// (WriteEnvironment writes atomically via temp+rename, so chmodding the
+	// file itself would not block it, and root bypasses directory write bits,
+	// so the file must be replaced with a symlink, which WriteEnvironment
+	// refuses regardless of privileges.)
 	w.restartHTTPService = func(_ context.Context, _ *InstallState) error {
-		if err := os.Chmod(envDir, 0o500); err != nil {
-			t.Fatalf("chmod env dir: %v", err)
+		if err := os.Remove(envFile); err != nil {
+			t.Fatalf("remove env file for symlink swap: %v", err)
+		}
+		if err := os.Symlink("/dev/null", envFile); err != nil {
+			t.Fatalf("symlink env file: %v", err)
 		}
 		return fmt.Errorf("systemctl restart failed")
 	}
