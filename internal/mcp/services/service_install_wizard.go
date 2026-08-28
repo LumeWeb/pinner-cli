@@ -59,6 +59,18 @@ type ServiceInstallState struct {
 	// must never have this set.
 	EnvFileCreated bool
 
+	// ProviderDecided reports that the tunnel provider was fixed by a decisive
+	// source this run: an explicit --tunnel switch, a headless selection, or an
+	// interactive select. It exists because "no tunnel" (localhost) is
+	// represented by the EMPTY provider string, which is otherwise identical to
+	// "undecided". Without it, a seed fold of a persisted MCP_TUNNEL_PROVIDER
+	// from a prior install would clobber an operator's explicit localhost choice
+	// back to the old tunnel provider, and a reconcile could not tell a
+	// deliberate downgrade-to-localhost from an untouched state. It mirrors the
+	// tri-state "decided this run" discipline used for OAuth/Port/DevTools, but
+	// as a plain bool because a decided value of "localhost" is still empty.
+	ProviderDecided bool
+
 	// decisions is the Decided channel of the two-channel provenance model (see
 	// fieldform). For each install field it records an operator decision made
 	// this run via a CLI switch or prompt, distinct from the flat Operational
@@ -170,16 +182,17 @@ func (nilPrompt) Text(string, string, string) (string, error) {
 	return "", errors.New("interactive prompt requested but no prompt channel is bound")
 }
 
-// OAuthFlagSetOnCmdLine reports whether --oauth was passed explicitly on the
+// flagSetOnCmdLine reports whether --<name> was passed explicitly on the
 // command line. It scans the raw process arguments because
-// (*cli.Command).IsSet("oauth") is also true when the flag is sourced from the
-// MCP_OAUTH env var (BoolFlag declares Sources: MCP_OAUTH), and urfave/cli v3
-// exposes no CLI-vs-env distinction. A persisted MCP_OAUTH env value is
-// inherited configuration, not an operator decision for this run, so it must
-// not suppress the OAuth prompt — it is offered as the prompt's default
-// instead. Only a literal --oauth token on the command line counts.
-func OAuthFlagSetOnCmdLine() bool {
-	flag := "--" + serviceOAuthFlag
+// (*cli.Command).IsSet(name) is also true when the flag is sourced from a
+// declared env var (Sources: ...), and urfave/cli v3 exposes no CLI-vs-env
+// distinction. A persisted env value is inherited configuration, not an
+// operator decision for this run — it only PREFILLS the value, it must never
+// hard-decide (or re-clobber) it. Only a literal --flag token on the command
+// line counts as a decision. Single shared helper for every flag that needs
+// the CLI-vs-env distinction (currently --tunnel and --oauth).
+func flagSetOnCmdLine(name string) bool {
+	flag := "--" + name
 	for _, a := range os.Args {
 		if a == flag || strings.HasPrefix(a, flag+"=") {
 			return true
@@ -187,6 +200,16 @@ func OAuthFlagSetOnCmdLine() bool {
 	}
 	return false
 }
+
+// OAuthFlagSetOnCmdLine reports whether --oauth was passed explicitly on the
+// command line (see flagSetOnCmdLine). Kept exported for the cli package, which
+// asserts it directly.
+func OAuthFlagSetOnCmdLine() bool { return flagSetOnCmdLine(serviceOAuthFlag) }
+
+// tunnelFlagSetOnCmdLine reports whether --tunnel was passed explicitly on the
+// command line (see flagSetOnCmdLine). Only an explicit CLI switch hard-decides
+// the provider; a persisted MCP_TUNNEL_PROVIDER env value merely prefills.
+func tunnelFlagSetOnCmdLine() bool { return flagSetOnCmdLine(serviceTunnelFlag) }
 
 // promptOAuthForInstall asks the operator about enabling the OAuth 2.1
 // handshake. Uses the shared prompter channel so both mcp install and the
@@ -225,8 +248,12 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 		wizard.StepFunc[*ServiceInstallState]{
 			Name_: "Tunnel provider",
 			ExecuteFunc: func(ctx context.Context, s *ServiceInstallState) error {
-				// Headless: reuse a resolved provider instead of prompting.
+				// Headless: reuse a resolved provider instead of prompting. It is
+				// already fixed (from a --tunnel switch or a persisted env value a
+				// headless run reuses), so mark it decided to keep later seed
+				// folds from re-deciding it.
 				if s.Provider != "" && fieldform.NonInteractive {
+					s.ProviderDecided = true
 					return nil
 				}
 				p := serviceInstallStepsPrompter(ctx)
@@ -243,6 +270,12 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 					choice = choice[:i]
 				}
 				s.Provider, err = parseTunnelProvider(choice)
+				if err == nil {
+					// The operator made an explicit choice this run — including the
+					// empty provider (localhost). Mark it decided so a later seed
+					// fold of a persisted MCP_TUNNEL_PROVIDER cannot clobber it.
+					s.ProviderDecided = true
+				}
 				return err
 			},
 		},
@@ -356,9 +389,25 @@ func IsServiceInstallSeeded(s *ServiceInstallState) bool {
 
 // seedServiceFromFlagsAndEnv is SeedServiceFromFlagsAndEnv's internal form.
 func seedServiceFromFlagsAndEnv(cmd *cli.Command, s *ServiceInstallState, _ string) {
-	if s.Provider == "" {
-		if p, err := parseTunnelProvider(cmd.String(serviceTunnelFlag)); err == nil {
-			s.Provider = p
+	// Resolve the provider, honoring the two-channel provenance discipline used
+	// everywhere in the install flows: a provider the operator already decided
+	// this run (ProviderDecided — possibly localhost, the empty value) is never
+	// clobbered. seedServiceFromFlagsAndEnv is re-invoked before EVERY wrapped
+	// tunnel step, so without this guard an env-sourced MCP_TUNNEL_PROVIDER
+	// would resurrect a stale tunnel over the operator's localhost choice.
+	if !s.ProviderDecided {
+		if tunnelFlagSetOnCmdLine() {
+			// An explicit --tunnel CLI switch is a hard decision for this run.
+			if p, err := parseTunnelProvider(cmd.String(serviceTunnelFlag)); err == nil {
+				s.Provider = p
+				s.ProviderDecided = true
+			}
+		} else if s.Provider == "" {
+			// No CLI switch: fold a persisted MCP_TUNNEL_PROVIDER only while
+			// undecided, as a prefill the interactive select can still change.
+			if p, err := parseTunnelProvider(cmd.String(serviceTunnelFlag)); err == nil {
+				s.Provider = p
+			}
 		}
 	}
 	set := func(flag string, dst *string) {

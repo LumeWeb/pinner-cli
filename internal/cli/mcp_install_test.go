@@ -454,8 +454,9 @@ func TestMcpInstallHTTPCompositeWritesRemoteEntry(t *testing.T) {
 	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
 	// Inject the fake collector: the real tunnel is not exercised in this test.
 	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "test-auth-token")
-	// The MCP Password step (always run for interactive http installs) is
-	// prompted with the collected token and the operator keeps it.
+	// This is a no-tunnel http install (s.Service is nil), so the MCP Password
+	// step is the single place the secret is asked — prompted with the
+	// collected token and the operator keeps it.
 	ui.SetMCPPasswordResult = "test-auth-token"
 
 	if _, err := w.Run(ctx); err != nil {
@@ -508,8 +509,8 @@ func TestMcpInstallHTTPCompositeSkipsStdioOnlyAgent(t *testing.T) {
 
 	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
 	w.collectHTTP = fakeHTTPCollector("https://mcp.example.com", "test-auth-token")
-	// The MCP Password step runs because claude-code supports http; keep the
-	// collected token.
+	// No-tunnel http install: the MCP Password step runs (claude-code supports
+	// http) and the operator keeps the collected token.
 	ui.SetMCPPasswordResult = "test-auth-token"
 
 	if _, err := w.Run(ctx); err != nil {
@@ -1363,6 +1364,46 @@ func TestSeedServiceFromEnvFile_FoldsKnownValues(t *testing.T) {
 	}
 }
 
+// TestSeedServiceFromEnvFile_PreservesExplicitLocalhost guards the audit
+// finding that "localhost" (the EMPTY provider, deliberately chosen = decided)
+// was clobbered back to a persisted tunnel provider by the env fold on a
+// re-run — which made the config step prompt for ngrok credentials even though
+// the operator selected localhost. Once the provider step has decided localhost
+// (ProviderDecided=true), the fold must leave it alone.
+func TestSeedServiceFromEnvFile_PreservesExplicitLocalhost(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "mcp.env")
+	// A PRIOR install left a tunnel provider persisted.
+	writeEnv(t, envFile, partialEnv) // MCP_TUNNEL_PROVIDER=ngrok ...
+
+	// The provider step ran interactively and the operator chose "localhost"
+	// (empty provider), which marks it decided.
+	s := &mcpadapter.ServiceInstallState{ProviderDecided: true}
+	seedServiceFromEnvFile(envFile, s)
+
+	if s.Provider != "" {
+		t.Fatalf("BUG: explicit localhost (empty provider) was clobbered to %q by the env fold; the config step would prompt for ngrok credentials", s.Provider)
+	}
+	// Non-provider values still fold (they are not affected by the decision).
+	if s.AuthToken != "repro-auth" {
+		t.Errorf("authToken = %q, want repro-auth folded", s.AuthToken)
+	}
+}
+
+// TestSeedServiceFromEnvFile_FoldsWhenUndecided guards the complement: an
+// UNDECIDED provider still folds the persisted MCP_TUNNEL_PROVIDER so a re-run
+// against an existing tunnel install reuses it as the interactive default.
+func TestSeedServiceFromEnvFile_FoldsWhenUndecided(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "mcp.env")
+	writeEnv(t, envFile, partialEnv)
+	s := &mcpadapter.ServiceInstallState{}
+	seedServiceFromEnvFile(envFile, s)
+	if s.Provider != tunnel.TunnelProviderNgrok {
+		t.Errorf("undecided provider = %q, want ngrok folded from env", s.Provider)
+	}
+}
+
 func TestSeedServiceFromEnvFile_LeavesPreSetValues(t *testing.T) {
 	root := t.TempDir()
 	envFile := filepath.Join(root, "mcp.env")
@@ -1550,13 +1591,17 @@ func TestMcpInstallRunsAsDelegateSubWizard(t *testing.T) {
 	}
 }
 
-// TestMcpInstallHTTPAlwaysPromptsForPassword guards the core edge case: an
-// interactive http install must ALWAYS ask the operator for the MCP password,
-// even when an auth token was already inherited from the tunnel/env collector.
+// TestMcpInstallHTTPNoTunnelPromptsForPassword guards the NO-TUNNEL (localhost)
+// context of the context-dependent single ask: an interactive http install with
+// no tunnel provider (here s.Service is nil — the operator runs their own
+// foreground server / --service=false) IS the place the MCP password is
+// prompted, even when an auth token was already inherited from the collector.
 // The operator's chosen password (if they replace it) must be what ends up in
 // the written Authorization header — never a silently-sourced token the user
-// did not see.
-func TestMcpInstallHTTPAlwaysPromptsForPassword(t *testing.T) {
+// did not see. (A TUNNEL install instead gets the secret from the tunnel
+// config step and skips this prompt — see
+// TestMcpInstallHTTPTunnelSkipsPasswordPrompt.)
+func TestMcpInstallHTTPNoTunnelPromptsForPassword(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	projectDir := t.TempDir()
@@ -1597,6 +1642,97 @@ func TestMcpInstallHTTPAlwaysPromptsForPassword(t *testing.T) {
 	}
 }
 
+// TestMcpInstallHTTPTunnelSkipsPasswordPrompt guard the tunnel context of the
+// context-dependent single ask: on a TUNNEL install the shared auth token is
+// collected by the tunnel-specific configuration step, so the parent MCP
+// Password step must be SKIPPED — never prompting for the same secret twice.
+func TestMcpInstallHTTPTunnelSkipsPasswordPrompt(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+	ui := newMockInstallUI()
+
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: true,
+		// A tunnel provider is configured: the tunnel-config step already
+		// gathered the shared secret, so the parent must not ask again.
+		Service: &mcpadapter.ServiceInstallState{
+			Provider:  tunnel.TunnelProviderNgrok,
+			AuthToken: "collected-in-tunnel-step",
+			PublicURL: "https://mcp.ngrok-free.dev",
+		},
+	}
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
+	w.collectHTTP = fakeHTTPCollector("https://mcp.ngrok-free.dev", "collected-in-tunnel-step")
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+
+	if ui.WasCalled("SetMCPPassword") {
+		t.Errorf("SetMCPPassword must NOT be called on a tunnel install (secret already collected by the tunnel step)")
+	}
+
+	// The agent entry uses the token the tunnel step collected.
+	entry := readGlobalJSON(t, root, install.AgentClaudeCode)
+	headers, _ := entry["headers"].(map[string]any)
+	if auth, _ := headers["Authorization"]; auth != "Bearer collected-in-tunnel-step" {
+		t.Errorf("entry headers[Authorization] = %v, want 'Bearer collected-in-tunnel-step'", auth)
+	}
+}
+
+// TestMcpInstallHTTPLocalhostPromptsPassword guard the no-tunnel (localhost)
+// context of the context-dependent single ask: a localhost http install gathers
+// NO secret in the tunnel step, so the parent MCP Password step is the one place
+// the secret is asked — exactly once.
+func TestMcpInstallHTTPLocalhostPromptsPassword(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+	ui := newMockInstallUI()
+
+	// A backing localhost service env file for persistAuthToken to write into.
+	envFile := filepath.Join(t.TempDir(), "mcp.env")
+	if err := os.WriteFile(envFile, []byte("MCP_PUBLIC_URL=http://127.0.0.1:43047\n"), 0o600); err != nil {
+		t.Fatalf("write env file: %v", err)
+	}
+
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: true,
+		// No tunnel provider (localhost): the tunnel step only prompts OAuth
+		// and gathers no secret, so the MCP Password step must run.
+		Service: &mcpadapter.ServiceInstallState{
+			EnvFile:   envFile,
+			PublicURL: "http://127.0.0.1:43047",
+		},
+	}
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
+	w.collectHTTP = fakeHTTPCollector("http://127.0.0.1:43047", "")
+	ui.SetMCPPasswordResult = "operator-chosen-password"
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+
+	ui.mu.Lock()
+	pwCalls := append([]string(nil), ui.SetMCPPasswordCalls...)
+	ui.mu.Unlock()
+	if len(pwCalls) != 1 {
+		t.Errorf("SetMCPPassword calls = %d, want exactly 1 on a localhost install", len(pwCalls))
+	}
+	if state.AuthToken != "operator-chosen-password" {
+		t.Errorf("state.AuthToken = %q, want operator-chosen-password", state.AuthToken)
+	}
+}
+
 // TestMcpInstallHTTPPasswordPersistsToServiceEnv guards the follow-on: when an
 // http install has a backing managed service and the operator replaces the MCP
 // password, the new token must ALSO be persisted to the service env file
@@ -1620,13 +1756,15 @@ func TestMcpInstallHTTPPasswordPersistsToServiceEnv(t *testing.T) {
 		Scope:      scopeGlobal,
 		Transport:  install.TransportHTTP,
 		UseService: true,
-		// A backing service whose env file already carries the inherited token.
+		// A LOCALHOST backing service (no tunnel provider) whose env file
+		// already carries the inherited token. A no-tunnel service install is
+		// the context in which the MCP Password step still runs — a tunnel
+		// install gathered the secret in the tunnel step, so this path only
+		// applies here.
 		Service: &mcpadapter.ServiceInstallState{
-			EnvFile:    envFile,
-			AuthToken:  "inherited-token",
-			PublicURL:  "https://mcp.example.com",
-			Provider:   tunnel.TunnelProviderNgrok,
-			TunnelName: "pinner-mcp",
+			EnvFile:   envFile,
+			AuthToken: "inherited-token",
+			PublicURL: "https://mcp.example.com",
 		},
 	}
 
@@ -1696,12 +1834,13 @@ func TestMcpInstallHTTPPasswordRestartFailureRollsBack(t *testing.T) {
 		Scope:      scopeGlobal,
 		Transport:  install.TransportHTTP,
 		UseService: true,
+		// Localhost (no-tunnel) backing service — see
+		// TestMcpInstallHTTPPasswordPersistsToServiceEnv for why this path only
+		// applies to a no-tunnel service install.
 		Service: &mcpadapter.ServiceInstallState{
-			EnvFile:    envFile,
-			AuthToken:  "inherited-token",
-			PublicURL:  "https://mcp.example.com",
-			Provider:   tunnel.TunnelProviderNgrok,
-			TunnelName: "pinner-mcp",
+			EnvFile:   envFile,
+			AuthToken: "inherited-token",
+			PublicURL: "https://mcp.example.com",
 		},
 	}
 
@@ -1769,12 +1908,13 @@ func TestMcpInstallHTTPPasswordRestoreFailureSurfaced(t *testing.T) {
 		Scope:      scopeGlobal,
 		Transport:  install.TransportHTTP,
 		UseService: true,
+		// Localhost (no-tunnel) backing service — see
+		// TestMcpInstallHTTPPasswordPersistsToServiceEnv for why this path only
+		// applies to a no-tunnel service install.
 		Service: &mcpadapter.ServiceInstallState{
-			EnvFile:    envFile,
-			AuthToken:  "inherited-token",
-			PublicURL:  "https://mcp.example.com",
-			Provider:   tunnel.TunnelProviderNgrok,
-			TunnelName: "pinner-mcp",
+			EnvFile:   envFile,
+			AuthToken: "inherited-token",
+			PublicURL: "https://mcp.example.com",
 		},
 	}
 

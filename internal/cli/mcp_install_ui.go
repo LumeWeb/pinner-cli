@@ -35,10 +35,12 @@ type InstallUI interface {
 	ConfirmHTTP(agents []install.AgentKey) (bool, error)
 	// SetMCPPassword prompts for the shared auth token ("MCP password") that
 	// protects the public HTTP endpoint. current is the password already
-	// resolved from flags/env/tunnel collection (may be empty); it is shown
-	// masked so the operator can keep it or replace it. Returns the password
-	// to use. Always called for http/remote installs in interactive mode so
-	// the operator is never silently skipped past setting the credential.
+	// resolved from flags/env (may be empty); it is shown masked so the
+	// operator can keep it or replace it. Returns the password to use. It is
+	// asked once, context-dependently: for a no-tunnel (localhost) http
+	// install this is the single place the secret is collected; for a tunnel
+	// install the shared token was already gathered by the tunnel-config step,
+	// so this is not called (the MCP Password step is skipped).
 	SetMCPPassword(current string) (string, error)
 	// ConfirmOAuth asks whether to enable the OAuth 2.1 handshake on the
 	// public HTTP MCP endpoint. assumed is the value to present as the default

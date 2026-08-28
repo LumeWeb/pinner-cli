@@ -409,6 +409,71 @@ func TestReconcileFromInstallStatePurgesOldProviderViaPassedPrev(t *testing.T) {
 	require.Equal(t, "saved-token", env["MCP_AUTH_TOKEN"])
 }
 
+// TestReconcileFromInstallStateDowngradesLocalhost guards the re-run path
+// where an operator switches an existing tunnel install to "localhost" (the
+// empty provider, deliberately chosen — ProviderDecided). The previous
+// provider's identity + credential keys and its derived MCP_PUBLIC_URL must be
+// purged so the service stops starting a tunnel, while the shared auth token
+// and OAuth decision (both valid under localhost) survive.
+func TestReconcileFromInstallStateDowngradesLocalhost(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+		"MCP_TUNNEL_PROVIDER": "ngrok",
+		"MCP_TUNNEL_TOKEN":    "old-tok",
+		"MCP_AUTH_TOKEN":      "saved-token",
+		"MCP_PUBLIC_URL":      "https://dead.ngrok-free.dev",
+		"MCP_OAUTH":           "true",
+	}))
+
+	// Operator re-ran interactively and explicitly chose localhost (ProviderDecided).
+	err := ReconcileServiceEnvironmentFromInstallState(path, &ServiceInstallState{
+		Provider:        "",
+		ProviderDecided: true,
+		AuthToken:       "saved-token",
+	}, tunnel.TunnelProviderNgrok, false)
+	require.NoError(t, err)
+
+	env, err := service.LoadEnvironment(path)
+	require.NoError(t, err)
+	_, hasProvider := env["MCP_TUNNEL_PROVIDER"]
+	require.False(t, hasProvider, "MCP_TUNNEL_PROVIDER must be removed when switching to localhost")
+	_, hasToken := env["MCP_TUNNEL_TOKEN"]
+	require.False(t, hasToken, "ngrok's MCP_TUNNEL_TOKEN must be purged when switching to localhost")
+	_, hasURL := env["MCP_PUBLIC_URL"]
+	require.False(t, hasURL, "the previous provider's derived MCP_PUBLIC_URL must be purged when switching to localhost")
+	require.Equal(t, "saved-token", env["MCP_AUTH_TOKEN"], "the shared auth token is valid under localhost and must survive")
+	require.Equal(t, "true", env["MCP_OAUTH"], "the OAuth decision is valid under localhost and must survive")
+}
+
+// TestReconcileFromInstallStateLocalhostUndecidedIsNoop guards that an
+// UNDECIDED empty provider (ProviderDecided false — the operator never touched
+// the provider step, e.g. a partial/interrupted earlier step) does NOT purge
+// the existing tunnel config: nothing was decided, so it must stay intact. This
+// is what protects a re-run that never reaches the provider select from silently
+// dismantling a working tunnel install.
+func TestReconcileFromInstallStateLocalhostUndecidedIsNoop(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+		"MCP_TUNNEL_PROVIDER": "ngrok",
+		"MCP_TUNNEL_TOKEN":    "old-tok",
+		"MCP_PUBLIC_URL":      "https://ngrok-free.dev",
+	}))
+
+	err := ReconcileServiceEnvironmentFromInstallState(path, &ServiceInstallState{
+		Provider:  "",
+		AuthToken: "saved-token",
+	}, tunnel.TunnelProviderNgrok, false)
+	require.NoError(t, err)
+
+	env, err := service.LoadEnvironment(path)
+	require.NoError(t, err)
+	require.Equal(t, "ngrok", env["MCP_TUNNEL_PROVIDER"], "an undecided empty provider must NOT purge the existing provider")
+	require.Equal(t, "old-tok", env["MCP_TUNNEL_TOKEN"], "an undecided empty provider must NOT purge the existing credential")
+	require.Equal(t, "https://ngrok-free.dev", env["MCP_PUBLIC_URL"], "an undecided empty provider must NOT purge the existing public URL")
+}
+
 // TestReconcileFromInstallStatePreservesExplicitPublicURLOnSwitch guards that
 // an explicit --public-url (explicitPublicURL=true), which is provider-agnostic,
 // survives a provider switch — it must NOT be purged like a derived URL.
@@ -812,6 +877,40 @@ func TestSeedFromFlagsAndEnvSourcesFlagsAndEnv(t *testing.T) {
 	require.True(t, *captured.OAuth, "MCP_OAUTH env must seed OAuth")
 	require.NotNil(t, captured.Port, "MCP_PORT env must seed port")
 	require.Equal(t, 5555, *captured.Port, "MCP_PORT env must seed port")
+}
+
+// TestSeedFromFlagsAndEnvPreservesDecidedLocalhostVsEnv guards the Kody
+// finding: urfave/cli v3's IsSet("tunnel") is true when MCP_TUNNEL_PROVIDER is
+// present in the process env (the flag declares it as a Source), not only for an
+// explicit --tunnel CLI switch. Because seedServiceFromFlagsAndEnv is re-invoked
+// before EVERY wrapped tunnel step, an env-sourced value must never re-decide
+// (clobber) a provider the operator already fixed this run — in particular an
+// explicit localhost (empty provider) choice. Only a literal --tunnel on the
+// command line is a hard decision; an env value only prefills while undecided.
+func TestSeedFromFlagsAndEnvPreservesDecidedLocalhostVsEnv(t *testing.T) {
+	// MCP_TUNNEL_PROVIDER in the process env makes cmd.IsSet("tunnel") true, but
+	// no --tunnel appears on the command line.
+	t.Setenv("MCP_TUNNEL_PROVIDER", "ngrok")
+
+	var s *ServiceInstallState
+	cmd := &cli.Command{
+		Flags: managedServiceFlags(),
+		Action: func(ctx context.Context, c *cli.Command) error {
+			s = &ServiceInstallState{
+				// The provider step already ran and the operator chose localhost.
+				Provider:        "",
+				ProviderDecided: true,
+			}
+			seedServiceFromFlagsAndEnv(c, s, "")
+			return nil
+		},
+	}
+	require.NoError(t, cmd.Run(context.Background(), []string{"pinner", "mcp", "service", "install"}))
+
+	require.NotNil(t, s)
+	require.Equal(t, tunnel.TunnelProvider(""), s.Provider,
+		"an env-sourced MCP_TUNNEL_PROVIDER must NOT clobber an explicit localhost decision")
+	require.True(t, s.ProviderDecided, "localhost decision must remain decided")
 }
 
 func TestInstallRemovesFreshFileOnValidationFailure(t *testing.T) {
