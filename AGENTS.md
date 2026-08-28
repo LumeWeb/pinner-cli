@@ -3,7 +3,9 @@
 This file provides guidance to AI agents and developers working with the
 Pinner.xyz CLI. For the full architecture, see
 [`docs/architecture.md`](docs/architecture.md); for build, test, and release
-workflows, see [`docs/build.md`](docs/build.md).
+workflows, see [`docs/build.md`](docs/build.md). For auditing the MCP
+tool-programming surface as a connected host sees it (host-specific regressions
+and intel), see [`docs/mcp-host-audit.md`](docs/mcp-host-audit.md).
 
 ## Common Commands
 
