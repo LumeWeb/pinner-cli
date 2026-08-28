@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
@@ -398,6 +399,18 @@ func mcpOAuthEnabled(s *InstallState) bool {
 	return s.Service != nil && s.Service.OAuth != nil && *s.Service.OAuth
 }
 
+// httpEndpointURL returns the streamable-HTTP endpoint URL a client dials for
+// an http install. The operator-facing public URL is the base origin the server
+// binds and advertises in OAuth discovery; the endpoint path /mcp is appended
+// unless it is already present.
+func httpEndpointURL(publicURL string) string {
+	base := strings.TrimRight(publicURL, "/")
+	if strings.HasSuffix(base, "/mcp") {
+		return base
+	}
+	return base + "/mcp"
+}
+
 // writeConfig writes the server entry for each selected agent at each scope.
 func (w *InstallWizard) writeConfig(s *InstallState) error {
 	serverCfg := install.McpServerConfig{}
@@ -418,6 +431,15 @@ func (w *InstallWizard) writeConfig(s *InstallState) error {
 		}
 		serverCfg.Type = s.Transport
 		serverCfg.URL = s.PublicURL
+		// The entry URL must point at the transport endpoint (/mcp for HTTP),
+		// not the bare origin. RFC 9728 OAuth clients (Claude, Gemini, ...)
+		// validate that the dialed URL matches the protected-resource identifier
+		// advertised in discovery (BaseURL + "/mcp"); writing the origin alone
+		// makes OAuth discovery reject the handshake with a protected-resource
+		// mismatch.
+		if s.Transport == install.TransportHTTP {
+			serverCfg.URL = httpEndpointURL(s.PublicURL)
+		}
 		// On an OAuth-protected endpoint a static Bearer header is meaningless:
 		// /mcp only accepts tokens issued through the OAuth handshake, and
 		// MCP_AUTH_TOKEN doubles as the login-page shared secret a human enters.
