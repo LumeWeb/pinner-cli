@@ -7,8 +7,8 @@ import (
 )
 
 // TestSearchFilters verifies metadata-first search: name substring, tag AND
-// membership, provenance, and directory prefix filtering, with AND semantics
-// across filters.
+// membership, and directory prefix filtering, with AND semantics across
+// filters.
 func TestSearchFilters(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTagTestService(t)
@@ -19,16 +19,10 @@ func TestSearchFilters(t *testing.T) {
 			t.Fatalf("Put %s: %v", path, err)
 		}
 	}
-	// Three files with tags + provenance.
-	mk("vault:/docs/report-q3.txt", map[string]any{
-		"created_by": "derrick", "agent_id": "agent-1", "tags": []any{"finance", "draft"},
-	})
-	mk("vault:/docs/report-final.txt", map[string]any{
-		"created_by": "derrick", "agent_id": "agent-1", "tags": []any{"finance", "final"},
-	})
-	mk("vault:/photos/beach.jpg", map[string]any{
-		"created_by": "your-name", "agent_id": "agent-2", "tags": []any{"vacation"},
-	})
+	// Three files with tags.
+	mk("vault:/docs/report-q3.txt", map[string]any{"tags": []any{"finance", "draft"}})
+	mk("vault:/docs/report-final.txt", map[string]any{"tags": []any{"finance", "final"}})
+	mk("vault:/photos/beach.jpg", map[string]any{"tags": []any{"vacation"}})
 
 	// Name substring (case-insensitive).
 	res, err := svc.Search(ctx, SearchFilter{Name: "REPORT"})
@@ -51,15 +45,6 @@ func TestSearchFilters(t *testing.T) {
 		t.Fatal("search result should surface tags")
 	}
 
-	// Provenance + status.
-	res, err = svc.Search(ctx, SearchFilter{CreatedBy: "derrick"})
-	if err != nil {
-		t.Fatalf("Search created_by: %v", err)
-	}
-	if len(res) != 2 {
-		t.Fatalf("created_by=derrick found %d, want 2", len(res))
-	}
-
 	// Directory prefix: only /docs files.
 	res, err = svc.Search(ctx, SearchFilter{Dir: "vault:/docs"})
 	if err != nil {
@@ -69,8 +54,8 @@ func TestSearchFilters(t *testing.T) {
 		t.Fatalf("dir /docs found %d, want 2", len(res))
 	}
 
-	// Cross-filter AND: created_by=derrick + tag vacation -> none.
-	res, err = svc.Search(ctx, SearchFilter{CreatedBy: "derrick", Tags: []string{"vacation"}})
+	// Cross-filter AND: tag finance+vacation -> none.
+	res, err = svc.Search(ctx, SearchFilter{Tags: []string{"finance", "vacation"}})
 	if err != nil {
 		t.Fatalf("Search combined: %v", err)
 	}

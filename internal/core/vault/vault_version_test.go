@@ -389,11 +389,10 @@ func TestVersion_RestorePropagatesDownloadError(t *testing.T) {
 	}
 }
 
-// TestVersion_RestorePreservesTagsAndProvenance asserts that restoring an old
-// version mints a new current winner that KEEPS the live file's tags and
-// provenance (created_by/agent/session), rather than coming up empty (which
-// would silently drop the label set from the restored row).
-func TestVersion_RestorePreservesTagsAndProvenance(t *testing.T) {
+// TestVersion_RestorePreservesTags asserts that restoring an old version mints
+// a new current winner that KEEPS the live file's tags, rather than coming up
+// empty (which would silently drop the label set from the restored row).
+func TestVersion_RestorePreservesTags(t *testing.T) {
 	ctx := context.Background()
 	const path = "vault:/docs/doc.txt"
 
@@ -411,8 +410,7 @@ func TestVersion_RestorePreservesTagsAndProvenance(t *testing.T) {
 	c1 := File{UUID: "uuid-doc", Name: "doc.txt", DirectoryID: dirID, IsCurrent: false,
 		VersionID: "version-v1", Seq: 1, ObjectKey: keyV1, Size: int64(len("v1 content"))}
 	c2 := File{UUID: "uuid-doc", Name: "doc.txt", DirectoryID: dirID, IsCurrent: true,
-		VersionID: "version-v2", Seq: 2, ObjectKey: keyV2, Size: int64(len("v2 content")),
-		CreatedBy: "derrick", AgentID: "agent-7", SessionID: "session-9"}
+		VersionID: "version-v2", Seq: 2, ObjectKey: keyV2, Size: int64(len("v2 content"))}
 	for _, f := range []File{c1, c2} {
 		if err := db.Create(&f).Error; err != nil {
 			t.Fatalf("seed version row: %v", err)
@@ -431,12 +429,6 @@ func TestVersion_RestorePreservesTagsAndProvenance(t *testing.T) {
 	restored, err := svc.VersionRestore(ctx, path, "version-v1")
 	if err != nil {
 		t.Fatalf("VersionRestore: %v", err)
-	}
-
-	// The restored winner row must carry over provenance from the live file.
-	if restored.CreatedBy != "derrick" || restored.AgentID != "agent-7" || restored.SessionID != "session-9" {
-		t.Errorf("restored row lost provenance: got (%q,%q,%q), want (derrick,agent-7,session-9)",
-			restored.CreatedBy, restored.AgentID, restored.SessionID)
 	}
 
 	// And the restored winner's tags must be persisted to the local join.

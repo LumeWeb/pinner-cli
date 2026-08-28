@@ -8,11 +8,10 @@ import "encoding/json"
 // so distinct objects with the same name are not conflated and sync never
 // drops a file on a name collision.
 //
-// Status/LostReason/createdBy/agentID/sessionID are carried through this same
-// encode/decode path so lifecycle state and provenance survive cache rebuilds
-// and sync to every device like every other field. They are omitempty so a
-// healthy file ("ok", no provenance) does not consume the 1024-byte sealed
-// metadata budget.
+// Status/LostReason are carried through this same encode/decode path so
+// lifecycle state survives cache rebuilds and syncs to every device like every
+// other field. They are omitempty so a healthy file ("ok") does not consume the
+// 1024-byte sealed metadata budget.
 type FileMetadata struct {
 	ID            string         `json:"id"`            // stable per-file UUID
 	VersionID     string         `json:"version_id,omitempty"` // opaque version handle (syncs)
@@ -28,10 +27,6 @@ type FileMetadata struct {
 	// the terminal detail (e.g. slab-unavailable error) when Status == "lost".
 	Status      string `json:"status,omitempty"`
 	LostReason  string `json:"lost_reason,omitempty"`
-	// Provenance: best-effort, user-attested audit fields.
-	CreatedBy string `json:"created_by,omitempty"`
-	AgentID   string `json:"agent_id,omitempty"`
-	SessionID string `json:"session_id,omitempty"`
 }
 
 func (m FileMetadata) JSON() (json.RawMessage, error) {

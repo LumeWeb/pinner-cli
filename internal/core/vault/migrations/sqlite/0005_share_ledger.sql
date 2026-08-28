@@ -21,7 +21,6 @@ CREATE TABLE IF NOT EXISTS `share_ledger`
     `object_key`        text    NOT NULL,
     `expiry`            datetime,
     `target_principal`  text    NOT NULL DEFAULT '',
-    `created_by`        text    NOT NULL DEFAULT '',
     `created_at`        datetime NOT NULL
 );
 
