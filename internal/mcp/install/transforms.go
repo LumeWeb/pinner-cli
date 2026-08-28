@@ -1,5 +1,10 @@
 package install
 
+import (
+	"strings"
+	"unicode"
+)
+
 // This file implements the per-agent transforms. Each transform builds a
 // FRESH map containing only recognized keys — unsupported fields never leak
 // into an agent's native schema.
@@ -58,8 +63,17 @@ func transformFx(_ string, cfg McpServerConfig, local bool) any {
 			"url":     cfg.URL,
 			"enabled": true,
 		}
-		if len(cfg.Headers) > 0 {
-			entry["headers"] = cfg.Headers
+		// fx rejects a literal Authorization header, so when a bearer token env
+		// is configured the credential is emitted as bearer_token_env (fx reads
+		// it from that env var) and the Authorization header is stripped so the
+		// secret never lands in ~/.fx/mcp.json as plaintext.
+		headers := cfg.Headers
+		if bearerEnv := fxBearerTokenEnv(cfg); bearerEnv != "" {
+			headers = headersWithoutAuthorization(cfg.Headers)
+			entry["bearer_token_env"] = bearerEnv
+		}
+		if len(headers) > 0 {
+			entry["headers"] = headers
 		}
 		return entry
 	}
@@ -74,6 +88,44 @@ func transformFx(_ string, cfg McpServerConfig, local bool) any {
 		entry["environment"] = cfg.Env
 	}
 	return entry
+}
+
+// fxBearerTokenEnv returns the bearer-token env var name fx should read from,
+// or "" when none is configured. The name is validated to be a plausible
+// environment variable name so a literal value is never emitted accidentally.
+func fxBearerTokenEnv(cfg McpServerConfig) string {
+	name := strings.TrimSpace(cfg.BearerTokenEnv)
+	if name == "" {
+		return ""
+	}
+	for i, r := range name {
+		if i == 0 && !unicode.IsLetter(r) && r != '_' {
+			return ""
+		}
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' {
+			return ""
+		}
+	}
+	return name
+}
+
+// headersWithoutAuthorization returns a copy of headers with any Authorization
+// header removed (case-insensitive). Returns nil when the result is empty.
+func headersWithoutAuthorization(headers map[string]string) map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(headers))
+	for name, val := range headers {
+		if strings.EqualFold(name, "Authorization") {
+			continue
+		}
+		out[name] = val
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // transformGemini converts into Gemini CLI's mcpServers entry shape.

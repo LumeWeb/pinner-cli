@@ -387,6 +387,11 @@ func (w *InstallWizard) writeConfig(s *InstallState) error {
 		serverCfg.URL = s.PublicURL
 		if s.AuthToken != "" {
 			serverCfg.Headers = map[string]string{"Authorization": "Bearer " + s.AuthToken}
+			// fx cannot take a literal Authorization header; it must read the
+			// token from an env var. Point it at the canonical MCP_AUTH_TOKEN
+			// var (the transform strips the literal header and emits
+			// bearer_token_env). Other agents ignore this field.
+			serverCfg.BearerTokenEnv = "MCP_AUTH_TOKEN"
 		}
 	}
 
@@ -499,6 +504,13 @@ func (w *InstallWizard) writeOne(s *InstallState, agentCfg install.Agent, server
 	}
 	if err := install.WriteServerConfig(agentCfg, path, defaultServerName, serverCfg, local); err != nil {
 		return fmt.Errorf("%s: write config: %w", agentCfg.Key(), err)
+	}
+	if agentCfg.Key() == install.AgentFx && serverCfg.BearerTokenEnv != "" {
+		// fx reads the MCP password from BearerTokenEnv's env var rather than a
+		// literal Authorization header, so the running config depends on that var
+		// being set in fx's shell. Instruct the operator to export it with their
+		// just-set password; the raw value is never echoed into the output.
+		_ = w.ui.ReportBuild(install.AgentFx, "fx reads the MCP password from the "+serverCfg.BearerTokenEnv+" env var (bearer_token_env); before running fx, export it with the MCP password you set in the previous step (e.g. 'export "+serverCfg.BearerTokenEnv+"=<mcp-password>')")
 	}
 	return w.ui.ReportWritten(agentCfg.Key(), path, local)
 }

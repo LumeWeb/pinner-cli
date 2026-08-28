@@ -68,6 +68,10 @@ type McpServerConfig struct {
 	OAuthScopes      []string `json:"-"`
 	AutoApproveTools []string `json:"-"` // per-tool approve list (empty [] = approve all)
 	AutoApproveSet   bool     `json:"-"` // true when auto-approve was explicitly requested
+	// BearerTokenEnv names the environment variable a remote fx server reads its
+	// Bearer token from. fx rejects a literal Authorization header, so the token
+	// is carried via bearer_token_env instead of headers. Only fx consumes this.
+	BearerTokenEnv string `json:"-"`
 }
 
 // IsRemote reports whether this config describes a remote (http/sse) server.
