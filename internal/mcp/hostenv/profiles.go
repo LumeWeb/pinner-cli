@@ -84,6 +84,17 @@ var ProfileGrokHTTP = newProfile(
 	HostGrok, TransportHTTP, AuthOAuth, true,
 )
 
+// ProfileGrokStdio is xAI Grok Shell (clientInfo name "grok-shell-pinner" and
+// kin) running over co-located stdio. Like the other co-located stdio hosts it
+// shares the host filesystem, so it picks up source-path/sink-local from the
+// stdio transport mechanisms. No host-specific capability features are declared
+// statically: MCP Apps is set only by the live overlay when the client actually
+// negotiates io.modelcontextprotocol/ui, mirroring ProfileGrokHTTP.
+var ProfileGrokStdio = newProfile(
+	nil,
+	HostGrok, TransportStdio, AuthNone, false,
+)
+
 // ProfileClaudeHTTP is Anthropic's Claude Web client (clientInfo name
 // "Anthropic/ClaudeAI", User-Agent "Claude-User") connecting over HTTP +
 // OAuth. Claude Web grants the agent no network egress (no curl) and no
@@ -215,6 +226,8 @@ func resolveProfile(host HostType, transport TransportKind, auth AuthMethod) Pla
 		return ProfileOpenAIHTTP
 	case host == HostGrok && transport == TransportHTTP:
 		return ProfileGrokHTTP
+	case host == HostGrok && transport == TransportStdio:
+		return ProfileGrokStdio
 	case host == HostClaude && transport == TransportHTTP:
 		return ProfileClaudeHTTP
 	case host == HostClaudeDesktop && transport == TransportStdio:

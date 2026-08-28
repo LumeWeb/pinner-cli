@@ -144,10 +144,39 @@ func TestGrokDetector_MatchByUserAgent(t *testing.T) {
 	require.Equal(t, AuthOAuth, auth)
 }
 
+func TestGrokDetector_MatchCoLocatedShell(t *testing.T) {
+	d := grokDetector{}
+
+	// Positive: co-located stdio with clientInfo name "grok-shell-pinner"
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "grok-shell-pinner", Version: "1.0.5"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostGrok, host)
+	require.Equal(t, AuthNone, auth)
+
+	// Positive: a helper may prefix the product token
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "myorg-grok-shell"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostGrok, host)
+	require.Equal(t, AuthNone, auth)
+
+	// Negative: co-located but the name is not grok-shell
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "grok-something"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+}
+
 func TestGrokDetector_NoMatch(t *testing.T) {
 	d := grokDetector{}
 
-	// Negative: grokDetector does NOT check ClientInfo, only User-Agent
+	// Negative: remote, name is not an exact "grok" (the co-located
+	// "grok-shell" prefix is not accepted on the remote path)
 	host, auth := d.Match(DetectRequest{
 		ClientInfo: &ClientInfo{Name: "grok-something"},
 	})
@@ -1139,6 +1168,13 @@ func TestResolveProfile(t *testing.T) {
 			transport: TransportHTTP,
 			auth:      AuthOAuth,
 			want:      ProfileGrokHTTP,
+		},
+		{
+			name:      "grok over stdio",
+			host:      HostGrok,
+			transport: TransportStdio,
+			auth:      AuthNone,
+			want:      ProfileGrokStdio,
 		},
 		{
 			name:      "claude over http",
