@@ -229,6 +229,12 @@ var profileAliasTargets = map[HostType]HostType{
 	// host-specific gating can use HostIs(HostKimi), but inherits HostGeneric's
 	// declaration.
 	HostKimi: HostGeneric,
+
+	// Zed is a co-located stdio client (clientInfo name "Zed") whose capability
+	// surface is exactly the generic stdio profile (co-located, sink-local,
+	// source-path). It is its own HostType so host-specific gating can use
+	// HostIs(HostZed), but inherits HostGeneric's declaration.
+	HostZed: HostGeneric,
 }
 
 // ProfileForTransport returns the generic profile for a transport kind.
