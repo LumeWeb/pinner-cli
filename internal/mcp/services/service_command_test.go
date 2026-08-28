@@ -131,6 +131,43 @@ func TestInstallBootstrapsMissingEnvFile(t *testing.T) {
 	require.Contains(t, cfg.Arguments, "--http")
 }
 
+// TestInstallBootstrapPersistsDevTools guards that the managed-service install
+// respects --dev-tools and persists it as MCP_DEV_TOOLS in the service env file
+// (so the running `pinner mcp` server sourced from that file starts with the
+// dev_* introspection tools).
+func TestInstallBootstrapPersistsDevTools(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		set  func(*cli.Command)
+		want string // expected MCP_DEV_TOOLS value, "" means the key is absent
+	}{
+		{"explicit enable", func(c *cli.Command) { require.NoError(t, c.Set(serviceDevToolsFlag, "true")) }, "true"},
+		{"explicit disable", func(c *cli.Command) { require.NoError(t, c.Set(serviceDevToolsFlag, "false")) }, "false"},
+		{"unset stays absent", func(*cli.Command) {}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "mcp.env")
+			cmd := &cli.Command{Flags: managedServiceFlags()}
+			require.NoError(t, cmd.Set(serviceEnvFileFlag, path))
+			require.NoError(t, cmd.Set(serviceTunnelFlag, "cloudflared"))
+			require.NoError(t, cmd.Set(serviceDomainFlag, "mcp.example.com"))
+			require.NoError(t, cmd.Set(serviceAuthTokenFlag, "test-auth-token-abc123"))
+			tc.set(cmd)
+
+			require.NoError(t, bootstrapServiceEnvironment(cmd, path, nil))
+
+			env, err := service.LoadEnvironment(path)
+			require.NoError(t, err)
+			if tc.want == "" {
+				require.NotContains(t, env, "MCP_DEV_TOOLS", "unset --dev-tools must not write MCP_DEV_TOOLS")
+			} else {
+				require.Equal(t, tc.want, env["MCP_DEV_TOOLS"], "--dev-tools must persist to the service env file")
+			}
+		})
+	}
+}
+
 func TestInstallBootstrapHonorsExplicitOAuthFalse(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")
@@ -682,6 +719,29 @@ func TestServiceInstallStateToEnvOmitsOAuthWhenUndecided(t *testing.T) {
 		Provider: tunnel.TunnelProviderCloudflared,
 	})
 	require.NotContains(t, env, "MCP_OAUTH", "undecided OAuth must omit the key, not force MCP_OAUTH=false")
+}
+
+// TestServiceInstallStateToEnvPersistsDevTools guards the interactive wizard
+// write path: an explicit --dev-tools/--no-dev-tools decision is persisted as
+// MCP_DEV_TOOLS, while an undecided value omits the key (preserving whatever a
+// pre-existing env file already carries).
+func TestServiceInstallStateToEnvPersistsDevTools(t *testing.T) {
+	env := serviceInstallStateToEnv(&ServiceInstallState{
+		Provider: tunnel.TunnelProviderCloudflared,
+		DevTools: new(true),
+	})
+	require.Equal(t, "true", env["MCP_DEV_TOOLS"], "explicit --dev-tools must be persisted as MCP_DEV_TOOLS=true")
+
+	env = serviceInstallStateToEnv(&ServiceInstallState{
+		Provider: tunnel.TunnelProviderCloudflared,
+		DevTools: new(false),
+	})
+	require.Equal(t, "false", env["MCP_DEV_TOOLS"], "explicit --no-dev-tools must be persisted as MCP_DEV_TOOLS=false")
+
+	env = serviceInstallStateToEnv(&ServiceInstallState{
+		Provider: tunnel.TunnelProviderCloudflared,
+	})
+	require.NotContains(t, env, "MCP_DEV_TOOLS", "undecided DevTools must omit the key, not force MCP_DEV_TOOLS=false")
 }
 
 // TestServiceInstallStateToEnvWritesPort guards that an explicit --port 0
