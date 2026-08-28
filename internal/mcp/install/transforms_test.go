@@ -552,15 +552,54 @@ func TestTransformFxRemote(t *testing.T) {
 	})
 }
 
-// TestTransformFxRejectsAuthorizationHeader verifies that a remote fx config
-// carrying a literal Authorization header fails the install instead of writing
-// an entry fx refuses to load (fx requires bearer_token_env / header_env).
-func TestTransformFxRejectsAuthorizationHeader(t *testing.T) {
+// TestTransformFxBearerTokenEnv verifies that when a bearer-token env is
+// configured the Authorization header is not written as a literal value (fx
+// rejects it) and is instead emitted as bearer_token_env.
+func TestTransformFxBearerTokenEnv(t *testing.T) {
+	cfg := McpServerConfig{
+		Type:           TransportHTTP,
+		URL:            "https://example.com/mcp",
+		Headers:        map[string]string{"Authorization": "Bearer x"},
+		BearerTokenEnv: "MCP_AUTH_TOKEN",
+	}
+	got := transformRunner(t, AgentFx, "server", cfg, false)
+	assertMapEqual(t, "fx-remote-bearer", got, map[string]any{
+		"type":             "http",
+		"url":              "https://example.com/mcp",
+		"enabled":          true,
+		"bearer_token_env": "MCP_AUTH_TOKEN",
+	})
+}
+
+// TestTransformFxBearerTokenEnvKeepsOtherHeaders verifies that configuring a
+// bearer-token env strips only the Authorization header and keeps other headers.
+func TestTransformFxBearerTokenEnvKeepsOtherHeaders(t *testing.T) {
+	cfg := McpServerConfig{
+		Type:           TransportHTTP,
+		URL:            "https://example.com/mcp",
+		Headers:        map[string]string{"Authorization": "Bearer x", "X-API-Key": "v"},
+		BearerTokenEnv: "MCP_AUTH_TOKEN",
+	}
+	got := transformRunner(t, AgentFx, "server", cfg, false)
+	assertMapEqual(t, "fx-remote-bearer-headers", got, map[string]any{
+		"type":             "http",
+		"url":              "https://example.com/mcp",
+		"enabled":          true,
+		"bearer_token_env": "MCP_AUTH_TOKEN",
+		"headers":          map[string]string{"X-API-Key": "v"},
+	})
+}
+
+// TestTransformFxRejectsAuthorizationHeaderWithoutEnv verifies that a remote fx
+// config carrying a literal Authorization header with no bearer-token env
+// configured fails instead of writing an entry fx refuses to load (fx requires
+// bearer_token_env / header_env).
+func TestTransformFxRejectsAuthorizationHeaderWithoutEnv(t *testing.T) {
 	cfg := McpServerConfig{Type: TransportHTTP, URL: "https://example.com/mcp", Headers: map[string]string{"Authorization": "Bearer x"}}
 	agent := Lookup(AgentFx)
 	_, err := agent.Transform("server", cfg, false)
 	if err == nil {
-		t.Fatal("fx transform should reject a literal Authorization header")
+		t.Fatal("fx transform should reject a literal Authorization header without a bearer-token env")
 	}
 	if !strings.Contains(err.Error(), "Authorization") {
 		t.Errorf("error = %q, want it to mention Authorization", err)

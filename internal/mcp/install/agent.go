@@ -108,28 +108,35 @@ func (a *declaredAgent) Transform(serverName string, cfg McpServerConfig, local 
 	if !ok {
 		return nil, fmt.Errorf("%s: unknown transform %q", a.spec.key, a.spec.transformName)
 	}
-	// fx rejects a literal Authorization header in the remote entry (it needs
-	// credentials via bearer_token_env / header_env), so fail the install rather
-	// than write a config fx refuses to load.
+	// fx rejects a literal Authorization header; when no bearer-token env is
+	// configured to carry the credential, fail rather than write a config fx
+	// refuses to load. With a bearer-token env set, the transform strips the
+	// Authorization header and emits bearer_token_env instead.
 	if a.spec.key == AgentFx {
-		if err := validateFxRemoteHeaders(cfg); err != nil {
+		if err := validateFxRemoteAuth(cfg); err != nil {
 			return nil, fmt.Errorf("%s: %w", a.spec.key, err)
 		}
 	}
 	return fn(serverName, cfg, local), nil
 }
 
-// validateFxRemoteHeaders returns an error when a remote fx config carries a
-// literal Authorization header, which fx does not accept. fx requires
-// credentials through bearer_token_env / header_env in ~/.fx/mcp.json.
+// validateFxRemoteAuth returns an error when a remote fx config carries a
+// literal Authorization header with no bearer-token env configured to carry
+// the credential. fx rejects a literal Authorization header and requires the
+// token via bearer_token_env / header_env in ~/.fx/mcp.json.
 // See https://fx.sh/docs/capabilities/mcp.
-func validateFxRemoteHeaders(cfg McpServerConfig) error {
+func validateFxRemoteAuth(cfg McpServerConfig) error {
 	if !cfg.IsRemote() {
+		return nil
+	}
+	// With a bearer-token env set, transformFx strips the Authorization header
+	// and emits bearer_token_env, so no literal header is written.
+	if fxBearerTokenEnv(cfg) != "" {
 		return nil
 	}
 	for name := range cfg.Headers {
 		if strings.EqualFold(name, "Authorization") {
-			return fmt.Errorf("fx rejects a literal Authorization header; provide the credential via bearer_token_env or header_env in ~/.fx/mcp.json")
+			return fmt.Errorf("fx rejects a literal Authorization header; configure a bearer-token env var (e.g. MCP_AUTH_TOKEN) so the credential is emitted via bearer_token_env in ~/.fx/mcp.json")
 		}
 	}
 	return nil
