@@ -879,6 +879,40 @@ func TestSeedFromFlagsAndEnvSourcesFlagsAndEnv(t *testing.T) {
 	require.Equal(t, 5555, *captured.Port, "MCP_PORT env must seed port")
 }
 
+// TestSeedFromFlagsAndEnvPreservesDecidedLocalhostVsEnv guards the Kody
+// finding: urfave/cli v3's IsSet("tunnel") is true when MCP_TUNNEL_PROVIDER is
+// present in the process env (the flag declares it as a Source), not only for an
+// explicit --tunnel CLI switch. Because seedServiceFromFlagsAndEnv is re-invoked
+// before EVERY wrapped tunnel step, an env-sourced value must never re-decide
+// (clobber) a provider the operator already fixed this run — in particular an
+// explicit localhost (empty provider) choice. Only a literal --tunnel on the
+// command line is a hard decision; an env value only prefills while undecided.
+func TestSeedFromFlagsAndEnvPreservesDecidedLocalhostVsEnv(t *testing.T) {
+	// MCP_TUNNEL_PROVIDER in the process env makes cmd.IsSet("tunnel") true, but
+	// no --tunnel appears on the command line.
+	t.Setenv("MCP_TUNNEL_PROVIDER", "ngrok")
+
+	var s *ServiceInstallState
+	cmd := &cli.Command{
+		Flags: managedServiceFlags(),
+		Action: func(ctx context.Context, c *cli.Command) error {
+			s = &ServiceInstallState{
+				// The provider step already ran and the operator chose localhost.
+				Provider:        "",
+				ProviderDecided: true,
+			}
+			seedServiceFromFlagsAndEnv(c, s, "")
+			return nil
+		},
+	}
+	require.NoError(t, cmd.Run(context.Background(), []string{"pinner", "mcp", "service", "install"}))
+
+	require.NotNil(t, s)
+	require.Equal(t, tunnel.TunnelProvider(""), s.Provider,
+		"an env-sourced MCP_TUNNEL_PROVIDER must NOT clobber an explicit localhost decision")
+	require.True(t, s.ProviderDecided, "localhost decision must remain decided")
+}
+
 func TestInstallRemovesFreshFileOnValidationFailure(t *testing.T) {
 	// Bootstrap writes a cloudflared env, then validation fails because MCP_DOMAIN
 	// and the auth token are unset; the freshly created file must be removed (not
