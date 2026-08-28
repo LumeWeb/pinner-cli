@@ -471,6 +471,9 @@ func TestRun_DropsNotApplicableStep(t *testing.T) {
 	require.Equal(t, 2, result.StepsCompleted)
 	require.Equal(t, 0, result.StepsSkipped)
 	require.False(t, mock.WasCalled("ShowStepSkipped(N/A)"))
+	// StepsTotal counts applicable steps, not the raw step list length (the
+	// N/A step is dropped).
+	require.Equal(t, 2, result.StepsTotal)
 
 	// B is numbered gap-free as 2, not "3" (the inapplicable step left no slot).
 	expected := []string{

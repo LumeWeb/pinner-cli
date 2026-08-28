@@ -113,7 +113,15 @@ func Run[S any](ctx context.Context, ui UI, steps []Step[S], state S) (Result, e
 		return Result{}, err
 	}
 
-	result := Result{StepsTotal: len(steps)}
+	// StepsTotal reflects the number of steps that apply to this configuration.
+	// A step dropped as not applicable is not part of the flow, so counting
+	// len(steps) would inflate the total for consumers reading it.
+	result := Result{}
+	for _, s := range steps {
+		if s.Applicable(state) {
+			result.StepsTotal++
+		}
+	}
 
 	// Iterate the steps. A step that is NOT applicable to the current
 	// configuration is dropped entirely: it is not numbered, not shown with a
