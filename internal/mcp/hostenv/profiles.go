@@ -191,6 +191,12 @@ var profileAliasTargets = map[HostType]HostType{
 	// can use HostIs(HostKilo), but inherits HostGeneric's declaration.
 	HostKilo: HostGeneric,
 
+	// Kiro (clientInfo name "Q DEV CLI") is a co-located stdio client whose
+	// capability surface is exactly the generic stdio profile (co-located,
+	// sink-local, source-path). It is its own HostType so host-specific gating
+	// can use HostIs(HostKiro), but inherits HostGeneric's declaration.
+	HostKiro: HostGeneric,
+
 	// OpenCode is a co-located stdio client (clientInfo name "opencode") whose
 	// capability surface is exactly the generic stdio profile (co-located,
 	// sink-local, source-path). It is its own HostType so host-specific gating
