@@ -401,9 +401,16 @@ func buildMcpTunnelSteps(realCmd *cli.Command, ui InstallUI) []wizard.Step[*Inst
 
 	inner := mcpadapter.ServiceInstallSteps(&mcpadapter.ServiceInstallState{}, realCmd, "", mcpadapter.ServiceConfigManager())
 
-	wrap := func(hostName string, inner wizard.Step[*mcpadapter.ServiceInstallState], seed wizard.SeedFunc[*InstallState], extraSkip func(*InstallState) bool, preExecute func(context.Context, *InstallState, *mcpadapter.ServiceInstallState) error, postExecute func(context.Context, *InstallState, *mcpadapter.ServiceInstallState, error) error) wizard.Step[*InstallState] {
+	wrap := func(hostName string, inner wizard.Step[*mcpadapter.ServiceInstallState], seed wizard.SeedFunc[*InstallState], applicable func(*InstallState) bool, extraSkip func(*InstallState) bool, preExecute func(context.Context, *InstallState, *mcpadapter.ServiceInstallState) error, postExecute func(context.Context, *InstallState, *mcpadapter.ServiceInstallState, error) error) wizard.Step[*InstallState] {
 		return wizard.StepFunc[*InstallState]{
 			Name_: hostName,
+			// Applicability is evaluated when the step is reached. The wrapped
+			// tunnel steps are only part of a remote (http) install; the config
+			// step additionally drops out entirely once the operator has chosen
+			// a NO-tunnel (localhost) provider in the preceding step, so it
+			// never renders as an empty numbered slot. A nil applicable means
+			// "always applicable".
+			ApplicableFunc: applicable,
 			SeedFunc_: func(ctx context.Context, s *InstallState) ([]string, bool) {
 				svc := svcInit(s)
 				if s.serviceEnvErr != nil {
@@ -499,7 +506,16 @@ func buildMcpTunnelSteps(realCmd *cli.Command, ui InstallUI) []wizard.Step[*Inst
 	}
 
 	return []wizard.Step[*InstallState]{
-		wrap("Tunnel provider", tunnelStepAt(inner, 0), tunnelProviderSeeded, nil, nil, nil),
+		// The tunnel steps are only applicable to a remote (http) install; the
+		// config step also drops out when the operator chose a NO-tunnel
+		// (localhost) provider in the preceding step — there is nothing
+		// tunnel-specific to configure, so it never renders as an empty
+		// numbered slot. The OAuth secure default-on (applyOAuthSecureDefault
+		// in the write step) covers the endpoint on fresh installs; an explicit
+		// --oauth flag still wins.
+		wrap("Tunnel provider", tunnelStepAt(inner, 0), tunnelProviderSeeded,
+			func(s *InstallState) bool { return !httpTunnelSkipped(s) },
+			nil, nil, nil),
 		// The config step prompts for provider credentials + the shared auth
 		// token into s.Service, and (via its postExecute) asks the operator
 		// about OAuth in the same step. On a HEADLESS re-run against a
@@ -512,6 +528,7 @@ func buildMcpTunnelSteps(realCmd *cli.Command, ui InstallUI) []wizard.Step[*Inst
 		// seeded predicates keep the step un-seeded on interactive env-file
 		// re-runs so the host renders it as a prompting step, not "Seeded".
 		wrap("Tunnel-specific configuration", tunnelStepAt(inner, 1), tunnelConfigSeeded,
+			func(s *InstallState) bool { return !httpTunnelSkipped(s) && hasTunnelProvider(s) },
 			func(s *InstallState) bool { return configStepSkipIfHeadlessReRun(realCmd, s) },
 			nil, nil),
 		// The env-write step NEVER skips for http (only for a non-http install
@@ -533,8 +550,10 @@ func buildMcpTunnelSteps(realCmd *cli.Command, ui InstallUI) []wizard.Step[*Inst
 			// Internal plumbing: persisting the collected tunnel/service env is
 			// never a user-facing decision — hide it like Resolve Binary.
 			Hidden_: true,
+			// Applicable only to a remote (http) install; hidden so it never renders.
+			ApplicableFunc: func(s *InstallState) bool { return !httpTunnelSkipped(s) },
 			SkipFunc: func(s *InstallState) bool {
-				return httpTunnelSkipped(s) || s.serviceEnvErr != nil
+				return s.serviceEnvErr != nil
 			},
 			ExecuteFunc: func(ctx context.Context, s *InstallState) error {
 				if s.serviceEnvErr != nil {

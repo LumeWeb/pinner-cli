@@ -39,7 +39,7 @@ func TestRun_FullySeededStepRendersSeededAndDoesNotPrompt(t *testing.T) {
 	// Renders the seeded banner, never a progress prompt.
 	expected := []string{
 		"ShowWelcome",
-		"ShowStepProgress(1,1,Tunnel provider)",
+		"ShowStepProgress(1,Tunnel provider)",
 		"ShowStepSeeded(Tunnel provider,[tunnel])",
 		"ShowCompletion",
 	}
@@ -79,7 +79,7 @@ func TestRun_PartiallySeededStepPromptsOnlyForRemainder(t *testing.T) {
 	// Renders a normal progress step (no seeded banner, no skipped banner) —
 	// it prompts for the missing value inside Execute.
 	calls := mock.GetCalls()
-	require.Contains(t, calls, "ShowStepProgress(1,1,Tunnel config)")
+	require.Contains(t, calls, "ShowStepProgress(1,Tunnel config)")
 	require.NotContains(t, calls, "ShowStepSeeded(")
 	require.NotContains(t, calls, "ShowStepSkipped(")
 }

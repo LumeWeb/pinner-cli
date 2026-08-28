@@ -34,13 +34,13 @@ func TestSetupWizard_Run(t *testing.T) {
 			setupMocks: func(cfgMgr *configmocks.MockManager) {},
 			expectedCalls: []string{
 				"ShowWelcome",
-				"ShowStepProgress(1,4,Authentication)",
+				"ShowStepProgress(1,Authentication)",
 				"ExecuteAuthStep",
-				"ShowStepProgress(2,4,Configuration)",
+				"ShowStepProgress(2,Configuration)",
 				"ExecuteConfigStep",
-				"ShowStepProgress(3,4,Shell Completion)",
+				"ShowStepProgress(3,Shell Completion)",
 				"ExecuteCompletionStep",
-				"ShowStepProgress(4,4,Quick Tutorial)",
+				"ShowStepProgress(4,Quick Tutorial)",
 				"ExecuteTutorialStep",
 				"ShowCompletion",
 			},
@@ -57,13 +57,13 @@ func TestSetupWizard_Run(t *testing.T) {
 			setupMocks: func(cfgMgr *configmocks.MockManager) {},
 			expectedCalls: []string{
 				"ShowWelcome",
-				"ShowStepProgress(1,4,Authentication)",
+				"ShowStepProgress(1,Authentication)",
 				"ShowStepSkipped(Authentication)",
-				"ShowStepProgress(2,4,Configuration)",
+				"ShowStepProgress(2,Configuration)",
 				"ExecuteConfigStep",
-				"ShowStepProgress(3,4,Shell Completion)",
+				"ShowStepProgress(3,Shell Completion)",
 				"ExecuteCompletionStep",
-				"ShowStepProgress(4,4,Quick Tutorial)",
+				"ShowStepProgress(4,Quick Tutorial)",
 				"ExecuteTutorialStep",
 				"ShowCompletion",
 			},
@@ -80,13 +80,13 @@ func TestSetupWizard_Run(t *testing.T) {
 			setupMocks: func(cfgMgr *configmocks.MockManager) {},
 			expectedCalls: []string{
 				"ShowWelcome",
-				"ShowStepProgress(1,4,Authentication)",
+				"ShowStepProgress(1,Authentication)",
 				"ExecuteAuthStep",
-				"ShowStepProgress(2,4,Configuration)",
+				"ShowStepProgress(2,Configuration)",
 				"ShowStepSkipped(Configuration)",
-				"ShowStepProgress(3,4,Shell Completion)",
+				"ShowStepProgress(3,Shell Completion)",
 				"ExecuteCompletionStep",
-				"ShowStepProgress(4,4,Quick Tutorial)",
+				"ShowStepProgress(4,Quick Tutorial)",
 				"ExecuteTutorialStep",
 				"ShowCompletion",
 			},
@@ -103,13 +103,13 @@ func TestSetupWizard_Run(t *testing.T) {
 			setupMocks: func(cfgMgr *configmocks.MockManager) {},
 			expectedCalls: []string{
 				"ShowWelcome",
-				"ShowStepProgress(1,4,Authentication)",
+				"ShowStepProgress(1,Authentication)",
 				"ShowStepSkipped(Authentication)",
-				"ShowStepProgress(2,4,Configuration)",
+				"ShowStepProgress(2,Configuration)",
 				"ExecuteConfigStep",
-				"ShowStepProgress(3,4,Shell Completion)",
+				"ShowStepProgress(3,Shell Completion)",
 				"ExecuteCompletionStep",
-				"ShowStepProgress(4,4,Quick Tutorial)",
+				"ShowStepProgress(4,Quick Tutorial)",
 				"ExecuteTutorialStep",
 				"ShowCompletion",
 			},
@@ -128,13 +128,13 @@ func TestSetupWizard_Run(t *testing.T) {
 			},
 			expectedCalls: []string{
 				"ShowWelcome",
-				"ShowStepProgress(1,4,Authentication)",
+				"ShowStepProgress(1,Authentication)",
 				"ShowStepSkipped(Authentication)",
-				"ShowStepProgress(2,4,Configuration)",
+				"ShowStepProgress(2,Configuration)",
 				"ExecuteConfigStep",
-				"ShowStepProgress(3,4,Shell Completion)",
+				"ShowStepProgress(3,Shell Completion)",
 				"ExecuteCompletionStep",
-				"ShowStepProgress(4,4,Quick Tutorial)",
+				"ShowStepProgress(4,Quick Tutorial)",
 				"ExecuteTutorialStep",
 				"ShowCompletion",
 			},
@@ -524,7 +524,7 @@ func TestMockSetupUI(t *testing.T) {
 		mock := NewMockSetupUI()
 
 		_ = mock.ShowWelcome()
-		_ = mock.ShowStepProgress(context.Background(), 1, 3, "Test")
+		_ = mock.ShowStepProgress(context.Background(), 1, "Test")
 
 		require.Len(t, mock.GetCalls(), 2)
 
@@ -537,12 +537,12 @@ func TestMockSetupUI(t *testing.T) {
 		mock := NewMockSetupUI()
 
 		_ = mock.ShowWelcome()
-		_ = mock.ShowStepProgress(context.Background(), 1, 3, "Test")
+		_ = mock.ShowStepProgress(context.Background(), 1, "Test")
 		_ = mock.ShowCompletion()
 
 		expected := []string{
 			"ShowWelcome",
-			"ShowStepProgress(1,3,Test)",
+			"ShowStepProgress(1,Test)",
 			"ShowCompletion",
 		}
 
@@ -613,7 +613,7 @@ func TestSetupMcpInstallStep_Declined(t *testing.T) {
 
 	// The step is present as a visible 5th step in the offered flow.
 	calls := ui.GetCalls()
-	require.Contains(t, calls, "ShowStepProgress(5,5,Install MCP Server)")
+	require.Contains(t, calls, "ShowStepProgress(5,Install MCP Server)")
 }
 
 // TestSetupMcpInstallStep_Accepted guards that accepting the offer runs the

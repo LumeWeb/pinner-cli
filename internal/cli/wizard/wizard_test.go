@@ -41,8 +41,8 @@ func TestRun_ExecutesAllSteps(t *testing.T) {
 
 	expected := []string{
 		"ShowWelcome",
-		"ShowStepProgress(1,2,A)",
-		"ShowStepProgress(2,2,B)",
+		"ShowStepProgress(1,A)",
+		"ShowStepProgress(2,B)",
 		"ShowCompletion",
 	}
 	require.True(t, mock.VerifyCalls(expected))
@@ -314,7 +314,7 @@ func TestRun_RetryStep(t *testing.T) {
 
 	expected := []string{
 		"ShowWelcome",
-		"ShowStepProgress(1,1,Retryable)",
+		"ShowStepProgress(1,Retryable)",
 		"ShowStepRetrying(Retryable)",
 		"ShowStepRetrying(Retryable)",
 		"ShowCompletion",
@@ -425,4 +425,59 @@ func TestRun_ShowStepRetryingError(t *testing.T) {
 	_, err := Run(context.Background(), mock, steps, &s)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "retry ui fail")
+}
+
+// TestRun_DropsNotApplicableStep guards the framework foundation: a step that
+// is NOT applicable to the configuration is dropped entirely — it is not
+// executed, not shown with a "skipped" banner, and (critically) NOT numbered,
+// so the remaining applicable steps renumber gap-free. This is what lets a
+// localhost/stdio install omit "Tunnel-specific configuration" as an empty
+// numbered slot instead of rendering "Skipped: ... (already configured)".
+func TestRun_DropsNotApplicableStep(t *testing.T) {
+	mock := NewMockUI()
+	var executed []string
+
+	steps := []Step[*string]{
+		StepFunc[*string]{
+			Name_: "A",
+			ExecuteFunc: func(_ context.Context, _ *string) error {
+				executed = append(executed, "A")
+				return nil
+			},
+		},
+		StepFunc[*string]{
+			Name_:          "N/A",
+			ApplicableFunc: func(_ *string) bool { return false },
+			ExecuteFunc: func(_ context.Context, _ *string) error {
+				executed = append(executed, "N/A")
+				return nil
+			},
+		},
+		StepFunc[*string]{
+			Name_: "B",
+			ExecuteFunc: func(_ context.Context, _ *string) error {
+				executed = append(executed, "B")
+				return nil
+			},
+		},
+	}
+
+	s := ""
+	result, err := Run(context.Background(), mock, steps, &s)
+	require.NoError(t, err)
+	require.True(t, result.Completed)
+	// The inapplicable step is neither completed nor skipped — it is dropped.
+	require.Equal(t, []string{"A", "B"}, executed)
+	require.Equal(t, 2, result.StepsCompleted)
+	require.Equal(t, 0, result.StepsSkipped)
+	require.False(t, mock.WasCalled("ShowStepSkipped(N/A)"))
+
+	// B is numbered gap-free as 2, not "3" (the inapplicable step left no slot).
+	expected := []string{
+		"ShowWelcome",
+		"ShowStepProgress(1,A)",
+		"ShowStepProgress(2,B)",
+		"ShowCompletion",
+	}
+	require.True(t, mock.VerifyCalls(expected))
 }

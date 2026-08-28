@@ -14,6 +14,19 @@ type Step[S any] interface {
 	// plumbing that belongs to the flow but should never appear to the user
 	// (e.g. resolving the local binary path for a stdio install).
 	Hidden() bool
+	// Applicable reports whether the step is part of the current configuration
+	// at all. Unlike ShouldSkip, which means "applicable but already satisfied",
+	// a step that is NOT applicable is dropped from the flow entirely: it is not
+	// numbered, not shown with a "skipped" banner, and does not execute. This is
+	// the distinction between e.g. "tunnel configuration on a localhost/stdio
+	// install" (not applicable — no tunnel exists) and "the tunnel auth token on
+	// a tunnel install" (applicable, but already collected). Applicable is
+	// evaluated when the step is reached, so it may depend on decisions made by
+	// earlier steps (e.g. the tunnel provider chosen two steps prior).
+	Applicable(state S) bool
+	// ShouldSkip reports whether an APPLICABLE step is already satisfied and can
+	// be skipped without prompting. A skipped step keeps its numbered slot and
+	// may render a "skipped" banner.
 	ShouldSkip(state S) bool
 	Execute(ctx context.Context, state S) error
 	ShouldRetry(state S) bool
@@ -30,16 +43,23 @@ type Step[S any] interface {
 type SeedFunc[S any] func(ctx context.Context, state S) ([]string, bool)
 
 type StepFunc[S any] struct {
-	Name_       string
-	Hidden_     bool
-	SeedFunc_   SeedFunc[S]
-	SkipFunc    func(state S) bool
-	ExecuteFunc func(ctx context.Context, state S) error
-	RetryFunc   func(state S) bool
+	Name_     string
+	Hidden_   bool
+	SeedFunc_ SeedFunc[S]
+	// ApplicableFunc reports whether the step belongs to the current
+	// configuration. When nil, the step is always applicable (the default for
+	// the vast majority of steps). See Step.Applicable.
+	ApplicableFunc func(state S) bool
+	SkipFunc       func(state S) bool
+	ExecuteFunc    func(ctx context.Context, state S) error
+	RetryFunc      func(state S) bool
 }
 
-func (sf StepFunc[S]) Name() string             { return sf.Name_ }
-func (sf StepFunc[S]) Hidden() bool             { return sf.Hidden_ }
+func (sf StepFunc[S]) Name() string { return sf.Name_ }
+func (sf StepFunc[S]) Hidden() bool { return sf.Hidden_ }
+func (sf StepFunc[S]) Applicable(state S) bool {
+	return sf.ApplicableFunc == nil || sf.ApplicableFunc(state)
+}
 func (sf StepFunc[S]) ShouldSkip(state S) bool  { return sf.SkipFunc != nil && sf.SkipFunc(state) }
 func (sf StepFunc[S]) ShouldRetry(state S) bool { return sf.RetryFunc != nil && sf.RetryFunc(state) }
 func (sf StepFunc[S]) Seed(ctx context.Context, state S) ([]string, bool) {
@@ -57,7 +77,10 @@ func (sf StepFunc[S]) Execute(ctx context.Context, state S) error {
 
 type UI interface {
 	ShowWelcome() error
-	ShowStepProgress(ctx context.Context, current, total int, stepName string) error
+	// ShowStepProgress renders a visible, applicable step. current is the step's
+	// sequential ordinal among applicable visible steps (gap-free — steps dropped
+	// as not applicable are never numbered).
+	ShowStepProgress(ctx context.Context, current int, stepName string) error
 	ShowStepSkipped(ctx context.Context, stepName string) error
 	// ShowStepSeeded renders a step whose value was pre-selected by one or
 	// more command-line switches (e.g. "--seeded from --tunnel"), so the
@@ -92,19 +115,21 @@ func Run[S any](ctx context.Context, ui UI, steps []Step[S], state S) (Result, e
 
 	result := Result{StepsTotal: len(steps)}
 
-	// Assign each VISIBLE (non-hidden) step a gapless ordinal and count the
-	// visible total up front. Hidden steps execute but never render, so they
-	// must not create gaps ("Step 4 ... Step 6") or inflate the "of N" total —
-	// the operator should see a clean 1..N over exactly the steps shown.
+	// Iterate the steps. A step that is NOT applicable to the current
+	// configuration is dropped entirely: it is not numbered, not shown with a
+	// skipped banner, and does not execute. Applicable visible steps are
+	// numbered sequentially (gap-free) as they are reached, so a step that
+	// becomes inapplicable mid-flow — e.g. "Tunnel-specific configuration" after
+	// the operator picks localhost in the preceding step — never renders as an
+	// empty numbered slot. This is the difference from ShouldSkip: a skipped
+	// step is applicable but already satisfied (it keeps its number and may
+	// print a "skipped" banner).
 	visibleOrdinal := 0
-	visibleTotal := 0
 	for _, step := range steps {
-		if !step.Hidden() {
-			visibleTotal++
+		if !step.Applicable(state) {
+			continue
 		}
-	}
 
-	for _, step := range steps {
 		hidden := step.Hidden()
 		// The prompter bound above flows into every step via ctx so spliced
 		// sub-wizard steps ask the user through the SAME terminal channel as
@@ -112,7 +137,7 @@ func Run[S any](ctx context.Context, ui UI, steps []Step[S], state S) (Result, e
 		stepCtx := ctx
 		if !hidden {
 			visibleOrdinal++
-			if err := ui.ShowStepProgress(ctx, visibleOrdinal, visibleTotal, step.Name()); err != nil {
+			if err := ui.ShowStepProgress(ctx, visibleOrdinal, step.Name()); err != nil {
 				return Result{}, err
 			}
 		}

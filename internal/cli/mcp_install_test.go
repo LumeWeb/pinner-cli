@@ -637,6 +637,40 @@ func TestMcpInstallBuildTunnelStepsProducesVisibleSteps(t *testing.T) {
 	}
 }
 
+// TestMcpInstallTunnelConfigDropsLocalhost guards the framework foundation as
+// applied to the tunnel-config step: on a localhost (no-tunnel) install the
+// "Tunnel-specific configuration" step is NOT applicable — there is nothing
+// tunnel-specific to configure — so it is dropped from the visible flow
+// entirely (never a numbered slot, never a "skipped" banner). A tunnel provider
+// (ngrok) must still be applicable. This replaces the old "skip it and show a
+// misleading (already configured) banner" behavior.
+func TestMcpInstallTunnelConfigDropsLocalhost(t *testing.T) {
+	cmd := NewMcpInstallCommand()
+	steps := buildMcpTunnelSteps(cmd, NewPTermInstallUI("", ""))
+	if len(steps) != 3 {
+		t.Fatalf("buildMcpTunnelSteps returned %d steps, want 3", len(steps))
+	}
+	configStep := steps[1]
+
+	localhost := &InstallState{
+		Agents:    []install.AgentKey{install.AgentClaudeCode},
+		Transport: install.TransportHTTP,
+		Service:   &mcpadapter.ServiceInstallState{}, // empty provider = localhost
+	}
+	if configStep.Applicable(localhost) {
+		t.Error("Tunnel-specific configuration must NOT be applicable on a localhost (no tunnel) install")
+	}
+
+	tunneled := &InstallState{
+		Agents:    []install.AgentKey{install.AgentClaudeCode},
+		Transport: install.TransportHTTP,
+		Service:   &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok},
+	}
+	if !configStep.Applicable(tunneled) {
+		t.Error("Tunnel-specific configuration must be applicable on a tunnel install")
+	}
+}
+
 // TestMcpInstallTunnelConfigSeeded guards the fix for non-interactive
 // `--service --tunnel` bootstraps: the "Tunnel-specific configuration" step
 // must render "Seeded" (and thus skip its field gather) whenever
@@ -863,10 +897,12 @@ func TestMcpInstallEnvWriteNeverSkipsOnHttp(t *testing.T) {
 		t.Errorf("env-write step mutated a pre-existing file on the non-fresh path; reconcile must be deferred to collector success:\nbefore=%q\nafter=%q", before, after)
 	}
 
-	// A non-http (stdio) install still skips it.
+	// A non-http (stdio) install drops the env-write step entirely (it is not
+	// applicable — there is no service env to write) rather than merely
+	// skipping it.
 	s.Transport = install.TransportStdio
-	if !writeStep.ShouldSkip(s) {
-		t.Error("env-write step must skip on a stdio (non-http) install")
+	if writeStep.Applicable(s) {
+		t.Error("env-write step must NOT be applicable on a stdio (non-http) install")
 	}
 }
 
