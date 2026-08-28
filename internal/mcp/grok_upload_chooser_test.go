@@ -86,7 +86,7 @@ func TestUploadFileSourceModeToolScopedCopy(t *testing.T) {
 // upload_file/vault_put_file.source, names upload_url/upload_data as separate
 // tools, and gives the single ordered byte-route chooser.
 func TestCapabilitiesNamesRelayTools(t *testing.T) {
-	grok := capabilitiesDescriptionFor(hostenv.ProfileGrokHTTP, true, false)
+	grok := capabilitiesDescriptionFor(hostenv.ProfileGrokHTTP, true, false, true, true)
 	require.Contains(t, grok, "upload_url")
 	require.Contains(t, grok, "upload_data")
 	require.Contains(t, grok, "Pick the byte route in this order:")
@@ -96,7 +96,7 @@ func TestCapabilitiesNamesRelayTools(t *testing.T) {
 	require.Contains(t, grok, "only raw bytes, no file, no URL → upload_data")
 
 	// Generic HTTP has no relay tools: the copy must NOT reference them.
-	generic := capabilitiesDescriptionFor(hostenv.ProfileHTTPGeneric, true, false)
+	generic := capabilitiesDescriptionFor(hostenv.ProfileHTTPGeneric, true, false, true, true)
 	require.NotContains(t, generic, "upload_url")
 	require.NotContains(t, generic, "upload_data")
 }
@@ -235,12 +235,12 @@ func TestAgentGuideByteRouteChooserInSteps(t *testing.T) {
 // download_sink_modes with distinct jobs, without hard-naming tools the host
 // may not register (so generic HTTP never references upload_url/upload_data).
 func TestCapabilitiesLeadInNamesThreeFields(t *testing.T) {
-	grok := capabilitiesDescriptionFor(hostenv.ProfileGrokHTTP, true, false)
+	grok := capabilitiesDescriptionFor(hostenv.ProfileGrokHTTP, true, false, true, true)
 	require.Contains(t, grok, "source_modes lists the source.mode values")
 	require.Contains(t, grok, "upload_tools lists every upload tool registered on this host")
 	require.Contains(t, grok, "download_sink_modes lists the sinks")
 
-	generic := capabilitiesDescriptionFor(hostenv.ProfileHTTPGeneric, true, false)
+	generic := capabilitiesDescriptionFor(hostenv.ProfileHTTPGeneric, true, false, true, true)
 	require.Contains(t, generic, "upload_tools lists every upload tool registered on this host")
 	require.NotContains(t, generic, "upload_url", "generic HTTP has no relay tools")
 	require.NotContains(t, generic, "upload_data", "generic HTTP has no relay tools")
