@@ -232,6 +232,60 @@ func TestOpenCodeDetector_NoMatch(t *testing.T) {
 	require.Equal(t, AuthMethod(""), auth)
 }
 
+func TestAntigravityDetector_MatchByClientInfo(t *testing.T) {
+	d := antigravityDetector{}
+
+	// Positive: co-located stdio with clientInfo name "antigravity-client"
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "antigravity-client", Version: "v1.0.0"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostAntigravity, host)
+	require.Equal(t, AuthNone, auth)
+
+	// Positive: case-insensitive
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "Antigravity-Client"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostAntigravity, host)
+	require.Equal(t, AuthNone, auth)
+}
+
+func TestAntigravityDetector_NoMatch(t *testing.T) {
+	d := antigravityDetector{}
+
+	// Negative: unrelated clientInfo
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "some-client", Version: "1.0.0"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: no clientInfo at all
+	host, auth = d.Match(DetectRequest{CoLocated: true})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: antigravity clientInfo but remote HTTP — Antigravity is stdio-only
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "antigravity-client"},
+		CoLocated:  false,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: antigravity clientInfo but OpenAI tunnel
+	host, auth = d.Match(DetectRequest{
+		ClientInfo:   &ClientInfo{Name: "antigravity-client"},
+		CoLocated:    false,
+		TunnelOpenAI: true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+}
+
 func TestAiderDeskDetector_MatchByClientInfo(t *testing.T) {
 	d := aiderDeskDetector{}
 
@@ -1651,12 +1705,12 @@ func TestNewRegistry_DetectorsRegistered(t *testing.T) {
 	r := NewRegistry()
 
 	require.NotNil(t, r)
-	require.Len(t, r.detectors, 11)
+	require.Len(t, r.detectors, 12)
 	// Priority order: aider-desk, goose, devin, cline, codex, openai, grok,
-	// kilo, claude (web), claude-desktop, opencode. The stdio-only detectors
-	// (aider-desk, goose, devin, cline, codex) run first because they do not
-	// conflict with the remote-only openai/grok/claude detectors; kilo and
-	// opencode are the co-located stdio editors/agents.
+	// kilo, claude (web), claude-desktop, opencode, antigravity. The stdio-only
+	// detectors (aider-desk, goose, devin, cline, codex) run first because they
+	// do not conflict with the remote-only openai/grok/claude detectors; kilo,
+	// opencode and antigravity are the co-located stdio editors/agents.
 	require.IsType(t, aiderDeskDetector{}, r.detectors[0])
 	require.IsType(t, gooseDetector{}, r.detectors[1])
 	require.IsType(t, devinDetector{}, r.detectors[2])
@@ -1668,6 +1722,7 @@ func TestNewRegistry_DetectorsRegistered(t *testing.T) {
 	require.IsType(t, claudeDetector{}, r.detectors[8])
 	require.IsType(t, claudeDesktopDetector{}, r.detectors[9])
 	require.IsType(t, opencodeDetector{}, r.detectors[10])
+	require.IsType(t, antigravityDetector{}, r.detectors[11])
 }
 
 func TestNewRegistry_PriorityOrder(t *testing.T) {

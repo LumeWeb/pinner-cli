@@ -22,13 +22,14 @@ const (
 	// client that also renders MCP Apps UI. It is the alias target shared by
 	// the concrete stdio hosts that present this surface (Claude Desktop,
 	// Goose); it is never detected directly.
-	HostStdioApps     HostType = "stdio-apps"
-	HostAiderDesk     HostType = "aider-desk"
-	HostDevin         HostType = "devin"
-	HostCline         HostType = "cline"
-	HostCodex         HostType = "codex"
-	HostGoose         HostType = "goose"
-	HostGeneric       HostType = "generic"
+	HostStdioApps   HostType = "stdio-apps"
+	HostAiderDesk   HostType = "aider-desk"
+	HostDevin       HostType = "devin"
+	HostCline       HostType = "cline"
+	HostCodex       HostType = "codex"
+	HostGoose       HostType = "goose"
+	HostAntigravity HostType = "antigravity"
+	HostGeneric     HostType = "generic"
 )
 
 // TransportKind is the MCP transport the server runs under. It decides
