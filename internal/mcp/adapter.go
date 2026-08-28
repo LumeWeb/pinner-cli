@@ -706,11 +706,7 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 			if tun != nil || publicURL != "" {
 				return fmt.Errorf("--oauth requires --auth-token: the login page authenticates with the shared secret")
 			}
-			if cfgMgr.Exists("mcp_oauth_token") {
-				stored, err := cfgMgr.GetString("mcp_oauth_token")
-				if err != nil {
-					return fmt.Errorf("read oauth secret: %w", err)
-				}
+			if stored, err := cfgMgr.GetString("mcp_oauth_token"); err == nil && stored != "" {
 				authToken = stored
 			} else {
 				generated, gErr := generateOAuthSecret()
