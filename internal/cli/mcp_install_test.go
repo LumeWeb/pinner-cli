@@ -478,8 +478,8 @@ func TestMcpInstallHTTPCompositeWritesRemoteEntry(t *testing.T) {
 	if entry["type"] != "http" {
 		t.Errorf("entry type = %v, want http", entry["type"])
 	}
-	if entry["url"] != "https://mcp.example.com" {
-		t.Errorf("entry url = %v, want tunnel public URL", entry["url"])
+	if entry["url"] != "https://mcp.example.com/mcp" {
+		t.Errorf("entry url = %v, want HTTP endpoint URL", entry["url"])
 	}
 	headers, _ := entry["headers"].(map[string]any)
 	auth, _ := headers["Authorization"]
@@ -555,8 +555,8 @@ func TestMcpInstallHTTPCompositeSkipsStdioOnlyAgent(t *testing.T) {
 
 	// claude-code gets the remote entry.
 	entry := readGlobalJSON(t, root, install.AgentClaudeCode)
-	if entry["url"] != "https://mcp.example.com" {
-		t.Errorf("claude-code url = %v, want tunnel public URL", entry["url"])
+	if entry["url"] != "https://mcp.example.com/mcp" {
+		t.Errorf("claude-code url = %v, want HTTP endpoint URL", entry["url"])
 	}
 
 	// claude-desktop must be skipped with a clear message and no config file.
@@ -631,8 +631,33 @@ func TestMcpInstallTunnelStepsThenCollector(t *testing.T) {
 	}
 	// writeConfig read the URL the collector produced.
 	entry := readGlobalJSON(t, root, install.AgentClaudeCode)
-	if entry["url"] != "https://mcp.example.com" {
-		t.Errorf("entry url = %v, want https://mcp.example.com", entry["url"])
+	if entry["url"] != "https://mcp.example.com/mcp" {
+		t.Errorf("entry url = %v, want HTTP endpoint URL", entry["url"])
+	}
+}
+
+// TestHTTPEndpointURL guards RFC 9728 protected-resource matching: the http
+// entry URL must carry the /mcp endpoint path (matching the advertised OAuth
+// protected-resource BaseURL + "/mcp"), and must be idempotent when the path is
+// already present. Writing the bare origin makes strict OAuth clients reject the
+// handshake with a protected-resource mismatch.
+func TestHTTPEndpointURL(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"localhost origin", "http://127.0.0.1:38550", "http://127.0.0.1:38550/mcp"},
+		{"localhost origin trailing slash", "http://localhost:38550/", "http://localhost:38550/mcp"},
+		{"tunnel origin", "https://you.ngrok-free.dev", "https://you.ngrok-free.dev/mcp"},
+		{"already has endpoint path", "http://127.0.0.1:38550/mcp", "http://127.0.0.1:38550/mcp"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := httpEndpointURL(tc.in); got != tc.want {
+				t.Errorf("httpEndpointURL(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
 	}
 }
 
