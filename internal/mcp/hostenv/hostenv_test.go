@@ -1319,6 +1319,87 @@ func TestRegistry_Detect_KimiOverStdio(t *testing.T) {
 	require.False(t, prof.Has(FeatMCPApps))
 }
 
+func TestZedDetector_MatchByClientInfo(t *testing.T) {
+	d := zedDetector{}
+
+	// Positive: co-located stdio clientInfo name "Zed" → HostZed, AuthNone.
+	// This is the identity Zed's editor sends (e.g. {name: "Zed", version:
+	// "0.1.0"}).
+	host, auth := d.Match(DetectRequest{
+		CoLocated:  true,
+		ClientInfo: &ClientInfo{Name: "Zed", Version: "0.1.0"},
+	})
+	require.Equal(t, HostZed, host)
+	require.Equal(t, AuthNone, auth)
+
+	// Positive: case-insensitive / whitespace-tolerant name match
+	host, auth = d.Match(DetectRequest{
+		CoLocated:  true,
+		ClientInfo: &ClientInfo{Name: "  zed "},
+	})
+	require.Equal(t, HostZed, host)
+	require.Equal(t, AuthNone, auth)
+}
+
+func TestZedDetector_NoMatch(t *testing.T) {
+	d := zedDetector{}
+
+	// Negative: co-located but wrong clientInfo name
+	host, auth := d.Match(DetectRequest{
+		CoLocated:  true,
+		ClientInfo: &ClientInfo{Name: "some-client", Version: "1.0.0"},
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: correct name but not co-located (remote) — Zed is stdio-only
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "Zed", Version: "0.1.0"},
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: correct name but OpenAI tunnel
+	host, auth = d.Match(DetectRequest{
+		CoLocated:    true,
+		TunnelOpenAI: true,
+		ClientInfo:   &ClientInfo{Name: "Zed", Version: "0.1.0"},
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: no clientInfo at all
+	host, auth = d.Match(DetectRequest{CoLocated: true})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+}
+
+func TestRegistry_Detect_ZedOverStdio(t *testing.T) {
+	r := NewRegistry()
+
+	req := DetectRequest{
+		CoLocated:       true,
+		ClientInfo:      &ClientInfo{Name: "Zed", Version: "0.1.0"},
+		ProtocolVersion: "2025-11-25",
+	}
+	prof := r.Detect(req)
+
+	require.Equal(t, HostZed, prof.HostType)
+	require.Equal(t, TransportStdio, prof.Transport)
+	require.Equal(t, AuthNone, prof.AuthMethod)
+	require.False(t, prof.Remote)
+	// Runtime overlay
+	require.Equal(t, "Zed", prof.ClientInfo.Name)
+	require.Equal(t, "0.1.0", prof.ClientInfo.Version)
+	require.Equal(t, "2025-11-25", prof.ProtocolVer)
+	// Mechanism features are the stdio set, matching the observed payload.
+	require.True(t, prof.Has(FeatSourcePath))
+	require.True(t, prof.Has(FeatSinkLocal))
+	require.True(t, prof.Has(FeatCoLocated))
+	require.False(t, prof.Has(FeatRemoteAccess))
+	require.False(t, prof.Has(FeatMCPApps))
+}
+
 func TestRegistry_Detect_UnknownOverStdio(t *testing.T) {
 	r := NewRegistry()
 
@@ -2019,13 +2100,13 @@ func TestNewRegistry_DetectorsRegistered(t *testing.T) {
 	r := NewRegistry()
 
 	require.NotNil(t, r)
-	require.Len(t, r.detectors, 15)
+	require.Len(t, r.detectors, 16)
 	// Priority order: aider-desk, goose, devin, cline, codex, copilot-cli,
 	// openai, grok, kilo, kiro, claude (web), claude-desktop, opencode,
-	// antigravity, kimi. The stdio-only detectors (aider-desk, goose, devin,
-	// cline, codex, copilot-cli) run first because they do not conflict with
-	// the remote-only openai/grok/claude detectors; kilo, kiro, opencode,
-	// antigravity and kimi are the co-located stdio editors/agents.
+	// antigravity, kimi, zed. The stdio-only detectors (aider-desk, goose,
+	// devin, cline, codex, copilot-cli) run first because they do not conflict
+	// with the remote-only openai/grok/claude detectors; kilo, kiro, opencode,
+	// antigravity, kimi and zed are the co-located stdio editors/agents.
 	require.IsType(t, aiderDeskDetector{}, r.detectors[0])
 	require.IsType(t, gooseDetector{}, r.detectors[1])
 	require.IsType(t, devinDetector{}, r.detectors[2])
@@ -2041,6 +2122,7 @@ func TestNewRegistry_DetectorsRegistered(t *testing.T) {
 	require.IsType(t, opencodeDetector{}, r.detectors[12])
 	require.IsType(t, antigravityDetector{}, r.detectors[13])
 	require.IsType(t, kimiDetector{}, r.detectors[14])
+	require.IsType(t, zedDetector{}, r.detectors[15])
 }
 
 func TestNewRegistry_PriorityOrder(t *testing.T) {

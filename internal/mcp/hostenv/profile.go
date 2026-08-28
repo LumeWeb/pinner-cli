@@ -32,6 +32,7 @@ const (
 	HostGoose       HostType = "goose"
 	HostAntigravity HostType = "antigravity"
 	HostKimi        HostType = "kimi"
+	HostZed         HostType = "zed"
 	HostGeneric     HostType = "generic"
 )
 
