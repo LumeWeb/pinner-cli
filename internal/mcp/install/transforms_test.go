@@ -2,6 +2,7 @@ package install
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -537,5 +538,62 @@ func TestTransformMCPorterStandard(t *testing.T) {
 	assertMapEqual(t, "mcporter-local", got, map[string]any{
 		"command": "pinner",
 		"args":    []string{"mcp"},
+	})
+}
+
+func TestTransformFxRemote(t *testing.T) {
+	cfg := McpServerConfig{Type: TransportHTTP, URL: "https://example.com/mcp", Headers: map[string]string{"X-API-Key": "v"}}
+	got := transformRunner(t, AgentFx, "server", cfg, false)
+	assertMapEqual(t, "fx-remote", got, map[string]any{
+		"type":    "http",
+		"url":     "https://example.com/mcp",
+		"enabled": true,
+		"headers": map[string]string{"X-API-Key": "v"},
+	})
+}
+
+// TestTransformFxRejectsAuthorizationHeader verifies that a remote fx config
+// carrying a literal Authorization header fails the install instead of writing
+// an entry fx refuses to load (fx requires bearer_token_env / header_env).
+func TestTransformFxRejectsAuthorizationHeader(t *testing.T) {
+	cfg := McpServerConfig{Type: TransportHTTP, URL: "https://example.com/mcp", Headers: map[string]string{"Authorization": "Bearer x"}}
+	agent := Lookup(AgentFx)
+	_, err := agent.Transform("server", cfg, false)
+	if err == nil {
+		t.Fatal("fx transform should reject a literal Authorization header")
+	}
+	if !strings.Contains(err.Error(), "Authorization") {
+		t.Errorf("error = %q, want it to mention Authorization", err)
+	}
+}
+
+func TestTransformFxRemoteSSE(t *testing.T) {
+	cfg := McpServerConfig{Type: TransportSSE, URL: "https://example.com/sse"}
+	got := transformRunner(t, AgentFx, "server", cfg, false)
+	assertMapEqual(t, "fx-remote-sse", got, map[string]any{
+		"type":    "sse",
+		"url":     "https://example.com/sse",
+		"enabled": true,
+	})
+}
+
+func TestTransformFxLocal(t *testing.T) {
+	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp", "serve"}, Env: map[string]string{"K": "v"}}
+	got := transformRunner(t, AgentFx, "server", cfg, false)
+	assertMapEqual(t, "fx-local", got, map[string]any{
+		"type":        "local",
+		"command":     []string{"pinner", "mcp", "serve"},
+		"enabled":     true,
+		"environment": map[string]string{"K": "v"},
+	})
+}
+
+func TestTransformFxLocalOmitsEnvironment(t *testing.T) {
+	cfg := McpServerConfig{Command: "pinner", Args: []string{"mcp", "serve"}}
+	got := transformRunner(t, AgentFx, "server", cfg, false)
+	assertMapEqual(t, "fx-local-noenv", got, map[string]any{
+		"type":    "local",
+		"command": []string{"pinner", "mcp", "serve"},
+		"enabled": true,
 	})
 }

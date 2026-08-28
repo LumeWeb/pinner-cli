@@ -40,6 +40,42 @@ func transformCursor(_ string, cfg McpServerConfig, local bool) any {
 	return stdioEntry(cfg)
 }
 
+// transformFx converts into fx's mcp entry shape (~/.fx/mcp.json, top-level
+// "mcp" key). fx always writes a discriminator: "local" with the command and
+// args flattened into a single array under "command", or remote with an
+// explicit type. Env is nested under "environment".
+//
+// Remote: {type: sse|http, url, enabled:true, headers?}
+// Local:  {type:"local", command:[cmd, ...args], enabled:true, environment?}
+func transformFx(_ string, cfg McpServerConfig, local bool) any {
+	if cfg.IsRemote() {
+		transport := "http"
+		if cfg.Type == TransportSSE {
+			transport = "sse"
+		}
+		entry := map[string]any{
+			"type":    transport,
+			"url":     cfg.URL,
+			"enabled": true,
+		}
+		if len(cfg.Headers) > 0 {
+			entry["headers"] = cfg.Headers
+		}
+		return entry
+	}
+	cmd := []string{cfg.Command}
+	cmd = append(cmd, cfg.Args...)
+	entry := map[string]any{
+		"type":    "local",
+		"command": cmd,
+		"enabled": true,
+	}
+	if len(cfg.Env) > 0 {
+		entry["environment"] = cfg.Env
+	}
+	return entry
+}
+
 // transformGemini converts into Gemini CLI's mcpServers entry shape.
 //
 // Remote: standard {type?, url, headers?} + oauth?{scopes} when OAuthScopes non-empty

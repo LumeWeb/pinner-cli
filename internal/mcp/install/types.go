@@ -16,6 +16,7 @@ const (
 	AgentClaudeDesktop    AgentKey = "claude-desktop"
 	AgentVSCode           AgentKey = "vscode"
 	AgentCursor           AgentKey = "cursor"
+	AgentFx               AgentKey = "fx"
 	AgentCodex            AgentKey = "codex"
 	AgentGeminiCLI        AgentKey = "gemini-cli"
 	AgentOpenCode         AgentKey = "opencode"
