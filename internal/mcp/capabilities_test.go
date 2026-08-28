@@ -270,17 +270,19 @@ func TestSourceModesForAllTransports(t *testing.T) {
 }
 
 // TestCapabilitiesDescDropGated ensures the capabilities DESCRIPTION only
-// advertises the filedrop sink when the profile supports it (FeatSinkDrop),
-// so co-located / OpenAI-tunnel hosts are not misled into an unavailable sink.
+// advertises the filedrop sink when the profile supports it (FeatSinkDrop).
+// Stdio supports drop (a local HTTP listener can be spun up), and HTTP has a
+// reachable mux. Only the OpenAI tunnel (no reachable mux) is excluded.
 func TestCapabilitiesDescDropGated(t *testing.T) {
-	httpDesc := capabilitiesDescriptionFor(hostenv.ProfileHTTPGeneric, true, false)
-	require.Contains(t, httpDesc, "drop", "HTTP profile with a reachable mux must advertise the drop sink")
-
-	for _, p := range []hostenv.PlatformProfile{hostenv.ProfileStdioGeneric, hostenv.ProfileOpenAITunnel} {
+	for _, p := range []hostenv.PlatformProfile{hostenv.ProfileStdioGeneric, hostenv.ProfileHTTPGeneric} {
 		desc := capabilitiesDescriptionFor(p, true, false)
-		require.NotContains(t, desc, "drop", "%s must not advertise the filedrop sink", p.Transport)
+		require.Contains(t, desc, "drop", "%s must advertise the filedrop sink", p.Transport)
 		require.Contains(t, desc, "local", "local sink is always available")
 	}
+
+	tunnelDesc := capabilitiesDescriptionFor(hostenv.ProfileOpenAITunnel, true, false)
+	require.NotContains(t, tunnelDesc, "drop", "OpenAI tunnel must not advertise the filedrop sink")
+	require.Contains(t, tunnelDesc, "local", "local sink is always available")
 }
 
 // TestCapabilitiesHostFileInputRequiresWiredTool verifies host_file_input is

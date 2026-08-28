@@ -2162,6 +2162,7 @@ func TestTransportMechanismFeaturesDerived(t *testing.T) {
 	stdio := transportMechanismFeatures(TransportStdio)
 	require.True(t, stdio[FeatSourcePath])
 	require.True(t, stdio[FeatSinkLocal])
+	require.True(t, stdio[FeatSinkDrop])
 	require.True(t, stdio[FeatCoLocated])
 	require.False(t, stdio[FeatSourceMint])
 

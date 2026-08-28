@@ -36,9 +36,6 @@ var uploadFileDesc = Static(
 	).
 	WhenTransport(hostenv.TransportOpenAI,
 		"If the upload fails with 'context canceled', retry with the same parameters — this is a transient host-side cancellation, not a file rejection. Poll upload_status with the returned handle.",
-	).
-	When(hostenv.FeatSourcePath,
-		"If the upload fails with 'context canceled', retry with the same parameters — this is a transient host-side cancellation, not a file rejection. Poll upload_status with the returned handle.",
 	)
 
 // vaultPutFileDesc composes the vault_put_file tool description from a static
@@ -111,7 +108,7 @@ var vaultGetFileDesc = Static(
 		"or sink=drop to get a one-time HTTP GET filedrop link to pull from out of band.",
 	).
 	UnlessSep(SepSentence, hostenv.FeatSinkDrop,
-		"The filedrop GET sink is unavailable on this tunnel transport.",
+		"The filedrop GET sink is unavailable on this transport.",
 	)
 
 // VaultGetFileTargets are the per-profile description targets for vault_get_file.

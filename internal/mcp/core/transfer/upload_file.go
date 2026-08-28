@@ -57,9 +57,9 @@ type UploadFileInput struct {
 	// arrive, but DEFAULTS to preserve — only an explicit convert extracts a
 	// streamed archive.
 	ArchiveMode string `json:"archive_mode,omitempty" jsonschema:"enum=convert,enum=preserve,description=How to treat an archive. convert extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. The archive's directory structure is preserved exactly, so index.html MUST be at the archive root (not inside a wrapper directory). preserve keeps the archive intact as a single file. IMPORTANT: the default depends on the source. Host-file, path, and url/data sources default to convert; the mint (presigned PUT) source defaults to preserve and ONLY converts when archive_mode=convert is passed explicitly. A website ZIP streamed via source.mode=mint therefore MUST pass archive_mode=convert, or it uploads as a raw single-file CID and websites_create will reject it."`
-	// TTL is the presigned endpoint lifetime for source mode mint (e.g. 5m).
-	// Only used in HTTP/tunnel mode.
-	TTL string `json:"ttl,omitempty" jsonschema:"description=Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used with source mode mint."`
+	// TTL is the presigned endpoint lifetime (e.g. 5m). Only used on transports
+	// that use presigned PUT endpoints (HTTP/tunnel).
+	TTL string `json:"ttl,omitempty" jsonschema:"description=Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used on transports that use presigned PUT endpoints."`
 	// Wrap forces a directory root when uploading a single file, required for
 	// content that will be a website (a website must resolve to a directory,
 	// not a bare file). Only affects single-file uploads (file / url / data /
@@ -435,7 +435,7 @@ func uploadFileSchema(features hostenv.FeatureSet) json.RawMessage {
 		StringProperty("name", "Optional upload name (defaults to the file name).").
 		BoolProperty("wait", "Wait until this upload's own pin operation completes before returning (the upload already pins; this only controls whether the call blocks for it).").
 		StringProperty("archive_mode", archiveModeSchemaDesc, toolforge.Enum("convert", "preserve"), toolforge.Transform(archiveModeSchemaTransform)).
-		StringProperty("ttl", "Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used with source mode mint.").
+		StringProperty("ttl", "Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used on transports that use presigned PUT endpoints.").
 		BoolProperty("wrap", wrapSchemaDesc).
 		RawJSON(features)
 }
