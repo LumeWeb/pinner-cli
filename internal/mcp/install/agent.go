@@ -1,6 +1,9 @@
 package install
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // transformFunc converts a canonical server config into an agent's native entry.
 type transformFunc func(serverName string, cfg McpServerConfig, local bool) any
@@ -105,5 +108,29 @@ func (a *declaredAgent) Transform(serverName string, cfg McpServerConfig, local 
 	if !ok {
 		return nil, fmt.Errorf("%s: unknown transform %q", a.spec.key, a.spec.transformName)
 	}
+	// fx rejects a literal Authorization header in the remote entry (it needs
+	// credentials via bearer_token_env / header_env), so fail the install rather
+	// than write a config fx refuses to load.
+	if a.spec.key == AgentFx {
+		if err := validateFxRemoteHeaders(cfg); err != nil {
+			return nil, fmt.Errorf("%s: %w", a.spec.key, err)
+		}
+	}
 	return fn(serverName, cfg, local), nil
+}
+
+// validateFxRemoteHeaders returns an error when a remote fx config carries a
+// literal Authorization header, which fx does not accept. fx requires
+// credentials through bearer_token_env / header_env in ~/.fx/mcp.json.
+// See https://fx.sh/docs/capabilities/mcp.
+func validateFxRemoteHeaders(cfg McpServerConfig) error {
+	if !cfg.IsRemote() {
+		return nil
+	}
+	for name := range cfg.Headers {
+		if strings.EqualFold(name, "Authorization") {
+			return fmt.Errorf("fx rejects a literal Authorization header; provide the credential via bearer_token_env or header_env in ~/.fx/mcp.json")
+		}
+	}
+	return nil
 }

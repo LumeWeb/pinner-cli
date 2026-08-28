@@ -2,6 +2,7 @@ package install
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -541,14 +542,29 @@ func TestTransformMCPorterStandard(t *testing.T) {
 }
 
 func TestTransformFxRemote(t *testing.T) {
-	cfg := McpServerConfig{Type: TransportHTTP, URL: "https://example.com/mcp", Headers: map[string]string{"Authorization": "Bearer x"}}
+	cfg := McpServerConfig{Type: TransportHTTP, URL: "https://example.com/mcp", Headers: map[string]string{"X-API-Key": "v"}}
 	got := transformRunner(t, AgentFx, "server", cfg, false)
 	assertMapEqual(t, "fx-remote", got, map[string]any{
 		"type":    "http",
 		"url":     "https://example.com/mcp",
 		"enabled": true,
-		"headers": map[string]string{"Authorization": "Bearer x"},
+		"headers": map[string]string{"X-API-Key": "v"},
 	})
+}
+
+// TestTransformFxRejectsAuthorizationHeader verifies that a remote fx config
+// carrying a literal Authorization header fails the install instead of writing
+// an entry fx refuses to load (fx requires bearer_token_env / header_env).
+func TestTransformFxRejectsAuthorizationHeader(t *testing.T) {
+	cfg := McpServerConfig{Type: TransportHTTP, URL: "https://example.com/mcp", Headers: map[string]string{"Authorization": "Bearer x"}}
+	agent := Lookup(AgentFx)
+	_, err := agent.Transform("server", cfg, false)
+	if err == nil {
+		t.Fatal("fx transform should reject a literal Authorization header")
+	}
+	if !strings.Contains(err.Error(), "Authorization") {
+		t.Errorf("error = %q, want it to mention Authorization", err)
+	}
 }
 
 func TestTransformFxRemoteSSE(t *testing.T) {
