@@ -234,6 +234,64 @@ func TestAiderDeskDetector_NoMatch(t *testing.T) {
 	require.Equal(t, AuthMethod(""), auth)
 }
 
+func TestDevinDetector_MatchByClientInfo(t *testing.T) {
+	d := devinDetector{}
+
+	// Positive: co-located stdio with the Devin harness's clientInfo name.
+	// Devin's harness is built on the rmcp Rust MCP SDK and reports it as its
+	// identity, so "rmcp" is the primary signal.
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "rmcp", Version: "3.1.0"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostDevin, host)
+	require.Equal(t, AuthNone, auth)
+
+	// Positive: a future Devin build that overrides its client identity.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "Devin", Version: "3.1.0"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostDevin, host)
+	require.Equal(t, AuthNone, auth)
+}
+
+func TestDevinDetector_NoMatch(t *testing.T) {
+	d := devinDetector{}
+
+	// Negative: co-located stdio but unrelated clientInfo name.
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "some-rust-tool"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: no clientInfo at all.
+	host, auth = d.Match(DetectRequest{CoLocated: true})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: Devin name but remote (not co-located) — Devin is always
+	// co-located stdio.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "rmcp", Version: "3.1.0"},
+		CoLocated:  false,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: Devin name but OpenAI tunnel — Devin cannot use the OpenAI
+	// tunnel transport.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo:   &ClientInfo{Name: "rmcp", Version: "3.1.0"},
+		CoLocated:    false,
+		TunnelOpenAI: true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+}
+
 func TestClaudeDetector_MatchByUserAgent(t *testing.T) {
 	d := claudeDetector{}
 
@@ -482,6 +540,33 @@ func TestRegistry_Detect_AiderDeskOverStdio(t *testing.T) {
 	require.False(t, prof.Has(FeatMCPApps))
 	// Runtime overlay: clientInfo and protocol version surfaced.
 	require.Equal(t, "aider-desk-client", prof.ClientInfo.Name)
+	require.Equal(t, "2025-11-25", prof.ProtocolVer)
+}
+
+func TestRegistry_Detect_DevinOverStdio(t *testing.T) {
+	r := NewRegistry()
+
+	req := DetectRequest{
+		ClientInfo:      &ClientInfo{Name: "rmcp", Version: "3.1.0"},
+		ProtocolVersion: "2025-11-25",
+		CoLocated:       true,
+	}
+	prof := r.Detect(req)
+
+	require.Equal(t, HostDevin, prof.HostType)
+	require.Equal(t, TransportStdio, prof.Transport)
+	require.Equal(t, AuthNone, prof.AuthMethod)
+	require.False(t, prof.Remote)
+	// Feature surface is exactly the generic stdio profile, inherited via the
+	// HostGeneric alias.
+	require.Equal(t, ProfileStdioGeneric.Features, prof.Features)
+	require.True(t, prof.Has(FeatSourcePath))
+	require.True(t, prof.Has(FeatSinkLocal))
+	require.True(t, prof.Has(FeatCoLocated))
+	require.False(t, prof.Has(FeatRemoteAccess))
+	require.False(t, prof.Has(FeatMCPApps))
+	// Runtime overlay: clientInfo and protocol version surfaced.
+	require.Equal(t, "rmcp", prof.ClientInfo.Name)
 	require.Equal(t, "2025-11-25", prof.ProtocolVer)
 }
 
@@ -778,6 +863,20 @@ func TestResolveProfile_AiderDesk(t *testing.T) {
 	require.Equal(t, ProfileStdioGeneric.Features, got.Features)
 }
 
+// TestResolveProfile_Devin verifies the Devin alias path: an aliased host
+// inherits the target's full profile (features, transport, auth, remote) but
+// keeps its own HostType.
+func TestResolveProfile_Devin(t *testing.T) {
+	got := resolveProfile(HostDevin, TransportStdio, AuthNone)
+
+	require.Equal(t, HostDevin, got.HostType)
+	require.Equal(t, TransportStdio, got.Transport)
+	require.Equal(t, AuthNone, got.AuthMethod)
+	require.False(t, got.Remote)
+	// Feature surface equals the generic stdio profile exactly (alias target).
+	require.Equal(t, ProfileStdioGeneric.Features, got.Features)
+}
+
 // TestProfileAliasDoesNotCorruptTarget locks in that resolving an alias
 // returns a value copy — overriding the alias's HostType must not mutate the
 // shared static target profile.
@@ -1062,15 +1161,17 @@ func TestNewRegistry_DetectorsRegistered(t *testing.T) {
 	r := NewRegistry()
 
 	require.NotNil(t, r)
-	require.Len(t, r.detectors, 5)
-	// Priority order: aider-desk, openai, grok, claude (web), claude-desktop
-	// Aider-desk runs first because it is stdio-only and does not conflict
-	// with the remote-only openai/grok/claude detectors.
+	require.Len(t, r.detectors, 6)
+	// Priority order: aider-desk, devin, openai, grok, claude (web),
+	// claude-desktop. The stdio-only detectors (aider-desk, devin) run first
+	// because they do not conflict with the remote-only openai/grok/claude
+	// detectors.
 	require.IsType(t, aiderDeskDetector{}, r.detectors[0])
-	require.IsType(t, openAIDetector{}, r.detectors[1])
-	require.IsType(t, grokDetector{}, r.detectors[2])
-	require.IsType(t, claudeDetector{}, r.detectors[3])
-	require.IsType(t, claudeDesktopDetector{}, r.detectors[4])
+	require.IsType(t, devinDetector{}, r.detectors[1])
+	require.IsType(t, openAIDetector{}, r.detectors[2])
+	require.IsType(t, grokDetector{}, r.detectors[3])
+	require.IsType(t, claudeDetector{}, r.detectors[4])
+	require.IsType(t, claudeDesktopDetector{}, r.detectors[5])
 }
 
 func TestNewRegistry_PriorityOrder(t *testing.T) {
