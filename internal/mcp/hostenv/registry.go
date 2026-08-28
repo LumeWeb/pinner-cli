@@ -19,6 +19,7 @@ func NewRegistry() *DetectorRegistry {
 		detectors: []Detector{
 			aiderDeskDetector{},
 			devinDetector{},
+			clineDetector{},
 			openAIDetector{},
 			grokDetector{},
 			claudeDetector{},

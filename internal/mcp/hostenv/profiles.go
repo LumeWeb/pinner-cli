@@ -152,6 +152,11 @@ var profileAliasTargets = map[HostType]HostType{
 	// its own HostType so host-specific gating can use HostIs(HostDevin),
 	// but inherits HostGeneric's declaration.
 	HostDevin: HostGeneric,
+
+	// cline (VS Code extension / CLI, clientInfo name "@cline/core") is a
+	// co-located stdio client whose capability surface is exactly the generic
+	// stdio profile.
+	HostCline: HostGeneric,
 }
 
 // ProfileForTransport returns the generic profile for a transport kind.

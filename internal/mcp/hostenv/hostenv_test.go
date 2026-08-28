@@ -303,6 +303,64 @@ func TestDevinDetector_NoMatch(t *testing.T) {
 	require.Equal(t, AuthMethod(""), auth)
 }
 
+func TestClineDetector_MatchByClientInfo(t *testing.T) {
+	d := clineDetector{}
+
+	// Positive: co-located stdio with the Cline clientInfo name "@cline/core".
+	// Cline sends its identity in clientInfo.name, which is the only reliable
+	// signal on stdio (no User-Agent header).
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "@cline/core", Version: "0.0.0"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostCline, host)
+	require.Equal(t, AuthNone, auth)
+
+	// Positive: name containing "cline" (case-insensitive).
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "Cline"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostCline, host)
+	require.Equal(t, AuthNone, auth)
+}
+
+func TestClineDetector_NoMatch(t *testing.T) {
+	d := clineDetector{}
+
+	// Negative: co-located stdio but unrelated clientInfo name.
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "some-client"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: no clientInfo at all.
+	host, auth = d.Match(DetectRequest{CoLocated: true})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: Cline name but remote (not co-located) — Cline is always
+	// co-located stdio.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "@cline/core"},
+		CoLocated:  false,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: Cline name but OpenAI tunnel — Cline cannot use the OpenAI
+	// tunnel transport.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo:   &ClientInfo{Name: "@cline/core"},
+		CoLocated:    false,
+		TunnelOpenAI: true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+}
+
 func TestClaudeDetector_MatchByUserAgent(t *testing.T) {
 	d := claudeDetector{}
 
@@ -650,6 +708,30 @@ func TestRegistry_Detect_UnknownOverStdio(t *testing.T) {
 	require.True(t, prof.Has(FeatSourcePath))
 	require.True(t, prof.Has(FeatCoLocated))
 	require.False(t, prof.Has(FeatMCPApps))
+}
+
+func TestRegistry_Detect_ClineOverStdio(t *testing.T) {
+	r := NewRegistry()
+
+	req := DetectRequest{
+		ClientInfo: &ClientInfo{Name: "@cline/core", Version: "0.0.0"},
+		CoLocated:  true,
+	}
+	prof := r.Detect(req)
+
+	// Cline is its own HostType but inherits the generic stdio profile.
+	require.Equal(t, HostCline, prof.HostType)
+	require.Equal(t, ProfileStdioGeneric.Transport, prof.Transport)
+	require.Equal(t, AuthNone, prof.AuthMethod)
+	require.False(t, prof.Remote)
+	// Inherits the generic stdio feature surface.
+	require.True(t, prof.Has(FeatSourcePath))
+	require.True(t, prof.Has(FeatSinkLocal))
+	require.True(t, prof.Has(FeatCoLocated))
+	require.False(t, prof.Has(FeatMCPApps))
+	require.False(t, prof.Has(FeatRemoteAccess))
+	// Runtime overlay: clientInfo surfaced.
+	require.Equal(t, "@cline/core", prof.ClientInfo.Name)
 }
 
 func TestRegistry_Detect_UnknownOverHTTP(t *testing.T) {
@@ -1172,17 +1254,18 @@ func TestNewRegistry_DetectorsRegistered(t *testing.T) {
 	r := NewRegistry()
 
 	require.NotNil(t, r)
-	require.Len(t, r.detectors, 6)
-	// Priority order: aider-desk, devin, openai, grok, claude (web),
-	// claude-desktop. The stdio-only detectors (aider-desk, devin) run first
-	// because they do not conflict with the remote-only openai/grok/claude
+	require.Len(t, r.detectors, 7)
+	// Priority order: aider-desk, devin, cline, openai, grok, claude (web),
+	// claude-desktop. The stdio-only detectors (aider-desk, devin, cline) run
+	// first because they do not conflict with the remote-only openai/grok/claude
 	// detectors.
 	require.IsType(t, aiderDeskDetector{}, r.detectors[0])
 	require.IsType(t, devinDetector{}, r.detectors[1])
-	require.IsType(t, openAIDetector{}, r.detectors[2])
-	require.IsType(t, grokDetector{}, r.detectors[3])
-	require.IsType(t, claudeDetector{}, r.detectors[4])
-	require.IsType(t, claudeDesktopDetector{}, r.detectors[5])
+	require.IsType(t, clineDetector{}, r.detectors[2])
+	require.IsType(t, openAIDetector{}, r.detectors[3])
+	require.IsType(t, grokDetector{}, r.detectors[4])
+	require.IsType(t, claudeDetector{}, r.detectors[5])
+	require.IsType(t, claudeDesktopDetector{}, r.detectors[6])
 }
 
 func TestNewRegistry_PriorityOrder(t *testing.T) {
