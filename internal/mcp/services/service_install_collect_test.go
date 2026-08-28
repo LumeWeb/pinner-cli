@@ -405,6 +405,27 @@ func TestCollectHTTPInstallOneShotResolvesNamedDomainURL(t *testing.T) {
 	require.Equal(t, "https://mcp.example.com", reloaded["MCP_PUBLIC_URL"])
 }
 
+func TestResolveServicePublicURLPinsDefaultOnZeroPort(t *testing.T) {
+	// An explicit MCP_PORT=0 is the "pick a free port" sentinel — bind's
+	// auto-assign value, which can never be connected to. On a localhost
+	// install it must be treated like empty and pinned to the default port, or
+	// the derived MCP_PUBLIC_URL becomes the unreachable http://<host>:0.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mcp.env")
+
+	env := ServiceEnvironment{
+		"MCP_HOST": "127.0.0.1",
+		"MCP_PORT": "0",
+	}
+	require.NoError(t, service.WriteEnvironment(path, env))
+
+	loaded, err := service.LoadEnvironment(path)
+	require.NoError(t, err)
+	resolveServicePublicURL(path, loaded)
+	require.Equal(t, "38550", loaded["MCP_PORT"], "explicit --port 0 must pin the default port")
+	require.Equal(t, "http://127.0.0.1:38550", loaded["MCP_PUBLIC_URL"], "port 0 must not yield an unreachable http://host:0 URL")
+}
+
 func TestCollectHTTPInstallOneShotResolvesLocalhostURL(t *testing.T) {
 	// A one-shot (non --service) http install with NO tunnel provider
 	// (localhost) must derive the loopback MCP_PUBLIC_URL and pin MCP_PORT to

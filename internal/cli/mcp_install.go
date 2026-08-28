@@ -512,7 +512,17 @@ func buildMcpTunnelSteps(realCmd *cli.Command, ui InstallUI) []wizard.Step[*Inst
 		// seeded predicates keep the step un-seeded on interactive env-file
 		// re-runs so the host renders it as a prompting step, not "Seeded".
 		wrap("Tunnel-specific configuration", tunnelStepAt(inner, 1), tunnelConfigSeeded,
-			func(s *InstallState) bool { return configStepSkipIfHeadlessReRun(realCmd, s) },
+			func(s *InstallState) bool {
+				if configStepSkipIfHeadlessReRun(realCmd, s) {
+					return true
+				}
+				// Localhost (no tunnel): there is nothing tunnel-specific to
+				// configure, so never surface a "tunnel" ask on a no-tunnel
+				// install. The OAuth secure default-on (applyOAuthSecureDefault
+				// in the write step) covers the endpoint for fresh installs;
+				// an explicit --oauth flag still wins.
+				return !hasTunnelProvider(s)
+			},
 			nil, nil),
 		// The env-write step NEVER skips for http (only for a non-http install
 		// or a tapped serviceEnvErr). On the FRESH path it writes the env from

@@ -165,11 +165,16 @@ func resolveServicePublicURL(envFile string, env ServiceEnvironment) {
 			host = "127.0.0.1"
 		}
 		port = strings.TrimSpace(env["MCP_PORT"])
-		if port == "" {
+		if port == "" || port == "0" {
 			// Pin the deterministic default port and persist it so the managed
 			// service binds port defaultLocalhostPort, matching the URL written
-			// to the agent config. Without this the server binds port 0 (free
-			// port) and the agent config would point at a never-open port.
+			// to the agent config. Without this the server binds port 0 (the
+			// OS-assigned free-port sentinel) and the agent config would point
+			// at a never-open port — the derived URL would become
+			// http://<host>:0, which can never be connected to. An explicit
+			// --port 0 ("pick a free port") therefore falls back to the default
+			// on a localhost install, which has no deterministic free-port
+			// discovery path.
 			port = strconv.Itoa(defaultLocalhostPort)
 			env["MCP_PORT"] = port
 		}

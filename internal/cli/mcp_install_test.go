@@ -637,6 +637,38 @@ func TestMcpInstallBuildTunnelStepsProducesVisibleSteps(t *testing.T) {
 	}
 }
 
+// TestMcpInstallTunnelConfigSkipsLocalhost guards that the "Tunnel-specific
+// configuration" step NEVER runs on a localhost (no-tunnel) install: there is
+// nothing tunnel-specific to configure, so surfacing the step (which would
+// prompt OAuth) is a tunnel ask on a no-tunnel selection. A tunnel provider
+// (ngrok) must still run it.
+func TestMcpInstallTunnelConfigSkipsLocalhost(t *testing.T) {
+	cmd := NewMcpInstallCommand()
+	steps := buildMcpTunnelSteps(cmd, NewPTermInstallUI("", ""))
+	if len(steps) != 3 {
+		t.Fatalf("buildMcpTunnelSteps returned %d steps, want 3", len(steps))
+	}
+	configStep := steps[1]
+
+	localhost := &InstallState{
+		Agents:    []install.AgentKey{install.AgentClaudeCode},
+		Transport: install.TransportHTTP,
+		Service:   &mcpadapter.ServiceInstallState{}, // empty provider = localhost
+	}
+	if !configStep.ShouldSkip(localhost) {
+		t.Error("Tunnel-specific configuration must SKIP on a localhost (no tunnel) install")
+	}
+
+	tunneled := &InstallState{
+		Agents:    []install.AgentKey{install.AgentClaudeCode},
+		Transport: install.TransportHTTP,
+		Service:   &mcpadapter.ServiceInstallState{Provider: tunnel.TunnelProviderNgrok},
+	}
+	if configStep.ShouldSkip(tunneled) {
+		t.Error("Tunnel-specific configuration must RUN on a tunnel install")
+	}
+}
+
 // TestMcpInstallTunnelConfigSeeded guards the fix for non-interactive
 // `--service --tunnel` bootstraps: the "Tunnel-specific configuration" step
 // must render "Seeded" (and thus skip its field gather) whenever
