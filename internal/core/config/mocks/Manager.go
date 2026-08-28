@@ -113,7 +113,7 @@ type MockManager_BulkSet_Call struct {
 // BulkSet is a helper method to define mock.On call
 //   - ctx context.Context
 //   - updates map[string]any
-func (_e *MockManager_Expecter) BulkSet(ctx interface{}, updates interface{}) *MockManager_BulkSet_Call {
+func (_e *MockManager_Expecter) BulkSet(ctx any, updates any) *MockManager_BulkSet_Call {
 	return &MockManager_BulkSet_Call{Call: _e.mock.On("BulkSet", ctx, updates)}
 }
 
@@ -170,7 +170,7 @@ type MockManager_BulkSetAtomic_Call struct {
 // BulkSetAtomic is a helper method to define mock.On call
 //   - ctx context.Context
 //   - updates map[string]any
-func (_e *MockManager_Expecter) BulkSetAtomic(ctx interface{}, updates interface{}) *MockManager_BulkSetAtomic_Call {
+func (_e *MockManager_Expecter) BulkSetAtomic(ctx any, updates any) *MockManager_BulkSetAtomic_Call {
 	return &MockManager_BulkSetAtomic_Call{Call: _e.mock.On("BulkSetAtomic", ctx, updates)}
 }
 
@@ -393,7 +393,7 @@ type MockManager_Delete_Call struct {
 
 // Delete is a helper method to define mock.On call
 //   - key string
-func (_e *MockManager_Expecter) Delete(key interface{}) *MockManager_Delete_Call {
+func (_e *MockManager_Expecter) Delete(key any) *MockManager_Delete_Call {
 	return &MockManager_Delete_Call{Call: _e.mock.On("Delete", key)}
 }
 
@@ -600,7 +600,7 @@ type MockManager_Exists_Call struct {
 
 // Exists is a helper method to define mock.On call
 //   - key string
-func (_e *MockManager_Expecter) Exists(key interface{}) *MockManager_Exists_Call {
+func (_e *MockManager_Expecter) Exists(key any) *MockManager_Exists_Call {
 	return &MockManager_Exists_Call{Call: _e.mock.On("Exists", key)}
 }
 
@@ -675,7 +675,7 @@ func (_c *MockManager_FlagManager_Call) RunAndReturn(run func() configmanager.Fl
 
 // Get provides a mock function for the type MockManager
 func (_mock *MockManager) Get(key string, target ...any) (any, any, error) {
-	var _ca []interface{}
+	var _ca []any
 	_ca = append(_ca, key)
 	_ca = append(_ca, target...)
 	ret := _mock.Called(_ca...)
@@ -720,9 +720,9 @@ type MockManager_Get_Call struct {
 // Get is a helper method to define mock.On call
 //   - key string
 //   - target ...any
-func (_e *MockManager_Expecter) Get(key interface{}, target ...interface{}) *MockManager_Get_Call {
+func (_e *MockManager_Expecter) Get(key any, target ...any) *MockManager_Get_Call {
 	return &MockManager_Get_Call{Call: _e.mock.On("Get",
-		append([]interface{}{key}, target...)...)}
+		append([]any{key}, target...)...)}
 }
 
 func (_c *MockManager_Get_Call) Run(run func(key string, target ...any)) *MockManager_Get_Call {
@@ -836,7 +836,7 @@ type MockManager_GetBool_Call struct {
 
 // GetBool is a helper method to define mock.On call
 //   - key string
-func (_e *MockManager_Expecter) GetBool(key interface{}) *MockManager_GetBool_Call {
+func (_e *MockManager_Expecter) GetBool(key any) *MockManager_GetBool_Call {
 	return &MockManager_GetBool_Call{Call: _e.mock.On("GetBool", key)}
 }
 
@@ -859,6 +859,66 @@ func (_c *MockManager_GetBool_Call) Return(b bool, err error) *MockManager_GetBo
 }
 
 func (_c *MockManager_GetBool_Call) RunAndReturn(run func(key string) (bool, error)) *MockManager_GetBool_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetBoolOK provides a mock function for the type MockManager
+func (_mock *MockManager) GetBoolOK(key string) (bool, bool) {
+	ret := _mock.Called(key)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetBoolOK")
+	}
+
+	var r0 bool
+	var r1 bool
+	if returnFunc, ok := ret.Get(0).(func(string) (bool, bool)); ok {
+		return returnFunc(key)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string) bool); ok {
+		r0 = returnFunc(key)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	if returnFunc, ok := ret.Get(1).(func(string) bool); ok {
+		r1 = returnFunc(key)
+	} else {
+		r1 = ret.Get(1).(bool)
+	}
+	return r0, r1
+}
+
+// MockManager_GetBoolOK_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetBoolOK'
+type MockManager_GetBoolOK_Call struct {
+	*mock.Call
+}
+
+// GetBoolOK is a helper method to define mock.On call
+//   - key string
+func (_e *MockManager_Expecter) GetBoolOK(key any) *MockManager_GetBoolOK_Call {
+	return &MockManager_GetBoolOK_Call{Call: _e.mock.On("GetBoolOK", key)}
+}
+
+func (_c *MockManager_GetBoolOK_Call) Run(run func(key string)) *MockManager_GetBoolOK_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManager_GetBoolOK_Call) Return(b bool, b1 bool) *MockManager_GetBoolOK_Call {
+	_c.Call.Return(b, b1)
+	return _c
+}
+
+func (_c *MockManager_GetBoolOK_Call) RunAndReturn(run func(key string) (bool, bool)) *MockManager_GetBoolOK_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -887,7 +947,7 @@ type MockManager_GetDescription_Call struct {
 
 // GetDescription is a helper method to define mock.On call
 //   - key string
-func (_e *MockManager_Expecter) GetDescription(key interface{}) *MockManager_GetDescription_Call {
+func (_e *MockManager_Expecter) GetDescription(key any) *MockManager_GetDescription_Call {
 	return &MockManager_GetDescription_Call{Call: _e.mock.On("GetDescription", key)}
 }
 
@@ -940,7 +1000,7 @@ type MockManager_GetDescriptionsForPrefix_Call struct {
 
 // GetDescriptionsForPrefix is a helper method to define mock.On call
 //   - prefix string
-func (_e *MockManager_Expecter) GetDescriptionsForPrefix(prefix interface{}) *MockManager_GetDescriptionsForPrefix_Call {
+func (_e *MockManager_Expecter) GetDescriptionsForPrefix(prefix any) *MockManager_GetDescriptionsForPrefix_Call {
 	return &MockManager_GetDescriptionsForPrefix_Call{Call: _e.mock.On("GetDescriptionsForPrefix", prefix)}
 }
 
@@ -1000,7 +1060,7 @@ type MockManager_GetDuration_Call struct {
 
 // GetDuration is a helper method to define mock.On call
 //   - key string
-func (_e *MockManager_Expecter) GetDuration(key interface{}) *MockManager_GetDuration_Call {
+func (_e *MockManager_Expecter) GetDuration(key any) *MockManager_GetDuration_Call {
 	return &MockManager_GetDuration_Call{Call: _e.mock.On("GetDuration", key)}
 }
 
@@ -1023,6 +1083,66 @@ func (_c *MockManager_GetDuration_Call) Return(duration time.Duration, err error
 }
 
 func (_c *MockManager_GetDuration_Call) RunAndReturn(run func(key string) (time.Duration, error)) *MockManager_GetDuration_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetDurationOK provides a mock function for the type MockManager
+func (_mock *MockManager) GetDurationOK(key string) (time.Duration, bool) {
+	ret := _mock.Called(key)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetDurationOK")
+	}
+
+	var r0 time.Duration
+	var r1 bool
+	if returnFunc, ok := ret.Get(0).(func(string) (time.Duration, bool)); ok {
+		return returnFunc(key)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string) time.Duration); ok {
+		r0 = returnFunc(key)
+	} else {
+		r0 = ret.Get(0).(time.Duration)
+	}
+	if returnFunc, ok := ret.Get(1).(func(string) bool); ok {
+		r1 = returnFunc(key)
+	} else {
+		r1 = ret.Get(1).(bool)
+	}
+	return r0, r1
+}
+
+// MockManager_GetDurationOK_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetDurationOK'
+type MockManager_GetDurationOK_Call struct {
+	*mock.Call
+}
+
+// GetDurationOK is a helper method to define mock.On call
+//   - key string
+func (_e *MockManager_Expecter) GetDurationOK(key any) *MockManager_GetDurationOK_Call {
+	return &MockManager_GetDurationOK_Call{Call: _e.mock.On("GetDurationOK", key)}
+}
+
+func (_c *MockManager_GetDurationOK_Call) Run(run func(key string)) *MockManager_GetDurationOK_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManager_GetDurationOK_Call) Return(duration time.Duration, b bool) *MockManager_GetDurationOK_Call {
+	_c.Call.Return(duration, b)
+	return _c
+}
+
+func (_c *MockManager_GetDurationOK_Call) RunAndReturn(run func(key string) (time.Duration, bool)) *MockManager_GetDurationOK_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1060,7 +1180,7 @@ type MockManager_GetInt_Call struct {
 
 // GetInt is a helper method to define mock.On call
 //   - key string
-func (_e *MockManager_Expecter) GetInt(key interface{}) *MockManager_GetInt_Call {
+func (_e *MockManager_Expecter) GetInt(key any) *MockManager_GetInt_Call {
 	return &MockManager_GetInt_Call{Call: _e.mock.On("GetInt", key)}
 }
 
@@ -1083,6 +1203,66 @@ func (_c *MockManager_GetInt_Call) Return(n int64, err error) *MockManager_GetIn
 }
 
 func (_c *MockManager_GetInt_Call) RunAndReturn(run func(key string) (int64, error)) *MockManager_GetInt_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetIntOK provides a mock function for the type MockManager
+func (_mock *MockManager) GetIntOK(key string) (int64, bool) {
+	ret := _mock.Called(key)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetIntOK")
+	}
+
+	var r0 int64
+	var r1 bool
+	if returnFunc, ok := ret.Get(0).(func(string) (int64, bool)); ok {
+		return returnFunc(key)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string) int64); ok {
+		r0 = returnFunc(key)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+	if returnFunc, ok := ret.Get(1).(func(string) bool); ok {
+		r1 = returnFunc(key)
+	} else {
+		r1 = ret.Get(1).(bool)
+	}
+	return r0, r1
+}
+
+// MockManager_GetIntOK_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetIntOK'
+type MockManager_GetIntOK_Call struct {
+	*mock.Call
+}
+
+// GetIntOK is a helper method to define mock.On call
+//   - key string
+func (_e *MockManager_Expecter) GetIntOK(key any) *MockManager_GetIntOK_Call {
+	return &MockManager_GetIntOK_Call{Call: _e.mock.On("GetIntOK", key)}
+}
+
+func (_c *MockManager_GetIntOK_Call) Run(run func(key string)) *MockManager_GetIntOK_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManager_GetIntOK_Call) Return(n int64, b bool) *MockManager_GetIntOK_Call {
+	_c.Call.Return(n, b)
+	return _c
+}
+
+func (_c *MockManager_GetIntOK_Call) RunAndReturn(run func(key string) (int64, bool)) *MockManager_GetIntOK_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1166,7 +1346,7 @@ type MockManager_GetString_Call struct {
 
 // GetString is a helper method to define mock.On call
 //   - key string
-func (_e *MockManager_Expecter) GetString(key interface{}) *MockManager_GetString_Call {
+func (_e *MockManager_Expecter) GetString(key any) *MockManager_GetString_Call {
 	return &MockManager_GetString_Call{Call: _e.mock.On("GetString", key)}
 }
 
@@ -1189,6 +1369,66 @@ func (_c *MockManager_GetString_Call) Return(s string, err error) *MockManager_G
 }
 
 func (_c *MockManager_GetString_Call) RunAndReturn(run func(key string) (string, error)) *MockManager_GetString_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetStringOK provides a mock function for the type MockManager
+func (_mock *MockManager) GetStringOK(key string) (string, bool) {
+	ret := _mock.Called(key)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetStringOK")
+	}
+
+	var r0 string
+	var r1 bool
+	if returnFunc, ok := ret.Get(0).(func(string) (string, bool)); ok {
+		return returnFunc(key)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string) string); ok {
+		r0 = returnFunc(key)
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+	if returnFunc, ok := ret.Get(1).(func(string) bool); ok {
+		r1 = returnFunc(key)
+	} else {
+		r1 = ret.Get(1).(bool)
+	}
+	return r0, r1
+}
+
+// MockManager_GetStringOK_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetStringOK'
+type MockManager_GetStringOK_Call struct {
+	*mock.Call
+}
+
+// GetStringOK is a helper method to define mock.On call
+//   - key string
+func (_e *MockManager_Expecter) GetStringOK(key any) *MockManager_GetStringOK_Call {
+	return &MockManager_GetStringOK_Call{Call: _e.mock.On("GetStringOK", key)}
+}
+
+func (_c *MockManager_GetStringOK_Call) Run(run func(key string)) *MockManager_GetStringOK_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManager_GetStringOK_Call) Return(s string, b bool) *MockManager_GetStringOK_Call {
+	_c.Call.Return(s, b)
+	return _c
+}
+
+func (_c *MockManager_GetStringOK_Call) RunAndReturn(run func(key string) (string, bool)) *MockManager_GetStringOK_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1228,7 +1468,7 @@ type MockManager_GetStringSlice_Call struct {
 
 // GetStringSlice is a helper method to define mock.On call
 //   - key string
-func (_e *MockManager_Expecter) GetStringSlice(key interface{}) *MockManager_GetStringSlice_Call {
+func (_e *MockManager_Expecter) GetStringSlice(key any) *MockManager_GetStringSlice_Call {
 	return &MockManager_GetStringSlice_Call{Call: _e.mock.On("GetStringSlice", key)}
 }
 
@@ -1251,6 +1491,68 @@ func (_c *MockManager_GetStringSlice_Call) Return(strings []string, err error) *
 }
 
 func (_c *MockManager_GetStringSlice_Call) RunAndReturn(run func(key string) ([]string, error)) *MockManager_GetStringSlice_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetStringSliceOK provides a mock function for the type MockManager
+func (_mock *MockManager) GetStringSliceOK(key string) ([]string, bool) {
+	ret := _mock.Called(key)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetStringSliceOK")
+	}
+
+	var r0 []string
+	var r1 bool
+	if returnFunc, ok := ret.Get(0).(func(string) ([]string, bool)); ok {
+		return returnFunc(key)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string) []string); ok {
+		r0 = returnFunc(key)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]string)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(string) bool); ok {
+		r1 = returnFunc(key)
+	} else {
+		r1 = ret.Get(1).(bool)
+	}
+	return r0, r1
+}
+
+// MockManager_GetStringSliceOK_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetStringSliceOK'
+type MockManager_GetStringSliceOK_Call struct {
+	*mock.Call
+}
+
+// GetStringSliceOK is a helper method to define mock.On call
+//   - key string
+func (_e *MockManager_Expecter) GetStringSliceOK(key any) *MockManager_GetStringSliceOK_Call {
+	return &MockManager_GetStringSliceOK_Call{Call: _e.mock.On("GetStringSliceOK", key)}
+}
+
+func (_c *MockManager_GetStringSliceOK_Call) Run(run func(key string)) *MockManager_GetStringSliceOK_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManager_GetStringSliceOK_Call) Return(strings []string, b bool) *MockManager_GetStringSliceOK_Call {
+	_c.Call.Return(strings, b)
+	return _c
+}
+
+func (_c *MockManager_GetStringSliceOK_Call) RunAndReturn(run func(key string) ([]string, bool)) *MockManager_GetStringSliceOK_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1280,7 +1582,7 @@ type MockManager_IsSet_Call struct {
 // IsSet is a helper method to define mock.On call
 //   - ctx context.Context
 //   - key string
-func (_e *MockManager_Expecter) IsSet(ctx interface{}, key interface{}) *MockManager_IsSet_Call {
+func (_e *MockManager_Expecter) IsSet(ctx any, key any) *MockManager_IsSet_Call {
 	return &MockManager_IsSet_Call{Call: _e.mock.On("IsSet", ctx, key)}
 }
 
@@ -1308,6 +1610,57 @@ func (_c *MockManager_IsSet_Call) Return(b bool) *MockManager_IsSet_Call {
 }
 
 func (_c *MockManager_IsSet_Call) RunAndReturn(run func(ctx context.Context, key string) bool) *MockManager_IsSet_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// IsSetOK provides a mock function for the type MockManager
+func (_mock *MockManager) IsSetOK(key string) bool {
+	ret := _mock.Called(key)
+
+	if len(ret) == 0 {
+		panic("no return value specified for IsSetOK")
+	}
+
+	var r0 bool
+	if returnFunc, ok := ret.Get(0).(func(string) bool); ok {
+		r0 = returnFunc(key)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	return r0
+}
+
+// MockManager_IsSetOK_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'IsSetOK'
+type MockManager_IsSetOK_Call struct {
+	*mock.Call
+}
+
+// IsSetOK is a helper method to define mock.On call
+//   - key string
+func (_e *MockManager_Expecter) IsSetOK(key any) *MockManager_IsSetOK_Call {
+	return &MockManager_IsSetOK_Call{Call: _e.mock.On("IsSetOK", key)}
+}
+
+func (_c *MockManager_IsSetOK_Call) Run(run func(key string)) *MockManager_IsSetOK_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockManager_IsSetOK_Call) Return(b bool) *MockManager_IsSetOK_Call {
+	_c.Call.Return(b)
+	return _c
+}
+
+func (_c *MockManager_IsSetOK_Call) RunAndReturn(run func(key string) bool) *MockManager_IsSetOK_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1384,7 +1737,7 @@ type MockManager_ListKeys_Call struct {
 
 // ListKeys is a helper method to define mock.On call
 //   - prefix string
-func (_e *MockManager_Expecter) ListKeys(prefix interface{}) *MockManager_ListKeys_Call {
+func (_e *MockManager_Expecter) ListKeys(prefix any) *MockManager_ListKeys_Call {
 	return &MockManager_ListKeys_Call{Call: _e.mock.On("ListKeys", prefix)}
 }
 
@@ -1523,7 +1876,7 @@ type MockManager_LoadNamespace_Call struct {
 
 // LoadNamespace is a helper method to define mock.On call
 //   - namespace string
-func (_e *MockManager_Expecter) LoadNamespace(namespace interface{}) *MockManager_LoadNamespace_Call {
+func (_e *MockManager_Expecter) LoadNamespace(namespace any) *MockManager_LoadNamespace_Call {
 	return &MockManager_LoadNamespace_Call{Call: _e.mock.On("LoadNamespace", namespace)}
 }
 
@@ -1620,7 +1973,7 @@ type MockManager_LoadSource_Call struct {
 //   - src source.ConfigSource
 //   - load bool
 //   - watch bool
-func (_e *MockManager_Expecter) LoadSource(src interface{}, load interface{}, watch interface{}) *MockManager_LoadSource_Call {
+func (_e *MockManager_Expecter) LoadSource(src any, load any, watch any) *MockManager_LoadSource_Call {
 	return &MockManager_LoadSource_Call{Call: _e.mock.On("LoadSource", src, load, watch)}
 }
 
@@ -1660,11 +2013,11 @@ func (_c *MockManager_LoadSource_Call) RunAndReturn(run func(src source.ConfigSo
 // Persist provides a mock function for the type MockManager
 func (_mock *MockManager) Persist(keyPrefix ...string) error {
 	// string
-	_va := make([]interface{}, len(keyPrefix))
+	_va := make([]any, len(keyPrefix))
 	for _i := range keyPrefix {
 		_va[_i] = keyPrefix[_i]
 	}
-	var _ca []interface{}
+	var _ca []any
 	_ca = append(_ca, _va...)
 	ret := _mock.Called(_ca...)
 
@@ -1688,9 +2041,9 @@ type MockManager_Persist_Call struct {
 
 // Persist is a helper method to define mock.On call
 //   - keyPrefix ...string
-func (_e *MockManager_Expecter) Persist(keyPrefix ...interface{}) *MockManager_Persist_Call {
+func (_e *MockManager_Expecter) Persist(keyPrefix ...any) *MockManager_Persist_Call {
 	return &MockManager_Persist_Call{Call: _e.mock.On("Persist",
-		append([]interface{}{}, keyPrefix...)...)}
+		append([]any{}, keyPrefix...)...)}
 }
 
 func (_c *MockManager_Persist_Call) Run(run func(keyPrefix ...string)) *MockManager_Persist_Call {
@@ -1734,7 +2087,7 @@ type MockManager_RegisterNamespace_Call struct {
 // RegisterNamespace is a helper method to define mock.On call
 //   - namespace string
 //   - src source.ConfigSource
-func (_e *MockManager_Expecter) RegisterNamespace(namespace interface{}, src interface{}) *MockManager_RegisterNamespace_Call {
+func (_e *MockManager_Expecter) RegisterNamespace(namespace any, src any) *MockManager_RegisterNamespace_Call {
 	return &MockManager_RegisterNamespace_Call{Call: _e.mock.On("RegisterNamespace", namespace, src)}
 }
 
@@ -1779,7 +2132,7 @@ type MockManager_RegisterSource_Call struct {
 
 // RegisterSource is a helper method to define mock.On call
 //   - src source.ConfigSource
-func (_e *MockManager_Expecter) RegisterSource(src interface{}) *MockManager_RegisterSource_Call {
+func (_e *MockManager_Expecter) RegisterSource(src any) *MockManager_RegisterSource_Call {
 	return &MockManager_RegisterSource_Call{Call: _e.mock.On("RegisterSource", src)}
 }
 
@@ -1831,7 +2184,7 @@ type MockManager_RegisterStruct_Call struct {
 // RegisterStruct is a helper method to define mock.On call
 //   - key string
 //   - cfg any
-func (_e *MockManager_Expecter) RegisterStruct(key interface{}, cfg interface{}) *MockManager_RegisterStruct_Call {
+func (_e *MockManager_Expecter) RegisterStruct(key any, cfg any) *MockManager_RegisterStruct_Call {
 	return &MockManager_RegisterStruct_Call{Call: _e.mock.On("RegisterStruct", key, cfg)}
 }
 
@@ -1986,7 +2339,7 @@ type MockManager_Root_Call struct {
 
 // Root is a helper method to define mock.On call
 //   - target any
-func (_e *MockManager_Expecter) Root(target interface{}) *MockManager_Root_Call {
+func (_e *MockManager_Expecter) Root(target any) *MockManager_Root_Call {
 	return &MockManager_Root_Call{Call: _e.mock.On("Root", target)}
 }
 
@@ -2083,7 +2436,7 @@ type MockManager_Set_Call struct {
 //   - ctx context.Context
 //   - key string
 //   - value any
-func (_e *MockManager_Expecter) Set(ctx interface{}, key interface{}, value interface{}) *MockManager_Set_Call {
+func (_e *MockManager_Expecter) Set(ctx any, key any, value any) *MockManager_Set_Call {
 	return &MockManager_Set_Call{Call: _e.mock.On("Set", ctx, key, value)}
 }
 
@@ -2144,7 +2497,7 @@ type MockManager_SetAPIEndpoint_Call struct {
 
 // SetAPIEndpoint is a helper method to define mock.On call
 //   - endpoint string
-func (_e *MockManager_Expecter) SetAPIEndpoint(endpoint interface{}) *MockManager_SetAPIEndpoint_Call {
+func (_e *MockManager_Expecter) SetAPIEndpoint(endpoint any) *MockManager_SetAPIEndpoint_Call {
 	return &MockManager_SetAPIEndpoint_Call{Call: _e.mock.On("SetAPIEndpoint", endpoint)}
 }
 
@@ -2196,7 +2549,7 @@ type MockManager_SetAtomic_Call struct {
 // SetAtomic is a helper method to define mock.On call
 //   - ctx context.Context
 //   - updates map[string]any
-func (_e *MockManager_Expecter) SetAtomic(ctx interface{}, updates interface{}) *MockManager_SetAtomic_Call {
+func (_e *MockManager_Expecter) SetAtomic(ctx any, updates any) *MockManager_SetAtomic_Call {
 	return &MockManager_SetAtomic_Call{Call: _e.mock.On("SetAtomic", ctx, updates)}
 }
 
@@ -2252,7 +2605,7 @@ type MockManager_SetAuthToken_Call struct {
 
 // SetAuthToken is a helper method to define mock.On call
 //   - token string
-func (_e *MockManager_Expecter) SetAuthToken(token interface{}) *MockManager_SetAuthToken_Call {
+func (_e *MockManager_Expecter) SetAuthToken(token any) *MockManager_SetAuthToken_Call {
 	return &MockManager_SetAuthToken_Call{Call: _e.mock.On("SetAuthToken", token)}
 }
 
@@ -2303,7 +2656,7 @@ type MockManager_SetBaseEndpoint_Call struct {
 
 // SetBaseEndpoint is a helper method to define mock.On call
 //   - endpoint string
-func (_e *MockManager_Expecter) SetBaseEndpoint(endpoint interface{}) *MockManager_SetBaseEndpoint_Call {
+func (_e *MockManager_Expecter) SetBaseEndpoint(endpoint any) *MockManager_SetBaseEndpoint_Call {
 	return &MockManager_SetBaseEndpoint_Call{Call: _e.mock.On("SetBaseEndpoint", endpoint)}
 }
 
@@ -2344,7 +2697,7 @@ type MockManager_SetDescription_Call struct {
 // SetDescription is a helper method to define mock.On call
 //   - key string
 //   - description string
-func (_e *MockManager_Expecter) SetDescription(key interface{}, description interface{}) *MockManager_SetDescription_Call {
+func (_e *MockManager_Expecter) SetDescription(key any, description any) *MockManager_SetDescription_Call {
 	return &MockManager_SetDescription_Call{Call: _e.mock.On("SetDescription", key, description)}
 }
 
@@ -2389,7 +2742,7 @@ type MockManager_SetDescriptions_Call struct {
 
 // SetDescriptions is a helper method to define mock.On call
 //   - descriptions map[string]string
-func (_e *MockManager_Expecter) SetDescriptions(descriptions interface{}) *MockManager_SetDescriptions_Call {
+func (_e *MockManager_Expecter) SetDescriptions(descriptions any) *MockManager_SetDescriptions_Call {
 	return &MockManager_SetDescriptions_Call{Call: _e.mock.On("SetDescriptions", descriptions)}
 }
 
@@ -2440,7 +2793,7 @@ type MockManager_SetMaxRetries_Call struct {
 
 // SetMaxRetries is a helper method to define mock.On call
 //   - retries int
-func (_e *MockManager_Expecter) SetMaxRetries(retries interface{}) *MockManager_SetMaxRetries_Call {
+func (_e *MockManager_Expecter) SetMaxRetries(retries any) *MockManager_SetMaxRetries_Call {
 	return &MockManager_SetMaxRetries_Call{Call: _e.mock.On("SetMaxRetries", retries)}
 }
 
@@ -2491,7 +2844,7 @@ type MockManager_SetSecure_Call struct {
 
 // SetSecure is a helper method to define mock.On call
 //   - secure bool
-func (_e *MockManager_Expecter) SetSecure(secure interface{}) *MockManager_SetSecure_Call {
+func (_e *MockManager_Expecter) SetSecure(secure any) *MockManager_SetSecure_Call {
 	return &MockManager_SetSecure_Call{Call: _e.mock.On("SetSecure", secure)}
 }
 
@@ -2544,7 +2897,7 @@ type MockManager_SetTunnelCredential_Call struct {
 //   - provider string
 //   - key string
 //   - value string
-func (_e *MockManager_Expecter) SetTunnelCredential(provider interface{}, key interface{}, value interface{}) *MockManager_SetTunnelCredential_Call {
+func (_e *MockManager_Expecter) SetTunnelCredential(provider any, key any, value any) *MockManager_SetTunnelCredential_Call {
 	return &MockManager_SetTunnelCredential_Call{Call: _e.mock.On("SetTunnelCredential", provider, key, value)}
 }
 
@@ -2584,11 +2937,11 @@ func (_c *MockManager_SetTunnelCredential_Call) RunAndReturn(run func(provider s
 // SetupSync provides a mock function for the type MockManager
 func (_mock *MockManager) SetupSync(opts ...configmanager.ConfigOption) error {
 	// configmanager.ConfigOption
-	_va := make([]interface{}, len(opts))
+	_va := make([]any, len(opts))
 	for _i := range opts {
 		_va[_i] = opts[_i]
 	}
-	var _ca []interface{}
+	var _ca []any
 	_ca = append(_ca, _va...)
 	ret := _mock.Called(_ca...)
 
@@ -2612,9 +2965,9 @@ type MockManager_SetupSync_Call struct {
 
 // SetupSync is a helper method to define mock.On call
 //   - opts ...configmanager.ConfigOption
-func (_e *MockManager_Expecter) SetupSync(opts ...interface{}) *MockManager_SetupSync_Call {
+func (_e *MockManager_Expecter) SetupSync(opts ...any) *MockManager_SetupSync_Call {
 	return &MockManager_SetupSync_Call{Call: _e.mock.On("SetupSync",
-		append([]interface{}{}, opts...)...)}
+		append([]any{}, opts...)...)}
 }
 
 func (_c *MockManager_SetupSync_Call) Run(run func(opts ...configmanager.ConfigOption)) *MockManager_SetupSync_Call {
@@ -2715,7 +3068,7 @@ type MockManager_Subscribe_Call struct {
 // Subscribe is a helper method to define mock.On call
 //   - pattern string
 //   - callback configmanager.SubscriptionCallback
-func (_e *MockManager_Expecter) Subscribe(pattern interface{}, callback interface{}) *MockManager_Subscribe_Call {
+func (_e *MockManager_Expecter) Subscribe(pattern any, callback any) *MockManager_Subscribe_Call {
 	return &MockManager_Subscribe_Call{Call: _e.mock.On("Subscribe", pattern, callback)}
 }
 
@@ -2772,7 +3125,7 @@ type MockManager_TunnelCredential_Call struct {
 // TunnelCredential is a helper method to define mock.On call
 //   - provider string
 //   - key string
-func (_e *MockManager_Expecter) TunnelCredential(provider interface{}, key interface{}) *MockManager_TunnelCredential_Call {
+func (_e *MockManager_Expecter) TunnelCredential(provider any, key any) *MockManager_TunnelCredential_Call {
 	return &MockManager_TunnelCredential_Call{Call: _e.mock.On("TunnelCredential", provider, key)}
 }
 
@@ -2828,7 +3181,7 @@ type MockManager_UnregisterNamespace_Call struct {
 
 // UnregisterNamespace is a helper method to define mock.On call
 //   - namespace string
-func (_e *MockManager_Expecter) UnregisterNamespace(namespace interface{}) *MockManager_UnregisterNamespace_Call {
+func (_e *MockManager_Expecter) UnregisterNamespace(namespace any) *MockManager_UnregisterNamespace_Call {
 	return &MockManager_UnregisterNamespace_Call{Call: _e.mock.On("UnregisterNamespace", namespace)}
 }
 
@@ -2858,11 +3211,11 @@ func (_c *MockManager_UnregisterNamespace_Call) RunAndReturn(run func(namespace 
 // Validate provides a mock function for the type MockManager
 func (_mock *MockManager) Validate(keyPrefix ...string) error {
 	// string
-	_va := make([]interface{}, len(keyPrefix))
+	_va := make([]any, len(keyPrefix))
 	for _i := range keyPrefix {
 		_va[_i] = keyPrefix[_i]
 	}
-	var _ca []interface{}
+	var _ca []any
 	_ca = append(_ca, _va...)
 	ret := _mock.Called(_ca...)
 
@@ -2886,9 +3239,9 @@ type MockManager_Validate_Call struct {
 
 // Validate is a helper method to define mock.On call
 //   - keyPrefix ...string
-func (_e *MockManager_Expecter) Validate(keyPrefix ...interface{}) *MockManager_Validate_Call {
+func (_e *MockManager_Expecter) Validate(keyPrefix ...any) *MockManager_Validate_Call {
 	return &MockManager_Validate_Call{Call: _e.mock.On("Validate",
-		append([]interface{}{}, keyPrefix...)...)}
+		append([]any{}, keyPrefix...)...)}
 }
 
 func (_c *MockManager_Validate_Call) Run(run func(keyPrefix ...string)) *MockManager_Validate_Call {

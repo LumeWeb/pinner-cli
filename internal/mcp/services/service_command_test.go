@@ -891,6 +891,17 @@ func TestServiceConfigForInstallPassesEnvFileUntouched(t *testing.T) {
 	require.FileExists(t, path)
 }
 
+// TestServiceConfigForInstallLocalhostAppendsHTTP ensures that the localhost
+// (empty provider) path still passes --http so the service starts in HTTP mode
+// instead of falling through to stdio transport.
+func TestServiceConfigForInstallLocalhostAppendsHTTP(t *testing.T) {
+	cmd := &cli.Command{}
+	cfg, err := serviceConfigForInstall(cmd, "", "")
+	require.NoError(t, err)
+	require.Contains(t, cfg.Arguments, "--http",
+		"localhost (empty provider) must still get --http so the service serves HTTP")
+}
+
 // TestRestartManagedServiceNoOp guards that RestartManagedService is a safe
 // no-op when the install state carries no backing service to restart (nil
 // state, or no env file / provider). This keeps the MCP install password path

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -89,6 +90,7 @@ func NewServiceInstallWizardUI() *serviceInstallWizardUI {
 // test share the list.
 func tunnelProviderChoiceLabels() []string {
 	return []string{
+		"localhost - serve on your machine, no public URL or tunnel needed",
 		"ngrok - a public URL, from an authtoken you get free at ngrok.com",
 		"cloudflared - a public URL under your own Cloudflare domain",
 		"openai - connects to ChatGPT/Connectors via an OpenAI Secure MCP Tunnel ID (needs a control-plane API key)",
@@ -102,7 +104,10 @@ func tunnelProviderChoiceLabels() []string {
 // matching the leading provider token (the identifier before " - "), so the
 // labels never drift between the option list and the highlighted default.
 func providerChoiceLabel(p tunnel.TunnelProvider) string {
-	prefix := string(p) + " - "
+	prefix := "localhost - "
+	if p != "" {
+		prefix = string(p) + " - "
+	}
 	for _, label := range tunnelProviderChoiceLabels() {
 		if strings.HasPrefix(label, prefix) {
 			return label
@@ -165,6 +170,50 @@ func (nilPrompt) Text(string, string, string) (string, error) {
 	return "", errors.New("interactive prompt requested but no prompt channel is bound")
 }
 
+// OAuthFlagSetOnCmdLine reports whether --oauth was passed explicitly on the
+// command line. It scans the raw process arguments because
+// (*cli.Command).IsSet("oauth") is also true when the flag is sourced from the
+// MCP_OAUTH env var (BoolFlag declares Sources: MCP_OAUTH), and urfave/cli v3
+// exposes no CLI-vs-env distinction. A persisted MCP_OAUTH env value is
+// inherited configuration, not an operator decision for this run, so it must
+// not suppress the OAuth prompt — it is offered as the prompt's default
+// instead. Only a literal --oauth token on the command line counts.
+func OAuthFlagSetOnCmdLine() bool {
+	flag := "--" + serviceOAuthFlag
+	for _, a := range os.Args {
+		if a == flag || strings.HasPrefix(a, flag+"=") {
+			return true
+		}
+	}
+	return false
+}
+
+// promptOAuthForInstall asks the operator about enabling the OAuth 2.1
+// handshake. Uses the shared prompter channel so both mcp install and the
+// standalone service install wizard ask through the same terminal. Skipped
+// in non-interactive mode and when --oauth was explicitly passed on the
+// command line (an explicit operator decision that seeds the tri-state
+// directly).
+func promptOAuthForInstall(ctx context.Context, s *ServiceInstallState) error {
+	if fieldform.NonInteractive {
+		return nil
+	}
+	if OAuthFlagSetOnCmdLine() {
+		return nil
+	}
+	p := serviceInstallStepsPrompter(ctx)
+	assumed := true // secure default-on for a remote endpoint
+	if s.OAuth != nil {
+		assumed = *s.OAuth
+	}
+	enabled, err := p.Confirm("Enable the OAuth 2.1 handshake for OAuth-expecting MCP clients (ChatGPT, Claude.ai, Copilot, Vertex)?", assumed)
+	if err != nil {
+		return err
+	}
+	s.OAuth = &enabled
+	return nil
+}
+
 // ServiceInstallSteps returns the ordered steps that collect and persist the
 // MCP service (tunnel) configuration into state. It is exported so a host
 // wizard (mcp install) can splice these steps directly into its own run and
@@ -200,6 +249,11 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 		wizard.StepFunc[*ServiceInstallState]{
 			Name_: "Tunnel-specific configuration",
 			ExecuteFunc: func(ctx context.Context, s *ServiceInstallState) error {
+				// Localhost (no tunnel): skip credentials, just prompt for OAuth.
+				if s.Provider == "" {
+					return promptOAuthForInstall(ctx, s)
+				}
+
 				spec, ok := providers.spec(s.Provider)
 				p := serviceInstallStepsPrompter(ctx)
 
@@ -238,7 +292,7 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 							return err
 						}
 					}
-					return nil
+					return promptOAuthForInstall(ctx, s)
 				}
 
 				// Prefer the MCP_AUTH_TOKEN environment variable over an
@@ -251,7 +305,7 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 					}
 					s.AuthToken = strings.TrimSpace(secret)
 				}
-				return nil
+				return promptOAuthForInstall(ctx, s)
 			},
 		},
 		wizard.StepFunc[*ServiceInstallState]{
