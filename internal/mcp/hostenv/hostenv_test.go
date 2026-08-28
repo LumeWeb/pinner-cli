@@ -768,6 +768,85 @@ func TestRegistry_Detect_ClaudeDesktopOverStdio(t *testing.T) {
 	require.False(t, prof.Has(FeatRemoteAccess))
 }
 
+func TestKiloDetector_MatchByClientInfo(t *testing.T) {
+	d := kiloDetector{}
+
+	// Positive: co-located stdio clientInfo name "kilo" → HostKilo, AuthNone
+	host, auth := d.Match(DetectRequest{
+		CoLocated:  true,
+		ClientInfo: &ClientInfo{Name: "kilo", Version: "7.5.5"},
+	})
+	require.Equal(t, HostKilo, host)
+	require.Equal(t, AuthNone, auth)
+
+	// Positive: case-insensitive / whitespace-tolerant name match
+	host, auth = d.Match(DetectRequest{
+		CoLocated:  true,
+		ClientInfo: &ClientInfo{Name: "  Kilo "},
+	})
+	require.Equal(t, HostKilo, host)
+	require.Equal(t, AuthNone, auth)
+}
+
+func TestKiloDetector_NoMatch(t *testing.T) {
+	d := kiloDetector{}
+
+	// Negative: co-located but wrong clientInfo name
+	host, auth := d.Match(DetectRequest{
+		CoLocated:  true,
+		ClientInfo: &ClientInfo{Name: "some-client", Version: "1.0.0"},
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: correct name but not co-located (remote) — Kilo is stdio-only
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "kilo", Version: "7.5.5"},
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: correct name but OpenAI tunnel
+	host, auth = d.Match(DetectRequest{
+		CoLocated:    true,
+		TunnelOpenAI: true,
+		ClientInfo:   &ClientInfo{Name: "kilo", Version: "7.5.5"},
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: no clientInfo at all
+	host, auth = d.Match(DetectRequest{CoLocated: true})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+}
+
+func TestRegistry_Detect_KiloOverStdio(t *testing.T) {
+	r := NewRegistry()
+
+	req := DetectRequest{
+		CoLocated:       true,
+		ClientInfo:      &ClientInfo{Name: "kilo", Version: "7.5.5"},
+		ProtocolVersion: "2025-11-25",
+	}
+	prof := r.Detect(req)
+
+	require.Equal(t, HostKilo, prof.HostType)
+	require.Equal(t, TransportStdio, prof.Transport)
+	require.Equal(t, AuthNone, prof.AuthMethod)
+	require.False(t, prof.Remote)
+	// Runtime overlay
+	require.Equal(t, "kilo", prof.ClientInfo.Name)
+	require.Equal(t, "7.5.5", prof.ClientInfo.Version)
+	require.Equal(t, "2025-11-25", prof.ProtocolVer)
+	// Mechanism features are the stdio set, matching the observed payload.
+	require.True(t, prof.Has(FeatSourcePath))
+	require.True(t, prof.Has(FeatSinkLocal))
+	require.True(t, prof.Has(FeatCoLocated))
+	require.False(t, prof.Has(FeatRemoteAccess))
+	require.False(t, prof.Has(FeatMCPApps))
+}
+
 func TestRegistry_Detect_UnknownOverStdio(t *testing.T) {
 	r := NewRegistry()
 
@@ -1368,19 +1447,20 @@ func TestNewRegistry_DetectorsRegistered(t *testing.T) {
 	r := NewRegistry()
 
 	require.NotNil(t, r)
-	require.Len(t, r.detectors, 8)
-	// Priority order: aider-desk, devin, cline, codex, openai, grok, claude
-	// (web), claude-desktop. The stdio-only detectors (aider-desk, devin, cline,
-	// codex) run first because they do not conflict with the remote-only
-	// openai/grok/claude detectors.
+	require.Len(t, r.detectors, 9)
+	// Priority order: aider-desk, devin, cline, codex, openai, grok, kilo,
+	// claude (web), claude-desktop. The stdio-only detectors (aider-desk, devin,
+	// cline, codex) run first because they do not conflict with the remote-only
+	// openai/grok/claude detectors; kilo is the co-located stdio editor.
 	require.IsType(t, aiderDeskDetector{}, r.detectors[0])
 	require.IsType(t, devinDetector{}, r.detectors[1])
 	require.IsType(t, clineDetector{}, r.detectors[2])
 	require.IsType(t, codexDetector{}, r.detectors[3])
 	require.IsType(t, openAIDetector{}, r.detectors[4])
 	require.IsType(t, grokDetector{}, r.detectors[5])
-	require.IsType(t, claudeDetector{}, r.detectors[6])
-	require.IsType(t, claudeDesktopDetector{}, r.detectors[7])
+	require.IsType(t, kiloDetector{}, r.detectors[6])
+	require.IsType(t, claudeDetector{}, r.detectors[7])
+	require.IsType(t, claudeDesktopDetector{}, r.detectors[8])
 }
 
 func TestNewRegistry_PriorityOrder(t *testing.T) {

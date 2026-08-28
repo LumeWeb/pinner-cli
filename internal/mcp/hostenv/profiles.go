@@ -163,6 +163,12 @@ var profileAliasTargets = map[HostType]HostType{
 	// its own HostType so host-specific gating can use HostIs(HostCodex),
 	// but inherits HostGeneric's declaration.
 	HostCodex: HostGeneric,
+
+	// Kilo Code is a co-located stdio client (clientInfo name "kilo") whose
+	// capability surface is exactly the generic stdio profile (co-located,
+	// sink-local, source-path). It is its own HostType so host-specific gating
+	// can use HostIs(HostKilo), but inherits HostGeneric's declaration.
+	HostKilo: HostGeneric,
 }
 
 // ProfileForTransport returns the generic profile for a transport kind.
