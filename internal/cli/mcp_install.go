@@ -707,10 +707,14 @@ func seedServiceFromEnvFile(envFile string, s *mcpadapter.ServiceInstallState) {
 			*dst = strings.TrimSpace(env[key])
 		}
 	}
-	if s.Provider == "" {
+	if s.Provider == "" && !s.ProviderDecided {
 		// The env file only ever contains a provider token written by
 		// serviceInstallStateToEnv (one of the three known providers), so it
-		// round-trips directly.
+		// round-trips directly. The fold is gated on the provider NOT having
+		// been decided this run: an explicit localhost choice (empty provider)
+		// must not be clobbered back to a tunnel provider persisted by an
+		// earlier install — otherwise the operator who picks "localhost" still
+		// gets prompted for ngrok credentials.
 		switch tunnel.TunnelProvider(env["MCP_TUNNEL_PROVIDER"]) {
 		case tunnel.TunnelProviderNgrok,
 			tunnel.TunnelProviderCloudflared,

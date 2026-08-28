@@ -489,7 +489,44 @@ func ReconcileServiceEnvironmentFromFlags(cmd *cli.Command, envFile string) erro
 // scrub from the overlay) come from the provider registry — NEVER a switch on
 // the provider value here.
 func ReconcileServiceEnvironmentFromInstallState(envFile string, s *ServiceInstallState, prevProvider tunnel.TunnelProvider, explicitPublicURL bool) error {
-	switching := prevProvider != "" && s.Provider != "" && prevProvider != s.Provider
+	prevSet := prevProvider != ""
+	switching := prevSet && s.Provider != "" && prevProvider != s.Provider
+	// A deliberate switch to no-tunnel (localhost): the previous provider is on
+	// disk but the operator decided an EMPTY provider this run. Only meaningful
+	// when ProviderDecided is true — an UNDECIDED empty provider must not purge
+	// anything, since no decision was made.
+	downgradingToLocalhost := prevSet && s.ProviderDecided && s.Provider == ""
+
+	overlay := serviceInstallStateToEnv(s)
+	purge := switching || downgradingToLocalhost
+	if len(overlay) == 0 && !purge {
+		// Nothing to overlay AND nothing to purge: a strict no-op that must not
+		// even require the env file to exist.
+		return nil
+	}
+	env, err := service.LoadEnvironment(envFile)
+	if err != nil {
+		return fmt.Errorf("load service environment %q for reconcile: %w", envFile, err)
+	}
+
+	if purge {
+		// A provider switch must purge the previous provider's modeled keys so
+		// the file carries no orphaned credentials for a tunnel that no longer
+		// exists. Its derived MCP_PUBLIC_URL is purged too — unless explicitly
+		// supplied this run, in which case the operator's decision wins.
+		for _, k := range TunnelProviderEnvKeys(prevProvider) {
+			delete(env, k)
+		}
+		// The provider identity key is always removed on a downgrade to
+		// localhost (serviceInstallStateToEnv writes nothing for an empty
+		// provider, so without this the stale MCP_TUNNEL_PROVIDER would keep
+		// the service starting a tunnel). On a provider->provider switch the
+		// overlay below writes the new value, overwriting it.
+		delete(env, "MCP_TUNNEL_PROVIDER")
+		if !explicitPublicURL {
+			delete(env, "MCP_PUBLIC_URL")
+		}
+	}
 	if switching {
 		// Scrub the previous provider's fields out of the state so the overlay
 		// below does not resurrect them (a seed fold loads every persisted
@@ -502,26 +539,25 @@ func ReconcileServiceEnvironmentFromInstallState(envFile string, s *ServiceInsta
 		if !explicitPublicURL {
 			s.PublicURL = ""
 		}
+		// Rebuild the overlay after the state scrub so it no longer carries the
+		// previous provider's credentials.
+		overlay = serviceInstallStateToEnv(s)
 	}
-	overlay := serviceInstallStateToEnv(s)
-	if len(overlay) == 0 {
-		return nil
-	}
-	env, err := service.LoadEnvironment(envFile)
-	if err != nil {
-		return fmt.Errorf("load service environment %q for reconcile: %w", envFile, err)
-	}
-	if switching {
-		// A provider switch must purge the previous provider's modeled keys so
-		// the file carries no orphaned credentials for a tunnel that no longer
-		// exists. Its derived MCP_PUBLIC_URL is purged too — unless explicitly
-		// supplied this run, in which case the operator's decision wins.
-		for _, k := range TunnelProviderEnvKeys(prevProvider) {
-			delete(env, k)
-		}
+	if downgradingToLocalhost {
+		// Also scrub the provider-specific credential fields from the state so
+		// the overlay cannot resurrect another tunnel's credentials under a
+		// no-tunnel config. The shared auth token/MCP_OAUTH survive (they are
+		// valid for a localhost OAuth serving), but the per-provider identity
+		// and the derived URL do not.
+		s.TunnelID = ""
+		s.ApiKey = ""
+		s.Domain = ""
+		s.TunnelName = ""
+		s.TunnelToken = ""
 		if !explicitPublicURL {
-			delete(env, "MCP_PUBLIC_URL")
+			s.PublicURL = ""
 		}
+		overlay = serviceInstallStateToEnv(s)
 	}
 	// For the CURRENT provider, clear stale alternate-name spellings of
 	// credentials the overlay models — e.g. an old NGROK_AUTHTOKEN next to the

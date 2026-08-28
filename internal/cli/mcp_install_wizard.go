@@ -264,18 +264,27 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 	})
 
 	// The MCP password (the shared auth token that protects the public HTTP
-	// endpoint) is a first-class, always-asked credential in interactive
-	// installs. Even when one was inherited from MCP_AUTH_TOKEN env/flags or
-	// the tunnel collection above, the operator is given the chance to keep
-	// or replace it, so it is never silently written past the user. Skipped in
-	// non-interactive mode (--non-interactive; token sourced from flags/env)
-	// and for non-http transports (stdio needs no credential).
+	// endpoint) is a first-class credential: the single, context-dependent
+	// prompt for the shared secret. On a NO-TUNNEL (localhost) http install the
+	// tunnel step does not gather a secret, so this is the one place it is
+	// asked. On a TUNNEL install the secret was already collected as the shared
+	// "AuthToken" field in the tunnel-specific configuration step, so this step
+	// is skipped (hasTunnelProvider) — never prompting for the same secret
+	// twice. Skipped in non-interactive mode (--non-interactive; token sourced
+	// from flags/env) and for non-http transports (stdio needs no credential).
 	steps = append(steps, wizard.StepFunc[*InstallState]{
 		Name_: "MCP Password",
 		SkipFunc: func(s *InstallState) bool {
 			return s.NonInteractive ||
 				s.Transport != install.TransportHTTP ||
-				!anySupportsTransport(s.Agents, install.TransportHTTP)
+				!anySupportsTransport(s.Agents, install.TransportHTTP) ||
+				// Context-dependent single ask: on a tunnel install the shared
+				// auth token was already collected by the tunnel-specific
+				// configuration step (the shared "AuthToken" field), so asking
+				// again here would double-prompt. Only a no-tunnel (localhost)
+				// http install has not gathered a secret — that is the single
+				// place it is asked there.
+				hasTunnelProvider(s)
 		},
 		ExecuteFunc: func(ctx context.Context, s *InstallState) error {
 			pw, err := w.ui.SetMCPPassword(s.AuthToken)
@@ -324,6 +333,16 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 	)
 
 	return steps
+}
+
+// hasTunnelProvider reports whether the install is configured with a tunnel
+// provider. On a tunnel install the tunnel-specific configuration step already
+// gathers the shared auth token (the "MCP password"), so the parent installer's
+// MCP Password step must be skipped to avoid asking for the same secret twice.
+// A no-tunnel (localhost) http install has no provider set and no such gather,
+// so the parent MCP Password step remains the single place the secret is asked.
+func hasTunnelProvider(s *InstallState) bool {
+	return s.Service != nil && s.Service.Provider != ""
 }
 
 // httpTunnelSkipped reports whether the HTTP/tunnel steps should be skipped for

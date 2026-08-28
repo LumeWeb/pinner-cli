@@ -59,6 +59,18 @@ type ServiceInstallState struct {
 	// must never have this set.
 	EnvFileCreated bool
 
+	// ProviderDecided reports that the tunnel provider was fixed by a decisive
+	// source this run: an explicit --tunnel switch, a headless selection, or an
+	// interactive select. It exists because "no tunnel" (localhost) is
+	// represented by the EMPTY provider string, which is otherwise identical to
+	// "undecided". Without it, a seed fold of a persisted MCP_TUNNEL_PROVIDER
+	// from a prior install would clobber an operator's explicit localhost choice
+	// back to the old tunnel provider, and a reconcile could not tell a
+	// deliberate downgrade-to-localhost from an untouched state. It mirrors the
+	// tri-state "decided this run" discipline used for OAuth/Port/DevTools, but
+	// as a plain bool because a decided value of "localhost" is still empty.
+	ProviderDecided bool
+
 	// decisions is the Decided channel of the two-channel provenance model (see
 	// fieldform). For each install field it records an operator decision made
 	// this run via a CLI switch or prompt, distinct from the flat Operational
@@ -225,8 +237,12 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 		wizard.StepFunc[*ServiceInstallState]{
 			Name_: "Tunnel provider",
 			ExecuteFunc: func(ctx context.Context, s *ServiceInstallState) error {
-				// Headless: reuse a resolved provider instead of prompting.
+				// Headless: reuse a resolved provider instead of prompting. It is
+				// already fixed (from a --tunnel switch or a persisted env value a
+				// headless run reuses), so mark it decided to keep later seed
+				// folds from re-deciding it.
 				if s.Provider != "" && fieldform.NonInteractive {
+					s.ProviderDecided = true
 					return nil
 				}
 				p := serviceInstallStepsPrompter(ctx)
@@ -243,6 +259,12 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 					choice = choice[:i]
 				}
 				s.Provider, err = parseTunnelProvider(choice)
+				if err == nil {
+					// The operator made an explicit choice this run — including the
+					// empty provider (localhost). Mark it decided so a later seed
+					// fold of a persisted MCP_TUNNEL_PROVIDER cannot clobber it.
+					s.ProviderDecided = true
+				}
 				return err
 			},
 		},
@@ -356,7 +378,19 @@ func IsServiceInstallSeeded(s *ServiceInstallState) bool {
 
 // seedServiceFromFlagsAndEnv is SeedServiceFromFlagsAndEnv's internal form.
 func seedServiceFromFlagsAndEnv(cmd *cli.Command, s *ServiceInstallState, _ string) {
-	if s.Provider == "" {
+	// An explicit --tunnel switch fixes the provider this run regardless of a
+	// persisted MCP_TUNNEL_PROVIDER, so mark it a decision BEFORE folding. The
+	// provider itself is only set when still undecided (or expressly overridden
+	// by the switch); a provider the operator already chose (possibly localhost,
+	// the empty value) is never clobbered by a flag or env fold.
+	if cmd.IsSet(serviceTunnelFlag) {
+		if p, err := parseTunnelProvider(cmd.String(serviceTunnelFlag)); err == nil {
+			s.ProviderDecided = true
+			s.Provider = p
+		}
+	} else if s.Provider == "" && !s.ProviderDecided {
+		// No --tunnel switch: fold a persisted value only while the provider is
+		// genuinely undecided. A decided empty provider (localhost) stays empty.
 		if p, err := parseTunnelProvider(cmd.String(serviceTunnelFlag)); err == nil {
 			s.Provider = p
 		}
