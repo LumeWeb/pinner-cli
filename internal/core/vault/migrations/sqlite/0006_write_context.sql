@@ -25,8 +25,9 @@ CREATE INDEX IF NOT EXISTS `idx_files_host`   ON `files`(`host`);
 
 -- +goose Down
 
+-- Drop the searchability indexes but leave the columns in place, mirroring
+-- 0003/0002's down convention: SQLite DROP COLUMN requires a full table
+-- rebuild and SQLite >= 3.35, so leaving harmless write-context columns
+-- behind keeps `goose down` a safe no-op on any SQLite version.
 DROP INDEX IF EXISTS `idx_files_source`;
 DROP INDEX IF EXISTS `idx_files_host`;
-ALTER TABLE `files` DROP COLUMN `agent`;
-ALTER TABLE `files` DROP COLUMN `host`;
-ALTER TABLE `files` DROP COLUMN `source`;
