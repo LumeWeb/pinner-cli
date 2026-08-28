@@ -40,6 +40,12 @@ type InstallUI interface {
 	// to use. Always called for http/remote installs in interactive mode so
 	// the operator is never silently skipped past setting the credential.
 	SetMCPPassword(current string) (string, error)
+	// ConfirmOAuth asks whether to enable the OAuth 2.1 handshake on the
+	// public HTTP MCP endpoint. assumed is the value to present as the default
+	// (true = enable), reflecting a persisted MCP_OAUTH decision or the secure
+	// default-on. Returns the operator's decision (true = enable OAuth,
+	// false = plain Bearer token).
+	ConfirmOAuth(assumed bool) (bool, error)
 
 	// ReportWritten reports a written config entry for an agent.
 	ReportWritten(agent install.AgentKey, path string, local bool) error
@@ -238,6 +244,35 @@ func (ui *PTermInstallUI) SetMCPPassword(current string) (string, error) {
 		return current, nil
 	}
 	return val, nil
+}
+
+// ConfirmOAuth asks whether to enable the OAuth 2.1 handshake on the public
+// HTTP MCP endpoint. assumed is the default presented (true = enable), derived
+// from a persisted MCP_OAUTH decision or the secure default-on. The question is
+// always asked on interactive http installs so the handshake is never silently
+// assumed; an explicit --oauth flag seeds it instead.
+func (ui *PTermInstallUI) ConfirmOAuth(assumed bool) (bool, error) {
+	if fieldform.NonInteractive {
+		return false, fmt.Errorf("OAuth prompt requires an interactive terminal")
+	}
+	pterm.Println()
+	pterm.DefaultParagraph.Println(
+		"Should the public MCP endpoint use the OAuth 2.1 handshake?",
+	)
+	pterm.DefaultParagraph.Println(
+		"OAuth lets OAuth-expecting clients (ChatGPT, Claude.ai, Copilot, Vertex) authorize " +
+			"through a login page. Disabling it requires them to send the MCP password as a " +
+			"plain Bearer token instead.",
+	)
+	ok, err := pterm.DefaultInteractiveConfirm.
+		WithDefaultValue(assumed).
+		WithConfirmText("Enable OAuth").
+		WithRejectText("Disable OAuth").
+		Show()
+	if err != nil {
+		return false, handleInterrupt(err)
+	}
+	return ok, nil
 }
 
 // ReportWritten reports a written config entry for an agent.
