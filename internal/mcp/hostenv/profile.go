@@ -27,6 +27,7 @@ const (
 	HostDevin       HostType = "devin"
 	HostCline       HostType = "cline"
 	HostCodex       HostType = "codex"
+	HostCopilotCLI  HostType = "copilot-cli"
 	HostGoose       HostType = "goose"
 	HostAntigravity HostType = "antigravity"
 	HostGeneric     HostType = "generic"
