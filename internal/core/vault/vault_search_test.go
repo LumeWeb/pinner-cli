@@ -73,6 +73,83 @@ func TestSearchFilters(t *testing.T) {
 	}
 }
 
+// TestSearchWriteContext verifies the normalized write-context columns
+// (source/host/agent) are populated from the stamped metadata and filterable.
+func TestSearchWriteContext(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTagTestService(t)
+
+	mk := func(path string, meta map[string]any) {
+		t.Helper()
+		if _, err := svc.Put(ctx, bytes.NewReader([]byte(path)), int64(len(path)), path, meta); err != nil {
+			t.Fatalf("Put %s: %v", path, err)
+		}
+	}
+	mk("vault:/docs/mcp-doc.txt", StampedMetadata("mcp", "claude-desktop", "home", map[string]any{"agent": "orchestrator-a"}))
+	mk("vault:/docs/cli-doc.txt", StampedMetadata("cli", "", "home", nil))
+	mk("vault:/docs/other.txt", nil)
+
+	// Projects the columns from stamped metadata on Put.
+	byName := func(n string) *SearchItem {
+		res, err := svc.Search(ctx, SearchFilter{Name: n})
+		if err != nil {
+			t.Fatalf("search %s: %v", n, err)
+		}
+		if len(res) != 1 {
+			t.Fatalf("search %s found %d, want 1", n, len(res))
+		}
+		return &res[0]
+	}
+	mcp := byName("mcp-doc.txt")
+	if mcp.Source != "mcp" || mcp.Host != "claude-desktop" || mcp.Agent != "orchestrator-a" {
+		t.Fatalf("mcp-doc write-context = %+v", mcp)
+	}
+	cli := byName("cli-doc.txt")
+	if cli.Source != "cli" || cli.Host != "" || cli.Agent != "" {
+		t.Fatalf("cli-doc write-context = %+v", cli)
+	}
+	other := byName("other.txt")
+	if other.Source != "" || other.Host != "" || other.Agent != "" {
+		t.Fatalf("other write-context = %+v", other)
+	}
+
+	// Filter by source.
+	res, err := svc.Search(ctx, SearchFilter{Source: "mcp"})
+	if err != nil {
+		t.Fatalf("Search source: %v", err)
+	}
+	if len(res) != 1 || res[0].Name != "mcp-doc.txt" {
+		t.Fatalf("source=mcp found %+v, want only mcp-doc.txt", res)
+	}
+
+	// Filter by host.
+	res, err = svc.Search(ctx, SearchFilter{Host: "claude-desktop", Source: "mcp"})
+	if err != nil {
+		t.Fatalf("Search host: %v", err)
+	}
+	if len(res) != 1 || res[0].Agent != "orchestrator-a" {
+		t.Fatalf("host+source found %+v, want only mcp-doc.txt", res)
+	}
+
+	// Filter by agent.
+	res, err = svc.Search(ctx, SearchFilter{Agent: "orchestrator-a"})
+	if err != nil {
+		t.Fatalf("Search agent: %v", err)
+	}
+	if len(res) != 1 || res[0].Source != "mcp" {
+		t.Fatalf("agent found %+v, want only mcp-doc.txt", res)
+	}
+
+	// Stat surfaces the columns too.
+	st, err := svc.Stat(ctx, "vault:/docs/mcp-doc.txt")
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if st.Source != "mcp" || st.Host != "claude-desktop" || st.Agent != "orchestrator-a" {
+		t.Fatalf("Stat write-context = %+v", st)
+	}
+}
+
 // TestSearchStatusFilter verifies filtering by the lost/pending status field.
 func TestSearchStatusFilter(t *testing.T) {
 	ctx := context.Background()

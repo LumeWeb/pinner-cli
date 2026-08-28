@@ -404,9 +404,9 @@ func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 		rows := make([][]string, 0, r.Count)
 		for _, p := range r.Results {
 			item := r.Detail[p]
-			rows = append(rows, []string{p, formatBytes(int(item.Size)), strings.Join(item.Tags, ",")})
+			rows = append(rows, []string{p, formatBytes(int(item.Size)), strings.Join(item.Tags, ","), item.Source, item.Host, item.Agent})
 		}
-		output.PrintTable([]string{"Path", "Size", "Tags"}, rows)
+		output.PrintTable([]string{"Path", "Size", "Tags", "Source", "Host", "Agent"}, rows)
 		return nil
 
 	default:

@@ -43,6 +43,13 @@ type File struct {
 	MediaType     string         // MIME type
 	ContentDigest string         // sha256 hex
 	Metadata      datatypes.JSON // opaque user metadata
+	// Source, Host, Agent are normalized write-context columns (a CACHE of the
+	// well-known keys in Metadata, reconciled on Put and sync-down like tags).
+	// They let vault_search filter by which frontend (src=mcp|cli), host
+	// platform, and creator agent wrote the object without a JSON scan.
+	Source string `gorm:"index:idx_files_source"`
+	Host   string `gorm:"index:idx_files_host"`
+	Agent  string
 	Status        string         `gorm:"column:status;default:ok"` // "ok" | "pending" | "lost"
 	LostReason    string         `gorm:"column:lost_reason;default:''"` // detail when status == "lost"
 	DeletedAt     *time.Time     // tombstone (soft delete); NULL = live

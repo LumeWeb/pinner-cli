@@ -200,6 +200,9 @@ func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err er
 						metaJSON = datatypes.JSON(b)
 					}
 				}
+				// Project write-context columns from the sealed object metadata so
+				// a first-time sync-down reconstructs src/host/agent.
+				recSource, recHost, recAgent := WriteContextColumns(fileMeta.Metadata)
 				existing = File{
 					UUID:          fileID,
 					VersionID:     versionID,
@@ -212,6 +215,9 @@ func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err er
 					MediaType:     fileMeta.MediaType,
 					ContentDigest: fileMeta.ContentDigest,
 					Metadata:      metaJSON,
+					Source:        recSource,
+					Host:          recHost,
+					Agent:         recAgent,
 					// Lifecycle fields carried from the object's sealed FileMetadata
 					// so a first-time sync-down on another device preserves the
 					// status stamped by Put (mirrors the upsert path; status

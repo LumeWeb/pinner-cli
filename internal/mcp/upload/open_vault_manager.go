@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	corevault "go.lumeweb.com/pinner-cli/internal/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
@@ -73,7 +74,11 @@ func NewOpenVaultManagerDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescr
 					ttl = d
 				}
 			}
-			url, err := vu.Mint(in.VaultPath, ttl)
+			var hostType string
+			if request.Caps != nil && request.Caps.Profile != nil {
+				hostType = string(request.Caps.Profile.HostType)
+			}
+			url, err := vu.Mint(in.VaultPath, ttl, corevault.StampedMetadata("mcp", hostType, "", nil))
 			if err != nil {
 				return model.ToolResult{}, err
 			}

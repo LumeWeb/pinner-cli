@@ -15,7 +15,7 @@ import (
 // recordingPut returns a VaultPutFunc that records every (vaultPath, size, content)
 // it is given and returns a fake object id derived from the vault path.
 func recordingPut(t *testing.T, got *[]string) VaultPutFunc {
-	return func(ctx context.Context, reader io.Reader, size int64, vaultPath string) (any, error) {
+	return func(ctx context.Context, reader io.Reader, size int64, vaultPath string, _ map[string]any) (any, error) {
 		content, err := io.ReadAll(reader)
 		if err != nil {
 			return nil, err
@@ -37,7 +37,7 @@ func TestDirToVaultSingleFile(t *testing.T) {
 	mkfile(t, dir, "a.txt", []byte("hello vault"))
 
 	var got []string
-	res, err := DirToVault(context.Background(), dir, "vault:/docs", recordingPut(t, &got))
+	res, err := DirToVault(context.Background(), dir, "vault:/docs", nil, recordingPut(t, &got))
 	require.NoError(t, err)
 
 	require.Equal(t, "vault:/docs", res.Base)
@@ -59,7 +59,7 @@ func TestDirToVaultNested(t *testing.T) {
 	mkfile(t, dir, "b.txt", []byte("root b"))
 
 	var got []string
-	res, err := DirToVault(context.Background(), dir, "vault:/docs", recordingPut(t, &got))
+	res, err := DirToVault(context.Background(), dir, "vault:/docs", nil, recordingPut(t, &got))
 	require.NoError(t, err)
 
 	require.Equal(t, 2, res.Total)
@@ -80,7 +80,7 @@ func TestDirToVaultNested(t *testing.T) {
 
 func TestDirToVaultEmptyDir(t *testing.T) {
 	dir := t.TempDir()
-	res, err := DirToVault(context.Background(), dir, "vault:/docs", func(ctx context.Context, r io.Reader, size int64, p string) (any, error) {
+	res, err := DirToVault(context.Background(), dir, "vault:/docs", nil, func(ctx context.Context, r io.Reader, size int64, p string, _ map[string]any) (any, error) {
 		return nil, nil
 	})
 	require.NoError(t, err)
@@ -96,8 +96,8 @@ func TestDirToVaultReturnsPartialResultOnPutFailure(t *testing.T) {
 	mkfile(t, dir, "z-fails.txt", []byte("boom"))
 
 	var got []string
-	res, err := DirToVault(context.Background(), dir, "vault:/docs",
-		func(ctx context.Context, r io.Reader, size int64, p string) (any, error) {
+	res, err := DirToVault(context.Background(), dir, "vault:/docs", nil,
+		func(ctx context.Context, r io.Reader, size int64, p string, _ map[string]any) (any, error) {
 			if strings.Contains(p, "z-fails") {
 				return nil, fmt.Errorf("simulated put failure")
 			}
@@ -126,8 +126,8 @@ func TestDirToVaultHonorsCancelledContext(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	calls := 0
-	res, err := DirToVault(ctx, dir, "vault:/docs",
-		func(ctx context.Context, r io.Reader, size int64, p string) (any, error) {
+	res, err := DirToVault(ctx, dir, "vault:/docs", nil,
+		func(ctx context.Context, r io.Reader, size int64, p string, _ map[string]any) (any, error) {
 			calls++
 			cancel() // cancel after the first file is walked; the next callback must abort
 			return "obj:" + p, nil

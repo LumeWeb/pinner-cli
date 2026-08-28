@@ -183,7 +183,12 @@ func vaultUpload(ctx context.Context, c *cli.Command, output Output, localEp, va
 		reader = pr
 	}
 
-	record, err := svc.Put(ctx, reader, stat.Size(), vaultPath, nil)
+	// Stamp write context: this is a person running the CLI (not an agent), so
+	// src=cli and only the receiving profile are recorded. No host/agent/
+	// caller KV — a hand-typed `vault cp` has none. Resolve the actual profile
+	// (an empty authority means the active profile) to record the real one.
+	profileName, _ := vault.ResolveProfile(vaultEp.profile)
+	record, err := svc.Put(ctx, reader, stat.Size(), vaultPath, vault.StampedMetadata("cli", "", profileName, nil))
 	if err != nil {
 		return err
 	}
@@ -336,7 +341,10 @@ func vaultVaultCopy(ctx context.Context, c *cli.Command, output Output, srcEp, d
 		reader = pr
 	}
 
-	record, err := dstSvc.Put(ctx, reader, stat.Size(), dstPath, nil)
+	// Stamp write context on the destination write: src=cli (this is a person
+	// running `vault cp`) and the receiving profile. No caller KV.
+	dstProfile, _ := vault.ResolveProfile(dstEp.profile)
+	record, err := dstSvc.Put(ctx, reader, stat.Size(), dstPath, vault.StampedMetadata("cli", "", dstProfile, nil))
 	if err != nil {
 		return err
 	}

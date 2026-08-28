@@ -313,11 +313,11 @@ func TestVaultByteRouteTransportGated(t *testing.T) {
 func TestVaultSourceModeCopyIsVaultSpecific(t *testing.T) {
 	mkVault := func(features hostenv.FeatureSet) model.ToolDescriptor {
 		return vault.NewVaultPutFileDescriptor(features, false, false,
-			func(ctx context.Context, path, vaultPath, archiveMode string) (any, error) {
+			func(ctx context.Context, path, vaultPath, archiveMode string, _ map[string]any) (any, error) {
 				return map[string]any{"vault_path": vaultPath}, nil
 			},
 			transfer.NewVaultHTTPUpload(nil, 0),
-			func(ctx context.Context, r io.Reader, sz int64, vaultPath string) (any, error) {
+			func(ctx context.Context, r io.Reader, sz int64, vaultPath string, _ map[string]any) (any, error) {
 				return map[string]any{"vault_path": vaultPath}, nil
 			},
 			nil, 0,
