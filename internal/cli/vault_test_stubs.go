@@ -48,9 +48,6 @@ func (NopVaultService) VersionDownload(context.Context, string, string, io.Write
 func (NopVaultService) VersionRestore(context.Context, string, string) (*vault.File, error) {
 	return nil, nil
 }
-func (NopVaultService) SetProvenance(context.Context, string, string, string, string) (*vault.File, error) {
-	return nil, nil
-}
 func (NopVaultService) AddTags(context.Context, string, []string) (*vault.File, error) {
 	return nil, nil
 }

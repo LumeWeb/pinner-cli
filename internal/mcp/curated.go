@@ -26,7 +26,6 @@ var compiledCuratedToolNames = []string{
 	"vault_stat",
 	"vault_version_ls",
 	"vault_version_get",
-	"vault_set_provenance",
 	"vault_search",
 	"vault_tag_add",
 	"vault_tag_ls",

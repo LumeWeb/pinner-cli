@@ -242,11 +242,6 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	var curSeq uint
 	s.db.Model(&File{}).Where("uuid = ?", fileID).Select("COALESCE(MAX(seq),0)").Scan(&curSeq)
 	versionSeq := curSeq + 1
-	// Best-effort provenance, user-attested by the writing client. If the
-	// caller's opaque metadata map carries created_by/agent_id/session_id keys,
-	// promote them to first-class provenance fields so they are queryable and
-	// sync to other devices; they remain in the opaque map too (unchanged).
-	createdBy, agentID, sessionID := provenanceFromMetadata(metadata)
 	// Best-effort tag promotion: if the caller's opaque metadata map carries a
 	// 'tags' key ([]string or []any of strings), normalize it and seed the
 	// object's Metadata['tags'] array so the tags are durable (re-pinned with
@@ -263,9 +258,6 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 		CreatedAt:   now,
 		Metadata:    metadata,
 		Status:      FileStatusOK,
-		CreatedBy:   createdBy,
-		AgentID:     agentID,
-		SessionID:   sessionID,
 	}
 	// Seed the planar tags array in the sealed object metadata so sync-down
 	// reconstructs file_tags on every device without an extra call.
@@ -343,9 +335,6 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 		ContentDigest: contentDigest,
 		Metadata:      datatypes.JSON(userMetaJSON),
 		Status:        FileStatusOK,
-		CreatedBy:     createdBy,
-		AgentID:       agentID,
-		SessionID:     sessionID,
 		CreatedAt:     nowTs,
 		UpdatedAt:     nowTs,
 	}
@@ -590,10 +579,9 @@ func (s *vaultService) List(ctx context.Context, vaultPath string) ([]ListItem, 
 
 // Search returns live vault FILES matching the filter, newest-first by
 // creation time. It is metadata-first (no full-text engine): an optional name
-// substring (case-insensitive), tag AND membership, exact provenance fields,
-// status, and a creation-time floor, all ANDed. Each result carries a full
-// vault path plus the same metadata Stat surfaces, so results are directly
-// actionable.
+// substring (case-insensitive), tag AND membership, status, and a
+// creation-time floor, all ANDed. Each result carries a full vault path plus
+// the same metadata Stat surfaces, so results are directly actionable.
 func (s *vaultService) Search(_ context.Context, f SearchFilter) ([]SearchItem, error) {
 	q := s.db.Table("files").
 		Select("files.*").
@@ -651,15 +639,6 @@ func (s *vaultService) Search(_ context.Context, f SearchFilter) ([]SearchItem, 
 		// is escaped as a whole (dir + "/") exactly once for the LIKE pattern.
 		prefix := dir + "/"
 		q = q.Where("(directories.path = ? OR directories.path LIKE ? ESCAPE '\\')", dir, escapeLike(prefix)+"%")
-	}
-	if f.CreatedBy != "" {
-		q = q.Where("files.created_by = ?", f.CreatedBy)
-	}
-	if f.AgentID != "" {
-		q = q.Where("files.agent_id = ?", f.AgentID)
-	}
-	if f.SessionID != "" {
-		q = q.Where("files.session_id = ?", f.SessionID)
 	}
 	if f.Status != "" {
 		q = q.Where("files.status = ?", f.Status)
@@ -743,9 +722,6 @@ func (s *vaultService) Search(_ context.Context, f SearchFilter) ([]SearchItem, 
 			ContentDigest: rec.ContentDigest,
 			ObjectID:      rec.ObjectKey,
 			Status:        rec.Status,
-			CreatedBy:     rec.CreatedBy,
-			AgentID:       rec.AgentID,
-			SessionID:     rec.SessionID,
 			CreatedAt:     rec.CreatedAt.Format(time.RFC3339),
 			UpdatedAt:     rec.UpdatedAt.Format(time.RFC3339),
 			Tags:          tagsByID[rec.ID],
@@ -822,9 +798,6 @@ func (s *vaultService) Stat(ctx context.Context, vaultPath string) (*StatResult,
 		ObjectID:      record.ObjectKey,
 		Status:        record.Status,
 		LostReason:    record.LostReason,
-		CreatedBy:     record.CreatedBy,
-		AgentID:       record.AgentID,
-		SessionID:     record.SessionID,
 		CreatedAt:     record.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:     record.UpdatedAt.Format(time.RFC3339),
 		Metadata:      metaOut,
@@ -1215,7 +1188,6 @@ func (s *vaultService) ShareAccept(ctx context.Context, vaultPath, shareURL, tar
 		ObjectKey:       f.ObjectKey,
 		Expiry:          nil,
 		TargetPrincipal: targetPrincipal,
-		CreatedBy:       f.CreatedBy,
 		CreatedAt:       time.Now().UTC(),
 	}).Error; err != nil {
 		return nil, fmt.Errorf("failed to record share accept in ledger: %w", err)
@@ -1355,18 +1327,13 @@ func (s *vaultService) VersionRestore(ctx context.Context, vaultPath string, ver
 		return nil, err
 	}
 
-	// Preserve the live file's tags + provenance onto the restored winner row.
-	// A restore mints a NEW current version; without this the new row would come
-	// up with empty provenance and no tags, silently dropping the label set.
+	// Preserve the live file's tags onto the restored winner row. A restore
+	// mints a NEW current version; without this the new row would come up with
+	// no tags, silently dropping the label set.
 	var meta map[string]any
 	if rec, err := s.resolveFile(vp); err == nil {
-		meta = map[string]any{
-			"created_by": rec.CreatedBy,
-			"agent_id":   rec.AgentID,
-			"session_id": rec.SessionID,
-		}
 		if tags, err := s.currentTags(rec.ID); err == nil && len(tags) > 0 {
-			meta["tags"] = tags
+			meta = map[string]any{"tags": tags}
 		}
 	}
 
@@ -1383,95 +1350,6 @@ func (s *vaultService) VersionRestore(ctx context.Context, vaultPath string, ver
 		pw.CloseWithError(s.VersionDownload(ctx, vp.Raw, versionID, pw))
 	}()
 	return s.Put(ctx, pr, row.Size, vp.Raw, meta)
-}
-
-// SetProvenance stamps the live current file at vaultPath with the given
-// best-effort audit fields (created_by / agent_id / session_id). It updates the
-// local File row AND re-stamps + re-pins the Sia object's encrypted metadata so
-// the provenance syncs to every device like any other FileMetadata field.
-//
-// Only non-empty values override; empty fields are preserved. The op is
-// best-effort (no signing authority on a permissionless network) but is durable
-// for the object: the metadata re-pin is an in-place upsert at the same content
-// address, so it propagates on the next sync-down without minting a version.
-func (s *vaultService) SetProvenance(ctx context.Context, vaultPath, createdBy, agentID, sessionID string) (*File, error) {
-	vp, err := ParseVaultPath(vaultPath)
-	if err != nil {
-		return nil, err
-	}
-	vp, err = RequireActiveProfile(vp)
-	if err != nil {
-		return nil, err
-	}
-	record, err := s.resolveFile(vp)
-	if err != nil {
-		return nil, err
-	}
-
-	objHash, err := parseHash256(record.ObjectKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse object key: %w", err)
-	}
-	sdk, err := s.ensureSDK()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Sia SDK: %w", err)
-	}
-	obj, err := sdk.Object(ctx, objHash)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch object from indexer: %w", err)
-	}
-
-	// Decode the object's current sealed metadata (preserving whatever the
-	// object carries), BUT seed provenance from the local row (the durable
-	// record) so preserve-empty semantics survive even if the object's stored
-	// sidecar is empty or stale. Only non-empty args override.
-	var meta FileMetadata
-	if raw := obj.Metadata(); len(raw) > 0 {
-		if m, merr := ParseFileMetadata(raw); merr == nil {
-			meta = m
-		}
-	}
-	if meta.CreatedBy == "" {
-		meta.CreatedBy = record.CreatedBy
-	}
-	if meta.AgentID == "" {
-		meta.AgentID = record.AgentID
-	}
-	if meta.SessionID == "" {
-		meta.SessionID = record.SessionID
-	}
-	if createdBy != "" {
-		meta.CreatedBy = createdBy
-	}
-	if agentID != "" {
-		meta.AgentID = agentID
-	}
-	if sessionID != "" {
-		meta.SessionID = sessionID
-	}
-	metaJSON, err := meta.JSON()
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode metadata: %w", err)
-	}
-	obj.UpdateMetadata(metaJSON)
-	if perr := sdk.PinObject(ctx, obj); perr != nil {
-		return nil, fmt.Errorf("failed to re-pin object with provenance: %w", perr)
-	}
-
-	// Persist locally (in-place; NOT a new version — provenance is a metadata
-	// mutation, not a content change).
-	if uerr := s.db.Model(&File{}).Where("id = ?", record.ID).Updates(map[string]any{
-		"created_by": meta.CreatedBy,
-		"agent_id":   meta.AgentID,
-		"session_id": meta.SessionID,
-		"updated_at": time.Now().UTC(),
-	}).Error; uerr != nil {
-		return nil, fmt.Errorf("failed to persist provenance: %w", uerr)
-	}
-	record.CreatedBy = meta.CreatedBy
-	record.AgentID = meta.AgentID
-	record.SessionID = meta.SessionID
-	return &record, nil
 }
 
 // resealObjectSize re-seals a just-accepted object's FileMetadata with the
@@ -1505,26 +1383,6 @@ func (s *vaultService) resealObjectSize(ctx context.Context, sdk sdkClient, obje
 		return fmt.Errorf("failed to re-pin object with corrected size: %w", perr)
 	}
 	return nil
-}
-
-// provenanceFromMetadata extracts best-effort provenance keys created_by /
-// agent_id / session_id from a caller-supplied opaque metadata map, so a Put
-// can promote them to first-class (queryable, syncable) fields. Values are read
-// as strings when present; absent or non-string values yield empty strings (the
-// caller keeps them empty, which the sealed metadata omits via omitempty).
-func provenanceFromMetadata(metadata map[string]any) (createdBy, agentID, sessionID string) {
-	if metadata == nil {
-		return "", "", ""
-	}
-	asStr := func(k string) string {
-		if v, ok := metadata[k]; ok {
-			if s, ok := v.(string); ok {
-				return s
-			}
-		}
-		return ""
-	}
-	return asStr("created_by"), asStr("agent_id"), asStr("session_id")
 }
 
 // Status reports live vault health and usage. Remote fields come from a real
@@ -1703,24 +1561,14 @@ func upsertFromMeta(tx *gorm.DB, existing *File, meta FileMetadata, objectKey st
 	existing.Size = meta.Size
 	existing.MediaType = meta.MediaType
 	existing.ContentDigest = meta.ContentDigest
-	// Carry provenance (but NOT lifecycle status) from the object's sealed
-	// metadata so audit fields survive cache rebuilds and sync to every device.
-	// Status is deliberately left untouched on the existing-row path: a file
-	// marked "lost" locally (Verify is a DB-only write that never re-pins the
-	// object) must not be silently reset to "ok" when a later sync re-processes
-	// the object, whose sealed metadata still carries the "ok" stamped at Put
-	// time. Lost state is only cleared by an explicit digest-matching Verify or
-	// a fresh Put — never by a passive re-sync. Fresh rows (sync-down to a new
-	// device) still seed status from the object via sync.go's create branch.
-	if meta.CreatedBy != "" {
-		existing.CreatedBy = meta.CreatedBy
-	}
-	if meta.AgentID != "" {
-		existing.AgentID = meta.AgentID
-	}
-	if meta.SessionID != "" {
-		existing.SessionID = meta.SessionID
-	}
+	// Lifecycle status is deliberately left untouched on the existing-row path:
+	// a file marked "lost" locally (Verify is a DB-only write that never re-pins
+	// the object) must not be silently reset to "ok" when a later sync
+	// re-processes the object, whose sealed metadata still carries the "ok"
+	// stamped at Put time. Lost state is only cleared by an explicit
+	// digest-matching Verify or a fresh Put — never by a passive re-sync. Fresh
+	// rows (sync-down to a new device) still seed status from the object via
+	// sync.go's create branch.
 	existing.UpdatedAt = updatedAt
 	if meta.Metadata != nil {
 		// Persist the user metadata carried in the object's FileMetadata so the
@@ -1854,9 +1702,6 @@ func (s *vaultService) adoptPreflight(ctx context.Context, obj *siastorage.Objec
 		Metadata:      rec.Metadata,
 		IsCurrent:     false, // promoteCurrent promotes this adopted row after insert
 		Status:        FileStatusOK,
-		CreatedBy:     fileMeta.CreatedBy,
-		AgentID:       fileMeta.AgentID,
-		SessionID:     fileMeta.SessionID,
 		UpdatedAt:     time.Now().UTC(),
 	}
 	// Carry forward the prior row's created-at (stable identity's birth time).
@@ -2181,7 +2026,7 @@ func (s *vaultService) resolveTagsChange(ctx context.Context, vp *VaultPath, mut
 	newTags = normalizeTags(newTags)
 
 	// Decode/re-seed the full FileMetadata so re-pinning does not drop other
-	// fields (provenance, status, content digest...) carried by the object.
+	// fields (status, content digest...) carried by the object.
 	var meta FileMetadata
 	if raw := obj.Metadata(); len(raw) > 0 {
 		if m, merr := ParseFileMetadata(raw); merr == nil {

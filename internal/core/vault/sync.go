@@ -214,14 +214,10 @@ func (s *vaultService) Sync(ctx context.Context) (applied int, full bool, err er
 					Metadata:      metaJSON,
 					// Lifecycle fields carried from the object's sealed FileMetadata
 					// so a first-time sync-down on another device preserves the
-					// status/provenance stamped by Put (mirrors the upsert path; an
-					// empty string is left empty, matching Put's provenance row, and
-					// status defaults to ok only when the object omits it).
+					// status stamped by Put (mirrors the upsert path; status
+					// defaults to ok only when the object omits it).
 					Status:     fileMeta.Status,
 					LostReason: fileMeta.LostReason,
-					CreatedBy:  fileMeta.CreatedBy,
-					AgentID:    fileMeta.AgentID,
-					SessionID:  fileMeta.SessionID,
 					CreatedAt:  now,
 					UpdatedAt:  now,
 				}

@@ -30,11 +30,6 @@ type Directory struct {
 // are unrecoverable). lost_reason carries the terminal detail (e.g. the
 // slab-unavailable error) when status == "lost". Lost files stay listed (never
 // tombstoned) so an agent can enumerate and recover them.
-//
-// Provenance: created_by / agent_id / session_id are best-effort, user-attested
-// audit fields (no signing authority on a permissionless network). They are
-// written once at Put, carried in the Sia object's encrypted metadata, and
-// synced to every device like every other FileMetadata field.
 type File struct {
 	ID            uint   `gorm:"primaryKey"`
 	UUID          string `gorm:"index:idx_files_uuid_version,unique"` // stable identity + version
@@ -50,9 +45,6 @@ type File struct {
 	Metadata      datatypes.JSON // opaque user metadata
 	Status        string         `gorm:"column:status;default:ok"` // "ok" | "pending" | "lost"
 	LostReason    string         `gorm:"column:lost_reason;default:''"` // detail when status == "lost"
-	CreatedBy     string         `gorm:"column:created_by;default:''"`  // provenance: user/principal
-	AgentID       string         `gorm:"column:agent_id;default:''"`    // provenance: originating agent
-	SessionID     string         `gorm:"column:session_id;default:''"`  // provenance: agent session
 	DeletedAt     *time.Time     // tombstone (soft delete); NULL = live
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
@@ -112,7 +104,6 @@ type ShareLedger struct {
 	ObjectKey        string
 	Expiry           *time.Time
 	TargetPrincipal  string
-	CreatedBy        string
 	CreatedAt        time.Time
 }
 

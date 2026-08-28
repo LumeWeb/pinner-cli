@@ -83,7 +83,6 @@ func VaultOperations(d VaultDeps) []catalog.Operation {
 		vaultVersionLs(d),
 		vaultVersionGet(d),
 		vaultVersionRestore(d),
-		vaultSetProvenance(d),
 		vaultSearch(d),
 		vaultTagAdd(d),
 		vaultTagRm(d),
@@ -109,7 +108,7 @@ func vaultStatus(d VaultDeps) catalog.Operation {
 		Name:        "vault_status",
 		Title:       "Vault status",
 		Summary:     "Show vault profile status",
-		Description: "Summarize identity, local session, remote health, storage usage, and cache health for the selected vault profile. Remote health is probed live against the indexer; local cache stats come from the profile's index. Writing new files is done via vault_put_file (and the co-located/remote/mint source it accepts); tags/provenance/version operations are exposed by vault_tag_*, vault_set_provenance, and vault_version_*. The read-only operations on this catalog are ls/stat/verify/sync/share/rm.",
+		Description: "Summarize identity, local session, remote health, storage usage, and cache health for the selected vault profile. Remote health is probed live against the indexer; local cache stats come from the profile's index. Writing new files is done via vault_put_file (and the co-located/remote/mint source it accepts); tags/version operations are exposed by vault_tag_* and vault_version_*. The read-only operations on this catalog are ls/stat/verify/sync/share/rm.",
 		Category:    "vault",
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
@@ -467,69 +466,6 @@ func vaultVersionRestore(d VaultDeps) catalog.Operation {
 }
 
 // ---------------------------------------------------------------------------
-// vault set provenance
-// ---------------------------------------------------------------------------
-
-// VaultSetProvenanceResult is the data returned by vault_set_provenance: the
-// path stamped and the resulting provenance fields.
-type VaultSetProvenanceResult struct {
-	Path      string `json:"path"`
-	CreatedBy string `json:"created_by,omitempty"`
-	AgentID   string `json:"agent_id,omitempty"`
-	SessionID string `json:"session_id,omitempty"`
-}
-
-func vaultSetProvenance(d VaultDeps) catalog.Operation {
-	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "vault_set_provenance",
-		Title:       "Stamp provenance on a vault file",
-		Summary:     "Set provenance (created_by / agent_id / session_id) on a file",
-		Description: "Stamp best-effort audit fields (created_by, agent_id, session_id) on the live current version of a vault file. Updates the local row AND re-stamps + re-pins the Sia object's encrypted metadata so the provenance syncs to every device. Only non-empty values override; empty fields on an existing file are preserved. Does NOT create a new version (provenance is a metadata mutation, not a content change). Use to record which agent/session wrote a file, enabling 'who touched this' audit chains.",
-		Category:    "vault",
-		Safety:      catalog.SafetyMutate,
-		Interaction: catalog.InteractionAgentSafe,
-		Visibility:  catalog.VisibilityBoth,
-		Positional:  "<path>",
-		Args: []catalog.OperationArg{
-			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path to stamp", AgentHelp: "The vault:/ path of the file to stamp with provenance."},
-			{Name: "created_by", Type: catalog.ArgTypeString, Help: "Created-by principal (user/identity)", AgentHelp: "The principal that created/owns the file."},
-			{Name: "agent_id", Type: catalog.ArgTypeString, Help: "Originating agent id", AgentHelp: "The id of the agent that wrote the file."},
-			{Name: "session_id", Type: catalog.ArgTypeString, Help: "Agent session id", AgentHelp: "The id of the agent session that wrote the file."},
-			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
-		},
-		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			vaultPath := catalog.StrArg(input, "path", "")
-			if vaultPath == "" {
-				return nil, fmt.Errorf("vault_set_provenance: missing required argument path")
-			}
-			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
-			if err != nil {
-				return nil, err
-			}
-			svc, err := d.service(profileName)
-			if err != nil {
-				return nil, err
-			}
-			defer svc.Close()
-			f, err := svc.SetProvenance(ctx, vaultPath,
-				catalog.StrArg(input, "created_by", ""),
-				catalog.StrArg(input, "agent_id", ""),
-				catalog.StrArg(input, "session_id", ""),
-			)
-			if err != nil {
-				return nil, err
-			}
-			return &VaultSetProvenanceResult{
-				Path:      vaultPath,
-				CreatedBy: f.CreatedBy,
-				AgentID:   f.AgentID,
-				SessionID: f.SessionID,
-			}, nil
-		}),
-	})
-}
-
-// ---------------------------------------------------------------------------
 // vault tag add / rm / set / ls
 // ---------------------------------------------------------------------------
 
@@ -564,8 +500,8 @@ func vaultSearch(d VaultDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "vault_search",
 		Title:       "Search vault files",
-		Summary:     "Search vault files by name, tag, provenance, or status",
-		Description: "Search the vault for live files matching the given filters, combined with AND semantics. Supports a name substring (case-insensitive), one or more tags (a file must have ALL of them), a directory prefix, exact provenance fields (created_by, agent, session), a status filter (ok/pending/lost), and a created-since timestamp. Metadata-first; no full-text engine. Results return the full vault paths, newest-first. Read-only.",
+		Summary:     "Search vault files by name, tag, or status",
+		Description: "Search the vault for live files matching the given filters, combined with AND semantics. Supports a name substring (case-insensitive), one or more tags (a file must have ALL of them), a directory prefix, a status filter (ok/pending/lost), and a created-since timestamp. Metadata-first; no full-text engine. Results return the full vault paths, newest-first. Read-only.",
 		Category:    "vault",
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
@@ -574,9 +510,6 @@ func vaultSearch(d VaultDeps) catalog.Operation {
 			{Name: "query", Type: catalog.ArgTypeString, Help: "Case-insensitive substring of the file name", AgentHelp: "A substring of the file name to match (case-insensitive)."},
 			{Name: "tag", Type: catalog.ArgTypeStringSlice, Help: "Require ALL of these tags (repeatable; AND)", AgentHelp: "One or more tags; a file must have all of them. Repeat for multiple."},
 			{Name: "dir", Type: catalog.ArgTypeString, Help: "Restrict to files under this vault directory", AgentHelp: "A vault directory to restrict results to (inclusive)."},
-			{Name: "created_by", Type: catalog.ArgTypeString, Help: "Exact creating principal/identity"},
-			{Name: "agent", Type: catalog.ArgTypeString, Help: "Exact originating agent ID"},
-			{Name: "session", Type: catalog.ArgTypeString, Help: "Exact agent session ID"},
 			{Name: "status", Type: catalog.ArgTypeString, Enum: []string{"ok", "pending", "lost"}, Help: "Only files with this status"},
 			{Name: "since", Type: catalog.ArgTypeString, Help: "Only files created at/after this time (RFC3339, e.g. 2026-08-01T00:00:00Z)"},
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to the active profile)"},
@@ -588,13 +521,10 @@ func vaultSearch(d VaultDeps) catalog.Operation {
 			// keeps the gate and the guard consistent.
 			status := strings.ToLower(catalog.StrArg(input, "status", ""))
 			f := vault.SearchFilter{
-				Name:      catalog.StrArg(input, "query", ""),
-				Tags:      catalog.StrSliceArg(input, "tag"),
-				Dir:       catalog.StrArg(input, "dir", ""),
-				CreatedBy: catalog.StrArg(input, "created_by", ""),
-				AgentID:   catalog.StrArg(input, "agent", ""),
-				SessionID: catalog.StrArg(input, "session", ""),
-				Status:    status,
+				Name:   catalog.StrArg(input, "query", ""),
+				Tags:   catalog.StrSliceArg(input, "tag"),
+				Dir:    catalog.StrArg(input, "dir", ""),
+				Status: status,
 			}
 			if sinceStr := catalog.StrArg(input, "since", ""); sinceStr != "" {
 				since, err := time.Parse(time.RFC3339, sinceStr)

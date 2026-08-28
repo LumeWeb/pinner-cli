@@ -49,8 +49,8 @@ type VaultService interface {
 	List(ctx context.Context, vaultPath string) ([]ListItem, error)
 
 	// Search returns live vault FILES matching the filter (metadata-first:
-	// name substring, tag AND, provenance, status, time). Empty filters match
-	// every live file. Results are ordered newest-first by creation time.
+	// name substring, tag AND, status, time). Empty filters match every live
+	// file. Results are ordered newest-first by creation time.
 	Search(ctx context.Context, f SearchFilter) ([]SearchItem, error)
 
 	// Stat returns metadata about a file or directory.
@@ -94,13 +94,6 @@ type VaultService interface {
 	// version of the file (content is copied; the restored version becomes the
 	// live current winner, preserving all prior versions' history).
 	VersionRestore(ctx context.Context, vaultPath string, versionID string) (*File, error)
-
-	// SetProvenance stamps the existing file at vaultPath with the given
-	// best-effort audit fields (created_by, agent_id, session_id). It updates
-	// the local File row AND re-stamps + re-pins the Sia object's encrypted
-	// metadata so the provenance syncs to every device. Fields left empty are
-	// preserved (only non-empty values override). Returns the updated record.
-	SetProvenance(ctx context.Context, vaultPath, createdBy, agentID, sessionID string) (*File, error)
 
 	// AddTags adds one or more tags to the file at vaultPath. Tags are
 	// normalized (lowercased, deduplicated) and stored durably: merged into the
@@ -183,9 +176,6 @@ type StatResult struct {
 	ObjectID      string         `json:"object_id,omitempty"`
 	Status        string         `json:"status,omitempty"`     // "ok" | "pending" | "lost"
 	LostReason    string         `json:"lost_reason,omitempty"` // detail when Status == "lost"
-	CreatedBy     string         `json:"created_by,omitempty"` // provenance
-	AgentID       string         `json:"agent_id,omitempty"`   // provenance
-	SessionID     string         `json:"session_id,omitempty"` // provenance
 	CreatedAt     string         `json:"created_at"`
 	UpdatedAt     string         `json:"updated_at,omitempty"`
 	Metadata      map[string]any `json:"metadata,omitempty"`
@@ -198,7 +188,7 @@ type StatResult struct {
 // ignored. Tags are ANDed too (a result must match EVERY tag). Name is a
 // case-insensitive substring of the file name. Dir restricts results to files
 // under the given vault directory (inclusive). Search is metadata-first (no
-// full-text engine): name, tags, provenance, status, and time.
+// full-text engine): name, tags, status, and time.
 type SearchFilter struct {
 	// Name is a case-insensitive substring of the file name. Empty = any.
 	Name string
@@ -206,10 +196,6 @@ type SearchFilter struct {
 	Dir string
 	// Tags requires a file to carry EVERY listed tag (AND semantics).
 	Tags []string
-	// CreatedBy/AgentID/SessionID are exact (case-sensitive) provenance matches.
-	CreatedBy string
-	AgentID   string
-	SessionID string
 	// Status restricts to a specific file status ("ok" | "pending" | "lost").
 	Status string
 	// Since restricts to files created at or after this time (UTC). Zero = any.
@@ -226,9 +212,6 @@ type SearchItem struct {
 	ContentDigest string         `json:"content_digest,omitempty"`
 	ObjectID      string         `json:"object_id,omitempty"`
 	Status        string         `json:"status,omitempty"`
-	CreatedBy     string         `json:"created_by,omitempty"`
-	AgentID       string         `json:"agent_id,omitempty"`
-	SessionID     string         `json:"session_id,omitempty"`
 	CreatedAt     string         `json:"created_at"`
 	UpdatedAt     string         `json:"updated_at,omitempty"`
 	Tags          []string       `json:"tags,omitempty"`

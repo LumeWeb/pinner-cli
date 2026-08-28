@@ -386,21 +386,6 @@ func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 		output.Printfln("Restored %s to version %s (%d bytes) as the new current version.", r.Path, r.RestoredTo, r.Size)
 		return nil
 
-	case *catalogops.VaultSetProvenanceResult:
-		if output.IsJSON() {
-			return output.PrintJSON(r)
-		}
-		output.PrintFields(FieldGroup{
-			Title: "Provenance",
-			Fields: []Field{
-				{"Path", r.Path},
-				{"Created By", r.CreatedBy},
-				{"Agent ID", r.AgentID},
-				{"Session ID", r.SessionID},
-			},
-		})
-		return nil
-
 	case *catalogops.VaultTagResult:
 		if output.IsJSON() {
 			return output.PrintJSON(r)
