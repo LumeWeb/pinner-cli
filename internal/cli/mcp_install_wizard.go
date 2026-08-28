@@ -507,8 +507,10 @@ func (w *InstallWizard) writeOne(s *InstallState, agentCfg install.Agent, server
 	}
 	if agentCfg.Key() == install.AgentFx && serverCfg.BearerTokenEnv != "" {
 		// fx reads the MCP password from BearerTokenEnv's env var rather than a
-		// literal Authorization header; make sure it is present in fx's shell.
-		_ = w.ui.ReportBuild(install.AgentFx, "fx reads the MCP password from the "+serverCfg.BearerTokenEnv+" env var; export it (e.g. 'export "+serverCfg.BearerTokenEnv+"=...') so fx can authenticate")
+		// literal Authorization header, so the running config depends on that var
+		// being set in fx's shell. Emit the exact export command with the
+		// operator's own just-set password (OOB-handoff style) so fx authenticates.
+		_ = w.ui.ReportBuild(install.AgentFx, "fx reads the MCP password from the "+serverCfg.BearerTokenEnv+" env var (bearer_token_env); export it in the shell you run fx from: 'export "+serverCfg.BearerTokenEnv+"="+s.AuthToken+"'")
 	}
 	return w.ui.ReportWritten(agentCfg.Key(), path, local)
 }
