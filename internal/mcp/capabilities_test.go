@@ -164,7 +164,7 @@ func TestCapabilitiesDescriptorSerializes(t *testing.T) {
 // schema rejects. The copy must instead point at the dynamic `source_modes`
 // field so it can never drift from the served enum.
 func TestCapabilitiesDescriptionForOpenAIHTTPNoImpossibleModes(t *testing.T) {
-	desc := capabilitiesDescriptionFor(hostenv.ProfileOpenAIHTTP, true, true)
+	desc := capabilitiesDescriptionFor(hostenv.ProfileOpenAIHTTP, true, true, true, true)
 	require.NotContains(t, desc, "source.mode=path")
 	require.NotContains(t, desc, "source.mode=url")
 	require.NotContains(t, desc, "source.mode=data")
@@ -193,7 +193,7 @@ func TestCapabilitiesDescriptionScopesMintCompletionByTool(t *testing.T) {
 		p := p
 		// Both wired: each contract described distinctly, and the old unqualified
 		// sentence is gone.
-		both := capabilitiesDescriptionFor(p, true, true)
+		both := capabilitiesDescriptionFor(p, true, true, true, true)
 		require.Contains(t, both, "upload_file(source.mode=mint)", "%s: upload_file mint contract must be described", p.Transport)
 		require.Contains(t, both, "poll upload_status", "%s: upload_file mint must require the upload_status poll", p.Transport)
 		require.Contains(t, both, "vault_put_file(source.mode=mint", "%s: vault_put_file mint contract must be described", p.Transport)
@@ -201,13 +201,13 @@ func TestCapabilitiesDescriptionScopesMintCompletionByTool(t *testing.T) {
 		require.NotContains(t, both, "With source.mode=mint", "%s: unqualified generic mint rule must be gone", p.Transport)
 
 		// Upload-only wiring: keep the upload poll contract, never name the vault one.
-		uploadOnly := capabilitiesDescriptionFor(p, true, false)
+		uploadOnly := capabilitiesDescriptionFor(p, true, false, true, true)
 		require.Contains(t, uploadOnly, "upload_file(source.mode=mint)", "%s: upload-only wiring keeps upload_file mint copy", p.Transport)
 		require.Contains(t, uploadOnly, "poll upload_status", "%s: upload-only wiring keeps the upload_status poll", p.Transport)
 		require.NotContains(t, uploadOnly, "vault_put_file(source.mode=mint", "%s: upload-only wiring must not name the vault mint contract", p.Transport)
 
 		// Vault-only wiring: keep the sync vault contract, never advertise an upload poll flow.
-		vaultOnly := capabilitiesDescriptionFor(p, false, true)
+		vaultOnly := capabilitiesDescriptionFor(p, false, true, true, true)
 		require.Contains(t, vaultOnly, "vault_put_file(source.mode=mint", "%s: vault-only wiring keeps vault_put_file mint copy", p.Transport)
 		require.Contains(t, vaultOnly, "no upload_status", "%s: vault-only wiring keeps the sync no-poll contract", p.Transport)
 		require.NotContains(t, vaultOnly, "upload_file(source.mode=mint", "%s: vault-only wiring must not name the upload mint contract", p.Transport)
@@ -220,7 +220,7 @@ func TestCapabilitiesDescriptionScopesMintCompletionByTool(t *testing.T) {
 		hostenv.ProfileOpenAITunnel,
 	}
 	for _, p := range nonMint {
-		desc := capabilitiesDescriptionFor(p, true, true)
+		desc := capabilitiesDescriptionFor(p, true, true, true, true)
 		require.NotContains(t, desc, "source.mode=mint", "%s: non-mint transport must not advertise mint completion", p.Transport)
 		require.NotContains(t, desc, "upload_status", "%s: non-mint transport must not mention upload_status", p.Transport)
 	}
@@ -241,10 +241,10 @@ func TestCapabilitiesDescriptionConcurrentNoSharedBackingMutation(t *testing.T) 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_ = capabilitiesDescriptionFor(hostenv.ProfileOpenAIHTTP, true, true)
-			_ = capabilitiesDescriptionFor(hostenv.ProfileHTTPGeneric, true, false)
-			_ = capabilitiesDescriptionFor(hostenv.ProfileGrokHTTP, false, true)
-			_ = capabilitiesDescriptionFor(hostenv.ProfileStdioGeneric, true, true)
+			_ = capabilitiesDescriptionFor(hostenv.ProfileOpenAIHTTP, true, true, true, true)
+			_ = capabilitiesDescriptionFor(hostenv.ProfileHTTPGeneric, true, false, true, true)
+			_ = capabilitiesDescriptionFor(hostenv.ProfileGrokHTTP, false, true, true, true)
+			_ = capabilitiesDescriptionFor(hostenv.ProfileStdioGeneric, true, true, true, true)
 		}()
 	}
 	wg.Wait()
@@ -270,17 +270,19 @@ func TestSourceModesForAllTransports(t *testing.T) {
 }
 
 // TestCapabilitiesDescDropGated ensures the capabilities DESCRIPTION only
-// advertises the filedrop sink when the profile supports it (FeatSinkDrop),
-// so co-located / OpenAI-tunnel hosts are not misled into an unavailable sink.
+// advertises the filedrop sink when the profile supports it (FeatSinkDrop).
+// Stdio supports drop (a local HTTP listener can be spun up), and HTTP has a
+// reachable mux. Only the OpenAI tunnel (no reachable mux) is excluded.
 func TestCapabilitiesDescDropGated(t *testing.T) {
-	httpDesc := capabilitiesDescriptionFor(hostenv.ProfileHTTPGeneric, true, false)
-	require.Contains(t, httpDesc, "drop", "HTTP profile with a reachable mux must advertise the drop sink")
-
-	for _, p := range []hostenv.PlatformProfile{hostenv.ProfileStdioGeneric, hostenv.ProfileOpenAITunnel} {
-		desc := capabilitiesDescriptionFor(p, true, false)
-		require.NotContains(t, desc, "drop", "%s must not advertise the filedrop sink", p.Transport)
+	for _, p := range []hostenv.PlatformProfile{hostenv.ProfileStdioGeneric, hostenv.ProfileHTTPGeneric} {
+		desc := capabilitiesDescriptionFor(p, true, false, true, true)
+		require.Contains(t, desc, "drop", "%s must advertise the filedrop sink", p.Transport)
 		require.Contains(t, desc, "local", "local sink is always available")
 	}
+
+	tunnelDesc := capabilitiesDescriptionFor(hostenv.ProfileOpenAITunnel, true, false, true, true)
+	require.NotContains(t, tunnelDesc, "drop", "OpenAI tunnel must not advertise the filedrop sink")
+	require.Contains(t, tunnelDesc, "local", "local sink is always available")
 }
 
 // TestCapabilitiesHostFileInputRequiresWiredTool verifies host_file_input is
@@ -317,17 +319,17 @@ func TestCapabilitiesHostFileInputRequiresWiredTool(t *testing.T) {
 // can fill it. tools/list must not advertise a file handoff the report clears.
 func TestCapabilitiesDescriptionMatchesWiring(t *testing.T) {
 	// OpenAI/HTTP host WITH an upload tool wired -> advertises the file handoff.
-	wired := capabilitiesDescriptionFor(hostenv.ProfileOpenAIHTTP, true, false)
+	wired := capabilitiesDescriptionFor(hostenv.ProfileOpenAIHTTP, true, false, true, true)
 	require.Contains(t, wired, "file_input_policy", "a wired file tool must advertise the host-file branch")
 
 	// Same OpenAI/HTTP host, NO file tool wired -> must fall to the no-file prose.
-	noTool := capabilitiesDescriptionFor(hostenv.ProfileOpenAIHTTP, false, false)
+	noTool := capabilitiesDescriptionFor(hostenv.ProfileOpenAIHTTP, false, false, false, false)
 	require.NotContains(t, noTool, "file_input_policy", "no wired file tool must not advertise host_file_first")
 	require.Contains(t, noTool, "no `file` parameter", "without a file tool the no-file prose must show")
 
 	// A client that cannot build the file object never sees the handoff, even
 	// when an upload tool is wired.
-	grokWired := capabilitiesDescriptionFor(hostenv.ProfileGrokHTTP, true, false)
+	grokWired := capabilitiesDescriptionFor(hostenv.ProfileGrokHTTP, true, false, true, true)
 	require.NotContains(t, grokWired, "file_input_policy", "Grok never advertises the OpenAI file handoff")
 }
 

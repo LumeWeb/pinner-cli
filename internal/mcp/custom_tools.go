@@ -517,7 +517,7 @@ func registerCustomTools(deps customToolDeps) error {
 		effectiveFeaturesFor(deps),
 	)
 	if deps.hostProfile != nil {
-		capDesc.Description = capabilitiesDescriptionFor(*deps.hostProfile, uploadWired, vaultWired)
+		capDesc.Description = capabilitiesDescriptionFor(*deps.hostProfile, uploadWired, vaultWired, opts.ipfsDownload != nil, opts.vaultGet != nil)
 	}
 	// capabilities is both directly visible on tools/list and indexed in the
 	// catalog so a cold-start host following search_tools(help) can resolve it.

@@ -283,10 +283,13 @@ func uploadToolsFor(feats hostenv.FeatureSet, uploadFile, relayURLWired, dataURI
 // Neither tool's clause names the other, so a single sentence can never be
 // read as "every mint operation polls upload_status", and an unwired tool is
 // never advertised.
-func capabilitiesDescriptionFor(profile hostenv.PlatformProfile, uploadFile, vaultPutFile bool) string {
+func capabilitiesDescriptionFor(profile hostenv.PlatformProfile, uploadFile, vaultPutFile, downloadFile, vaultGetFile bool) string {
+	profile = profile.CloneFeatures()
 	if !(uploadFile || vaultPutFile) {
-		profile = profile.CloneFeatures()
 		delete(profile.Features, hostenv.FeatFileHostInput)
+	}
+	if !(downloadFile || vaultGetFile) {
+		delete(profile.Features, hostenv.FeatSinkDrop)
 	}
 	// Clone before composing: capabilitiesLeadIn is a shared package-level
 	// builder and the List/WhenSentence calls below append to its segment
@@ -306,10 +309,10 @@ func capabilitiesDescriptionFor(profile hostenv.PlatformProfile, uploadFile, vau
 // capabilitiesTargets resolves the capabilities description per profile for a
 // specific tool-wiring decision. It is a direct-only tool outside the catalog,
 // so it carries a single DescFunc target for uniformity.
-func capabilitiesTargets(uploadFile, vaultPutFile bool) []model.ToolTarget {
+func capabilitiesTargets(uploadFile, vaultPutFile, downloadFile, vaultGetFile bool) []model.ToolTarget {
 	return toolforge.MCPTargets(model.ToolTarget{Visible: true,
 		DescFunc: func(p hostenv.PlatformProfile) string {
-			return capabilitiesDescriptionFor(p, uploadFile, vaultPutFile)
+			return capabilitiesDescriptionFor(p, uploadFile, vaultPutFile, downloadFile, vaultGetFile)
 		},
 	})
 }
@@ -322,9 +325,9 @@ func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile
 	return model.ToolDescriptor{
 		Name:        "capabilities",
 		Title:       "Pinner file-input/output capabilities",
-		Description: capabilitiesDescriptionFor(startupProfile, uploadFile, vaultPutFile),
+		Description: capabilitiesDescriptionFor(startupProfile, uploadFile, vaultPutFile, downloadFile, vaultGetFile),
 		Category:    model.CategoryCore,
-		MCPTargets:  capabilitiesTargets(uploadFile, vaultPutFile),
+		MCPTargets:  capabilitiesTargets(uploadFile, vaultPutFile, downloadFile, vaultGetFile),
 		InputSchema: toolargs.ToolSchemaFor[wizard.NoInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			// draft_x_mcp_file reports whether the CALLING client can speak the

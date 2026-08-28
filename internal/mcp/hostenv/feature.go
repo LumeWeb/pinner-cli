@@ -37,8 +37,9 @@ const (
 	// a local path for download tools.
 	FeatSinkLocal Feature = "sink-local"
 
-	// FeatSinkDrop: one-time HTTP GET filedrop. The server has a
-	// reachable HTTP mux to serve a transient download endpoint.
+	// FeatSinkDrop: one-time HTTP GET filedrop. The server can serve a
+	// transient download endpoint (a reachable HTTP mux on HTTP/tunnel, or
+	// a spun-up local listener on stdio).
 	FeatSinkDrop Feature = "sink-drop"
 
 	// FeatMCPApps: client can render MCP Apps (ui:// resources with
@@ -99,7 +100,7 @@ func (fs FeatureSet) Clone() FeatureSet {
 func transportMechanismFeatures(t TransportKind) FeatureSet {
 	switch t {
 	case TransportStdio:
-		return FeatureSet{FeatSourcePath: true, FeatSinkLocal: true, FeatCoLocated: true}
+		return FeatureSet{FeatSourcePath: true, FeatSinkLocal: true, FeatSinkDrop: true, FeatCoLocated: true}
 	case TransportHTTP:
 		return FeatureSet{FeatSourceMint: true, FeatSinkLocal: true, FeatSinkDrop: true, FeatRemoteAccess: true}
 	case TransportOpenAI:
