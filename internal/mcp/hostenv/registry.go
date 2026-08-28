@@ -20,6 +20,7 @@ func NewRegistry() *DetectorRegistry {
 			aiderDeskDetector{},
 			devinDetector{},
 			clineDetector{},
+			codexDetector{},
 			openAIDetector{},
 			grokDetector{},
 			claudeDetector{},

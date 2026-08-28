@@ -18,6 +18,7 @@ const (
 	HostAiderDesk     HostType = "aider-desk"
 	HostDevin         HostType = "devin"
 	HostCline         HostType = "cline"
+	HostCodex         HostType = "codex"
 	HostGeneric       HostType = "generic"
 )
 

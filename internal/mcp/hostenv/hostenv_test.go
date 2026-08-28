@@ -371,6 +371,72 @@ func TestClineDetector_NoMatch(t *testing.T) {
 	require.Equal(t, AuthMethod(""), auth)
 }
 
+func TestCodexDetector_MatchByClientInfo(t *testing.T) {
+	d := codexDetector{}
+
+	// Positive: co-located stdio with codex clientInfo name.
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "codex-mcp-client", Version: "0.150.1"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostCodex, host)
+	require.Equal(t, AuthNone, auth)
+
+	// Positive: case-insensitive name match.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "CODEX-MCP-Client"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostCodex, host)
+	require.Equal(t, AuthNone, auth)
+}
+
+func TestCodexDetector_NoMatch(t *testing.T) {
+	d := codexDetector{}
+
+	// Negative: co-located stdio but unrelated clientInfo name.
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "some-other-client"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: a name that merely CONTAINS "codex" but is not the Codex
+	// product token "codex-mcp-client" must not be misclassified (the same
+	// hardening class as the devin/cline detectors).
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "some-codex-tool"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: no clientInfo at all.
+	host, auth = d.Match(DetectRequest{CoLocated: true})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: codex name but remote (not co-located) — Codex is always
+	// co-located stdio.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "codex-mcp-client"},
+		CoLocated:  false,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: codex name but OpenAI tunnel — Codex cannot use the OpenAI
+	// tunnel transport.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo:   &ClientInfo{Name: "codex-mcp-client"},
+		CoLocated:    false,
+		TunnelOpenAI: true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+}
+
 func TestClaudeDetector_MatchByUserAgent(t *testing.T) {
 	d := claudeDetector{}
 
@@ -744,6 +810,33 @@ func TestRegistry_Detect_ClineOverStdio(t *testing.T) {
 	require.Equal(t, "@cline/core", prof.ClientInfo.Name)
 }
 
+func TestRegistry_Detect_CodexOverStdio(t *testing.T) {
+	r := NewRegistry()
+
+	req := DetectRequest{
+		ClientInfo:      &ClientInfo{Name: "codex-mcp-client", Version: "0.150.1"},
+		ProtocolVersion: "2025-06-18",
+		CoLocated:       true,
+	}
+	prof := r.Detect(req)
+
+	// Codex is its own HostType but inherits the generic stdio profile.
+	require.Equal(t, HostCodex, prof.HostType)
+	require.Equal(t, ProfileStdioGeneric.Transport, prof.Transport)
+	require.Equal(t, AuthNone, prof.AuthMethod)
+	require.False(t, prof.Remote)
+	// Inherits the generic stdio feature surface.
+	require.Equal(t, ProfileStdioGeneric.Features, prof.Features)
+	require.True(t, prof.Has(FeatSourcePath))
+	require.True(t, prof.Has(FeatSinkLocal))
+	require.True(t, prof.Has(FeatCoLocated))
+	require.False(t, prof.Has(FeatMCPApps))
+	require.False(t, prof.Has(FeatRemoteAccess))
+	// Runtime overlay: clientInfo and protocol version surfaced.
+	require.Equal(t, "codex-mcp-client", prof.ClientInfo.Name)
+	require.Equal(t, "2025-06-18", prof.ProtocolVer)
+}
+
 func TestRegistry_Detect_UnknownOverHTTP(t *testing.T) {
 	r := NewRegistry()
 
@@ -973,6 +1066,17 @@ func TestResolveProfile_Devin(t *testing.T) {
 	got := resolveProfile(HostDevin, TransportStdio, AuthNone)
 
 	require.Equal(t, HostDevin, got.HostType)
+	require.Equal(t, TransportStdio, got.Transport)
+	require.Equal(t, AuthNone, got.AuthMethod)
+	require.False(t, got.Remote)
+	// Feature surface equals the generic stdio profile exactly (alias target).
+	require.Equal(t, ProfileStdioGeneric.Features, got.Features)
+}
+
+func TestResolveProfile_Codex(t *testing.T) {
+	got := resolveProfile(HostCodex, TransportStdio, AuthNone)
+
+	require.Equal(t, HostCodex, got.HostType)
 	require.Equal(t, TransportStdio, got.Transport)
 	require.Equal(t, AuthNone, got.AuthMethod)
 	require.False(t, got.Remote)
@@ -1264,18 +1368,19 @@ func TestNewRegistry_DetectorsRegistered(t *testing.T) {
 	r := NewRegistry()
 
 	require.NotNil(t, r)
-	require.Len(t, r.detectors, 7)
-	// Priority order: aider-desk, devin, cline, openai, grok, claude (web),
-	// claude-desktop. The stdio-only detectors (aider-desk, devin, cline) run
-	// first because they do not conflict with the remote-only openai/grok/claude
-	// detectors.
+	require.Len(t, r.detectors, 8)
+	// Priority order: aider-desk, devin, cline, codex, openai, grok, claude
+	// (web), claude-desktop. The stdio-only detectors (aider-desk, devin, cline,
+	// codex) run first because they do not conflict with the remote-only
+	// openai/grok/claude detectors.
 	require.IsType(t, aiderDeskDetector{}, r.detectors[0])
 	require.IsType(t, devinDetector{}, r.detectors[1])
 	require.IsType(t, clineDetector{}, r.detectors[2])
-	require.IsType(t, openAIDetector{}, r.detectors[3])
-	require.IsType(t, grokDetector{}, r.detectors[4])
-	require.IsType(t, claudeDetector{}, r.detectors[5])
-	require.IsType(t, claudeDesktopDetector{}, r.detectors[6])
+	require.IsType(t, codexDetector{}, r.detectors[3])
+	require.IsType(t, openAIDetector{}, r.detectors[4])
+	require.IsType(t, grokDetector{}, r.detectors[5])
+	require.IsType(t, claudeDetector{}, r.detectors[6])
+	require.IsType(t, claudeDesktopDetector{}, r.detectors[7])
 }
 
 func TestNewRegistry_PriorityOrder(t *testing.T) {
