@@ -365,6 +365,16 @@ func (w *InstallWizard) candidates() (candidates []install.AgentKey, detected []
 	return candidates, detected
 }
 
+// mcpOAuthEnabled reports whether the remote (http) install's endpoint is
+// protected by the OAuth 2.1 handshake (MCP_OAUTH=true). On such an endpoint a
+// static Authorization bearer header is meaningless: /mcp only accepts tokens
+// issued through the OAuth flow, and MCP_AUTH_TOKEN doubles as the login-page
+// shared secret. Emitting the header would make OAuth-expecting clients (e.g.
+// Claude Code) treat the server as basic auth instead of running the handshake.
+func mcpOAuthEnabled(s *InstallState) bool {
+	return s.Service != nil && s.Service.OAuth != nil && *s.Service.OAuth
+}
+
 // writeConfig writes the server entry for each selected agent at each scope.
 func (w *InstallWizard) writeConfig(s *InstallState) error {
 	serverCfg := install.McpServerConfig{}
@@ -385,7 +395,13 @@ func (w *InstallWizard) writeConfig(s *InstallState) error {
 		}
 		serverCfg.Type = s.Transport
 		serverCfg.URL = s.PublicURL
-		if s.AuthToken != "" {
+		// On an OAuth-protected endpoint a static Bearer header is meaningless:
+		// /mcp only accepts tokens issued through the OAuth handshake, and
+		// MCP_AUTH_TOKEN doubles as the login-page shared secret a human enters.
+		// Writing an Authorization header would make OAuth-expecting clients
+		// (e.g. Claude Code) treat the server as basic auth and skip the OAuth
+		// flow, so only emit the header on a basic-auth (OAuth off) install.
+		if s.AuthToken != "" && !mcpOAuthEnabled(s) {
 			serverCfg.Headers = map[string]string{"Authorization": "Bearer " + s.AuthToken}
 		}
 	}
