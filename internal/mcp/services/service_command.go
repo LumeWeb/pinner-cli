@@ -638,10 +638,10 @@ func serviceConfigForInstall(cmd *cli.Command, envFile string, provider tunnel.T
 		return service.Config{}, fmt.Errorf("resolve pinner executable: %w", err)
 	}
 	args := []string{"mcp"}
-	// Public HTTP tunnel providers (ngrok, cloudflared) expose the server over
-	// HTTP; the embedded OpenAI tunnel speaks the transport directly, so it
-	// must not add --http.
-	if provider != "" && provider != tunnel.TunnelProviderOpenAI {
+	// Localhost (empty provider) and public HTTP tunnel providers (ngrok,
+	// cloudflared) expose the server over HTTP; the embedded OpenAI tunnel
+	// speaks the transport directly, so it must not add --http.
+	if provider != tunnel.TunnelProviderOpenAI {
 		args = append(args, "--http")
 	}
 	return service.Config{

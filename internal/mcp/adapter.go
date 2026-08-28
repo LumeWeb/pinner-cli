@@ -706,13 +706,23 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 			if tun != nil || publicURL != "" {
 				return fmt.Errorf("--oauth requires --auth-token: the login page authenticates with the shared secret")
 			}
-			generated, err := generateOAuthSecret()
-			if err != nil {
-				return fmt.Errorf("generate oauth secret: %w", err)
+			if stored, _ := cfgMgr.GetString("mcp_oauth_token"); stored != "" {
+				authToken = stored
+			} else {
+				generated, err := generateOAuthSecret()
+				if err != nil {
+					return fmt.Errorf("generate oauth secret: %w", err)
+				}
+				authToken = generated
+				if err := cfgMgr.Set(ctx, "mcp_oauth_token", generated); err != nil {
+					return fmt.Errorf("persist oauth secret: %w", err)
+				}
+				if err := cfgMgr.Save(); err != nil {
+					return fmt.Errorf("save oauth secret: %w", err)
+				}
+				fmt.Printf("OAuth enabled. Your login secret is: %s\n", authToken)
+				fmt.Println("Enter this secret on the authorize page when prompted by your MCP client.")
 			}
-			authToken = generated
-			fmt.Printf("OAuth enabled. Your login secret is: %s\n", authToken)
-			fmt.Println("Enter this secret on the authorize page when prompted by your MCP client.")
 		}
 		store, err := oauthstore.Open(oauthStorePath(), 30*24*time.Hour)
 		if err != nil {
