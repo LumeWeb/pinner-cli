@@ -167,6 +167,13 @@ var profileAliasTargets = map[HostType]HostType{
 	// but inherits HostGeneric's declaration.
 	HostCodex: HostGeneric,
 
+	// GitHub Copilot CLI is a co-located stdio client (clientInfo name
+	// "copilot-cli") whose capability surface is exactly the generic stdio
+	// profile (co-located, sink-local, source-path). It is its own HostType so
+	// host-specific gating can use HostIs(HostCopilotCLI), but inherits
+	// HostGeneric's declaration.
+	HostCopilotCLI: HostGeneric,
+
 	// Kilo Code is a co-located stdio client (clientInfo name "kilo") whose
 	// capability surface is exactly the generic stdio profile (co-located,
 	// sink-local, source-path). It is its own HostType so host-specific gating

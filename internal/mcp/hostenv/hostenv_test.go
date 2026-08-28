@@ -601,6 +601,71 @@ func TestCodexDetector_NoMatch(t *testing.T) {
 	require.Equal(t, AuthMethod(""), auth)
 }
 
+func TestCopilotCLIDetector_MatchByClientInfo(t *testing.T) {
+	d := copilotDetector{}
+
+	// Positive: co-located stdio clientInfo name "copilot-cli" → HostCopilotCLI,
+	// AuthNone.
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "copilot-cli", Version: "0.0.0"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostCopilotCLI, host)
+	require.Equal(t, AuthNone, auth)
+
+	// Positive: case-insensitive / whitespace-tolerant name match.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "  COPILOT-CLI "},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostCopilotCLI, host)
+	require.Equal(t, AuthNone, auth)
+}
+
+func TestCopilotCLIDetector_NoMatch(t *testing.T) {
+	d := copilotDetector{}
+
+	// Negative: co-located but wrong clientInfo name.
+	host, auth := d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "some-client"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: a name that merely CONTAINS "copilot" but is not the product
+	// token "copilot-cli" must not be misclassified (the same hardening class
+	// as the devin/cline/kilo detectors).
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "copilot-workspace"},
+		CoLocated:  true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: correct name but not co-located (remote) — Copilot CLI is
+	// stdio-only.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo: &ClientInfo{Name: "copilot-cli"},
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: correct name but OpenAI tunnel.
+	host, auth = d.Match(DetectRequest{
+		ClientInfo:   &ClientInfo{Name: "copilot-cli"},
+		CoLocated:    true,
+		TunnelOpenAI: true,
+	})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+
+	// Negative: no clientInfo at all.
+	host, auth = d.Match(DetectRequest{CoLocated: true})
+	require.Equal(t, HostUnknown, host)
+	require.Equal(t, AuthMethod(""), auth)
+}
+
 func TestClaudeDetector_MatchByUserAgent(t *testing.T) {
 	d := claudeDetector{}
 
@@ -1136,6 +1201,33 @@ func TestRegistry_Detect_CodexOverStdio(t *testing.T) {
 	require.Equal(t, "2025-06-18", prof.ProtocolVer)
 }
 
+func TestRegistry_Detect_CopilotCLIOverStdio(t *testing.T) {
+	r := NewRegistry()
+
+	req := DetectRequest{
+		ClientInfo:      &ClientInfo{Name: "copilot-cli", Version: "0.0.0"},
+		ProtocolVersion: "2026-07-28",
+		CoLocated:       true,
+	}
+	prof := r.Detect(req)
+
+	// Copilot CLI is its own HostType but inherits the generic stdio profile.
+	require.Equal(t, HostCopilotCLI, prof.HostType)
+	require.Equal(t, TransportStdio, prof.Transport)
+	require.Equal(t, AuthNone, prof.AuthMethod)
+	require.False(t, prof.Remote)
+	// Inherits the generic stdio feature surface.
+	require.Equal(t, ProfileStdioGeneric.Features, prof.Features)
+	require.True(t, prof.Has(FeatSourcePath))
+	require.True(t, prof.Has(FeatSinkLocal))
+	require.True(t, prof.Has(FeatCoLocated))
+	require.False(t, prof.Has(FeatMCPApps))
+	require.False(t, prof.Has(FeatRemoteAccess))
+	// Runtime overlay: clientInfo and protocol version surfaced.
+	require.Equal(t, "copilot-cli", prof.ClientInfo.Name)
+	require.Equal(t, "2026-07-28", prof.ProtocolVer)
+}
+
 func TestRegistry_Detect_UnknownOverHTTP(t *testing.T) {
 	r := NewRegistry()
 
@@ -1398,6 +1490,20 @@ func TestResolveProfile_Codex(t *testing.T) {
 	got := resolveProfile(HostCodex, TransportStdio, AuthNone)
 
 	require.Equal(t, HostCodex, got.HostType)
+	require.Equal(t, TransportStdio, got.Transport)
+	require.Equal(t, AuthNone, got.AuthMethod)
+	require.False(t, got.Remote)
+	// Feature surface equals the generic stdio profile exactly (alias target).
+	require.Equal(t, ProfileStdioGeneric.Features, got.Features)
+}
+
+// TestResolveProfile_CopilotCLI verifies the Copilot CLI alias path: an
+// aliased host inherits the target's full profile (features, transport, auth,
+// remote) but keeps its own HostType.
+func TestResolveProfile_CopilotCLI(t *testing.T) {
+	got := resolveProfile(HostCopilotCLI, TransportStdio, AuthNone)
+
+	require.Equal(t, HostCopilotCLI, got.HostType)
 	require.Equal(t, TransportStdio, got.Transport)
 	require.Equal(t, AuthNone, got.AuthMethod)
 	require.False(t, got.Remote)
@@ -1705,24 +1811,26 @@ func TestNewRegistry_DetectorsRegistered(t *testing.T) {
 	r := NewRegistry()
 
 	require.NotNil(t, r)
-	require.Len(t, r.detectors, 12)
-	// Priority order: aider-desk, goose, devin, cline, codex, openai, grok,
-	// kilo, claude (web), claude-desktop, opencode, antigravity. The stdio-only
-	// detectors (aider-desk, goose, devin, cline, codex) run first because they
-	// do not conflict with the remote-only openai/grok/claude detectors; kilo,
-	// opencode and antigravity are the co-located stdio editors/agents.
+	require.Len(t, r.detectors, 13)
+	// Priority order: aider-desk, goose, devin, cline, codex, copilot-cli,
+	// openai, grok, kilo, claude (web), claude-desktop, opencode, antigravity.
+	// The stdio-only detectors (aider-desk, goose, devin, cline, codex,
+	// copilot-cli) run first because they do not conflict with the remote-only
+	// openai/grok/claude detectors; kilo, opencode and antigravity are the
+	// co-located stdio editors/agents.
 	require.IsType(t, aiderDeskDetector{}, r.detectors[0])
 	require.IsType(t, gooseDetector{}, r.detectors[1])
 	require.IsType(t, devinDetector{}, r.detectors[2])
 	require.IsType(t, clineDetector{}, r.detectors[3])
 	require.IsType(t, codexDetector{}, r.detectors[4])
-	require.IsType(t, openAIDetector{}, r.detectors[5])
-	require.IsType(t, grokDetector{}, r.detectors[6])
-	require.IsType(t, kiloDetector{}, r.detectors[7])
-	require.IsType(t, claudeDetector{}, r.detectors[8])
-	require.IsType(t, claudeDesktopDetector{}, r.detectors[9])
-	require.IsType(t, opencodeDetector{}, r.detectors[10])
-	require.IsType(t, antigravityDetector{}, r.detectors[11])
+	require.IsType(t, copilotDetector{}, r.detectors[5])
+	require.IsType(t, openAIDetector{}, r.detectors[6])
+	require.IsType(t, grokDetector{}, r.detectors[7])
+	require.IsType(t, kiloDetector{}, r.detectors[8])
+	require.IsType(t, claudeDetector{}, r.detectors[9])
+	require.IsType(t, claudeDesktopDetector{}, r.detectors[10])
+	require.IsType(t, opencodeDetector{}, r.detectors[11])
+	require.IsType(t, antigravityDetector{}, r.detectors[12])
 }
 
 func TestNewRegistry_PriorityOrder(t *testing.T) {
