@@ -68,6 +68,12 @@ func TestResolveOpenAICredentialsEnvironment(t *testing.T) {
 
 func TestResolveOpenAICredentialsConfigManagerLastResort(t *testing.T) {
 	cmd := newCmdWithTunnelID(t, "")
+	// Isolate the environment vars that outrank the config-manager last-resort
+	// store so a developer's real OPENAI_API_KEY / CONTROL_PLANE_* cannot leak
+	// into the assertion.
+	t.Setenv("CONTROL_PLANE_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("CONTROL_PLANE_TUNNEL_ID", "")
 	mgr := newTestConfigMgr(t)
 	require.NoError(t, mgr.SetTunnelCredential("openai", "tunnel_id", testTunnelID))
 	require.NoError(t, mgr.SetTunnelCredential("openai", "api_key", "sk-cfgmgr"))

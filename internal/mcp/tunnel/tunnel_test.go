@@ -126,6 +126,11 @@ func TestRequiresTokenDefaultConfigPath(t *testing.T) {
 // job). The msg is checked via ErrorContains so both concrete tunnels return
 // their own actionable guidance without per-provider branching in the caller.
 func TestMissingTokenError(t *testing.T) {
+	// Isolate the ngrok config/env sources so a developer's real
+	// ~/.config/ngrok/ngrok.yml (or NGROK_AUTHTOKEN) cannot satisfy the token
+	// requirement and flip the bare-tunnel assertion.
+	t.Setenv("NGROK_AUTHTOKEN", "")
+	t.Setenv("NGROK_CONFIG", filepath.Join(t.TempDir(), "ngrok.yml"))
 	ng := NewNgrokTunnel("", "")
 	require.True(t, ng.RequiresToken(), "bare ngrok tunnel requires a token")
 	require.ErrorContains(t, ng.MissingTokenError(), "ngrok tunnel requires an account token")
