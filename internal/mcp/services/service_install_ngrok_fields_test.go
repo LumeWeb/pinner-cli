@@ -3,12 +3,23 @@ package services
 import (
 	"context"
 	"net/http"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 )
+
+// ngrokConfigIsolated points the ngrok config-file source at a path that does
+// not exist, so a developer's real ~/.config/ngrok/ngrok.yml (a valid
+// authtoken outranks the config-manager store in the resolution chain) cannot
+// leak into a test that asserts on the config-manager store. Mirrors the
+// NGROK_CONFIG escape hatch the production code honors.
+func ngrokConfigIsolated(t *testing.T) {
+	t.Helper()
+	t.Setenv("NGROK_CONFIG", filepath.Join(t.TempDir(), "ngrok.yml"))
+}
 
 // TestNgrokFieldsShape guards the migration of the ngrok provider to the shared
 // field-resolution primitive: the authtoken (masked) and public URL fields with
@@ -37,6 +48,7 @@ func TestNgrokFieldsShape(t *testing.T) {
 // pre-resolves from the config-manager last-resort store (written by a prior
 // install) so a re-run never re-prompts for a token it already knows.
 func TestNgrokTokenDerivesFromConfigManager(t *testing.T) {
+	ngrokConfigIsolated(t)
 	cfgMgr := newTestConfigMgr(t)
 	tunnel.PersistTunnelCredential(cfgMgr, "ngrok", "token", "cfg-manager-token")
 
@@ -53,7 +65,8 @@ func TestNgrokTokenDerivesFromConfigManager(t *testing.T) {
 // pre-existing token derives nothing and falls through to the prompt.
 func TestNgrokTokenDerivesNothingWhenAbsent(t *testing.T) {
 	// cfgMgr is fresh (no persisted ngrok token) and the ngrok config file is
-	// not present in this environment, so ResolveCredential yields nothing.
+	// isolated, so ResolveCredential yields nothing.
+	ngrokConfigIsolated(t)
 	fields := ngrokFields(context.Background(), newTestConfigMgr(t))
 	v, ok := fields[0].Derived(&ServiceInstallState{})
 	require.False(t, ok, "no token source -> not derived")
