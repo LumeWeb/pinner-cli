@@ -50,12 +50,15 @@ func (ptermPrompter) MultiSelect(label string, options, preChecked []string) ([]
 		Show(label)
 }
 
-// Confirm presents a yes/no prompt via pterm.DefaultInteractiveConfirm.
+// Confirm presents a yes/no prompt via pterm.DefaultInteractiveConfirm. The
+// label is passed as the prompt text so the operator sees what they are
+// confirming — without it pterm renders its generic "Please confirm" default,
+// leaving the question unstated.
 func (ptermPrompter) Confirm(label string, defaultValue bool) (bool, error) {
 	if fieldform.NonInteractive {
 		return false, errors.New("interactive prompt requested in non-interactive mode")
 	}
-	return pterm.DefaultInteractiveConfirm.WithDefaultValue(defaultValue).Show()
+	return pterm.DefaultInteractiveConfirm.WithDefaultValue(defaultValue).Show(label)
 }
 
 // Text collects a single line via pterm.DefaultInteractiveTextInput, masking
