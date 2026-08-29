@@ -153,10 +153,10 @@ func serviceInstallAction(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	if err := svc.Install(ctx); err != nil {
-		return err
-	}
-	if err := svc.Start(ctx); err != nil {
+	// Stop an already-installed service before reinstalling (releases the
+	// running process and its tunnel endpoint, and applies the new unit
+	// cleanly), then install and start — Install never auto-starts.
+	if err := installManagedService(ctx, svc); err != nil {
 		return err
 	}
 	fmt.Printf("MCP service installed and started (environment file: %s).\n", envFile)

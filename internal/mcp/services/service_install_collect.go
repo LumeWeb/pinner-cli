@@ -128,15 +128,58 @@ func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 		// on-disk env; callers must not roll back a reconciling env file past
 		// this point.
 		serviceSideEffect = true
-		if err := svc.Install(ctx); err != nil {
-			return nil, serviceSideEffect, err
-		}
-		if err := svc.Start(ctx); err != nil {
+		// The sequence stops an already-installed service before reinstalling
+		// so the running process (and any resource it holds, e.g. the tunnel
+		// provider's endpoint) is released before Install re-registers the unit,
+		// then Start brings it back up — Install never auto-starts. Stop is
+		// idempotent on an installed-but-inactive unit, so it is safe to call
+		// whenever Status reports the service installed.
+		if err := installManagedService(ctx, svc); err != nil {
 			return nil, serviceSideEffect, err
 		}
 	}
 
 	return env, serviceSideEffect, nil
+}
+
+// installManagedService performs the managed-service lifecycle for a setup/install
+// that must leave the daemon running: stop an already-installed service so the
+// reinstall applies cleanly and releases its held resources, install the unit,
+// then start it (Install does not auto-start). Stop is conditioned on Status
+// reporting the service installed; it is a no-op on a service that is not
+// installed or is installed but already inactive, so the sequence is safe on
+// both a fresh install and a re-run.
+func installManagedService(ctx context.Context, svc service.Service) error {
+	status, err := svc.Status(ctx)
+	if err != nil {
+		return fmt.Errorf("query managed service status before install: %w", err)
+	}
+	stopped := false
+	if status.Installed {
+		if err := svc.Stop(ctx); err != nil {
+			return fmt.Errorf("stop installed service before reinstall: %w", err)
+		}
+		stopped = true
+	}
+	if err := svc.Install(ctx); err != nil {
+		// The Windows SCM refuses to re-register an existing service, so on an
+		// already-installed service Install reports ErrServiceAlreadyExists
+		// instead of reinstalling. We stopped that service above; bring it back
+		// up so its endpoint stays reachable rather than failing with the unit
+		// left stopped. systemd and launchd reinstall idempotently and never
+		// hit this branch.
+		if errors.Is(err, service.ErrServiceAlreadyExists) && stopped {
+			if sErr := svc.Start(ctx); sErr != nil {
+				return fmt.Errorf("restart already-installed service: %v (install: %w)", sErr, err)
+			}
+			return nil
+		}
+		return fmt.Errorf("install managed service: %w", err)
+	}
+	if err := svc.Start(ctx); err != nil {
+		return fmt.Errorf("start managed service: %w", err)
+	}
+	return nil
 }
 
 // resolveServicePublicURL fills MCP_PUBLIC_URL in env (and persists it to

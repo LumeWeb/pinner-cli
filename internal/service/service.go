@@ -13,6 +13,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"os"
 )
 
@@ -41,6 +42,12 @@ type Service interface {
 	// cancelled or the command exits.
 	Logs(ctx context.Context, follow bool) error
 }
+
+// ErrServiceAlreadyExists is returned by Install when the service is already
+// registered with the host init system and cannot be re-registered. Only the
+// Windows SCM backend returns it (CreateService refuses an existing service);
+// systemd and launchd reinstall idempotently and never return it.
+var ErrServiceAlreadyExists = errors.New("service already exists")
 
 // Status is the backend-independent service state exposed to callers.
 type Status struct {
