@@ -399,15 +399,16 @@ func TestInvokeDestructiveForModelReturnsConfirmRequired(t *testing.T) {
 	}
 }
 
-// TestInvokeDestructiveConfirmSatisfiesGate verifies a destructive op with an
-// agent-settable confirm arg runs headless for a model once confirm=true is
-// supplied, while an absent confirm still returns ErrConfirmRequired.
+// TestInvokeDestructiveConfirmSatisfiesGate verifies a destructive op whose
+// confirm arg is explicitly marked AgentConfirm runs headless for a model once
+// confirm=true is supplied, while an absent or false confirm still returns
+// ErrConfirmRequired.
 func TestInvokeDestructiveConfirmSatisfiesGate(t *testing.T) {
 	c := newTestCatalog(t)
 	op := stub("pin force", "Force Remove", "force remove a pin", "long", "", "pinning",
 		SafetyDestructive, InteractionAgentSafe, VisibilityBoth,
 		OperationArg{Name: "cid", Type: ArgTypeString, Required: true},
-		OperationArg{Name: "confirm", Type: ArgTypeBool, Required: true})
+		OperationArg{Name: "confirm", Type: ArgTypeBool, Required: true, AgentConfirm: true})
 	if err := c.Add(op); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -428,6 +429,28 @@ func TestInvokeDestructiveConfirmSatisfiesGate(t *testing.T) {
 	}
 }
 
+// TestInvokeDestructiveNonAgentConfirmNotSelfConfirmable verifies a destructive
+// op whose confirm arg is NOT marked AgentConfirm is refused for a model even
+// when the model passes confirm=true. This is the guard for ops where confirm
+// has a different semantic (e.g. api_keys_delete's self-delete force guard) or
+// that must always route through the human hand-off (websites_delete, dns
+// zone/record delete, vault rm/forget, admin quota/billing purge): without the
+// explicit AgentConfirm opt-in, the destructive gate keeps requiring a human.
+func TestInvokeDestructiveNonAgentConfirmNotSelfConfirmable(t *testing.T) {
+	c := newTestCatalog(t)
+	op := stub("key del", "Delete Key", "delete a key", "long", "", "keys",
+		SafetyDestructive, InteractionAgentSafe, VisibilityBoth,
+		OperationArg{Name: "id", Type: ArgTypeString, Required: true},
+		OperationArg{Name: "confirm", Type: ArgTypeBool, Required: true})
+	if err := c.Add(op); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	_, err := c.Invoke(context.Background(), "key del", map[string]any{"id": "k1", "confirm": true}, ActorModel)
+	if !errors.Is(err, ErrConfirmRequired) {
+		t.Fatalf("err = %v, want errors.Is(err, ErrConfirmRequired) for a non-AgentConfirm confirm", err)
+	}
+}
+
 // TestInvokeDestructiveAgentRequiredConfirmNotSelfConfirmable verifies an
 // AgentRequired confirm (MCP "only a human sets this" contract) is refused for
 // a model even when the model passes confirm=true.
@@ -443,6 +466,25 @@ func TestInvokeDestructiveAgentRequiredConfirmNotSelfConfirmable(t *testing.T) {
 	_, err := c.Invoke(context.Background(), "key del", map[string]any{"id": "k1", "confirm": true}, ActorModel)
 	if !errors.Is(err, ErrConfirmRequired) {
 		t.Fatalf("err = %v, want errors.Is(err, ErrConfirmRequired) for AgentRequired confirm", err)
+	}
+}
+
+// TestAgentConfirmRegistrationValidation pins the AgentConfirm contract: it may
+// only be declared on a bool arg literally named "confirm". Any other usage is
+// a config bug rejected at registration.
+func TestAgentConfirmRegistrationValidation(t *testing.T) {
+	bad := stub("bad", "Bad", "bad", "long", "", "keys",
+		SafetyDestructive, InteractionAgentSafe, VisibilityBoth,
+		OperationArg{Name: "flag", Type: ArgTypeBool, AgentConfirm: true})
+	c := NewCatalog()
+	if err := c.Add(bad); err == nil {
+		t.Fatal("AgentConfirm on a non-\"confirm\" arg must be rejected at registration")
+	}
+	notBool := stub("bad2", "Bad2", "bad2", "long", "", "keys",
+		SafetyDestructive, InteractionAgentSafe, VisibilityBoth,
+		OperationArg{Name: "confirm", Type: ArgTypeString, AgentConfirm: true})
+	if err := c.Add(notBool); err == nil {
+		t.Fatal("AgentConfirm on a non-bool arg must be rejected at registration")
 	}
 }
 

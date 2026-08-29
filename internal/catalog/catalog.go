@@ -161,6 +161,13 @@ func validateOperation(op Operation) error {
 		// also declared) must have their default within the enum. Otherwise
 		// resolveArg's enum check would never apply, or would reject a default
 		// the arg itself declares. Both are config bugs caught at registration.
+		// AgentConfirm can only be set on a bool arg literally named "confirm":
+		// the destructive gate reads it as the model's self-confirmation for a
+		// destructive op, so letting it attach elsewhere would silently expand
+		// the gate to the wrong input. Reject at registration.
+		if a.AgentConfirm && (a.Name != "confirm" || a.Type != ArgTypeBool) {
+			return fmt.Errorf("catalog: operation %q arg %q: AgentConfirm requires a bool arg named \"confirm\"", op.Name(), a.Name)
+		}
 		if len(a.Enum) > 0 && a.Type != ArgTypeString {
 			return fmt.Errorf("catalog: operation %q arg %q: enum declared on non-string arg type", op.Name(), a.Name)
 		}
@@ -382,14 +389,15 @@ func (c *catalogImpl) Invoke(ctx context.Context, name string, input map[string]
 	}
 
 	// Safety: a destructive operation invoked by a model needs explicit human
-	// confirmation. If the operation declares an agent-settable `confirm` arg
-	// (a bool "confirm" that is NOT AgentRequired) and the model has supplied
-	// that confirmation (confirm=true), the confirmation is already present and
+	// confirmation unless the operation opts into agent self-confirmation by
+	// marking its `confirm` arg AgentConfirm and the model has supplied that
+	// confirmation (confirm=true) — then the confirmation is already present and
 	// the op runs headless (e.g. vault_version_restore's confirm=true is the
-	// rollback contract). Ops with no confirm arg, or with an AgentRequired
-	// confirm that by contract only a human sets (ipns_keys_delete,
-	// admin_platform_domains_delete), still return the ErrConfirmRequired
-	// sentinel so the caller surfaces a confirm hand-off.
+	// rollback contract). Every other destructive op — no confirm arg, an
+	// AgentRequired confirm that only a human sets (ipns_keys_delete,
+	// admin_platform_domains_delete), or a confirm with a different semantic
+	// (api_keys_delete) — still returns the ErrConfirmRequired sentinel so the
+	// caller surfaces a confirm hand-off.
 	if op.Safety() == SafetyDestructive && actor == ActorModel && !destructiveConfirmSatisfied(op, input) {
 		return nil, fmt.Errorf("operation %q is destructive: %w", name, ErrConfirmRequired)
 	}
@@ -412,14 +420,17 @@ func (c *catalogImpl) Invoke(ctx context.Context, name string, input map[string]
 
 // destructiveConfirmSatisfied reports whether a destructive operation invoked
 // by a model already carries explicit confirmation in the supplied input. An
-// op satisfies it when it declares a bool `confirm` argument that is
-// agent-settable (NOT AgentRequired — AgentRequired marks "only a human sets
-// this", which a model can never self-satisfy) and the input's confirm is
-// truthy. Ops with no confirm arg, or with an AgentRequired confirm, return
-// false so the caller surfaces the confirm hand-off.
+// op satisfies it only when it declares a `confirm` arg explicitly marked
+// AgentConfirm (the operation's declared agent-confirmation contract) and the
+// input's confirm is truthy. Every other confirm arg — whether AgentRequired
+// (ipns_keys_delete, admin_platform_domains_delete), a different semantic
+// (api_keys_delete's self-delete force guard), or a human hand-off field — is
+// deliberately excluded, so the model gate keeps refusing those ops with
+// ErrConfirmRequired. Ops with no confirm arg, or no AgentConfirm marker,
+// return false so the caller surfaces the confirm hand-off.
 func destructiveConfirmSatisfied(op Operation, input map[string]any) bool {
 	for _, a := range op.Args() {
-		if a.Name != "confirm" || a.AgentRequired {
+		if a.Name != "confirm" || !a.AgentConfirm {
 			continue
 		}
 		if a.Type == ArgTypeBool {

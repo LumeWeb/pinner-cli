@@ -432,7 +432,7 @@ func vaultVersionRestore(d VaultDeps) catalog.Operation {
 		Args: []catalog.OperationArg{
 			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Vault path of the file", AgentHelp: "The vault:/ path of the file to restore into."},
 			{Name: "version_id", Type: catalog.ArgTypeString, Required: true, Help: "Version id to restore (from vault_version_ls)", AgentHelp: "The version_id to restore (from vault_version_ls)."},
-			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Required: true, Help: "Must be true to restore (destructive to current content)", AgentHelp: "Set to true to confirm the destructive restore."},
+			{Name: "confirm", Type: catalog.ArgTypeBool, Default: "false", Required: true, AgentConfirm: true, Help: "Must be true to restore (destructive to current content)", AgentHelp: "Set to true to confirm the destructive restore. An agent may self-confirm this restore headlessly with confirm=true."},
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
