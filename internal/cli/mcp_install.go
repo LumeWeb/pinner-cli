@@ -259,6 +259,24 @@ func RunMcpInstallWizard(ctx context.Context, cmd mcpInstallFlagGetter, ui Insta
 			// default is safe; stdio installs never reach here.
 			wantService := effectiveManagedService(realCmd.IsSet("service"), s.UseService)
 
+			// Stop the running managed service before the collector probes
+			// tunnel resources (ResolveNgrokSDKURL opens a temp ngrok tunnel
+			// that conflicts with the running service's tunnel, ERR_NGROK_334).
+			// This runs in the Resolve public URL step — which is always
+			// applicable to http installs and never skipped by
+			// configStepSkipIfHeadlessReRun — so the service is freed even on a
+			// headless re-run where the tunnel-config step was skipped.
+			// installManagedService (inside CollectHTTPInstallWithCreated)
+			// reinstalls and starts the service on the success path; the
+			// deferred restart in RunMcpInstallWizard covers the error path.
+			if wantService {
+				stopped, stopErr := mcpadapter.StopManagedServiceIfInstalled(ctx)
+				if stopErr != nil {
+					return stopErr
+				}
+				s.serviceStoppedForProbe = stopped
+			}
+
 			env, sideEffect, err := mcpadapter.CollectHTTPInstallWithCreated(ctx, realCmd, "", wantService, created)
 			if err != nil {
 				// Roll the file back ONLY if the install failed before any
@@ -340,6 +358,9 @@ func RunMcpInstallWizard(ctx context.Context, cmd mcpInstallFlagGetter, ui Insta
 		ctx = fieldform.WithPrompter(ctx, wizard.NewPtermPrompter())
 	}
 	_, err := w.Run(ctx)
+	if err != nil && w.state.serviceStoppedForProbe {
+		_ = mcpadapter.StartManagedServiceIfInstalled(ctx)
+	}
 	return err
 }
 

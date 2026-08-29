@@ -658,6 +658,64 @@ func RestartManagedService(ctx context.Context, cmd *cli.Command, s *ServiceInst
 	return svc.Restart(ctx)
 }
 
+// newServiceForControl creates a minimal service backed by the host init system
+// for Stop/Status-only operations (no env file or provider needed). It is a
+// package-level seam so tests can substitute a fake without touching the live
+// init system (mirrors the ResolveNgrokSDKURL pattern).
+var newServiceForControl = func() (service.Service, error) {
+	return service.New(service.Config{
+		Name:     defaultMCPServiceName,
+		UserMode: true,
+	})
+}
+
+// StopManagedServiceIfInstalled stops the managed MCP service when it is
+// already installed. It builds a minimal service.Config (only Name and
+// UserMode are needed for Stop/Status), so it works before the env file or
+// tunnel provider is known. Callers use this to free resources the running
+// service holds (e.g. an ngrok tunnel endpoint) before the install wizard
+// probes them, then installManagedService reinstalls and starts the service.
+// Returns true when the service was actually stopped so callers can restart
+// it on an error path before installManagedService runs.
+func StopManagedServiceIfInstalled(ctx context.Context) (bool, error) {
+	svc, err := newServiceForControl()
+	if err != nil {
+		return false, err
+	}
+	status, err := svc.Status(ctx)
+	if err != nil {
+		return false, fmt.Errorf("query managed service status: %w", err)
+	}
+	if !status.Installed {
+		return false, nil
+	}
+	if err := svc.Stop(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// StartManagedServiceIfInstalled starts the managed MCP service when it is
+// installed but not running. It is the recovery counterpart to
+// StopManagedServiceIfInstalled: callers that stopped the service before the
+// wizard call this on an error path so a failed install does not leave the
+// endpoint indefinitely down. Starting an already-running service is a no-op
+// (systemd/launchd) or a benign error (Windows SCM) that callers ignore.
+func StartManagedServiceIfInstalled(ctx context.Context) error {
+	svc, err := newServiceForControl()
+	if err != nil {
+		return err
+	}
+	status, err := svc.Status(ctx)
+	if err != nil {
+		return fmt.Errorf("query managed service status: %w", err)
+	}
+	if !status.Installed {
+		return nil
+	}
+	return svc.Start(ctx)
+}
+
 // serviceConfigForInstall builds the service.Config for the managed MCP
 // service: the pinner executable run as `pinner mcp`, referencing the tunnel
 // credentials via envFile (a path). Each platform backend chooses its own

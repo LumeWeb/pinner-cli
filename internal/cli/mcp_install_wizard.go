@@ -76,6 +76,14 @@ type InstallState struct {
 	// Codex auto-approve opt-in (--auto-approve): when true the written Codex
 	// entry requests approval for all tools. Other agents ignore it.
 	AutoApprove bool
+
+	// serviceStoppedForProbe records that the managed service was stopped
+	// by the tunnel-config step's preExecute hook (to free the ngrok
+	// endpoint before ResolveNgrokSDKURL probes it). If the wizard fails
+	// after that point, RunMcpInstallWizard restarts the service so the
+	// endpoint is not left indefinitely down. installManagedService
+	// reinstalls and starts the service on the success path.
+	serviceStoppedForProbe bool
 }
 
 // pathResolver maps an agent + scope to the on-disk config path. It is

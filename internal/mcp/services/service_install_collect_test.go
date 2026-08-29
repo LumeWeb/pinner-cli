@@ -652,6 +652,94 @@ func (f *fakeManagedService) Stop(_ context.Context) error                     {
 func (f *fakeManagedService) Install(_ context.Context) error                  { return f.installErr }
 func (f *fakeManagedService) Start(_ context.Context) error                    { f.calledStart = true; return f.startErr }
 
+func TestStopManagedServiceIfInstalled(t *testing.T) {
+	t.Run("not installed is a no-op", func(t *testing.T) {
+		fake := &fakeManagedService{} // Status returns zero: not installed
+		orig := newServiceForControl
+		newServiceForControl = func() (service.Service, error) { return fake, nil }
+		defer func() { newServiceForControl = orig }()
+
+		stopped, err := StopManagedServiceIfInstalled(context.Background())
+		require.NoError(t, err)
+		require.False(t, stopped, "no stop reported when service is not installed")
+		require.False(t, fake.calledStop, "no Stop on a service that is not installed")
+	})
+
+	t.Run("installed service is stopped", func(t *testing.T) {
+		fake := &fakeManagedService{status: service.Status{Installed: true}}
+		orig := newServiceForControl
+		newServiceForControl = func() (service.Service, error) { return fake, nil }
+		defer func() { newServiceForControl = orig }()
+
+		stopped, err := StopManagedServiceIfInstalled(context.Background())
+		require.NoError(t, err)
+		require.True(t, stopped, "stop must be reported when service was running")
+		require.True(t, fake.calledStop, "an installed service must be stopped")
+	})
+
+	t.Run("status error propagates", func(t *testing.T) {
+		fake := &fakeManagedService{statusErr: errors.New("probe failed")}
+		orig := newServiceForControl
+		newServiceForControl = func() (service.Service, error) { return fake, nil }
+		defer func() { newServiceForControl = orig }()
+
+		stopped, err := StopManagedServiceIfInstalled(context.Background())
+		require.Error(t, err)
+		require.False(t, stopped)
+		require.False(t, fake.calledStop)
+	})
+
+	t.Run("stop error propagates", func(t *testing.T) {
+		fake := &fakeManagedService{
+			status:  service.Status{Installed: true},
+			stopErr: errors.New("stop failed"),
+		}
+		orig := newServiceForControl
+		newServiceForControl = func() (service.Service, error) { return fake, nil }
+		defer func() { newServiceForControl = orig }()
+
+		stopped, err := StopManagedServiceIfInstalled(context.Background())
+		require.Error(t, err)
+		require.False(t, stopped, "stop not reported when Stop failed")
+		require.True(t, fake.calledStop)
+	})
+}
+
+func TestStartManagedServiceIfInstalled(t *testing.T) {
+	t.Run("not installed is a no-op", func(t *testing.T) {
+		fake := &fakeManagedService{}
+		orig := newServiceForControl
+		newServiceForControl = func() (service.Service, error) { return fake, nil }
+		defer func() { newServiceForControl = orig }()
+
+		err := StartManagedServiceIfInstalled(context.Background())
+		require.NoError(t, err)
+		require.False(t, fake.calledStart, "no Start on a service that is not installed")
+	})
+
+	t.Run("installed service is started", func(t *testing.T) {
+		fake := &fakeManagedService{status: service.Status{Installed: true}}
+		orig := newServiceForControl
+		newServiceForControl = func() (service.Service, error) { return fake, nil }
+		defer func() { newServiceForControl = orig }()
+
+		err := StartManagedServiceIfInstalled(context.Background())
+		require.NoError(t, err)
+		require.True(t, fake.calledStart, "an installed service must be started")
+	})
+
+	t.Run("status error propagates", func(t *testing.T) {
+		fake := &fakeManagedService{statusErr: errors.New("probe failed")}
+		orig := newServiceForControl
+		newServiceForControl = func() (service.Service, error) { return fake, nil }
+		defer func() { newServiceForControl = orig }()
+
+		err := StartManagedServiceIfInstalled(context.Background())
+		require.Error(t, err)
+		require.False(t, fake.calledStart)
+	})
+}
+
 func TestInstallManagedService(t *testing.T) {
 	t.Run("fresh install skips stop then installs and starts", func(t *testing.T) {
 		svc := &fakeManagedService{} // Status returns zero-value: not installed

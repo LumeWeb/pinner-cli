@@ -58,9 +58,8 @@ func CollectHTTPInstallWithCreated(ctx context.Context, cmd *cli.Command, envFil
 	return collectHTTPInstall(ctx, cmd, envFile, wantService, envFileCreated)
 }
 
-func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, wantService, envFileCreated bool) (ServiceEnvironment, bool, error) {
+func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, wantService, envFileCreated bool) (env ServiceEnvironment, serviceSideEffect bool, err error) {
 	if envFile == "" {
-		var err error
 		envFile, err = resolveServiceEnvFile(cmd)
 		if err != nil {
 			return nil, false, err
@@ -68,12 +67,35 @@ func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 	}
 
 	created := envFileCreated
-	if _, err := os.Stat(envFile); errors.Is(err, os.ErrNotExist) {
+	if _, statErr := os.Stat(envFile); errors.Is(statErr, os.ErrNotExist) {
 		created = true
 		// A lazy config manager (nil on failure) is threaded into the wizard and
 		// bootstrap so any tunnel credential the user supplies is persisted to
 		// the last-resort store and auto-detected on later runs.
 		cfgMgr := serviceConfigManager()
+
+		// Stop a running managed service before the wizard or bootstrap probes
+		// tunnel resources (e.g. ngrok's ResolveNgrokSDKURL opens a temp tunnel
+		// that conflicts with the one the running service holds, ERR_NGROK_334).
+		// installManagedService reinstalls and starts it after the env file is
+		// written. Only needed when wantService is true (the only path that
+		// leaves a service running between runs).
+		var stoppedForProbe bool
+		if wantService {
+			stoppedForProbe, err = StopManagedServiceIfInstalled(ctx)
+			if err != nil {
+				return nil, false, fmt.Errorf("stop managed service before config: %w", err)
+			}
+		}
+		// If the service was stopped for the probe and a subsequent step fails
+		// before installManagedService can reinstall and start it, restart the
+		// service so the endpoint is not left indefinitely down.
+		defer func() {
+			if stoppedForProbe && err != nil {
+				_ = StartManagedServiceIfInstalled(ctx)
+			}
+		}()
+
 		if cmd.String(serviceTunnelFlag) != "" {
 			if err := bootstrapServiceEnvironment(cmd, envFile, cfgMgr); err != nil {
 				return nil, false, err
@@ -88,22 +110,23 @@ func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 				return nil, false, err
 			}
 		}
-	} else if err != nil {
-		return nil, false, fmt.Errorf("inspect MCP service environment file %q: %w", envFile, err)
+	} else if statErr != nil {
+		return nil, false, fmt.Errorf("inspect MCP service environment file %q: %w", envFile, statErr)
 	}
 
-	provider, err := validateServiceEnvironment(envFile, false)
-	if err != nil {
+	provider, providerErr := validateServiceEnvironment(envFile, false)
+	if providerErr != nil {
 		// A freshly bootstrapped file that fails completeness validation would
 		// otherwise strand the user with a partial/corrupt env file on re-run.
 		// Only remove it when we created it; never touch a pre-existing file.
 		if created {
 			_ = os.Remove(envFile)
 		}
+		err = providerErr
 		return nil, false, err
 	}
 
-	env, err := service.LoadEnvironment(envFile)
+	env, err = service.LoadEnvironment(envFile)
 	if err != nil {
 		return nil, false, err
 	}
@@ -118,10 +141,11 @@ func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 	// the tunnel is dynamic (no stable URL).
 	resolveServicePublicURL(envFile, env)
 
-	serviceSideEffect := false
+	serviceSideEffect = false
 	if wantService {
-		svc, err := newManagedService(cmd, envFile, provider)
-		if err != nil {
+		svc, svcErr := newManagedService(cmd, envFile, provider)
+		if svcErr != nil {
+			err = svcErr
 			return nil, false, err
 		}
 		// From here on the managed service may be installed/started against the
