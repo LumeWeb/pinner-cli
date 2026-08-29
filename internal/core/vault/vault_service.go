@@ -846,7 +846,11 @@ func (s *vaultService) Verify(ctx context.Context, vaultPath string) (*VerifyRes
 	res, obj, exists, err := s.resolveVerifyObject(ctx, vaultPath)
 	if err != nil || !exists {
 		if res != nil {
-			res.DigestVerified = DigestVerifiedUnverified
+			if res.ObjectExists {
+				res.DigestVerified = DigestVerifiedUnverified
+			} else {
+				res.DigestVerified = DigestVerifiedMismatch
+			}
 		}
 		return res, err
 	}
@@ -891,7 +895,11 @@ func (s *vaultService) VerifyDeep(ctx context.Context, vaultPath string) (*Verif
 	res, obj, exists, err := s.resolveVerifyObject(ctx, vaultPath)
 	if err != nil || !exists {
 		if res != nil {
-			res.DigestVerified = DigestVerifiedUnverified
+			if res.ObjectExists {
+				res.DigestVerified = DigestVerifiedUnverified
+			} else {
+				res.DigestVerified = DigestVerifiedMismatch
+			}
 		}
 		return res, err
 	}
