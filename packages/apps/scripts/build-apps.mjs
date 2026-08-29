@@ -38,6 +38,10 @@ for (const app of APPS) {
         "zod",
         "robot3",
         "@uppy/core",
+        // uppy 6 re-exports the core/ uploader helpers via a subpath entry;
+        // without an explicit entry tsdown leaves `@uppy/core/utils` external,
+        // which the sandboxed iframe cannot resolve.
+        "@uppy/core/utils",
         "@uppy/xhr-upload",
       ],
       onlyBundle: false,
