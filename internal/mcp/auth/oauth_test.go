@@ -309,6 +309,7 @@ func TestOAuthReapExpired(t *testing.T) {
 	o := newTestOAuth(t)
 	o.tokenTTL = -time.Second // force expiry
 	o.codeTTL = -time.Second
+	o.clockSkew = 0            // disable grace for reaping test
 
 	code := o.newCode(authorizationCode{clientID: "cli", expiry: time.Now().Add(-time.Second)})
 	o.mu.Lock()

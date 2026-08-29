@@ -157,7 +157,7 @@ func (o *OAuthServer) sweep() {
 func (o *OAuthServer) reapLocked() {
 	now := time.Now()
 	for tok, exp := range o.tokens {
-		if now.After(exp) {
+		if now.After(exp.Add(o.clockSkew)) {
 			delete(o.tokens, tok)
 		}
 	}
