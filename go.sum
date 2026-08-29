@@ -1044,6 +1044,8 @@ go.lumeweb.com/portal-sdk v0.1.69 h1:qyXietI23pCe+sj1zC7Q8lQQ+CmpsMvVe0p2Rb/T4Yg
 go.lumeweb.com/portal-sdk v0.1.69/go.mod h1:xwNOHOTaqcjvg7P3N8QhNDz9rITQyDQXPO4W8PWythE=
 go.lumeweb.com/queryutil v0.3.18 h1:LrVbnSJ7Z1LCsT5vKjKKd643kJPLH1RZAkot50zw6qY=
 go.lumeweb.com/queryutil v0.3.18/go.mod h1:ilKyQEBgS1SiLahUKSOw6qadIQa4hW1/1MstdHNeUnM=
+go.lumeweb.com/queryutil v0.3.19 h1:GV+zKsyGJ+YYPZi0mqOocDAROCQruGdizrE8Aw8cNFk=
+go.lumeweb.com/queryutil v0.3.19/go.mod h1:YPrXdEelsjJNBPXrG4IiYp4aq5YUk/l4uXw8z2cSAuw=
 go.opencensus.io v0.21.0/go.mod h1:mSImk1erAIZhrmZN+AvHh14ztQfjbGwt4TtuofqLduU=
 go.opencensus.io v0.22.0/go.mod h1:+kGneAE2xo2IficOXnaByMWTGM9T73dGwxeWcUqIpI8=
 go.opencensus.io v0.22.2/go.mod h1:yxeiOL68Rb0Xd1ddK5vPZ/oVn4vY4Ynel7k9FzqtOIw=

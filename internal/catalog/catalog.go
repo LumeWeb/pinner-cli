@@ -589,6 +589,19 @@ func resolveArg(a OperationArg, raw any, present bool) (value any, st argState, 
 			return nil, stateInvalid, fmt.Errorf("value %q not in enum %v", s, a.Enum)
 		}
 		return s, stateFilled, nil
+	case ArgTypeRawJSON:
+		// Pass-through: the value arrives as-is (a JSON string from the CLI, a
+		// decoded array/object/scalar from MCP JSON). The Handler is
+		// responsible for parsing it into its domain shape (e.g. a predicate
+		// list). No coercion, no enum gate — the schema language is entirely
+		// the Handler's.
+		if s, ok := raw.(string); ok {
+			if s == "" {
+				return s, stateEmpty, nil
+			}
+			return s, stateFilled, nil
+		}
+		return raw, stateFilled, nil
 	case ArgTypeFlexibleID:
 		// A string-or-integer id (e.g. the numeric id ipns_keys_list emits).
 		// Accept a string as-is; accept any JSON/native integer by rendering
@@ -866,6 +879,8 @@ func zeroShape(t ArgType) any {
 		return []string{}
 	case ArgTypeString, ArgTypeFlexibleID:
 		return ""
+	case ArgTypeRawJSON:
+		return nil
 	case ArgTypeInt:
 		return 0
 	case ArgTypeFloat:
@@ -1185,6 +1200,10 @@ func defaultValue(a OperationArg) any {
 			}
 		}
 		return out
+	case ArgTypeRawJSON:
+		// A raw-JSON arg has no scalar default; a declared Default (a JSON
+		// string) is returned as a string so CLI/`--where` parity holds.
+		return a.Default
 	default: // ArgTypeString
 		return a.Default
 	}
@@ -1196,6 +1215,26 @@ func defaultValue(a OperationArg) any {
 func inputSchemaFromArgs(name string, args []OperationArg) json.RawMessage {
 	props := make(map[string]any, len(args))
 	for _, a := range args {
+		// A RawSchema arg overrides the entire property object: the flat
+		// ArgType-to-JSON-Type mapping cannot express a rich structured schema
+		// (e.g. an array of predicate objects), so the author supplies it
+		// verbatim. It must be a JSON object. The sensitive marker and
+		// description are merged in so a raw schema can still carry them.
+		if len(a.RawSchema) > 0 {
+			var raw any
+			if err := json.Unmarshal(a.RawSchema, &raw); err != nil || raw == nil {
+				raw = map[string]any{}
+			}
+			p, ok := raw.(map[string]any)
+			if !ok {
+				p = map[string]any{}
+			}
+			if a.Sensitive {
+				p[SensitiveSchemaKey] = true
+			}
+			props[a.Name] = p
+			continue
+		}
 		p := map[string]any{"type": jsonType(a.Type)}
 		// A string-slice arg renders as a JSON Schema "array". Every array type
 		// must declare its element schema or strict hosts (e.g. AWS Bedrock and
@@ -1290,6 +1329,11 @@ func jsonType(t ArgType) any {
 		return "string"
 	case ArgTypeStringSlice:
 		return "array"
+	case ArgTypeRawJSON:
+		// The JSON type is "any": the resolved value may be a string (CLI) or
+		// a decoded array/object (MCP). The paired RawSchema advertises the
+		// concrete structured shape on the MCP surface.
+		return []string{"string", "array", "object"}
 	case ArgTypeFlexibleID:
 		// Accept a string or integer id so a model can pass either the form
 		// ipns_keys_list emits (integer) or a string id/name.

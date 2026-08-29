@@ -329,7 +329,7 @@ func (_c *MockVaultService_List_Call) RunAndReturn(run func(ctx context.Context,
 }
 
 // Search provides a mock function for the type MockVaultService
-func (_mock *MockVaultService) Search(ctx context.Context, filter SearchFilter) ([]SearchItem, error) {
+func (_mock *MockVaultService) Search(ctx context.Context, filter SearchRequest) ([]SearchItem, error) {
 	ret := _mock.Called(ctx, filter)
 
 	if len(ret) == 0 {
@@ -338,17 +338,17 @@ func (_mock *MockVaultService) Search(ctx context.Context, filter SearchFilter) 
 
 	var r0 []SearchItem
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, SearchFilter) ([]SearchItem, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, SearchRequest) ([]SearchItem, error)); ok {
 		return returnFunc(ctx, filter)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, SearchFilter) []SearchItem); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, SearchRequest) []SearchItem); ok {
 		r0 = returnFunc(ctx, filter)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]SearchItem)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, SearchFilter) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, SearchRequest) error); ok {
 		r1 = returnFunc(ctx, filter)
 	} else {
 		r1 = ret.Error(1)
@@ -363,20 +363,20 @@ type MockVaultService_Search_Call struct {
 
 // Search is a helper method to define mock.On call
 //   - ctx context.Context
-//   - filter SearchFilter
+//   - filter SearchRequest
 func (_e *MockVaultService_Expecter) Search(ctx any, filter any) *MockVaultService_Search_Call {
 	return &MockVaultService_Search_Call{Call: _e.mock.On("Search", ctx, filter)}
 }
 
-func (_c *MockVaultService_Search_Call) Run(run func(ctx context.Context, filter SearchFilter)) *MockVaultService_Search_Call {
+func (_c *MockVaultService_Search_Call) Run(run func(ctx context.Context, filter SearchRequest)) *MockVaultService_Search_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 SearchFilter
+		var arg1 SearchRequest
 		if args[1] != nil {
-			arg1 = args[1].(SearchFilter)
+			arg1 = args[1].(SearchRequest)
 		}
 		run(
 			arg0,
@@ -391,7 +391,7 @@ func (_c *MockVaultService_Search_Call) Return(searchItems []SearchItem, err err
 	return _c
 }
 
-func (_c *MockVaultService_Search_Call) RunAndReturn(run func(ctx context.Context, filter SearchFilter) ([]SearchItem, error)) *MockVaultService_Search_Call {
+func (_c *MockVaultService_Search_Call) RunAndReturn(run func(ctx context.Context, filter SearchRequest) ([]SearchItem, error)) *MockVaultService_Search_Call {
 	_c.Call.Return(run)
 	return _c
 }

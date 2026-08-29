@@ -27,6 +27,7 @@ require (
 	github.com/multiformats/go-multiaddr v0.16.1
 	github.com/oapi-codegen/runtime v1.6.0
 	github.com/openai/tunnel-client v0.0.12-dev.0.20260807232812-7136b51d2f54
+	github.com/pb33f/ordered-map/v2 v2.3.1
 	github.com/pressly/goose/v3 v3.27.3
 	github.com/pterm/pterm v0.12.84-0.20260430213317-32e5000d4c27
 	github.com/rs/cors v1.11.1
@@ -42,7 +43,7 @@ require (
 	go.lumeweb.com/ipfs-sdk v0.1.89
 	go.lumeweb.com/ipfs-sdk/dnsname v0.1.64
 	go.lumeweb.com/portal-sdk v0.1.69
-	go.lumeweb.com/queryutil v0.3.18
+	go.lumeweb.com/queryutil v0.3.19
 	go.sia.tech/core v0.21.7
 	go.sia.tech/indexd v0.2.3-0.20260519120331-4eab507a9847
 	go.sia.tech/siastorage v0.1.0
@@ -203,7 +204,6 @@ require (
 	github.com/oschwald/geoip2-golang v1.13.0 // indirect
 	github.com/oschwald/maxminddb-golang v1.13.1 // indirect
 	github.com/panjf2000/ants/v2 v2.11.3 // indirect
-	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/petar/GoLLRB v0.0.0-20210522233825-ae3b015fd3e9 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
