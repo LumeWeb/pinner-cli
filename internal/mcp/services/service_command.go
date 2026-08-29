@@ -670,12 +670,38 @@ var newServiceForControl = func() (service.Service, error) {
 }
 
 // StopManagedServiceIfInstalled stops the managed MCP service when it is
-// already installed and active. It builds a minimal service.Config (only Name
-// and UserMode are needed for Stop/Status), so it works before the env file
-// or tunnel provider is known. Callers use this to free resources the running
+// already installed. It builds a minimal service.Config (only Name and
+// UserMode are needed for Stop/Status), so it works before the env file or
+// tunnel provider is known. Callers use this to free resources the running
 // service holds (e.g. an ngrok tunnel endpoint) before the install wizard
 // probes them, then installManagedService reinstalls and starts the service.
-func StopManagedServiceIfInstalled(ctx context.Context) error {
+// Returns true when the service was actually stopped so callers can restart
+// it on an error path before installManagedService runs.
+func StopManagedServiceIfInstalled(ctx context.Context) (bool, error) {
+	svc, err := newServiceForControl()
+	if err != nil {
+		return false, err
+	}
+	status, err := svc.Status(ctx)
+	if err != nil {
+		return false, fmt.Errorf("query managed service status: %w", err)
+	}
+	if !status.Installed {
+		return false, nil
+	}
+	if err := svc.Stop(ctx); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// StartManagedServiceIfInstalled starts the managed MCP service when it is
+// installed but not running. It is the recovery counterpart to
+// StopManagedServiceIfInstalled: callers that stopped the service before the
+// wizard call this on an error path so a failed install does not leave the
+// endpoint indefinitely down. Starting an already-running service is a no-op
+// (systemd/launchd) or a benign error (Windows SCM) that callers ignore.
+func StartManagedServiceIfInstalled(ctx context.Context) error {
 	svc, err := newServiceForControl()
 	if err != nil {
 		return err
@@ -687,7 +713,7 @@ func StopManagedServiceIfInstalled(ctx context.Context) error {
 	if !status.Installed {
 		return nil
 	}
-	return svc.Stop(ctx)
+	return svc.Start(ctx)
 }
 
 // serviceConfigForInstall builds the service.Config for the managed MCP

@@ -340,6 +340,9 @@ func RunMcpInstallWizard(ctx context.Context, cmd mcpInstallFlagGetter, ui Insta
 		ctx = fieldform.WithPrompter(ctx, wizard.NewPtermPrompter())
 	}
 	_, err := w.Run(ctx)
+	if err != nil && w.state.serviceStoppedForProbe {
+		_ = mcpadapter.StartManagedServiceIfInstalled(ctx)
+	}
 	return err
 }
 
@@ -534,7 +537,12 @@ func buildMcpTunnelSteps(realCmd *cli.Command, ui InstallUI) []wizard.Step[*Inst
 				if !effectiveManagedService(realCmd.IsSet("service"), s.UseService) {
 					return nil
 				}
-				return mcpadapter.StopManagedServiceIfInstalled(ctx)
+				stopped, err := mcpadapter.StopManagedServiceIfInstalled(ctx)
+				if err != nil {
+					return err
+				}
+				s.serviceStoppedForProbe = stopped
+				return nil
 			}, nil),
 		// The env-write step NEVER skips for http (only for a non-http install
 		// or a tapped serviceEnvErr). On the FRESH path it writes the env from
