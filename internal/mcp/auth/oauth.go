@@ -42,6 +42,12 @@ type OAuthServer struct {
 
 	store *oauthstore.Store
 
+	// clockSkew is the grace window applied to expired access tokens
+	// by the bearer middleware. An access token that expired less than
+	// this long ago is still accepted so an in-flight request that
+	// started before expiry is not killed mid-pin.
+	clockSkew time.Duration
+
 	// registered clients keyed by client ID (backed by store)
 	clients map[string]oauthClient
 	// authorization codes, one-time use (in-memory)
@@ -82,9 +88,10 @@ func NewOAuthServer(secret, BaseURL string, store *oauthstore.Store) *OAuthServe
 		clients:  make(map[string]oauthClient),
 		codes:    make(map[string]authorizationCode),
 		tokens:   make(map[string]time.Time),
-		tokenTTL: time.Hour,
-		codeTTL:  10 * time.Minute,
-		done:     make(chan struct{}),
+		tokenTTL:  time.Hour,
+		codeTTL:   10 * time.Minute,
+		clockSkew: 2 * time.Minute,
+		done:      make(chan struct{}),
 		logger:   log,
 	}
 	// Repopulate the in-memory client registry from the durable store so a
@@ -595,11 +602,17 @@ func (o *OAuthServer) OfficialMiddleware(next http.Handler) http.Handler {
 		o.mu.Lock()
 		exp, ok := o.tokens[token]
 		if ok {
-			// Delete expired tokens so the map does not grow unboundedly;
-			// the SDK's ClockSkew (2m) applies the grace window for
-			// recently-expired tokens, not this verifier.
-			if time.Now().After(exp) {
+			// Keep the token in the map while it is still within the
+			// ClockSkew grace window so concurrent in-flight requests
+			// that present the same expired token also receive the
+			// TokenInfo and let the SDK apply the same tolerance.
+			// Tokens expired beyond the skew are reaped by the periodic
+			// sweep (reapLocked); delete here only if beyond the skew
+			// to bound map growth without breaking sibling requests.
+			if time.Now().After(exp.Add(o.clockSkew)) {
 				delete(o.tokens, token)
+				o.mu.Unlock()
+				return nil, fmt.Errorf("%w: the access token has expired", auth.ErrInvalidToken)
 			}
 			o.mu.Unlock()
 			return &auth.TokenInfo{Expiration: exp, UserID: tokenPrincipal(token)}, nil
@@ -609,7 +622,7 @@ func (o *OAuthServer) OfficialMiddleware(next http.Handler) http.Handler {
 	}
 	return auth.RequireBearerToken(verifier, &auth.RequireBearerTokenOptions{
 		ResourceMetadataURL: strings.TrimRight(o.BaseURL, "/") + "/.well-known/oauth-protected-resource",
-		ClockSkew:           2 * time.Minute,
+		ClockSkew:           o.clockSkew,
 	})(next)
 }
 
