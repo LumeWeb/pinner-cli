@@ -489,12 +489,13 @@ func TestVaultSyncLoopTicker_Integration(t *testing.T) {
 	s.Shutdown()
 }
 
-func TestVaultSyncLoop_IdleClosesServiceAfterNTicks(t *testing.T) {
-	// IdleCloseTicks=2: an idle profile's service is closed after 2 consecutive
-	// idle ticks and rebuilt lazily on the next tick that needs it, bounding
-	// open SDK/DB handles for long-idle vaults.
+
+func TestVaultSyncLoop_IdleClosesServiceAfterIdleDuration(t *testing.T) {
+	// IdleCloseAfter=10m: an idle profile's service is closed once its REAL
+	// idle elapsed time reaches the threshold, and rebuilt lazily on the next
+	// tick that needs it.
 	svcA := &MockVaultService{}
-	svcA.EXPECT().Sync(mock.Anything).Return(0, false, nil).Times(2)
+	svcA.EXPECT().Sync(mock.Anything).Return(0, false, nil).Times(3)
 	svcA.EXPECT().Close().Return(nil).Once()
 	svcB := &MockVaultService{}
 	svcB.EXPECT().Sync(mock.Anything).Return(0, false, nil).Once()
@@ -502,8 +503,9 @@ func TestVaultSyncLoop_IdleClosesServiceAfterNTicks(t *testing.T) {
 
 	var builds atomic.Int32
 	var built atomic.Int32
+	cur := time.Unix(1_000_000, 0)
 	loop := NewVaultSyncLoop(SyncLoopConfig{
-		IdleCloseTicks: 2,
+		IdleCloseAfter: 10 * time.Minute,
 		Profiles:       func() []string { return []string{"work"} },
 		Service: func(p string) (VaultService, error) {
 			builds.Add(1)
@@ -513,11 +515,16 @@ func TestVaultSyncLoop_IdleClosesServiceAfterNTicks(t *testing.T) {
 			return svcB, nil
 		},
 	})
+	loop.now = func() time.Time { return cur }
 
-	loop.Tick(context.Background()) // idle=1
-	loop.Tick(context.Background()) // idle=2 -> close A
+	loop.Tick(context.Background()) // build svcA, lastActivity=t0
+	cur = cur.Add(9 * time.Minute)
+	loop.Tick(context.Background()) // idle 9m < 10m, not closed
+	cur = cur.Add(2 * time.Minute)  // idle 11m >= 10m
+	loop.Tick(context.Background()) // close svcA
 	svcA.AssertNumberOfCalls(t, "Close", 1)
-	loop.Tick(context.Background()) // rebuild B
+	cur = cur.Add(1 * time.Minute)
+	loop.Tick(context.Background()) // rebuild svcB
 	if got := builds.Load(); got != 2 {
 		t.Fatalf("idle-close should trigger a lazy rebuild (%d builds), want 2", got)
 	}
@@ -526,8 +533,8 @@ func TestVaultSyncLoop_IdleClosesServiceAfterNTicks(t *testing.T) {
 }
 
 func TestVaultSyncLoop_ActiveProfileNotIdleClosed(t *testing.T) {
-	// Even with IdleCloseTicks=1, an actively-draining profile resets its idle
-	// counter and is never closed.
+	// A profile that drains each tick refreshes its last-activity time, so even
+	// with a tiny IdleCloseAfter it is never closed.
 	svc := &MockVaultService{}
 	svc.EXPECT().Sync(mock.Anything).Return(5, true, nil).Once() // full -> loop
 	svc.EXPECT().Sync(mock.Anything).Return(0, false, nil).Once()
@@ -535,13 +542,17 @@ func TestVaultSyncLoop_ActiveProfileNotIdleClosed(t *testing.T) {
 	svc.EXPECT().Sync(mock.Anything).Return(0, false, nil).Once()
 	svc.EXPECT().Close().Return(nil).Once()
 
+	cur := time.Unix(1_000_000, 0)
 	loop := NewVaultSyncLoop(SyncLoopConfig{
-		IdleCloseTicks: 1,
+		IdleCloseAfter: 5 * time.Minute,
 		Profiles:       func() []string { return []string{"work"} },
 		Service:        func(p string) (VaultService, error) { return svc, nil },
 	})
-	loop.Tick(context.Background()) // drains (active), idle reset
-	loop.Tick(context.Background()) // drains (active), idle reset
+	loop.now = func() time.Time { return cur }
+
+	loop.Tick(context.Background()) // drains, lastActivity=t0
+	cur = cur.Add(10 * time.Minute)
+	loop.Tick(context.Background()) // drains, lastActivity refreshed
 	svc.AssertNumberOfCalls(t, "Sync", 4)
 	svc.AssertNumberOfCalls(t, "Close", 0)
 	loop.Close()
@@ -549,7 +560,7 @@ func TestVaultSyncLoop_ActiveProfileNotIdleClosed(t *testing.T) {
 }
 
 func TestVaultSyncLoop_IdleCloseDisabled(t *testing.T) {
-	// IdleCloseTicks=0 (default) holds a profile's service for the server
+	// IdleCloseAfter=0 (default) holds a profile's service for the server
 	// lifetime even when idle.
 	svc := &MockVaultService{}
 	svc.EXPECT().Sync(mock.Anything).Return(0, false, nil).Times(3)
@@ -573,11 +584,11 @@ func TestVaultSyncLoop_IdleCloseDisabled(t *testing.T) {
 	svc.AssertNumberOfCalls(t, "Close", 1)
 }
 
-func TestVaultSyncLoop_BusySiblingDoesNotChurnIdleProfile(t *testing.T) {
-	// A busy (draining) sibling keeps the scheduler in immediate-rerun mode; an
-	// idle profile's service must NOT be idle-closed/rebuild-cycled in that
-	// window, even with a tiny IdleCloseTicks. Idle counters advance only on a
-	// fully-idle tick.
+func TestVaultSyncLoop_BusySiblingDoesNotStarveIdleClose(t *testing.T) {
+	// A perpetually-draining sibling keeps the scheduler in immediate-rerun
+	// mode. Idle-close is based on per-profile wall-clock elapsed time, so a
+	// quiescent profile still gets idle-closed once its OWN idle timeout elapses
+	// — it is neither churned by fast ticks nor starved by the busy sibling.
 	var aCalls atomic.Int32
 	svcA := &MockVaultService{}
 	// A drains every tick: full batch (-> loop) then a non-full batch, so
@@ -594,8 +605,9 @@ func TestVaultSyncLoop_BusySiblingDoesNotChurnIdleProfile(t *testing.T) {
 	svcB.EXPECT().Sync(mock.Anything).Return(0, false, nil) // unlimited: idle each tick
 	svcB.EXPECT().Close().Return(nil).Once()
 
+	cur := time.Unix(1_000_000, 0)
 	loop := NewVaultSyncLoop(SyncLoopConfig{
-		IdleCloseTicks: 1, // B would close after a single idle tick
+		IdleCloseAfter: 5 * time.Minute,
 		Profiles:       func() []string { return []string{"a", "b"} },
 		Service: func(p string) (VaultService, error) {
 			if p == "a" {
@@ -604,14 +616,15 @@ func TestVaultSyncLoop_BusySiblingDoesNotChurnIdleProfile(t *testing.T) {
 			return svcB, nil
 		},
 	})
+	loop.now = func() time.Time { return cur }
 
-	loop.Tick(context.Background()) // A drains (rerun); B idle but not advanced
-	loop.Tick(context.Background())
-	loop.Tick(context.Background())
+	loop.Tick(context.Background()) // A drains; B idle, lastActivity=t0
+	cur = cur.Add(6 * time.Minute)
+	loop.Tick(context.Background()) // A drains; B idle 6m >= 5m -> closed
 
-	// A's immediate re-runs must not have churned B's service.
-	svcB.AssertNumberOfCalls(t, "Close", 0)
-	loop.Close()
+	// B was idle-closed despite A's immediate re-runs (not starved).
 	svcB.AssertNumberOfCalls(t, "Close", 1)
+	svcA.AssertNumberOfCalls(t, "Close", 0)
+	loop.Close()
 	svcA.AssertNumberOfCalls(t, "Close", 1)
 }
