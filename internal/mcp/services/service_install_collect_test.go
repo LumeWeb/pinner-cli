@@ -684,4 +684,28 @@ func TestInstallManagedService(t *testing.T) {
 		require.True(t, svc.calledStop)
 		require.False(t, svc.calledStart, "Start must not run when Stop fails")
 	})
+
+	t.Run("only start-error aborts and other install errors propagate", func(t *testing.T) {
+		svc := &fakeManagedService{installErr: errors.New("other failure")}
+		err := installManagedService(context.Background(), svc)
+		require.Error(t, err)
+		require.False(t, svc.calledStart, "Start must not run on a non-already-exists install error")
+	})
+
+	t.Run("already-installed install error restarts the stopped service", func(t *testing.T) {
+		svc := &fakeManagedService{status: service.Status{Installed: true}, installErr: service.ErrServiceAlreadyExists}
+		err := installManagedService(context.Background(), svc)
+		require.NoError(t, err)
+		require.True(t, svc.calledStop, "the installed service must be stopped before the failed reinstall")
+		require.True(t, svc.calledStart, "the stopped service must be restarted so its endpoint stays up")
+	})
+
+	t.Run("already-installed install error without stop propagates", func(t *testing.T) {
+		// A backend that reports ErrServiceAlreadyExists without the caller
+		// having stopped anything must not silently succeed.
+		svc := &fakeManagedService{installErr: service.ErrServiceAlreadyExists}
+		err := installManagedService(context.Background(), svc)
+		require.Error(t, err)
+		require.False(t, svc.calledStart)
+	})
 }

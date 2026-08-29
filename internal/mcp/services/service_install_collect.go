@@ -154,12 +154,26 @@ func installManagedService(ctx context.Context, svc service.Service) error {
 	if err != nil {
 		return fmt.Errorf("query managed service status before install: %w", err)
 	}
+	stopped := false
 	if status.Installed {
 		if err := svc.Stop(ctx); err != nil {
 			return fmt.Errorf("stop installed service before reinstall: %w", err)
 		}
+		stopped = true
 	}
 	if err := svc.Install(ctx); err != nil {
+		// The Windows SCM refuses to re-register an existing service, so on an
+		// already-installed service Install reports ErrServiceAlreadyExists
+		// instead of reinstalling. We stopped that service above; bring it back
+		// up so its endpoint stays reachable rather than failing with the unit
+		// left stopped. systemd and launchd reinstall idempotently and never
+		// hit this branch.
+		if errors.Is(err, service.ErrServiceAlreadyExists) && stopped {
+			if sErr := svc.Start(ctx); sErr != nil {
+				return fmt.Errorf("restart already-installed service: %v (install: %w)", sErr, err)
+			}
+			return nil
+		}
 		return fmt.Errorf("install managed service: %w", err)
 	}
 	if err := svc.Start(ctx); err != nil {

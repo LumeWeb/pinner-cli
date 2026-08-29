@@ -71,7 +71,10 @@ func (s *windowsService) Install(ctx context.Context) error {
 
 	if existing, err := m.OpenService(s.name); err == nil {
 		existing.Close()
-		return fmt.Errorf("service %s already exists", s.name)
+		// Reported as a sentinel so callers can treat a pre-existing service as
+		// already installed (and restart it) instead of surfacing a platform
+		// string check.
+		return ErrServiceAlreadyExists
 	}
 
 	// mgr.CreateService internally quotes the binary path (via appendCmdLine)
