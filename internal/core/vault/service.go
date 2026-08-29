@@ -125,16 +125,19 @@ type VaultService interface {
 	// least one file.
 	TagList(ctx context.Context) ([]string, error)
 
-	// Share generates a time-limited sia:// share URL for a file.
+	// Share generates a time-limited share URL for a file. The URL is an
+	// https:// pre-signed indexer URL carrying the object's encryption key in
+	// its fragment (#encryption_key=…). It is consumable directly by
+	// ShareAccept.
 	Share(ctx context.Context, vaultPath string, validUntil time.Time) (string, error)
 
-	// ShareAccept resolves an expiring sia:// share URL issued by another
-	// agent/profile, downloads the shared content via the accepting profile's
-	// SDK, and pins a self-contained COPY into this profile's vault at
-	// vaultPath (A2A copy-once pin-to-indexer). It appends an audit row to the
-	// share ledger. The share URL is read-only and time-limited: none of its
-	// content is shared by reference — the accepting profile owns a new copy.
-	// metadata is forwarded to Put, so a "tags" key is promoted to durable
+	// ShareAccept resolves a share URL issued by another agent/profile,
+	// fetches the slab metadata (no content download), and pins slab
+	// references into this profile's indexer account — a metadata-only
+	// operation that completes in seconds regardless of file size. The
+	// accepting profile owns an independent object referencing the same Sia
+	// sectors. It appends an audit row to the share ledger. metadata is
+	// forwarded to the sealed object, so a "tags" key is promoted to durable
 	// tags at write time (same as vault_put_file).
 	// Returns the newly-created File record.
 	ShareAccept(ctx context.Context, vaultPath, shareURL, targetPrincipal string, metadata map[string]any) (*File, error)
