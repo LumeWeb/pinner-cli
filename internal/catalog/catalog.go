@@ -382,8 +382,15 @@ func (c *catalogImpl) Invoke(ctx context.Context, name string, input map[string]
 	}
 
 	// Safety: a destructive operation invoked by a model needs explicit human
-	// confirmation. Signal that via the ErrConfirmRequired sentinel.
-	if op.Safety() == SafetyDestructive && actor == ActorModel {
+	// confirmation. If the operation declares an agent-settable `confirm` arg
+	// (a bool "confirm" that is NOT AgentRequired) and the model has supplied
+	// that confirmation (confirm=true), the confirmation is already present and
+	// the op runs headless (e.g. vault_version_restore's confirm=true is the
+	// rollback contract). Ops with no confirm arg, or with an AgentRequired
+	// confirm that by contract only a human sets (ipns_keys_delete,
+	// admin_platform_domains_delete), still return the ErrConfirmRequired
+	// sentinel so the caller surfaces a confirm hand-off.
+	if op.Safety() == SafetyDestructive && actor == ActorModel && !destructiveConfirmSatisfied(op, input) {
 		return nil, fmt.Errorf("operation %q is destructive: %w", name, ErrConfirmRequired)
 	}
 
@@ -401,6 +408,25 @@ func (c *catalogImpl) Invoke(ctx context.Context, name string, input map[string]
 		return nil, fmt.Errorf("operation %q: %w", name, err)
 	}
 	return h.Execute(ctx, normalized)
+}
+
+// destructiveConfirmSatisfied reports whether a destructive operation invoked
+// by a model already carries explicit confirmation in the supplied input. An
+// op satisfies it when it declares a bool `confirm` argument that is
+// agent-settable (NOT AgentRequired — AgentRequired marks "only a human sets
+// this", which a model can never self-satisfy) and the input's confirm is
+// truthy. Ops with no confirm arg, or with an AgentRequired confirm, return
+// false so the caller surfaces the confirm hand-off.
+func destructiveConfirmSatisfied(op Operation, input map[string]any) bool {
+	for _, a := range op.Args() {
+		if a.Name != "confirm" || a.AgentRequired {
+			continue
+		}
+		if a.Type == ArgTypeBool {
+			return BoolArg(input, "confirm", false)
+		}
+	}
+	return false
 }
 
 // NormalizeOperationInput coerce-renders an operation's raw input into its

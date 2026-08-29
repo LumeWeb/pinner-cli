@@ -28,17 +28,17 @@ func stub(name, title, summary, desc, agentDesc, category string, safety Safety,
 		args = []OperationArg{{Name: "cid", Type: ArgTypeString, Required: true}}
 	}
 	return NewOperation(OperationSpec{
-		Name:             name,
-		Title:            title,
-		Summary:          summary,
-		Description:      desc,
-		MCPTargets:       MCPTargets(Fallback(agentDesc)),
-		Args:             args,
-		Safety:           safety,
-		Interaction:      inter,
-		Visibility:       vis,
-		Category:         category,
-		Handler:          markerHandler{marker: "ran:" + name},
+		Name:        name,
+		Title:       title,
+		Summary:     summary,
+		Description: desc,
+		MCPTargets:  MCPTargets(Fallback(agentDesc)),
+		Args:        args,
+		Safety:      safety,
+		Interaction: inter,
+		Visibility:  vis,
+		Category:    category,
+		Handler:     markerHandler{marker: "ran:" + name},
 	})
 }
 
@@ -388,12 +388,61 @@ func TestInvokeRefusesAppOnlyForModel(t *testing.T) {
 
 func TestInvokeDestructiveForModelReturnsConfirmRequired(t *testing.T) {
 	c := newTestCatalog(t)
+	// "pin remove" declares no confirm arg, so a model can never self-confirm
+	// it: it must still be refused with ErrConfirmRequired.
 	_, err := c.Invoke(context.Background(), "pin remove", map[string]any{}, ActorModel)
 	if err == nil {
 		t.Fatal("Destructive op for ActorModel should error")
 	}
 	if !errors.Is(err, ErrConfirmRequired) {
 		t.Fatalf("err = %v, want errors.Is(err, ErrConfirmRequired)", err)
+	}
+}
+
+// TestInvokeDestructiveConfirmSatisfiesGate verifies a destructive op with an
+// agent-settable confirm arg runs headless for a model once confirm=true is
+// supplied, while an absent confirm still returns ErrConfirmRequired.
+func TestInvokeDestructiveConfirmSatisfiesGate(t *testing.T) {
+	c := newTestCatalog(t)
+	op := stub("pin force", "Force Remove", "force remove a pin", "long", "", "pinning",
+		SafetyDestructive, InteractionAgentSafe, VisibilityBoth,
+		OperationArg{Name: "cid", Type: ArgTypeString, Required: true},
+		OperationArg{Name: "confirm", Type: ArgTypeBool, Required: true})
+	if err := c.Add(op); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	// confirm=true supplies the confirmation: the op runs headless.
+	if _, err := c.Invoke(context.Background(), "pin force", map[string]any{"cid": "x", "confirm": true}, ActorModel); err != nil {
+		t.Fatalf("Invoke(destructive, model, confirm=true) should run: %v", err)
+	}
+	// confirm absent -> still refused with ErrConfirmRequired.
+	_, err := c.Invoke(context.Background(), "pin force", map[string]any{"cid": "x"}, ActorModel)
+	if !errors.Is(err, ErrConfirmRequired) {
+		t.Fatalf("err = %v, want errors.Is(err, ErrConfirmRequired)", err)
+	}
+	// explicit confirm=false is not confirmation.
+	_, err = c.Invoke(context.Background(), "pin force", map[string]any{"cid": "x", "confirm": false}, ActorModel)
+	if !errors.Is(err, ErrConfirmRequired) {
+		t.Fatalf("err = %v, want errors.Is(err, ErrConfirmRequired)", err)
+	}
+}
+
+// TestInvokeDestructiveAgentRequiredConfirmNotSelfConfirmable verifies an
+// AgentRequired confirm (MCP "only a human sets this" contract) is refused for
+// a model even when the model passes confirm=true.
+func TestInvokeDestructiveAgentRequiredConfirmNotSelfConfirmable(t *testing.T) {
+	c := newTestCatalog(t)
+	op := stub("key del", "Delete Key", "delete a key", "long", "", "keys",
+		SafetyDestructive, InteractionAgentSafe, VisibilityBoth,
+		OperationArg{Name: "id", Type: ArgTypeString, Required: true},
+		OperationArg{Name: "confirm", Type: ArgTypeBool, AgentRequired: true})
+	if err := c.Add(op); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	_, err := c.Invoke(context.Background(), "key del", map[string]any{"id": "k1", "confirm": true}, ActorModel)
+	if !errors.Is(err, ErrConfirmRequired) {
+		t.Fatalf("err = %v, want errors.Is(err, ErrConfirmRequired) for AgentRequired confirm", err)
 	}
 }
 
@@ -1313,5 +1362,3 @@ func TestNullableBoolSchema(t *testing.T) {
 		}
 	}
 }
-
-
