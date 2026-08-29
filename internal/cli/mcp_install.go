@@ -530,7 +530,12 @@ func buildMcpTunnelSteps(realCmd *cli.Command, ui InstallUI) []wizard.Step[*Inst
 		wrap("Tunnel-specific configuration", tunnelStepAt(inner, 1), tunnelConfigSeeded,
 			func(s *InstallState) bool { return !httpTunnelSkipped(s) && hasTunnelProvider(s) },
 			func(s *InstallState) bool { return configStepSkipIfHeadlessReRun(realCmd, s) },
-			nil, nil),
+			func(ctx context.Context, s *InstallState, _ *mcpadapter.ServiceInstallState) error {
+				if !effectiveManagedService(realCmd.IsSet("service"), s.UseService) {
+					return nil
+				}
+				return mcpadapter.StopManagedServiceIfInstalled(ctx)
+			}, nil),
 		// The env-write step NEVER skips for http (only for a non-http install
 		// or a tapped serviceEnvErr). On the FRESH path it writes the env from
 		// the service state and (via preWrite) sets EnvFileCreated + applies

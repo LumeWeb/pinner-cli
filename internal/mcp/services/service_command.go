@@ -658,6 +658,38 @@ func RestartManagedService(ctx context.Context, cmd *cli.Command, s *ServiceInst
 	return svc.Restart(ctx)
 }
 
+// newServiceForControl creates a minimal service backed by the host init system
+// for Stop/Status-only operations (no env file or provider needed). It is a
+// package-level seam so tests can substitute a fake without touching the live
+// init system (mirrors the ResolveNgrokSDKURL pattern).
+var newServiceForControl = func() (service.Service, error) {
+	return service.New(service.Config{
+		Name:     defaultMCPServiceName,
+		UserMode: true,
+	})
+}
+
+// StopManagedServiceIfInstalled stops the managed MCP service when it is
+// already installed and active. It builds a minimal service.Config (only Name
+// and UserMode are needed for Stop/Status), so it works before the env file
+// or tunnel provider is known. Callers use this to free resources the running
+// service holds (e.g. an ngrok tunnel endpoint) before the install wizard
+// probes them, then installManagedService reinstalls and starts the service.
+func StopManagedServiceIfInstalled(ctx context.Context) error {
+	svc, err := newServiceForControl()
+	if err != nil {
+		return err
+	}
+	status, err := svc.Status(ctx)
+	if err != nil {
+		return fmt.Errorf("query managed service status: %w", err)
+	}
+	if !status.Installed {
+		return nil
+	}
+	return svc.Stop(ctx)
+}
+
 // serviceConfigForInstall builds the service.Config for the managed MCP
 // service: the pinner executable run as `pinner mcp`, referencing the tunnel
 // credentials via envFile (a path). Each platform backend chooses its own

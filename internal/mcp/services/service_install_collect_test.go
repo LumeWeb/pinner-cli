@@ -652,6 +652,55 @@ func (f *fakeManagedService) Stop(_ context.Context) error                     {
 func (f *fakeManagedService) Install(_ context.Context) error                  { return f.installErr }
 func (f *fakeManagedService) Start(_ context.Context) error                    { f.calledStart = true; return f.startErr }
 
+func TestStopManagedServiceIfInstalled(t *testing.T) {
+	t.Run("not installed is a no-op", func(t *testing.T) {
+		fake := &fakeManagedService{} // Status returns zero: not installed
+		orig := newServiceForControl
+		newServiceForControl = func() (service.Service, error) { return fake, nil }
+		defer func() { newServiceForControl = orig }()
+
+		err := StopManagedServiceIfInstalled(context.Background())
+		require.NoError(t, err)
+		require.False(t, fake.calledStop, "no Stop on a service that is not installed")
+	})
+
+	t.Run("installed service is stopped", func(t *testing.T) {
+		fake := &fakeManagedService{status: service.Status{Installed: true}}
+		orig := newServiceForControl
+		newServiceForControl = func() (service.Service, error) { return fake, nil }
+		defer func() { newServiceForControl = orig }()
+
+		err := StopManagedServiceIfInstalled(context.Background())
+		require.NoError(t, err)
+		require.True(t, fake.calledStop, "an installed service must be stopped")
+	})
+
+	t.Run("status error propagates", func(t *testing.T) {
+		fake := &fakeManagedService{statusErr: errors.New("probe failed")}
+		orig := newServiceForControl
+		newServiceForControl = func() (service.Service, error) { return fake, nil }
+		defer func() { newServiceForControl = orig }()
+
+		err := StopManagedServiceIfInstalled(context.Background())
+		require.Error(t, err)
+		require.False(t, fake.calledStop)
+	})
+
+	t.Run("stop error propagates", func(t *testing.T) {
+		fake := &fakeManagedService{
+			status:  service.Status{Installed: true},
+			stopErr: errors.New("stop failed"),
+		}
+		orig := newServiceForControl
+		newServiceForControl = func() (service.Service, error) { return fake, nil }
+		defer func() { newServiceForControl = orig }()
+
+		err := StopManagedServiceIfInstalled(context.Background())
+		require.Error(t, err)
+		require.True(t, fake.calledStop)
+	})
+}
+
 func TestInstallManagedService(t *testing.T) {
 	t.Run("fresh install skips stop then installs and starts", func(t *testing.T) {
 		svc := &fakeManagedService{} // Status returns zero-value: not installed

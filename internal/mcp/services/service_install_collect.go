@@ -74,6 +74,19 @@ func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 		// bootstrap so any tunnel credential the user supplies is persisted to
 		// the last-resort store and auto-detected on later runs.
 		cfgMgr := serviceConfigManager()
+
+		// Stop a running managed service before the wizard or bootstrap probes
+		// tunnel resources (e.g. ngrok's ResolveNgrokSDKURL opens a temp tunnel
+		// that conflicts with the one the running service holds, ERR_NGROK_334).
+		// installManagedService reinstalls and starts it after the env file is
+		// written. Only needed when wantService is true (the only path that
+		// leaves a service running between runs).
+		if wantService {
+			if err := StopManagedServiceIfInstalled(ctx); err != nil {
+				return nil, false, fmt.Errorf("stop managed service before config: %w", err)
+			}
+		}
+
 		if cmd.String(serviceTunnelFlag) != "" {
 			if err := bootstrapServiceEnvironment(cmd, envFile, cfgMgr); err != nil {
 				return nil, false, err
