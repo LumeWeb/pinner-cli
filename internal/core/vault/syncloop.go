@@ -291,10 +291,12 @@ func (l *VaultSyncLoop) Tick(ctx context.Context) *time.Duration {
 	}
 	l.mu.Unlock()
 
-	// A drained (full-batch) profile is active: it resets its idle counter and
-	// requests an immediate scheduler re-run. A non-drained profile is idle and
-	// advances its idle counter (possibly idle-closing its service to bound
-	// open handles).
+	// Draining every accessible profile. A profile that drained a full batch is
+	// active: it resets its idle counter and requests an immediate scheduler
+	// re-run. Idle counters are NOT advanced here — they advance only on a
+	// fully-idle tick (below), so a busy sibling's immediate re-runs (which can
+	// fire ticks far faster than the idle interval) never churn a quiescent
+	// vault's service.
 	rerun := false
 	for _, p := range profiles {
 		if err := ctx.Err(); err != nil {
@@ -308,14 +310,17 @@ func (l *VaultSyncLoop) Tick(ctx context.Context) *time.Duration {
 		if drainService(ctx, svc) {
 			rerun = true
 			l.resetIdle(p)
-		} else {
-			l.maybeCloseIdle(p, svc)
 		}
 	}
 	if rerun {
+		// The scheduler will re-run immediately; do not advance idle counters,
+		// so a busy peer's short cycles cannot idle-close a quiescent vault.
 		zero := time.Duration(0)
 		return &zero
 	}
+	// Fully-idle tick (the true idle cadence): advance every cached profile's
+	// idle counter and idle-close those past IdleCloseTicks.
+	l.advanceIdleAndClose()
 	return nil
 }
 
@@ -351,25 +356,28 @@ func (l *VaultSyncLoop) resetIdle(profile string) {
 	l.idle[profile] = 0
 }
 
-// maybeCloseIdle advances a profile's idle-tick counter and, once it reaches
-// cfg.IdleCloseTicks consecutive idle ticks, closes and drops that profile's
-// cached service (releasing its SDK/DB handle). The service is rebuilt lazily
-// by ensureService on the next tick that needs it. It returns true when the
-// service was closed. A non-positive IdleCloseTicks never closes.
-func (l *VaultSyncLoop) maybeCloseIdle(profile string, svc VaultService) bool {
+// advanceIdleAndClose advances every cached profile's idle counter by one and
+// closes each whose counter reaches cfg.IdleCloseTicks. It is called only on a
+// fully-idle tick — the true idle cadence — so an increment corresponds to one
+// real idle interval, independent of sibling-triggered immediate re-runs
+// (which, left unguarded, would drive a quiescent profile's counter to
+// IdleCloseTicks in seconds and churn its SDK/DB rebuild/close cycle). A
+// non-positive IdleCloseTicks never closes. Services are rebuilt lazily by
+// ensureService on the next tick that needs them.
+func (l *VaultSyncLoop) advanceIdleAndClose() {
 	if l.cfg.IdleCloseTicks <= 0 {
-		return false
+		return
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.idle[profile]++
-	if l.idle[profile] >= l.cfg.IdleCloseTicks {
-		_ = svc.Close()
-		delete(l.svcs, profile)
-		delete(l.idle, profile)
-		return true
+	for p, svc := range l.svcs {
+		l.idle[p]++
+		if l.idle[p] >= l.cfg.IdleCloseTicks {
+			_ = svc.Close()
+			delete(l.svcs, p)
+			delete(l.idle, p)
+		}
 	}
-	return false
 }
 
 // drainService syncs one VaultService, looping while the fetched batch is full
