@@ -53,11 +53,11 @@ type SyncLoopConfig struct {
 // dropped. Shutdown cancels all timers, aborts in-flight ticks via the shared
 // context, and waits for them to finish.
 type ServiceScheduler struct {
-	mu       sync.Mutex
-	workers  map[string]*schedulerWorker
-	cancel   context.CancelFunc
-	started  bool
-	wg       sync.WaitGroup
+	mu      sync.Mutex
+	workers map[string]*schedulerWorker
+	cancel  context.CancelFunc
+	started bool
+	wg      sync.WaitGroup
 }
 
 type schedulerWorker struct {
@@ -253,8 +253,8 @@ func (s *ServiceScheduler) runTick(ctx context.Context, w *schedulerWorker) *tim
 type VaultSyncLoop struct {
 	cfg SyncLoopConfig
 
-	mu     sync.Mutex
-	svcs   map[string]VaultService
+	mu   sync.Mutex
+	svcs map[string]VaultService
 	// lastActivity records, per profile, the last real wall-clock time it
 	// drained a full batch (built lazily to now on first appearance). Idle-close
 	// is computed from this plus the current time, so it is independent of tick

@@ -258,7 +258,7 @@ func TestVaultSyncLoop_DrainsFullBatchesAndRequestsRerun(t *testing.T) {
 	var serviceCalls atomic.Int32
 	loop := NewVaultSyncLoop(SyncLoopConfig{
 		Profiles: func() []string { return []string{"work"} },
-		Service: func(p string) (VaultService, error) { serviceCalls.Add(1); return msvc, nil },
+		Service:  func(p string) (VaultService, error) { serviceCalls.Add(1); return msvc, nil },
 	})
 
 	d := loop.Tick(context.Background())
@@ -282,7 +282,7 @@ func TestVaultSyncLoop_IdleTick(t *testing.T) {
 
 	loop := NewVaultSyncLoop(SyncLoopConfig{
 		Profiles: func() []string { return []string{"work"} },
-		Service: func(p string) (VaultService, error) { return msvc, nil },
+		Service:  func(p string) (VaultService, error) { return msvc, nil },
 	})
 	if d := loop.Tick(context.Background()); d != nil {
 		t.Fatalf("idle tick must return nil, got %v", d)
@@ -301,7 +301,7 @@ func TestVaultSyncLoop_ReusesServiceAcrossIdleTicks(t *testing.T) {
 	var serviceCalls atomic.Int32
 	loop := NewVaultSyncLoop(SyncLoopConfig{
 		Profiles: func() []string { return []string{"work"} },
-		Service: func(p string) (VaultService, error) { serviceCalls.Add(1); return msvc, nil },
+		Service:  func(p string) (VaultService, error) { serviceCalls.Add(1); return msvc, nil },
 	})
 
 	loop.Tick(context.Background())
@@ -429,7 +429,7 @@ func TestVaultSyncLoop_SyncError(t *testing.T) {
 
 	loop := NewVaultSyncLoop(SyncLoopConfig{
 		Profiles: func() []string { return []string{"work"} },
-		Service: func(p string) (VaultService, error) { return msvc, nil },
+		Service:  func(p string) (VaultService, error) { return msvc, nil },
 	})
 	if d := loop.Tick(context.Background()); d != nil {
 		t.Fatalf("error tick must return nil, got %v", d)
@@ -466,7 +466,7 @@ func TestVaultSyncLoopTicker_Integration(t *testing.T) {
 	var ticks atomic.Int32
 	loop := NewVaultSyncLoop(SyncLoopConfig{
 		Profiles: func() []string { return nil }, // no accessible profiles
-		Service: func(p string) (VaultService, error) { return nil, nil },
+		Service:  func(p string) (VaultService, error) { return nil, nil },
 	})
 	defer loop.Close()
 	s := NewServiceScheduler()
@@ -488,7 +488,6 @@ func TestVaultSyncLoopTicker_Integration(t *testing.T) {
 	cancel()
 	s.Shutdown()
 }
-
 
 func TestVaultSyncLoop_IdleClosesServiceAfterIdleDuration(t *testing.T) {
 	// IdleCloseAfter=10m: an idle profile's service is closed once its REAL
