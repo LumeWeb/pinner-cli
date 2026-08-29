@@ -43,19 +43,6 @@ type sdkClient interface {
 	AppKey() types.PrivateKey
 }
 
-// byteCounter is an io.Writer that tallies the total bytes written to it. It
-// is used in ShareAccept to measure the true size of a streamed shared object
-// (which the Sia SDK exposes only as an io.ReadCloser) without buffering it in
-// memory.
-type byteCounter struct {
-	n *int64
-}
-
-func (c *byteCounter) Write(p []byte) (int, error) {
-	*c.n += int64(len(p))
-	return len(p), nil
-}
-
 // vaultService implements VaultService.
 type vaultService struct {
 	db     *gorm.DB
@@ -80,6 +67,11 @@ type vaultService struct {
 	ftsMu      sync.Mutex
 	ftsChecked bool
 	ftsOK      bool
+
+	// sharedObjectFn overrides the default app.Client.SharedObject call used
+	// in ShareAccept. When nil, an app.Client is built from indexerURL. Tests
+	// inject it to serve slab metadata without an HTTP server.
+	sharedObjectFn func(ctx context.Context, shareURL string) (slabs.SharedObject, []byte, error)
 }
 
 // ensureSDK returns the Sia SDK, building it (and hitting the network) only on
@@ -1063,7 +1055,9 @@ func (s *vaultService) Remove(ctx context.Context, vaultPath string) error {
 	return nil
 }
 
-// Share generates a time-limited sia:// share URL for a file.
+// Share generates a time-limited share URL for a file. The URL is an https://
+// pre-signed indexer URL carrying the object's encryption key in its fragment
+// (#encryption_key=…). It is consumable directly by ShareAccept.
 func (s *vaultService) Share(ctx context.Context, vaultPath string, validUntil time.Time) (string, error) {
 	vp, err := ParseVaultPath(vaultPath)
 	if err != nil {
@@ -1092,15 +1086,15 @@ func (s *vaultService) Share(ctx context.Context, vaultPath string, validUntil t
 		return "", fmt.Errorf("failed to create share URL: %w", err)
 	}
 
-	return NormalizeShareURL(shareURL), nil
+	return shareURL, nil
 }
 
-// ShareAccept implements the A2A copy-once pin-to-indexer primitive. The SDK's
-// share URL is a time-limited, read-only bearer of a single object's content;
-// local SQLite cannot gate a permissionless Sia blob, so accepting a share
-// means resolving it and pinning a SELF-CONTAINED copy into this profile's
-// vault (never a reference). A write-only audit row is appended to the share
-// ledger recording the accept.
+// ShareAccept implements the A2A slab-reference pin primitive. The share URL
+// is a time-limited, read-only bearer of a single object's content; accepting
+// a share fetches only the slab metadata (no content download) and pins those
+// slab references into the accepting profile's indexer account. The accepting
+// profile owns an independent object pointing at the same Sia sectors — no
+// data is transferred. A write-only audit row is appended to the share ledger.
 func (s *vaultService) ShareAccept(ctx context.Context, vaultPath, shareURL, targetPrincipal string, metadata map[string]any) (*File, error) {
 	vp, err := ParseVaultPath(vaultPath)
 	if err != nil {
@@ -1121,86 +1115,192 @@ func (s *vaultService) ShareAccept(ctx context.Context, vaultPath, shareURL, tar
 		return nil, rerr
 	}
 
+// Rewrite the agent-supplied share URL to the profile's configured indexer
+	// origin (scheme + host). The path, query, and fragment (which carries
+	// the encryption key) are preserved. This guarantees the HTTP GET issued
+	// by app.Client.SharedObject always targets the trusted indexer,
+	// eliminating SSRF regardless of what host the agent supplied.
+	resolvedURL, err := resolveShareURL(shareURL, s.indexerURL)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch the shared object's slab metadata + encryption key via a metadata-
+	// only HTTP GET. app.SharedObject parses the #encryption_key fragment,
+	// hits the shared URL (pre-signed), and returns the slab slices + 32-byte
+	// key. No content is downloaded from Sia hosts.
+	var sharedObj slabs.SharedObject
+	var encryptionKey []byte
+	if s.sharedObjectFn != nil {
+		sharedObj, encryptionKey, err = s.sharedObjectFn(ctx, resolvedURL)
+	} else {
+		appClient := app.NewClient(s.indexerURL)
+		sharedObj, encryptionKey, err = appClient.SharedObject(ctx, resolvedURL)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve shared object: %w", err)
+	}
+	if len(encryptionKey) != 32 {
+		return nil, fmt.Errorf("invalid encryption key length: %d", len(encryptionKey))
+	}
+	var dataKey [32]byte
+	copy(dataKey[:], encryptionKey)
+
 	sdk, err := s.ensureSDK()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Sia SDK: %w", err)
 	}
 
-	// Resolve the share URL. The URL embeds the decryption key, so the
-	// accepting SDK needs no extra secrets.
-	rc, err := sdk.DownloadSharedObject(ctx, shareURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve shared object: %w", err)
-	}
-	defer rc.Close()
-
 	// Refuse to silently overwrite an existing live file at the destination.
-	// Accepting into an existing path would demote its current content + full
-	// version history with no confirmation; the caller must remove the target
-	// first. A missing destination directory is fine (Put creates it).
 	if dirID, derr := s.getDirectoryID(vp.Directory); derr == nil {
 		if _, ferr := s.findCurrentFile(vp.Name, dirID); ferr == nil {
 			return nil, fmt.Errorf("destination already exists (refusing to overwrite): %s", vp.FullPath())
 		}
 	}
 
-	// Stream the shared content straight into Put via a pipe rather than
-	// materializing the whole object in RAM (mirrors VersionRestore), so a
-	// large share cannot OOM the process. The shared object's true size is
-	// unknown until it streams (the Sia SDK exposes DownloadSharedObject only
-	// as an io.ReadCloser), so we count bytes as they pass through the pipe
-	// and reconcile the stored Size on the row + object after the upload. A
-	// failed download is propagated via CloseWithError so Put refuses the
-	// object instead of pinning partial/empty content.
+	// Build the Object from the shared slabs + data key. NewUnsafeObject
+	// creates a fresh Object that references the SAME sectors on the SAME Sia
+	// hosts as the shared object — no content is copied.
+	obj := siastorage.NewUnsafeObject(dataKey, sharedObj.Slabs)
+	size := int64(obj.Size())
 
-	// Pin a self-contained copy into this profile: a NEW object + NEW file
-	// row, fully owned by the accepting profile (never shared by reference).
-	// The shared object's true size is unknown until it streams (the Sia SDK
-	// surfaces DownloadSharedObject only as an io.ReadCloser), so bytes are
-	// counted as they pass through the pipe and the resulting Size is written
-	// back onto the row after the upload; a failed download is propagated via
-	// CloseWithError so Put refuses the object instead of pinning partial or
-	// empty content.
-	pr, pw := io.Pipe()
-	var n int64
-	counter := &byteCounter{n: &n}
-	go func() {
-		// Copy the shared stream into the pipe while tallying the real byte
-		// count (TeeReader feeds the counter as bytes pass through). A failed
-		// download is propagated via CloseWithError so Put refuses the object
-		// rather than pinning partial or empty content.
-		var werr error
-		_, werr = io.Copy(pw, io.TeeReader(rc, counter))
-		pw.CloseWithError(werr)
-	}()
-	f, err := s.Put(ctx, pr, 0, vp.FullPath(), metadata)
+	// Directory + media type + version identity (mirrors Put).
+	dirID, err := s.getOrCreateDirectory(vp.Directory)
 	if err != nil {
-		// Put bailed before draining the pipe (e.g. upload failure): the
-		// writer goroutine would block forever in pw.Write holding the Sia
-		// download open. Unblock it by failing the reader side.
-		pr.CloseWithError(err)
-		return nil, fmt.Errorf("failed to pin shared content copy: %w", err)
+		return nil, err
+	}
+	mediaType := mime.TypeByExtension(filepath.Ext(vp.Name))
+
+	fileID := ""
+	if current, err := s.findCurrentFile(vp.Name, dirID); err == nil {
+		fileID = current.UUID
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("failed to resolve current file for %s: %w", vp.Name, err)
+	}
+	mintedFresh := false
+	if fileID == "" {
+		fileID = uuid.NewString()
+		mintedFresh = true
 	}
 
-	// Reconcile the true size (counted during the stream) onto BOTH the local
-	// row and the sealed object metadata, so stat/ls and cross-device sync all
-	// report the actual byte count rather than the 0 placeholder Put sealed at
-	// upload time (the shared object's size is unknown until it streams).
-	if n > 0 {
-		if f.Size != n {
-			if uerr := s.db.Model(&File{}).Where("id = ?", f.ID).Update("size", n).Error; uerr == nil {
-				f.Size = n
+	now := time.Now().UTC().Format(time.RFC3339)
+	versionID := newVersionID()
+	var curSeq uint
+	s.db.Model(&File{}).Where("uuid = ?", fileID).Select("COALESCE(MAX(seq),0)").Scan(&curSeq)
+	versionSeq := curSeq + 1
+
+	putTags := tagsFromMetadata(metadata)
+	fileMeta := FileMetadata{
+		ID:        fileID,
+		VersionID: versionID,
+		Seq:       versionSeq,
+		Name:      vp.Name,
+		Directory: vp.Directory,
+		MediaType: mediaType,
+		Size:      size,
+		CreatedAt: now,
+		Metadata:  metadata,
+		Status:    FileStatusOK,
+	}
+	if len(putTags) > 0 {
+		if fileMeta.Metadata == nil {
+			fileMeta.Metadata = map[string]any{}
+		}
+		fileMeta.Metadata["tags"] = putTags
+	}
+
+	// Stamp file metadata on the object before pinning so the sealed object
+	// carries the same version_id/seq/tags as the local row (cross-device
+	// sync-down reconstructs the row from this).
+	metaJSON, err := fileMeta.JSON()
+	if err != nil {
+		return nil, err
+	}
+	obj.UpdateMetadata(metaJSON)
+
+	// Pin slab references + object metadata into this profile's indexer
+	// account. PinObject seals the object with the accepting profile's app
+	// key, pins any unpinned slabs (metadata-only, no data transfer), and
+	// records the object. This is idempotent by object ID.
+	if err := sdk.PinObject(ctx, obj); err != nil {
+		return nil, fmt.Errorf("failed to pin shared object: %w", err)
+	}
+
+	objectKey := obj.ID().String()
+
+	// Create the local DB record. This mirrors Put's post-network path:
+	// UUID minting, version tracking, concurrent-create resolution, tag
+	// reconciliation, is_current promotion.
+	userMetaJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+	recSource, recHost, recAgent := WriteContextColumns(metadata)
+	rec := File{
+		UUID:          fileID,
+		Name:          vp.Name,
+		DirectoryID:   dirID,
+		Source:        recSource,
+		Host:          recHost,
+		Agent:         recAgent,
+		IsCurrent:     mintedFresh,
+		ObjectKey:     objectKey,
+		Size:          size,
+		MediaType:     mediaType,
+		Metadata:      datatypes.JSON(userMetaJSON),
+		Status:        FileStatusOK,
+		CreatedAt:     time.Now().UTC(),
+		UpdatedAt:     time.Now().UTC(),
+	}
+
+	const maxAdoptRetries = 4
+	for attempt := 0; attempt < maxAdoptRetries; attempt++ {
+		if mintedFresh {
+			if adopted, aerr := s.adoptPreflight(ctx, &obj, &fileMeta, vp.Name, dirID, &rec); aerr != nil {
+				return nil, fmt.Errorf("failed to adopt concurrent winner: %w", aerr)
+			} else if adopted {
+				fileID = rec.UUID
 			}
 		}
-		if oerr := s.resealObjectSize(ctx, sdk, f.ObjectKey, n); oerr != nil {
-			return nil, fmt.Errorf("failed to update shared copy size in object metadata: %w", oerr)
+
+		err = s.db.Transaction(func(tx *gorm.DB) error {
+			var maxSeq uint
+			if err := tx.Model(&File{}).
+				Where("uuid = ?", rec.UUID).
+				Select("COALESCE(MAX(seq), 0)").
+				Scan(&maxSeq).Error; err != nil {
+				return fmt.Errorf("failed to compute next version seq: %w", err)
+			}
+			if versionSeq > maxSeq {
+				maxSeq = versionSeq
+			}
+			rec.Seq = maxSeq + 1
+			rec.VersionID = versionID
+
+			if err := tx.Create(&rec).Error; err != nil {
+				return err
+			}
+			if len(putTags) > 0 {
+				if rerr := reconcileTagsTx(tx, rec.ID, putTags); rerr != nil {
+					return rerr
+				}
+			}
+			return promoteCurrent(tx, vp.Name, dirID, rec.ID)
+		})
+		if err == nil {
+			break
+		}
+		if !isLiveNameConflict(err) {
+			return nil, fmt.Errorf("failed to store file record: %w", err)
 		}
 	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to store file record after %d attempts: %w", maxAdoptRetries, err)
+	}
 
-	// Append a write-only audit row to the share ledger.
 	if err := s.db.Create(&ShareLedger{
 		SharedVaultPath: vp.FullPath(),
-		ObjectKey:       f.ObjectKey,
+		ObjectKey:       objectKey,
 		Expiry:          nil,
 		TargetPrincipal: targetPrincipal,
 		CreatedAt:       time.Now().UTC(),
@@ -1208,7 +1308,7 @@ func (s *vaultService) ShareAccept(ctx context.Context, vaultPath, shareURL, tar
 		return nil, fmt.Errorf("failed to record share accept in ledger: %w", err)
 	}
 
-	return f, nil
+	return &rec, nil
 }
 
 // VersionList returns every live version row for the file at vaultPath, newest
@@ -1365,39 +1465,6 @@ func (s *vaultService) VersionRestore(ctx context.Context, vaultPath string, ver
 		pw.CloseWithError(s.VersionDownload(ctx, vp.Raw, versionID, pw))
 	}()
 	return s.Put(ctx, pr, row.Size, vp.Raw, meta)
-}
-
-// resealObjectSize re-seals a just-accepted object's FileMetadata with the
-// real byte count and re-pins it in place. ShareAccept streams the shared
-// content into Put with a size placeholder (the Sia SDK exposes the shared
-// object's size only once it streams), so after the stream completes this
-// corrects the sealed Size so cross-device sync-down reports the true size
-// instead of the placeholder.
-func (s *vaultService) resealObjectSize(ctx context.Context, sdk sdkClient, objectKeyHex string, size int64) error {
-	objHash, err := parseHash256(objectKeyHex)
-	if err != nil {
-		return fmt.Errorf("failed to parse object key: %w", err)
-	}
-	obj, err := sdk.Object(ctx, objHash)
-	if err != nil {
-		return fmt.Errorf("failed to fetch object from indexer: %w", err)
-	}
-	var meta FileMetadata
-	if raw := obj.Metadata(); len(raw) > 0 {
-		if m, merr := ParseFileMetadata(raw); merr == nil {
-			meta = m
-		}
-	}
-	meta.Size = size
-	metaJSON, err := meta.JSON()
-	if err != nil {
-		return fmt.Errorf("failed to encode metadata: %w", err)
-	}
-	obj.UpdateMetadata(metaJSON)
-	if perr := sdk.PinObject(ctx, obj); perr != nil {
-		return fmt.Errorf("failed to re-pin object with corrected size: %w", perr)
-	}
-	return nil
 }
 
 // Status reports live vault health and usage. Remote fields come from a real

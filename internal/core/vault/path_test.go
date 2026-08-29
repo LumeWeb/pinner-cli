@@ -267,17 +267,3 @@ func TestScalarPath(t *testing.T) {
 	}
 }
 
-func TestNormalizeShareURL(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"https://sia.example.com/share/abc#key123", "sia://sia.example.com/share/abc#key123"},
-		{"sia://sia.example.com/share/abc", "sia://sia.example.com/share/abc"},
-	}
-	for _, tt := range tests {
-		if got := NormalizeShareURL(tt.input); got != tt.want {
-			t.Errorf("NormalizeShareURL(%q) = %q, want %q", tt.input, got, tt.want)
-		}
-	}
-}

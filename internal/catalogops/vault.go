@@ -957,7 +957,10 @@ func vaultShare(d VaultDeps) catalog.Operation {
 		Name:        "vault_share",
 		Title:       "Share a vault file",
 		Summary:     "Generate a shareable link for a vault file",
-		Description: "Generate a shareable download link for a vault file. Returns the share URL and its expiry time. Control the expiry with the expiry field (e.g. 7d, 30d, 1h, or 0 for never). Does NOT upload or modify the file itself.",
+		Description: "Generate a shareable download link for a vault file. Returns a pre-signed URL and its expiry time. The URL is time-limited and grants read access to a single object. Control the expiry with the expiry field (e.g. 7d, 30d, 1h, or 0 for never). Does NOT upload or modify the file itself.",
+		MCPTargets: catalog.MCPTargets(
+			catalog.Fallback("Generate a share link for a vault file. Returns a time-limited pre-signed https:// URL whose fragment carries the object's encryption key (#encryption_key=…). Pass this URL unchanged to vault_share_accept on another profile to pin slab references — a metadata-only operation that transfers no content. Bound how long the link works with the expiry field (e.g. 7d, 30d, 1h, or 0 for never)."),
+		),
 		Category:    "vault",
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
@@ -1007,15 +1010,18 @@ func vaultShareAccept(d VaultDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
 		Name:        "vault_share_accept",
 		Title:       "Accept a vault share",
-		Summary:     "Accept a share URL and pin a copy",
-		Description: "Accept a time-limited sia:// share URL issued by another agent/profile, download the shared content, and pin a self-contained COPY into this profile's vault at the given path. The accepting profile owns a new object; nothing is shared by reference. An audit row is appended to the share ledger. Read-only, expiring share links only ever yield a copy — there is no persistent grant or access change.",
+		Summary:     "Accept a share URL and pin the shared content",
+		Description: "Accept a time-limited share link for a vault file and pin the referenced content into this profile's vault at the given path. Only the slab references are recorded — the content is not re-downloaded, so it is fast regardless of file size. Returns the newly-pinned file.",
+		MCPTargets: catalog.MCPTargets(
+			catalog.Fallback("Accept a share URL issued by another agent/profile and pin its slab references into this profile's vault. Metadata-only — no content is downloaded from Sia hosts, so it completes quickly regardless of file size. The accepting profile owns an independent object referencing the same sectors, so the content survives even if the sharer deletes theirs. The share URL's scheme and host are rewritten to this profile's indexer origin before any request is made, so the agent never needs to validate or transform the URL. Accepting the same share at different paths creates multiple local rows referencing the same indexer object (like hard-links); PinObject is idempotent, so duplicate accepts of the same slabs are a no-op on the indexer. path is the vault:/ destination for the pinned copy."),
+		),
 		Category:    "vault",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<path>",
 		Args: []catalog.OperationArg{
-			{Name: "share_url", Type: catalog.ArgTypeString, Required: true, Help: "The sia:// share URL to accept", AgentHelp: "The sia:// share URL you received. It is time-limited and grants read access to a single object."},
+			{Name: "share_url", Type: catalog.ArgTypeString, Required: true, Help: "The share URL to accept", AgentHelp: "The https:// share URL you received from vault_share. It is time-limited and carries the encryption key in its fragment (#encryption_key=…). Pass it through unchanged."},
 			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Where to store the accepted copy", AgentHelp: "The vault:/ destination path where the accepted copy should be pinned."},
 			{Name: "tags", Type: catalog.ArgTypeStringSlice, Help: "Tags to apply at write time (repeatable; durable)", AgentHelp: "Tags applied atomically at write time — durable on the sealed object and local tag index. Eliminates the need for a separate vault_tag_add call."},
 			{Name: "target_principal", Type: catalog.ArgTypeString, Help: "Optional principal/source identity recorded in the share ledger"},
