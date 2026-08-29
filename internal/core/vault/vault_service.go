@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/samber/lo"
 	"go.sia.tech/core/types"
 	"go.sia.tech/indexd/api/app"
 	"go.sia.tech/indexd/slabs"
@@ -599,19 +600,10 @@ func (s *vaultService) Search(_ context.Context, f SearchFilter) ([]SearchItem, 
 	if len(f.Tags) > 0 {
 		// AND semantics: a matching file must link to EVERY distinct tag.
 		// Dedupe so COUNT(DISTINCT tags.name) == len(deduped) is exact.
-		want := make([]string, 0, len(f.Tags))
-		seen := map[string]struct{}{}
-		for _, t := range f.Tags {
+		want := lo.Uniq(lo.FilterMap(f.Tags, func(t string, _ int) (string, bool) {
 			n := strings.ToLower(strings.TrimSpace(t))
-			if n == "" {
-				continue
-			}
-			if _, ok := seen[n]; ok {
-				continue
-			}
-			seen[n] = struct{}{}
-			want = append(want, n)
-		}
+			return n, n != ""
+		}))
 		if len(want) > 0 {
 			sub := s.db.Table("tags").
 				Select("ft.file_id").
@@ -648,20 +640,23 @@ func (s *vaultService) Search(_ context.Context, f SearchFilter) ([]SearchItem, 
 		prefix := dir + "/"
 		q = q.Where("(directories.path = ? OR directories.path LIKE ? ESCAPE '\\')", dir, escapeLike(prefix)+"%")
 	}
-	if f.Status != "" {
-		q = q.Where("files.status = ?", f.Status)
-	}
 	if !f.Since.IsZero() {
 		q = q.Where("files.created_at >= ?", f.Since)
 	}
-	if f.Source != "" {
-		q = q.Where("files.source = ?", f.Source)
-	}
-	if f.Host != "" {
-		q = q.Where("files.host = ?", f.Host)
-	}
-	if f.Agent != "" {
-		q = q.Where("files.agent = ?", f.Agent)
+	// Exact-match column filters (ANDed; an empty value is ignored).
+	// Table-driven so adding a new equality filter is one row, not a block.
+	for _, c := range []struct {
+		column string
+		value  string
+	}{
+		{column: "files.status", value: f.Status},
+		{column: "files.source", value: f.Source},
+		{column: "files.host", value: f.Host},
+		{column: "files.agent", value: f.Agent},
+	} {
+		if c.value != "" {
+			q = q.Where(c.column+" = ?", c.value)
+		}
 	}
 
 	// Bound results so a metadata search over a large vault never loads every
@@ -679,20 +674,15 @@ func (s *vaultService) Search(_ context.Context, f SearchFilter) ([]SearchItem, 
 	// Batch-load directory paths in one query so building the full vault path
 	// does not issue a per-result row lookup.
 	dirByID := map[uint]string{}
-	{
-		ids := make([]uint, 0, len(records))
-		for _, rec := range records {
-			if rec.DirectoryID != nil {
-				ids = append(ids, *rec.DirectoryID)
-			}
+	if ids := lo.FilterMap(records, func(rec File, _ int) (uint, bool) {
+		if rec.DirectoryID == nil {
+			return 0, false
 		}
-		if len(ids) > 0 {
-			var dirs []Directory
-			if err := s.db.Where("id IN ?", ids).Find(&dirs).Error; err == nil {
-				for _, d := range dirs {
-					dirByID[d.ID] = d.Path
-				}
-			}
+		return *rec.DirectoryID, true
+	}); len(ids) > 0 {
+		var dirs []Directory
+		if err := s.db.Where("id IN ?", ids).Find(&dirs).Error; err == nil {
+			dirByID = lo.SliceToMap(dirs, func(d Directory) (uint, string) { return d.ID, d.Path })
 		}
 	}
 
