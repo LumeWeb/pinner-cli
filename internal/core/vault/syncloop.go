@@ -17,20 +17,29 @@ const SyncLoopInterval = 10 * time.Second
 // server to keep the active vault's local cache converged with the indexer
 // without an agent needing to call vault_sync explicitly.
 type SyncLoopConfig struct {
-	// Profile resolves the active vault profile and reports whether a
-	// provisioned vault is available (ok=false when no active vault is
-	// configured or the profile has no app key yet). ok=false makes a tick a
-	// silent no-op without building a service. Called once per tick to detect
-	// an active-profile change, so a switch is picked up without restarting the
-	// server.
-	Profile func() (profile string, ok bool)
-	// Service builds a VaultService for the given resolved profile. It is called
-	// only when the active profile changes (or on the first tick), and the
-	// resulting service is REUSED across idle ticks (so a long-running MCP
+	// Profiles returns every registered vault profile the process has access to
+	// (i.e. provisioned with a readable app key), or an empty slice when none.
+	// Passively syncing ALL accessible profiles (not just the active/default
+	// one) keeps every vault pinner can unlock converging with its indexer
+	// while the server runs. Called once per tick so a newly registered,
+	// provisioned, or forgotten profile is picked up without restarting.
+	Profiles func() []string
+	// Service builds a VaultService for the given profile. It is called only
+	// when a profile first appears (or is re-added), and the resulting service
+	// is REUSED across idle ticks for that profile (so a long-running MCP
 	// server does not rebuild the Sia SDK and re-open the SQLite cache every
-	// interval — see VaultSyncLoop). A non-nil error is logged and the tick
-	// ends, retrying on the next idle interval.
+	// interval — see VaultSyncLoop). A non-nil error is logged and that profile
+	// is skipped for the tick, retrying on the next idle interval.
 	Service func(profile string) (VaultService, error)
+	// IdleCloseAfter bounds open SDK/DB handles on machines with many
+	// registered vaults: a profile's cached VaultService is closed after it has
+	// gone this long (wall-clock) without draining a full batch, and is rebuilt
+	// lazily on the next tick that needs it. Measured per profile against real
+	// elapsed time, so a busy sibling's immediate re-runs neither churn a
+	// quiescent profile's service nor starve its idle-close. Active bursts still
+	// reuse the open service. 0 (or negative) keeps a profile's service open for
+	// the server's lifetime.
+	IdleCloseAfter time.Duration
 }
 
 // ServiceScheduler manages background interval-based workers. Each registered
@@ -44,11 +53,11 @@ type SyncLoopConfig struct {
 // dropped. Shutdown cancels all timers, aborts in-flight ticks via the shared
 // context, and waits for them to finish.
 type ServiceScheduler struct {
-	mu       sync.Mutex
-	workers  map[string]*schedulerWorker
-	cancel   context.CancelFunc
-	started  bool
-	wg       sync.WaitGroup
+	mu      sync.Mutex
+	workers map[string]*schedulerWorker
+	cancel  context.CancelFunc
+	started bool
+	wg      sync.WaitGroup
 }
 
 type schedulerWorker struct {
@@ -218,41 +227,49 @@ func (s *ServiceScheduler) runTick(ctx context.Context, w *schedulerWorker) *tim
 	return w.fn(ctx)
 }
 
-// VaultSyncLoop is a ServiceScheduler TickFunc that keeps the active vault
-// profile's local cache converged with the Sia indexer while the MCP server
-// runs. Unlike a per-tick build-and-close, it owns one VaultService across idle
-// ticks and rebuilds it ONLY when the resolved active profile changes, so a
-// long-running server does not re-open the SQLite cache and reconstruct the Sia
-// SDK (with network auth) roughly every interval when the vault is idle.
+// VaultSyncLoop is a ServiceScheduler TickFunc that passively keeps EVERY
+// registered vault profile the process has access to converged with its Sia
+// indexer while the MCP server runs — not just the active/default one. It owns
+// one VaultService per profile across idle ticks and rebuilds a profile's
+// service only when that profile is added or re-provisioned, so a long-running
+// server does not re-open each SQLite cache and reconstruct each Sia SDK (with
+// network auth) roughly every interval when a vault is idle.
 //
 // Each tick:
 //
-//  1. Resolves the active profile (cheap registry read). ok=false (no active
-//     vault, or not yet provisioned) is a silent no-op.
-//  2. Rebuilds the service only if the profile changed; otherwise reuses the
-//     cached one.
-//  3. Calls Sync() in a loop while the returned batch is full, draining all
-//     pending events so a large backlog converges in one burst (mirrors the
-//     catalogops vault_sync handler and the Sia Storage App's batch loop).
+//  1. Enumerates the accessible profiles (cheap registry read).
+//  2. Retires and closes services for profiles no longer accessible (forgotten
+//     or de-provisioned).
+//  3. For each accessible profile, reuses (or builds) its cached service and
+//     drains the profile's pending events via Sync() in a loop while the
+//     returned batch is full (mirrors the catalogops vault_sync handler and the
+//     Sia Storage App's batch loop).
 //
-// It returns Duration(0) when any full batch was drained (so the scheduler
-// re-runs immediately within the same burst, still reusing the open service).
-// Errors are logged and the tick falls back to the idle interval; a background
-// sync that fails (e.g. indexer down) must not panic the server and is retried
-// on the next tick.
+// It returns Duration(0) when any profile drained a full batch (so the
+// scheduler re-runs immediately within the same burst, still reusing the open
+// services). Errors are logged per profile and that profile is retried on the
+// next idle interval; a background sync that fails (e.g. indexer down) must not
+// panic the server.
 type VaultSyncLoop struct {
 	cfg SyncLoopConfig
 
-	mu      sync.Mutex
-	svc     VaultService
-	profile string
+	mu   sync.Mutex
+	svcs map[string]VaultService
+	// lastActivity records, per profile, the last real wall-clock time it
+	// drained a full batch (built lazily to now on first appearance). Idle-close
+	// is computed from this plus the current time, so it is independent of tick
+	// frequency and of sibling-triggered immediate re-runs.
+	lastActivity map[string]time.Time
+	closed       bool
+	// now returns the current wall-clock time; injectable for tests.
+	now func() time.Time
 }
 
-// NewVaultSyncLoop creates a persistent sync loop over cfg. Close it when the
-// server shuts down so the held VaultService (and its SDK/DB handles) is
-// released.
+// NewVaultSyncLoop creates a persistent multi-profile sync loop over cfg.
+// Close it when the server shuts down so every held VaultService (and its
+// SDK/DB handles) is released.
 func NewVaultSyncLoop(cfg SyncLoopConfig) *VaultSyncLoop {
-	return &VaultSyncLoop{cfg: cfg}
+	return &VaultSyncLoop{cfg: cfg, svcs: map[string]VaultService{}, lastActivity: map[string]time.Time{}, now: time.Now}
 }
 
 // Tick implements the ServiceScheduler TickFunc contract. It is safe to call
@@ -260,49 +277,131 @@ func NewVaultSyncLoop(cfg SyncLoopConfig) *VaultSyncLoop {
 // concurrently on shutdown and is serialized through mu).
 func (l *VaultSyncLoop) Tick(ctx context.Context) *time.Duration {
 	if err := ctx.Err(); err != nil {
-		// Shutting down / ctx aborted; bail before building a service.
+		// Shutting down / ctx aborted; bail before building any service.
 		return nil
 	}
-	profile, ok := l.cfg.Profile()
-	if !ok {
-		// No active/provisioned vault; nothing to sync. Silent skip.
-		return nil
-	}
+	profiles := l.cfg.Profiles()
 
+	// Retire services for profiles that are no longer accessible, so a
+	// forgotten/de-provisioned vault stops being synced and its SDK/DB handle
+	// is released.
+	accessible := make(map[string]struct{}, len(profiles))
+	for _, p := range profiles {
+		accessible[p] = struct{}{}
+	}
 	l.mu.Lock()
-	svc := l.svc
-	if svc != nil && l.profile != profile {
-		// Active profile changed; retire the old service and build a fresh one
-		// bound to the new profile.
-		_ = svc.Close()
-		svc = nil
-		l.svc = nil
-		l.profile = ""
+	for p, svc := range l.svcs {
+		if _, ok := accessible[p]; !ok {
+			_ = svc.Close()
+			delete(l.svcs, p)
+			delete(l.lastActivity, p)
+		}
 	}
 	l.mu.Unlock()
 
-	if svc == nil {
-		var err error
-		svc, err = l.cfg.Service(profile)
-		if err != nil {
-			log.Printf("vault sync: skip tick (service build: %v)", err)
+	now := l.now()
+	// Drain every accessible profile. A profile that drained a full batch is
+	// active: it records its last-activity time and requests an immediate
+	// scheduler re-run.
+	rerun := false
+	for _, p := range profiles {
+		if err := ctx.Err(); err != nil {
 			return nil
 		}
-		l.mu.Lock()
-		l.svc = svc
-		l.profile = profile
-		l.mu.Unlock()
+		svc, err := l.ensureService(p)
+		if err != nil {
+			log.Printf("vault sync: skip profile %q (service build: %v)", p, err)
+			continue
+		}
+		if drainService(ctx, svc) {
+			rerun = true
+			l.noteActivity(p, now)
+		}
 	}
+	// Idle-close is evaluated each tick against per-profile REAL elapsed wall
+	// clock time, so a busy sibling's frequent immediate re-runs neither churn a
+	// quiescent profile's service (closing is time-based, not tick-count-based)
+	// nor starve its idle-close (a profile closes once its own idle timeout
+	// elapses, independent of sibling activity).
+	l.closeIdle(now)
+	if rerun {
+		zero := time.Duration(0)
+		return &zero
+	}
+	return nil
+}
 
+// ensureService returns the cached VaultService for a profile, building it on
+// first appearance and caching for reuse across ticks. It returns ErrVaultClosed
+// if the loop has been closed. A freshly built service gets a last-activity time
+// of now so it is not immediately treated as idle.
+func (l *VaultSyncLoop) ensureService(profile string) (VaultService, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
+		return nil, ErrVaultClosed
+	}
+	if svc := l.svcs[profile]; svc != nil {
+		return svc, nil
+	}
+	svc, err := l.cfg.Service(profile)
+	if err != nil {
+		return nil, err
+	}
+	l.svcs[profile] = svc
+	if _, ok := l.lastActivity[profile]; !ok {
+		l.lastActivity[profile] = l.now()
+	}
+	return svc, nil
+}
+
+// noteActivity records the wall-clock time a profile last drained a full batch,
+// so actively-syncing profiles are never considered idle.
+func (l *VaultSyncLoop) noteActivity(profile string, at time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lastActivity[profile] = at
+}
+
+// closeIdle closes each cached service whose real idle duration (wall-clock
+// since its last drained batch) has reached cfg.IdleCloseAfter. Because it is
+// measured against real elapsed time per profile, a busy sibling's immediate
+// re-runs neither churn the service (a short tick advances little elapsed time)
+// nor starve its idle-close (it closes as soon as its own timeout elapses). A
+// non-positive IdleCloseAfter never closes. Services are rebuilt lazily by
+// ensureService on the next tick that needs them.
+func (l *VaultSyncLoop) closeIdle(now time.Time) {
+	if l.cfg.IdleCloseAfter <= 0 {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for p, svc := range l.svcs {
+		last, ok := l.lastActivity[p]
+		if !ok {
+			continue
+		}
+		if now.Sub(last) >= l.cfg.IdleCloseAfter {
+			_ = svc.Close()
+			delete(l.svcs, p)
+			delete(l.lastActivity, p)
+		}
+	}
+}
+
+// drainService syncs one VaultService, looping while the fetched batch is full
+// so a large backlog converges in one burst. It reports whether any full batch
+// was drained (the caller uses that to request an immediate scheduler re-run).
+func drainService(ctx context.Context, svc VaultService) bool {
 	drained := false
 	for {
 		if err := ctx.Err(); err != nil {
-			return nil
+			return drained
 		}
 		applied, full, err := svc.Sync(ctx)
 		if err != nil {
 			log.Printf("vault sync: tick failed (%v)", err)
-			return nil
+			return drained
 		}
 		if full {
 			drained = true
@@ -313,25 +412,21 @@ func (l *VaultSyncLoop) Tick(ctx context.Context) *time.Duration {
 			// info level only when non-trivial to avoid noise.
 			log.Printf("vault sync: applied %d events", applied)
 		}
-		break
+		return drained
 	}
-	if drained {
-		zero := time.Duration(0)
-		return &zero
-	}
-	return nil
 }
 
-// Close releases the held VaultService. It is safe to call more than once and
+// Close releases every held VaultService. It is safe to call more than once and
 // concurrently with a running Tick; after Close returns, a subsequently-running
-// Tick will rebuild the service on its next Sync. Call it once the server
+// Tick will rebuild the services on its next pass. Call it once the server
 // shuts down (after the scheduler's Shutdown) to release SDK/DB handles.
 func (l *VaultSyncLoop) Close() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.svc != nil {
-		_ = l.svc.Close()
-		l.svc = nil
-		l.profile = ""
+	l.closed = true
+	for p, svc := range l.svcs {
+		_ = svc.Close()
+		delete(l.svcs, p)
 	}
+	l.lastActivity = map[string]time.Time{}
 }
