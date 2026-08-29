@@ -31,6 +31,13 @@ type SyncLoopConfig struct {
 	// interval — see VaultSyncLoop). A non-nil error is logged and that profile
 	// is skipped for the tick, retrying on the next idle interval.
 	Service func(profile string) (VaultService, error)
+	// IdleCloseTicks bounds open SDK/DB handles on machines with many
+	// registered vaults: after this many consecutive idle ticks (a tick with no
+	// full batch drained), a profile's cached VaultService is closed and rebuilt
+	// lazily on the next tick that needs it. 0 (or negative) keeps a profile's
+	// service open for the server's lifetime. Active bursts still reuse the open
+	// service; only genuinely long-idle vaults release their handles.
+	IdleCloseTicks int
 }
 
 // ServiceScheduler manages background interval-based workers. Each registered
@@ -246,6 +253,7 @@ type VaultSyncLoop struct {
 
 	mu     sync.Mutex
 	svcs   map[string]VaultService
+	idle   map[string]int // consecutive idle ticks per profile (idle-close bookkeeping)
 	closed bool
 }
 
@@ -253,7 +261,7 @@ type VaultSyncLoop struct {
 // Close it when the server shuts down so every held VaultService (and its
 // SDK/DB handles) is released.
 func NewVaultSyncLoop(cfg SyncLoopConfig) *VaultSyncLoop {
-	return &VaultSyncLoop{cfg: cfg, svcs: map[string]VaultService{}}
+	return &VaultSyncLoop{cfg: cfg, svcs: map[string]VaultService{}, idle: map[string]int{}}
 }
 
 // Tick implements the ServiceScheduler TickFunc contract. It is safe to call
@@ -278,11 +286,16 @@ func (l *VaultSyncLoop) Tick(ctx context.Context) *time.Duration {
 		if _, ok := accessible[p]; !ok {
 			_ = svc.Close()
 			delete(l.svcs, p)
+			delete(l.idle, p)
 		}
 	}
 	l.mu.Unlock()
 
-	drained := false
+	// A drained (full-batch) profile is active: it resets its idle counter and
+	// requests an immediate scheduler re-run. A non-drained profile is idle and
+	// advances its idle counter (possibly idle-closing its service to bound
+	// open handles).
+	rerun := false
 	for _, p := range profiles {
 		if err := ctx.Err(); err != nil {
 			return nil
@@ -293,10 +306,13 @@ func (l *VaultSyncLoop) Tick(ctx context.Context) *time.Duration {
 			continue
 		}
 		if drainService(ctx, svc) {
-			drained = true
+			rerun = true
+			l.resetIdle(p)
+		} else {
+			l.maybeCloseIdle(p, svc)
 		}
 	}
-	if drained {
+	if rerun {
 		zero := time.Duration(0)
 		return &zero
 	}
@@ -313,6 +329,9 @@ func (l *VaultSyncLoop) ensureService(profile string) (VaultService, error) {
 		return nil, ErrVaultClosed
 	}
 	if svc := l.svcs[profile]; svc != nil {
+		if _, ok := l.idle[profile]; !ok {
+			l.idle[profile] = 0
+		}
 		return svc, nil
 	}
 	svc, err := l.cfg.Service(profile)
@@ -320,7 +339,37 @@ func (l *VaultSyncLoop) ensureService(profile string) (VaultService, error) {
 		return nil, err
 	}
 	l.svcs[profile] = svc
+	l.idle[profile] = 0
 	return svc, nil
+}
+
+// resetIdle clears a profile's idle-tick counter after an active (drained)
+// tick, so an actively-syncing vault is never idle-closed.
+func (l *VaultSyncLoop) resetIdle(profile string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.idle[profile] = 0
+}
+
+// maybeCloseIdle advances a profile's idle-tick counter and, once it reaches
+// cfg.IdleCloseTicks consecutive idle ticks, closes and drops that profile's
+// cached service (releasing its SDK/DB handle). The service is rebuilt lazily
+// by ensureService on the next tick that needs it. It returns true when the
+// service was closed. A non-positive IdleCloseTicks never closes.
+func (l *VaultSyncLoop) maybeCloseIdle(profile string, svc VaultService) bool {
+	if l.cfg.IdleCloseTicks <= 0 {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.idle[profile]++
+	if l.idle[profile] >= l.cfg.IdleCloseTicks {
+		_ = svc.Close()
+		delete(l.svcs, profile)
+		delete(l.idle, profile)
+		return true
+	}
+	return false
 }
 
 // drainService syncs one VaultService, looping while the fetched batch is full
@@ -362,4 +411,5 @@ func (l *VaultSyncLoop) Close() {
 		_ = svc.Close()
 		delete(l.svcs, p)
 	}
+	l.idle = map[string]int{}
 }

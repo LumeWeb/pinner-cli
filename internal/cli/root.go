@@ -708,6 +708,11 @@ For more help on any command: pinner <command> --help`,
 			Service: func(profileName string) (vault.VaultService, error) {
 				return newVaultService(profileName)
 			},
+			// Bound open SDK/DB handles on machines with many registered
+			// vaults: close a vault's service after 60 consecutive idle ticks
+			// (~10 min at the default 10s interval), rebuilt lazily on the next
+			// sync that needs it. Active bursts still reuse the open service.
+			IdleCloseTicks: 60,
 		}),
 	)
 

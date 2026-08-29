@@ -488,3 +488,87 @@ func TestVaultSyncLoopTicker_Integration(t *testing.T) {
 	cancel()
 	s.Shutdown()
 }
+
+func TestVaultSyncLoop_IdleClosesServiceAfterNTicks(t *testing.T) {
+	// IdleCloseTicks=2: an idle profile's service is closed after 2 consecutive
+	// idle ticks and rebuilt lazily on the next tick that needs it, bounding
+	// open SDK/DB handles for long-idle vaults.
+	svcA := &MockVaultService{}
+	svcA.EXPECT().Sync(mock.Anything).Return(0, false, nil).Times(2)
+	svcA.EXPECT().Close().Return(nil).Once()
+	svcB := &MockVaultService{}
+	svcB.EXPECT().Sync(mock.Anything).Return(0, false, nil).Once()
+	svcB.EXPECT().Close().Return(nil).Once()
+
+	var builds atomic.Int32
+	var built atomic.Int32
+	loop := NewVaultSyncLoop(SyncLoopConfig{
+		IdleCloseTicks: 2,
+		Profiles:       func() []string { return []string{"work"} },
+		Service: func(p string) (VaultService, error) {
+			builds.Add(1)
+			if built.Add(1) == 1 {
+				return svcA, nil
+			}
+			return svcB, nil
+		},
+	})
+
+	loop.Tick(context.Background()) // idle=1
+	loop.Tick(context.Background()) // idle=2 -> close A
+	svcA.AssertNumberOfCalls(t, "Close", 1)
+	loop.Tick(context.Background()) // rebuild B
+	if got := builds.Load(); got != 2 {
+		t.Fatalf("idle-close should trigger a lazy rebuild (%d builds), want 2", got)
+	}
+	loop.Close()
+	svcB.AssertNumberOfCalls(t, "Close", 1)
+}
+
+func TestVaultSyncLoop_ActiveProfileNotIdleClosed(t *testing.T) {
+	// Even with IdleCloseTicks=1, an actively-draining profile resets its idle
+	// counter and is never closed.
+	svc := &MockVaultService{}
+	svc.EXPECT().Sync(mock.Anything).Return(5, true, nil).Once() // full -> loop
+	svc.EXPECT().Sync(mock.Anything).Return(0, false, nil).Once()
+	svc.EXPECT().Sync(mock.Anything).Return(6, true, nil).Once() // full -> loop
+	svc.EXPECT().Sync(mock.Anything).Return(0, false, nil).Once()
+	svc.EXPECT().Close().Return(nil).Once()
+
+	loop := NewVaultSyncLoop(SyncLoopConfig{
+		IdleCloseTicks: 1,
+		Profiles:       func() []string { return []string{"work"} },
+		Service:        func(p string) (VaultService, error) { return svc, nil },
+	})
+	loop.Tick(context.Background()) // drains (active), idle reset
+	loop.Tick(context.Background()) // drains (active), idle reset
+	svc.AssertNumberOfCalls(t, "Sync", 4)
+	svc.AssertNumberOfCalls(t, "Close", 0)
+	loop.Close()
+	svc.AssertNumberOfCalls(t, "Close", 1)
+}
+
+func TestVaultSyncLoop_IdleCloseDisabled(t *testing.T) {
+	// IdleCloseTicks=0 (default) holds a profile's service for the server
+	// lifetime even when idle.
+	svc := &MockVaultService{}
+	svc.EXPECT().Sync(mock.Anything).Return(0, false, nil).Times(3)
+	svc.EXPECT().Close().Return(nil).Once()
+
+	var builds atomic.Int32
+	loop := NewVaultSyncLoop(SyncLoopConfig{
+		Profiles: func() []string { return []string{"work"} },
+		Service: func(p string) (VaultService, error) {
+			builds.Add(1)
+			return svc, nil
+		},
+	})
+	loop.Tick(context.Background())
+	loop.Tick(context.Background())
+	loop.Tick(context.Background())
+	if builds.Load() != 1 {
+		t.Fatalf("idle-close disabled must keep one service (%d builds), want 1", builds.Load())
+	}
+	loop.Close()
+	svc.AssertNumberOfCalls(t, "Close", 1)
+}
