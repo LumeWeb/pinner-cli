@@ -259,24 +259,12 @@ func RunMcpInstallWizard(ctx context.Context, cmd mcpInstallFlagGetter, ui Insta
 			// default is safe; stdio installs never reach here.
 			wantService := effectiveManagedService(realCmd.IsSet("service"), s.UseService)
 
-			// Stop the running managed service before the collector probes
-			// tunnel resources (ResolveNgrokSDKURL opens a temp ngrok tunnel
-			// that conflicts with the running service's tunnel, ERR_NGROK_334).
-			// This runs in the Resolve public URL step — which is always
-			// applicable to http installs and never skipped by
-			// configStepSkipIfHeadlessReRun — so the service is freed even on a
-			// headless re-run where the tunnel-config step was skipped.
-			// installManagedService (inside CollectHTTPInstallWithCreated)
-			// reinstalls and starts the service on the success path; the
-			// deferred restart in RunMcpInstallWizard covers the error path.
-			if wantService {
-				stopped, stopErr := mcpadapter.StopManagedServiceIfInstalled(ctx)
-				if stopErr != nil {
-					return stopErr
-				}
-				s.serviceStoppedForProbe = stopped
-			}
-
+			// The managed service was already stopped by the tunnel-config
+			// step's preExecute (if it was running) to free the ngrok endpoint
+			// before ResolveNgrokSDKURL probed it. installManagedService (inside
+			// CollectHTTPInstallWithCreated) reinstalls and starts the service
+			// on the success path; RunMcpInstallWizard's error-path restart
+			// covers the failure case.
 			env, sideEffect, err := mcpadapter.CollectHTTPInstallWithCreated(ctx, realCmd, "", wantService, created)
 			if err != nil {
 				// Roll the file back ONLY if the install failed before any
@@ -526,6 +514,27 @@ func buildMcpTunnelSteps(realCmd *cli.Command, ui InstallUI) []wizard.Step[*Inst
 		return err
 	}
 
+	// preExecute for the tunnel-config step: stop the running managed service
+	// before the step's inner.Execute runs ngrokFields, which calls
+	// ResolveNgrokSDKURL to open a temp ngrok tunnel. If the service's tunnel
+	// is still live (ERR_NGROK_334), the probe collides with it and fails. The
+	// stop only fires when the step actually runs (not when it's skipped): a
+	// skipped step never calls ResolveNgrokSDKURL, so there is no probe and no
+	// conflict. installManagedService reinstalls and starts the service on the
+	// success path; RunMcpInstallWizard's error-path restart covers the failure
+	// case.
+	stopBeforeTunnelProbe := func(ctx context.Context, s *InstallState, _ *mcpadapter.ServiceInstallState) error {
+		if !effectiveManagedService(realCmd.IsSet("service"), s.UseService) {
+			return nil
+		}
+		stopped, err := mcpadapter.StopManagedServiceIfInstalled(ctx)
+		if err != nil {
+			return fmt.Errorf("stop managed service before tunnel config: %w", err)
+		}
+		s.serviceStoppedForProbe = stopped
+		return nil
+	}
+
 	return []wizard.Step[*InstallState]{
 		// The tunnel steps are only applicable to a remote (http) install; the
 		// config step also drops out when the operator chose a NO-tunnel
@@ -551,7 +560,7 @@ func buildMcpTunnelSteps(realCmd *cli.Command, ui InstallUI) []wizard.Step[*Inst
 		wrap("Tunnel-specific configuration", tunnelStepAt(inner, 1), tunnelConfigSeeded,
 			func(s *InstallState) bool { return !httpTunnelSkipped(s) && hasTunnelProvider(s) },
 			func(s *InstallState) bool { return configStepSkipIfHeadlessReRun(realCmd, s) },
-			nil, nil),
+			stopBeforeTunnelProbe, nil),
 		// The env-write step NEVER skips for http (only for a non-http install
 		// or a tapped serviceEnvErr). On the FRESH path it writes the env from
 		// the service state and (via preWrite) sets EnvFileCreated + applies
