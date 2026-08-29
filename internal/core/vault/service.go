@@ -192,9 +192,10 @@ type StatResult struct {
 
 // SearchFilter narrows a vault search. All fields are ANDed; empty fields are
 // ignored. Tags are ANDed too (a result must match EVERY tag). Name is a
-// case-insensitive substring of the file name. Dir restricts results to files
-// under the given vault directory (inclusive). Search is metadata-first (no
-// full-text engine): name, tags, status, and time.
+// case-insensitive substring of the file name (backed by FTS5 trigram when
+// available, else LIKE). Dir restricts results to files under the given vault
+// directory (inclusive). Other filters cover status, creation time, and the
+// write-context columns (source/host/agent).
 type SearchFilter struct {
 	// Name is a case-insensitive substring of the file name. Empty = any.
 	Name string

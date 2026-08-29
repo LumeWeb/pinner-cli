@@ -39,10 +39,12 @@ ARG TARGETARCH=amd64
 
 # -tags netgo osusergo: use the pure-Go net resolver and os/user, avoiding
 # libc-dependent resolv/nss lookups so the binary is fully static.
+# sqlite_fts5: compile FTS5 into mattn/go-sqlite3 (vault name search); without
+# it the vault 0007 migration aborts at runtime.
 # CGO_ENABLED=1 with the alpine (musl) toolchain gives a static binary.
 RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=1 CGO_CFLAGS="-O2 -g" \
-    go build -trimpath -tags "netgo osusergo" \
+    go build -trimpath -tags "netgo osusergo sqlite_fts5" \
       -ldflags "-s -w \
         -X 'go.lumeweb.com/pinner-cli/build.Version=${VERSION}' \
         -X 'go.lumeweb.com/pinner-cli/build.GitCommit=${GIT_COMMIT}' \

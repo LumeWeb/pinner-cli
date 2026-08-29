@@ -14,6 +14,11 @@ GO_VERSION := $(shell go version | sed 's/go version //')
 PLATFORM := $(shell go env GOOS)
 ARCH := $(shell go env GOARCH)
 
+# Build tags. sqlite_fts5 compiles FTS5 into mattn/go-sqlite3 (trigram
+# tokenizer), which powers the vault name full-text search. Without it FTS5 is
+# absent and vault search silently falls back to plain LIKE matching.
+TAGS := sqlite_fts5
+
 PKG := go.lumeweb.com/pinner-cli/build
 
 LDFLAGS := -X '$(PKG).Version=$(VERSION)' \
@@ -58,13 +63,13 @@ cssbuild:
 	pnpm build:css
 
 build: generate jsbuild cssbuild
-	CGO_ENABLED=1 go build -ldflags="$(LDFLAGS)" -o pinner ./cmd/pinner
+	CGO_ENABLED=1 go build -tags="$(TAGS)" -ldflags="$(LDFLAGS)" -o pinner ./cmd/pinner
 
 install: generate jsbuild cssbuild
-	CGO_ENABLED=1 go install -ldflags="$(LDFLAGS)" ./cmd/pinner
+	CGO_ENABLED=1 go install -tags="$(TAGS)" -ldflags="$(LDFLAGS)" ./cmd/pinner
 
 test: jsbuild cssbuild
-	go test ./...
+	go test -tags "$(TAGS)" ./...
 
 clean:
 	rm -f pinner

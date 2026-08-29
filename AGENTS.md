@@ -34,10 +34,20 @@ GOOS=darwin  GOARCH=arm64 go build -o pinner-darwin-arm64  ./cmd/pinner
 GOOS=windows GOARCH=amd64 go build -o pinner-windows-amd64.exe ./cmd/pinner
 ```
 
+> **Required build tag:** the vault name search uses SQLite FTS5 (trigram), so
+> the binary MUST be built with `-tags sqlite_fts5` (this compiles FTS5 into
+> `mattn/go-sqlite3`, which ships with FTS5 disabled by default). `make
+> build`/`make install`/`make test` pass it automatically. Any raw `go
+> build`/`go test` invocation must add `-tags sqlite_fts5`, or the vault 0007
+> migration (`CREATE VIRTUAL TABLE ... fts5`) fails and vault operations break.
+> `Search()` still degrades to plain LIKE matching (no FTS) if the index is
+> ever missing.
+
 ### Testing
 
 ```bash
-go test ./...                  # whole suite (assumes assets already built)
+go test -tags sqlite_fts5 ./...                  # whole suite (assumes assets already built)
+go test -tags sqlite_fts5 ./internal/cli
 go test ./internal/cli
 go test -v ./...
 go test ./internal/cli -run TestUpload

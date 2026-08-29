@@ -504,7 +504,7 @@ func vaultSearch(d VaultDeps) catalog.Operation {
 		Name:        "vault_search",
 		Title:       "Search vault files",
 		Summary:     "Search vault files by name, tag, status, or write context",
-		Description: "Search the vault for live files matching the given filters, combined with AND semantics. Supports a name substring (case-insensitive), one or more tags (a file must have ALL of them), a directory prefix, a status filter (ok/pending/lost), a created-since timestamp, and write-context filters (source=mcp|cli, host, agent). Metadata-first; no full-text engine. Results return the full vault paths, newest-first. Read-only.",
+		Description: "Search vault files by name and metadata.\n\nquery is a filename substring. It is not a query language. Filter with flags / parameters: tag, status, source, host, agent, since, dir. All filters AND together. Multiple tags all required.\n\nExamples:\n  vault search report --tag finance --host claude-desktop\n  vault search \"q4 invoice\" --since 2024-01-01 --dir reports/\n  vault search --status lost --tag legal",
 		Category:    "vault",
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
