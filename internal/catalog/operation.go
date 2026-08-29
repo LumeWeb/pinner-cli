@@ -159,6 +159,16 @@ type OperationArg struct {
 	Help          string // human help (CLI)
 	AgentHelp     string // agent-oriented help (MCP); audience separation
 	AgentRequired bool   // required on the MCP surface only; never the CLI
+	// AgentConfirm marks a bool `confirm` arg as the explicit agent-confirmation
+	// contract for a destructive operation: when the op is invoked by a model
+	// actor and this arg's value is true, it satisfies the destructive safety
+	// gate so the op runs headlessly without a human hand-off (e.g.
+	// vault_version_restore's confirm=true is the rollback contract). It must
+	// only be set on a bool arg literally named "confirm". Ops whose confirm
+	// has a different semantic (e.g. api_keys_delete's self-delete force guard)
+	// or that must always route through a human hand-off must leave it unset so
+	// the model gate still refuses them with ErrConfirmRequired.
+	AgentConfirm bool
 	// AgentOnly marks an arg exposed on the agent/MCP surface only: the CLI
 	// compiler omits its --flag entirely (like PositionalOnly), so the value is
 	// never requested from a CLI caller. The arg still appears by name in the

@@ -99,7 +99,16 @@ handler:
 
 - **Safety** is declared on the operation, never inferred from its name.
   Destructive operations (delete, forget, `--force` paths) are gated at
-  dispatch.
+  dispatch. A destructive op invoked by a model actor is refused with the
+  `ErrConfirmRequired` sentinel (surfaced as a `needs_human` confirm hand-off).
+  It runs headlessly only when the operation explicitly opts into agent
+  self-confirmation by marking a bool `confirm` argument `AgentConfirm` and the
+  model supplies `confirm=true` (e.g. `vault_version_restore`'s rollback
+  contract). Every other destructive op — no `confirm`, an `AgentRequired`
+  `confirm` (`ipns_keys_delete`, admin platform-domain delete), or a `confirm`
+  with a different semantic (`api_keys_delete`'s self-delete force guard) —
+  always requires the human hand-off for a model actor. `AgentConfirm` is
+  validated at registration to be set only on a bool arg named `confirm`.
 - **Interaction** tells a frontend whether an autonomous actor may invoke the
   operation directly, whether it must prompt a human interactively, or whether
   it needs an out-of-band human step (see *Runtime classifications*
