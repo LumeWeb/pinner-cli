@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
@@ -72,6 +73,13 @@ type vaultService struct {
 	sdk    sdkClient
 	sdkErr error
 	closed bool
+
+	// FTS5 name-search availability, cached for the service lifetime.
+	// Compile-time FTS5 support and the files_fts virtual table presence never
+	// change while a service is open, so it is probed once.
+	ftsMu      sync.Mutex
+	ftsChecked bool
+	ftsOK      bool
 }
 
 // ensureSDK returns the Sia SDK, building it (and hitting the network) only on
@@ -586,11 +594,14 @@ func (s *vaultService) List(ctx context.Context, vaultPath string) ([]ListItem, 
 	return items, nil
 }
 
-// Search returns live vault FILES matching the filter, newest-first by
-// creation time. It is metadata-first (no full-text engine): an optional name
-// substring (case-insensitive), tag AND membership, status, and a
-// creation-time floor, all ANDed. Each result carries a full vault path plus
-// the same metadata Stat surfaces, so results are directly actionable.
+// Search returns live vault FILES matching the filter. Results are ordered by
+// creation time (newest-first), except when an FTS5 name match is used, in
+// which case BM25 relevance is preferred then recency. Filters are all ANDed:
+// an optional opaque name substring (case-insensitive, backed by FTS5 trigram
+// when available and LIKE otherwise), tag AND membership, a directory prefix, a
+// status, a creation-time floor, and exact-match write-context columns. Each
+// result carries a full vault path plus the same metadata Stat surfaces, so
+// results are directly actionable.
 func (s *vaultService) Search(_ context.Context, f SearchFilter) ([]SearchItem, error) {
 	q := s.db.Table("files").
 		Select("files.*").
@@ -614,9 +625,10 @@ func (s *vaultService) Search(_ context.Context, f SearchFilter) ([]SearchItem, 
 			q = q.Where("files.id IN (?)", sub)
 		}
 	}
-	if f.Name != "" {
-		q = q.Where("files.name LIKE ? ESCAPE '\\'", "%"+escapeLike(f.Name)+"%")
-	}
+	// Note: the name predicate is intentionally NOT applied here. It is added
+	// at query-execution time so the FTS5-vs-LIKE decision (and its distinct
+	// ordering) happens after all structured filters are assembled.
+
 	if f.Dir != "" {
 		// Accept both "vault:/docs" (scheme) and "/docs" (scheme-less): reduce
 		// to the directory path stored on directories.path.
@@ -662,10 +674,29 @@ func (s *vaultService) Search(_ context.Context, f SearchFilter) ([]SearchItem, 
 	// Bound results so a metadata search over a large vault never loads every
 	// match into memory at once; the tag/path assembly below is batched so a
 	// result set of N rows needs a constant number of queries (not 2N+1).
+	//
+	// Name search execution: try FTS5 (trigram) when it is available and the
+	// query is long enough (>=3 chars); otherwise use the original LIKE
+	// substring match. A MATCH error also falls back to LIKE, so behavior never
+	// regresses. FTS orders by BM25 relevance then recency; the LIKE and
+	// no-name paths order by recency alone.
 	const searchLimit = 500
 	var records []File
-	if err := q.Order("files.created_at DESC").Limit(searchLimit).Find(&records).Error; err != nil {
-		return nil, fmt.Errorf("search failed: %w", err)
+	searched := false
+	if name := strings.TrimSpace(f.Name); name != "" {
+		if param, ok := ftsMatchParam(name); ok && s.ftsAvailable() {
+			// ftsSearch runs on a clone of q so a failed MATCH never corrupts
+			// the base predicates used by the LIKE fallback below.
+			searched = s.ftsSearch(q, param, searchLimit, &records)
+		}
+		if !searched {
+			q = q.Where("files.name LIKE ? ESCAPE '\\'", "%"+escapeLike(f.Name)+"%")
+		}
+	}
+	if !searched {
+		if err := q.Order("files.created_at DESC").Limit(searchLimit).Find(&records).Error; err != nil {
+			return nil, fmt.Errorf("search failed: %w", err)
+		}
 	}
 	if len(records) == 0 {
 		return []SearchItem{}, nil
@@ -1814,6 +1845,74 @@ func escapeLike(s string) string {
 	s = strings.ReplaceAll(s, "%", "\\%")
 	s = strings.ReplaceAll(s, "_", "\\_")
 	return s
+}
+
+// ===========================================================================
+// FTS5 name search
+//
+// The vault name search is backed by a SQLite FTS5 (trigram) index over
+// files.name when it is available, with a LIKE fallback. `query` is always an
+// opaque filename substring: it is never parsed into AND/OR/NOT, field:value,
+// or phrase operators. The whole input is wrapped as a single FTS5 quoted
+// phrase so any FTS5 special characters it contains are literal.
+// ===========================================================================
+
+// ftsMatchParam returns a safe, single-phrase FTS5 MATCH string for the given
+// raw name substring. It reports false when trigram search is unusable for the
+// input (<3 runes), in which case the caller must fall back to LIKE (where
+// shorter substrings still match). Quoting the entire input prevents user
+// input from ever acting as FTS5 operator syntax.
+func ftsMatchParam(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if utf8.RuneCountInString(s) < 3 {
+		return "", false
+	}
+	// A "..." phrase wraps the whole input; any internal double-quote is
+	// escaped by doubling, matching FTS5's phrase-escaping rule.
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`, true
+}
+
+// ftsAvailable reports whether the FTS5 files_fts index is usable for name
+// search: FTS5 must be compiled into the driver AND the external-content
+// virtual table must exist. The result never changes for a service's lifetime,
+// so it is probed once and cached.
+func (s *vaultService) ftsAvailable() bool {
+	s.ftsMu.Lock()
+	defer s.ftsMu.Unlock()
+	if s.ftsChecked {
+		return s.ftsOK
+	}
+	s.ftsChecked = true
+
+	var enabled int
+	if err := s.db.Raw("SELECT sqlite_compileoption_used('ENABLE_FTS5')").Scan(&enabled).Error; err != nil || enabled != 1 {
+		return false
+	}
+	var n int64
+	if err := s.db.Table("sqlite_master").
+		Where("type = 'table' AND name = 'files_fts'").
+		Count(&n).Error; err != nil || n == 0 {
+		return false
+	}
+	s.ftsOK = true
+	return true
+}
+
+// ftsSearch runs an FTS5 MATCH over files_fts joined back to files, bounding
+// results by limit and ordering by BM25 relevance then recency. It returns
+// whether the MATCH query executed successfully; on failure the caller falls
+// back to the LIKE path. Records is populated only on success (and may be empty
+// for a legitimate zero-match query).
+func (s *vaultService) ftsSearch(q *gorm.DB, param string, limit int, records *[]File) bool {
+	ftsQ := q.Session(&gorm.Session{}).
+		Joins("JOIN files_fts ON files_fts.rowid = files.id").
+		Where("files_fts MATCH ?", param).
+		Order("bm25(files_fts), files.created_at DESC").
+		Limit(limit)
+	if err := ftsQ.Find(records).Error; err != nil {
+		return false
+	}
+	return true
 }
 
 // ===========================================================================

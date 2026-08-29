@@ -25,7 +25,11 @@ builds:
           - CXX=x86_64-linux-gnu-g++
       goos: [linux]
       goarch: [amd64]
-      flags: [-trimpath]
+      # sqlite_fts5 compiles FTS5 into mattn/go-sqlite3 (vault name search);
+      # without it the vault 0007 migration aborts at runtime. Required on
+      # every platform. Note: the Dockerfile already passes it, so the GoReleaser
+      # cross-builds and the OCI image both ship an FTS5-enabled binary.
+      flags: [-trimpath, -tags=sqlite_fts5]
       ldflags: &ldflags
           - -s -w
           - -X 'go.lumeweb.com/pinner-cli/build.Version={{.Version}}'
@@ -45,7 +49,7 @@ builds:
           - CXX=aarch64-linux-gnu-g++
       goos: [linux]
       goarch: [arm64]
-      flags: [-trimpath]
+      flags: [-trimpath, -tags=sqlite_fts5]
       ldflags: *ldflags
       mod_timestamp: "{{.CommitTimestamp}}"
     - id: pinner-cli-darwin-amd64
@@ -57,7 +61,7 @@ builds:
           - CXX=o64-clang++
       goos: [darwin]
       goarch: [amd64]
-      flags: [-trimpath]
+      flags: [-trimpath, -tags=sqlite_fts5]
       ldflags: *ldflags
       mod_timestamp: "{{.CommitTimestamp}}"
     - id: pinner-cli-darwin-arm64
@@ -69,7 +73,7 @@ builds:
           - CXX=oa64-clang++
       goos: [darwin]
       goarch: [arm64]
-      flags: [-trimpath]
+      flags: [-trimpath, -tags=sqlite_fts5]
       ldflags: *ldflags
       mod_timestamp: "{{.CommitTimestamp}}"
     - id: pinner-cli-windows-amd64
@@ -81,7 +85,7 @@ builds:
           - CXX=x86_64-w64-mingw32-g++
       goos: [windows]
       goarch: [amd64]
-      flags: [-trimpath]
+      flags: [-trimpath, -tags=sqlite_fts5]
       ldflags: *ldflags
       mod_timestamp: "{{.CommitTimestamp}}"
     - id: pinner-cli-windows-arm64
@@ -93,7 +97,7 @@ builds:
           - CXX=/llvm-mingw/bin/aarch64-w64-mingw32-g++
       goos: [windows]
       goarch: [arm64]
-      flags: [-trimpath]
+      flags: [-trimpath, -tags=sqlite_fts5]
       ldflags: *ldflags
       mod_timestamp: "{{.CommitTimestamp}}"
 
