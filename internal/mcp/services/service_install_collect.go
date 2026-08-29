@@ -128,15 +128,44 @@ func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 		// on-disk env; callers must not roll back a reconciling env file past
 		// this point.
 		serviceSideEffect = true
-		if err := svc.Install(ctx); err != nil {
-			return nil, serviceSideEffect, err
-		}
-		if err := svc.Start(ctx); err != nil {
+		// The sequence stops an already-installed service before reinstalling
+		// so the running process (and any resource it holds, e.g. the tunnel
+		// provider's endpoint) is released before Install re-registers the unit,
+		// then Start brings it back up — Install never auto-starts. Stop is
+		// idempotent on an installed-but-inactive unit, so it is safe to call
+		// whenever Status reports the service installed.
+		if err := installManagedService(ctx, svc); err != nil {
 			return nil, serviceSideEffect, err
 		}
 	}
 
 	return env, serviceSideEffect, nil
+}
+
+// installManagedService performs the managed-service lifecycle for a setup/install
+// that must leave the daemon running: stop an already-installed service so the
+// reinstall applies cleanly and releases its held resources, install the unit,
+// then start it (Install does not auto-start). Stop is conditioned on Status
+// reporting the service installed; it is a no-op on a service that is not
+// installed or is installed but already inactive, so the sequence is safe on
+// both a fresh install and a re-run.
+func installManagedService(ctx context.Context, svc service.Service) error {
+	status, err := svc.Status(ctx)
+	if err != nil {
+		return fmt.Errorf("query managed service status before install: %w", err)
+	}
+	if status.Installed {
+		if err := svc.Stop(ctx); err != nil {
+			return fmt.Errorf("stop installed service before reinstall: %w", err)
+		}
+	}
+	if err := svc.Install(ctx); err != nil {
+		return fmt.Errorf("install managed service: %w", err)
+	}
+	if err := svc.Start(ctx); err != nil {
+		return fmt.Errorf("start managed service: %w", err)
+	}
+	return nil
 }
 
 // resolveServicePublicURL fills MCP_PUBLIC_URL in env (and persists it to

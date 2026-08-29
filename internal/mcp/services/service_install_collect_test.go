@@ -631,3 +631,57 @@ func TestIsServiceInstallSeeded(t *testing.T) {
 		})
 	}
 }
+
+// fakeManagedService records lifecycle calls so installManagedService's
+// stop-if-installed → install → start sequence can be asserted without a live
+// init system. It embeds service.Service so unimplemented methods panic rather
+// than silently succeed.
+type fakeManagedService struct {
+	service.Service
+	status      service.Status
+	statusErr   error
+	stopErr     error
+	installErr  error
+	startErr    error
+	calledStop  bool
+	calledStart bool
+}
+
+func (f *fakeManagedService) Status(_ context.Context) (service.Status, error) { return f.status, f.statusErr }
+func (f *fakeManagedService) Stop(_ context.Context) error                     { f.calledStop = true; return f.stopErr }
+func (f *fakeManagedService) Install(_ context.Context) error                  { return f.installErr }
+func (f *fakeManagedService) Start(_ context.Context) error                    { f.calledStart = true; return f.startErr }
+
+func TestInstallManagedService(t *testing.T) {
+	t.Run("fresh install skips stop then installs and starts", func(t *testing.T) {
+		svc := &fakeManagedService{} // Status returns zero-value: not installed
+		err := installManagedService(context.Background(), svc)
+		require.NoError(t, err)
+		require.False(t, svc.calledStop, "no Stop expected on a service that is not installed")
+		require.True(t, svc.calledStart, "Start must run because Install does not auto-start")
+	})
+
+	t.Run("installed service is stopped before reinstall then started", func(t *testing.T) {
+		svc := &fakeManagedService{status: service.Status{Installed: true}}
+		err := installManagedService(context.Background(), svc)
+		require.NoError(t, err)
+		require.True(t, svc.calledStop, "an installed service must be stopped before reinstall")
+		require.True(t, svc.calledStart, "Start must run after Install")
+	})
+
+	t.Run("status error propagates before any lifecycle call", func(t *testing.T) {
+		svc := &fakeManagedService{statusErr: errors.New("probe failed")}
+		err := installManagedService(context.Background(), svc)
+		require.Error(t, err)
+		require.False(t, svc.calledStop)
+		require.False(t, svc.calledStart)
+	})
+
+	t.Run("stop error propagates and aborts install", func(t *testing.T) {
+		svc := &fakeManagedService{status: service.Status{Installed: true}, stopErr: errors.New("stop failed")}
+		err := installManagedService(context.Background(), svc)
+		require.Error(t, err)
+		require.True(t, svc.calledStop)
+		require.False(t, svc.calledStart, "Start must not run when Stop fails")
+	})
+}
