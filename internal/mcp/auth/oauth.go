@@ -595,10 +595,11 @@ func (o *OAuthServer) OfficialMiddleware(next http.Handler) http.Handler {
 		o.mu.Lock()
 		exp, ok := o.tokens[token]
 		if ok {
+			// Delete expired tokens so the map does not grow unboundedly;
+			// the SDK's ClockSkew (2m) applies the grace window for
+			// recently-expired tokens, not this verifier.
 			if time.Now().After(exp) {
 				delete(o.tokens, token)
-				o.mu.Unlock()
-				return nil, fmt.Errorf("%w: the access token has expired", auth.ErrInvalidToken)
 			}
 			o.mu.Unlock()
 			return &auth.TokenInfo{Expiration: exp, UserID: tokenPrincipal(token)}, nil
