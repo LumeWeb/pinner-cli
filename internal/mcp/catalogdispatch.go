@@ -6,6 +6,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/invopop/jsonschema"
 	"go.lumeweb.com/pinner-cli/internal/catalog"
@@ -129,6 +130,18 @@ var catalogOutputUnionSchema = func() json.RawMessage {
 	return b
 }()
 
+// invokeTimeoutFn returns the configured deadline for MCP catalog operations.
+// It is set from the CLI layer during MCP startup (SetInvokeTimeout) to avoid
+// importing internal/cli (import cycle). When nil the caller's ctx is used
+// unchanged.
+var invokeTimeoutFn func() time.Duration
+
+// SetInvokeTimeout is called from the CLI layer to provide a config-driven
+// timeout for MCP catalog operations, mirroring applyDefaultTimeout.
+func SetInvokeTimeout(fn func() time.Duration) {
+	invokeTimeoutFn = fn
+}
+
 // DispatchCatalogOp routes a typed tool request through the operation
 // catalog's Invoke gate (the single enforcement point for Interaction,
 // Visibility, Safety, and required-arg validation) and converts the result
@@ -165,6 +178,15 @@ func DispatchCatalogOp(ctx context.Context, cat catalog.Catalog, actor catalog.A
 			return model.ToolResult{IsError: true, Text: cleanMessage(err)}, nil
 		}
 	}
+
+	if invokeTimeoutFn != nil {
+		if timeout := invokeTimeoutFn(); timeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, timeout)
+			defer cancel()
+		}
+	}
+
 	result, err := cat.Invoke(ctx, name, args, actor)
 	if err != nil {
 		// A destructive op invoked by a model needs explicit human

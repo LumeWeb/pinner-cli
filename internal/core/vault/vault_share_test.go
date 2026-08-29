@@ -37,7 +37,7 @@ func TestShareAcceptPinsCopyAndLedgers(t *testing.T) {
 	}
 
 	// Accept the share into a new path.
-	f, err := svc.ShareAccept(ctx, "vault:/docs/shared.txt", "sia://some-share-url", "alice")
+	f, err := svc.ShareAccept(ctx, "vault:/docs/shared.txt", "sia://some-share-url", "alice", nil)
 	if err != nil {
 		t.Fatalf("ShareAccept failed: %v", err)
 	}
@@ -126,10 +126,10 @@ func TestShareAcceptRejectsDirAndEmptyURL(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newTagTestService(t)
 
-	if _, err := svc.ShareAccept(ctx, "vault:/docs/", "sia://x", ""); err == nil {
+	if _, err := svc.ShareAccept(ctx, "vault:/docs/", "sia://x", "", nil); err == nil {
 		t.Fatal("ShareAccept to a directory should error")
 	}
-	if _, err := svc.ShareAccept(ctx, "vault:/docs/f.txt", "", ""); err == nil {
+	if _, err := svc.ShareAccept(ctx, "vault:/docs/f.txt", "", "", nil); err == nil {
 		t.Fatal("ShareAccept with empty share_url should error")
 	}
 }

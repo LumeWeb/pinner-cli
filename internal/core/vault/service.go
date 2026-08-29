@@ -134,8 +134,10 @@ type VaultService interface {
 	// vaultPath (A2A copy-once pin-to-indexer). It appends an audit row to the
 	// share ledger. The share URL is read-only and time-limited: none of its
 	// content is shared by reference — the accepting profile owns a new copy.
+	// metadata is forwarded to Put, so a "tags" key is promoted to durable
+	// tags at write time (same as vault_put_file).
 	// Returns the newly-created File record.
-	ShareAccept(ctx context.Context, vaultPath, shareURL, targetPrincipal string) (*File, error)
+	ShareAccept(ctx context.Context, vaultPath, shareURL, targetPrincipal string, metadata map[string]any) (*File, error)
 
 	// Sync pulls changes from the indexer into the local cache. It processes
 	// up to one batch of events (100) per call and always advances the cursor

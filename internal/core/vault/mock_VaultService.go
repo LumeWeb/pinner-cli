@@ -1151,8 +1151,8 @@ func (_c *MockVaultService_Share_Call) RunAndReturn(run func(ctx context.Context
 }
 
 // ShareAccept provides a mock function for the type MockVaultService
-func (_mock *MockVaultService) ShareAccept(ctx context.Context, vaultPath string, shareURL string, targetPrincipal string) (*File, error) {
-	ret := _mock.Called(ctx, vaultPath, shareURL, targetPrincipal)
+func (_mock *MockVaultService) ShareAccept(ctx context.Context, vaultPath string, shareURL string, targetPrincipal string, metadata map[string]any) (*File, error) {
+	ret := _mock.Called(ctx, vaultPath, shareURL, targetPrincipal, metadata)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ShareAccept")
@@ -1160,18 +1160,18 @@ func (_mock *MockVaultService) ShareAccept(ctx context.Context, vaultPath string
 
 	var r0 *File
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string) (*File, error)); ok {
-		return returnFunc(ctx, vaultPath, shareURL, targetPrincipal)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, map[string]any) (*File, error)); ok {
+		return returnFunc(ctx, vaultPath, shareURL, targetPrincipal, metadata)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string) *File); ok {
-		r0 = returnFunc(ctx, vaultPath, shareURL, targetPrincipal)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, map[string]any) *File); ok {
+		r0 = returnFunc(ctx, vaultPath, shareURL, targetPrincipal, metadata)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*File)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, string) error); ok {
-		r1 = returnFunc(ctx, vaultPath, shareURL, targetPrincipal)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, string, map[string]any) error); ok {
+		r1 = returnFunc(ctx, vaultPath, shareURL, targetPrincipal, metadata)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -1188,11 +1188,12 @@ type MockVaultService_ShareAccept_Call struct {
 //   - vaultPath string
 //   - shareURL string
 //   - targetPrincipal string
-func (_e *MockVaultService_Expecter) ShareAccept(ctx any, vaultPath any, shareURL any, targetPrincipal any) *MockVaultService_ShareAccept_Call {
-	return &MockVaultService_ShareAccept_Call{Call: _e.mock.On("ShareAccept", ctx, vaultPath, shareURL, targetPrincipal)}
+//   - metadata map[string]any
+func (_e *MockVaultService_Expecter) ShareAccept(ctx any, vaultPath any, shareURL any, targetPrincipal any, metadata any) *MockVaultService_ShareAccept_Call {
+	return &MockVaultService_ShareAccept_Call{Call: _e.mock.On("ShareAccept", ctx, vaultPath, shareURL, targetPrincipal, metadata)}
 }
 
-func (_c *MockVaultService_ShareAccept_Call) Run(run func(ctx context.Context, vaultPath string, shareURL string, targetPrincipal string)) *MockVaultService_ShareAccept_Call {
+func (_c *MockVaultService_ShareAccept_Call) Run(run func(ctx context.Context, vaultPath string, shareURL string, targetPrincipal string, metadata map[string]any)) *MockVaultService_ShareAccept_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -1210,7 +1211,11 @@ func (_c *MockVaultService_ShareAccept_Call) Run(run func(ctx context.Context, v
 		if args[3] != nil {
 			arg3 = args[3].(string)
 		}
-		run(arg0, arg1, arg2, arg3)
+		var arg4 map[string]any
+		if args[4] != nil {
+			arg4 = args[4].(map[string]any)
+		}
+		run(arg0, arg1, arg2, arg3, arg4)
 	})
 	return _c
 }
@@ -1220,7 +1225,7 @@ func (_c *MockVaultService_ShareAccept_Call) Return(file *File, err error) *Mock
 	return _c
 }
 
-func (_c *MockVaultService_ShareAccept_Call) RunAndReturn(run func(ctx context.Context, vaultPath string, shareURL string, targetPrincipal string) (*File, error)) *MockVaultService_ShareAccept_Call {
+func (_c *MockVaultService_ShareAccept_Call) RunAndReturn(run func(ctx context.Context, vaultPath string, shareURL string, targetPrincipal string, metadata map[string]any) (*File, error)) *MockVaultService_ShareAccept_Call {
 	_c.Call.Return(run)
 	return _c
 }

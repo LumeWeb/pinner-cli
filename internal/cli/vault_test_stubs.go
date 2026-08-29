@@ -61,7 +61,7 @@ func (NopVaultService) TagList(context.Context) ([]string, error) { return nil, 
 func (NopVaultService) Share(context.Context, string, time.Time) (string, error) {
 	return "", nil
 }
-func (NopVaultService) ShareAccept(context.Context, string, string, string) (*vault.File, error) {
+func (NopVaultService) ShareAccept(context.Context, string, string, string, map[string]any) (*vault.File, error) {
 	return nil, nil
 }
 func (NopVaultService) Sync(context.Context) (int, bool, error) { return 0, false, nil }

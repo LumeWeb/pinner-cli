@@ -153,7 +153,7 @@ func vaultLs(d VaultDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<path>",
 		Args: []catalog.OperationArg{
-			{Name: "path", Type: catalog.ArgTypeString, Help: "Vault path to list (e.g. vault:/reports; defaults to the root)"},
+			{Name: "path", Type: catalog.ArgTypeString, Help: "Vault path to list (e.g. vault:/reports; defaults to the root)", AgentHelp: "The vault path to list. Append a trailing slash (vault:/a/b/) to list a subdirectory; without it, a non-root path is assumed to be a file path and lists the parent. If the directory is empty, the tool auto-retries as a directory."},
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
@@ -1017,6 +1017,7 @@ func vaultShareAccept(d VaultDeps) catalog.Operation {
 		Args: []catalog.OperationArg{
 			{Name: "share_url", Type: catalog.ArgTypeString, Required: true, Help: "The sia:// share URL to accept", AgentHelp: "The sia:// share URL you received. It is time-limited and grants read access to a single object."},
 			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "Where to store the accepted copy", AgentHelp: "The vault:/ destination path where the accepted copy should be pinned."},
+			{Name: "tags", Type: catalog.ArgTypeStringSlice, Help: "Tags to apply at write time (repeatable; durable)", AgentHelp: "Tags applied atomically at write time — durable on the sealed object and local tag index. Eliminates the need for a separate vault_tag_add call."},
 			{Name: "target_principal", Type: catalog.ArgTypeString, Help: "Optional principal/source identity recorded in the share ledger"},
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile to accept into (defaults to the active profile)"},
 		},
@@ -1027,6 +1028,11 @@ func vaultShareAccept(d VaultDeps) catalog.Operation {
 				return nil, fmt.Errorf("vault_share_accept: missing required argument (share_url, path)")
 			}
 			targetPrincipal := catalog.StrArg(input, "target_principal", "")
+			tags := catalog.StrSliceArg(input, "tags")
+			var metadata map[string]any
+			if len(tags) > 0 {
+				metadata = map[string]any{"tags": tags}
+			}
 			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
 				return nil, err
@@ -1036,7 +1042,7 @@ func vaultShareAccept(d VaultDeps) catalog.Operation {
 				return nil, err
 			}
 			defer svc.Close()
-			f, err := svc.ShareAccept(ctx, vaultPath, shareURL, targetPrincipal)
+			f, err := svc.ShareAccept(ctx, vaultPath, shareURL, targetPrincipal, metadata)
 			if err != nil {
 				return nil, err
 			}

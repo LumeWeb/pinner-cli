@@ -27,6 +27,7 @@ var compiledCuratedToolNames = []string{
 	"vault_version_ls",
 	"vault_version_get",
 	"vault_search",
+	"vault_share_accept",
 	"vault_tag_add",
 	"vault_tag_ls",
 	"websites_list",

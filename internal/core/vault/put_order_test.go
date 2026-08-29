@@ -37,7 +37,7 @@ type fakeSDK struct {
 }
 
 func (f *fakeSDK) Account(_ context.Context) (app.AccountResponse, error) {
-	return app.AccountResponse{}, nil
+	return app.AccountResponse{Ready: true}, nil
 }
 func (f *fakeSDK) AppKey() types.PrivateKey {
 	return types.PrivateKey{}

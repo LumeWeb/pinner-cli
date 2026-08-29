@@ -61,7 +61,7 @@ func (f *versionSDK) registerContent(h types.Hash256, content []byte) string {
 }
 
 func (f *versionSDK) Account(_ context.Context) (app.AccountResponse, error) {
-	return app.AccountResponse{}, nil
+	return app.AccountResponse{Ready: true}, nil
 }
 func (f *versionSDK) AppKey() types.PrivateKey {
 	return types.PrivateKey{}
