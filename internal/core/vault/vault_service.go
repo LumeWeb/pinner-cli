@@ -845,6 +845,9 @@ func (s *vaultService) Cat(ctx context.Context, vaultPath string, w io.Writer) e
 func (s *vaultService) Verify(ctx context.Context, vaultPath string) (*VerifyResult, error) {
 	res, obj, exists, err := s.resolveVerifyObject(ctx, vaultPath)
 	if err != nil || !exists {
+		if res != nil {
+			res.DigestVerified = DigestVerifiedUnverified
+		}
 		return res, err
 	}
 
@@ -887,6 +890,9 @@ func (s *vaultService) Verify(ctx context.Context, vaultPath string) (*VerifyRes
 func (s *vaultService) VerifyDeep(ctx context.Context, vaultPath string) (*VerifyResult, error) {
 	res, obj, exists, err := s.resolveVerifyObject(ctx, vaultPath)
 	if err != nil || !exists {
+		if res != nil {
+			res.DigestVerified = DigestVerifiedUnverified
+		}
 		return res, err
 	}
 
@@ -909,10 +915,10 @@ func (s *vaultService) VerifyDeep(ctx context.Context, vaultPath string) (*Verif
 	if res.ContentDigest == "" {
 		// Backfill: persist the computed digest to the local row and the
 		// sealed object metadata so future shallow verifies match without a
-		// download.
-		if err := s.backfillDigest(ctx, vaultPath, computedDigest, obj); err != nil {
-			return nil, fmt.Errorf("failed to backfill content digest: %w", err)
-		}
+		// download. Best-effort: the content was already downloaded and
+		// hashed successfully, so a transient re-pin or DB failure must not
+		// discard the verification result.
+		_ = s.backfillDigest(ctx, vaultPath, computedDigest, obj)
 		res.ContentDigest = computedDigest
 		res.DigestMatch = true
 		res.DigestVerified = DigestVerifiedVerified
