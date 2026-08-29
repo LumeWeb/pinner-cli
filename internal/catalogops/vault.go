@@ -19,6 +19,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
+
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
 )
@@ -624,12 +626,15 @@ func vaultSearchPredicates(input map[string]any) ([]vault.Predicate, error) {
 	if any := catalog.StrSliceArg(input, "host_any"); len(any) > 0 {
 		preds = append(preds, vault.Predicate{Host: any})
 	}
-	// --source / --source-any.
-	if s := catalog.StrArg(input, "source", ""); s != "" {
+	// --source / --source-any. Source is lowercased to match the stored
+	// write-context values ("mcp"/"cli"): the enum gate accepts any case via
+	// EqualFold, but columnFilter matches case-sensitively, so an uppercase
+	// --source MCP would otherwise pass validation yet match no rows.
+	if s := strings.ToLower(catalog.StrArg(input, "source", "")); s != "" {
 		preds = append(preds, vault.Predicate{Source: []string{s}})
 	}
 	if any := catalog.StrSliceArg(input, "source_any"); len(any) > 0 {
-		preds = append(preds, vault.Predicate{Source: any})
+		preds = append(preds, vault.Predicate{Source: lo.Map(any, func(v string, _ int) string { return strings.ToLower(v) })})
 	}
 	// --agent / --agent-any.
 	if a := catalog.StrArg(input, "agent", ""); a != "" {
