@@ -199,6 +199,10 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 		return nil, fmt.Errorf("destination must be a file path, not a directory")
 	}
 
+	if rerr := s.CheckReady(ctx); rerr != nil {
+		return nil, rerr
+	}
+
 	// Upload requires the (lazily-built, network-connected) SDK.
 	sdk, err := s.ensureSDK()
 	if err != nil {
@@ -589,6 +593,18 @@ func (s *vaultService) List(ctx context.Context, vaultPath string) ([]ListItem, 
 			CreatedAt: f.CreatedAt.Format(time.RFC3339),
 			UpdatedAt: f.UpdatedAt.Format(time.RFC3339),
 		})
+	}
+
+	// When a non-trailing-slash path under a non-root parent returns zero
+	// results, the path was treated as a file path listing its parent. If
+	// the parent also had no files, the caller likely intended the path as a
+	// directory. Retry treating the leaf as a directory (mirrors how a root
+	// leaf works), so a missing trailing slash does not silently yield an
+	// empty listing for a real directory. The retry calls List with a path
+	// whose trailing slash forces IsDir=true, preventing re-entry.
+	if len(items) == 0 && !vp.IsDir && vp.Name != "" && vp.Directory != "/" {
+		retryPath := VaultScheme + JoinDirPath(vp.Directory, vp.Name) + "/"
+		return s.List(ctx, retryPath)
 	}
 
 	return items, nil
@@ -1085,7 +1101,7 @@ func (s *vaultService) Share(ctx context.Context, vaultPath string, validUntil t
 // means resolving it and pinning a SELF-CONTAINED copy into this profile's
 // vault (never a reference). A write-only audit row is appended to the share
 // ledger recording the accept.
-func (s *vaultService) ShareAccept(ctx context.Context, vaultPath, shareURL, targetPrincipal string) (*File, error) {
+func (s *vaultService) ShareAccept(ctx context.Context, vaultPath, shareURL, targetPrincipal string, metadata map[string]any) (*File, error) {
 	vp, err := ParseVaultPath(vaultPath)
 	if err != nil {
 		return nil, err
@@ -1099,6 +1115,10 @@ func (s *vaultService) ShareAccept(ctx context.Context, vaultPath, shareURL, tar
 	}
 	if shareURL == "" {
 		return nil, fmt.Errorf("share_url is required")
+	}
+
+	if rerr := s.CheckReady(ctx); rerr != nil {
+		return nil, rerr
 	}
 
 	sdk, err := s.ensureSDK()
@@ -1153,7 +1173,7 @@ func (s *vaultService) ShareAccept(ctx context.Context, vaultPath, shareURL, tar
 		_, werr = io.Copy(pw, io.TeeReader(rc, counter))
 		pw.CloseWithError(werr)
 	}()
-	f, err := s.Put(ctx, pr, 0, vp.FullPath(), nil)
+	f, err := s.Put(ctx, pr, 0, vp.FullPath(), metadata)
 	if err != nil {
 		// Put bailed before draining the pipe (e.g. upload failure): the
 		// writer goroutine would block forever in pw.Write holding the Sia

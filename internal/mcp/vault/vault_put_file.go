@@ -70,9 +70,13 @@ type VaultPutFileInput struct {
 	Agent string `json:"agent,omitempty" jsonschema:"description=Identifier for the creating agent (e.g. an orchestrator name). Stored as vault metadata (not a tag)."`
 	// Metadata is caller-supplied key-value pairs (e.g. kind, project, role).
 	// Reserved write-context keys (src, host, profile) are auto-stamped by the
-	// environment and cannot be overridden here. Tags must NOT be passed here;
-	// the tool has no tagging surface — tags stay conceptually separate.
-	Metadata map[string]any `json:"metadata,omitempty" jsonschema:"description=Caller-supplied metadata key-value pairs (e.g. kind, project, role). Reserved keys (src, host, profile) are auto-stamped and cannot be overridden. Not for tags."`
+	// environment and cannot be overridden here.
+	Metadata map[string]any `json:"metadata,omitempty" jsonschema:"description=Caller-supplied metadata key-value pairs (e.g. kind, project, role). Reserved keys (src, host, profile) are auto-stamped and cannot be overridden."`
+	// Tags are applied atomically at write time, durable on the sealed object
+	// metadata and the local tag index. Tags are normalized (lowercased,
+	// deduped). This eliminates the need for a separate vault_tag_add call
+	// after upload.
+	Tags []string `json:"tags,omitempty" jsonschema:"description=Tags to apply to the file at write time. Durable: sealed into the object metadata and the local tag index so they sync to every device. Normalized (lowercased, deduped). Eliminates the need for a separate vault_tag_add call."`
 }
 
 // NewVaultPutFileDescriptor builds the unified, transport-aware vault_put_file
@@ -164,6 +168,12 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 					callerKV = map[string]any{}
 				}
 				callerKV["agent"] = in.Agent
+			}
+			if len(in.Tags) > 0 {
+				if callerKV == nil {
+					callerKV = map[string]any{}
+				}
+				callerKV["tags"] = in.Tags
 			}
 			var hostType string
 			if request.Caps != nil && request.Caps.Profile != nil {
@@ -281,9 +291,16 @@ func vaultPutFileSchema(features hostenv.FeatureSet) json.RawMessage {
 		StringProperty("agent", "Identifier for the creating agent (e.g. an orchestrator name). Stored as vault metadata — never as a tag.").
 		Property("metadata", &jsonschema.Schema{
 			Type:        "object",
-			Description: "Caller-supplied metadata key-value pairs (e.g. kind, project, role). Reserved keys (src, host, profile) are auto-stamped and cannot be overridden. Not for tags.",
+			Description: "Caller-supplied metadata key-value pairs (e.g. kind, project, role). Reserved keys (src, host, profile) are auto-stamped and cannot be overridden.",
 			AdditionalProperties: &jsonschema.Schema{
 				Description: "Arbitrary caller-supplied metadata value.",
+			},
+		}).
+		Property("tags", &jsonschema.Schema{
+			Type:        "array",
+			Description: "Tags to apply to the file at write time. Durable: sealed into the object metadata and the local tag index so they sync to every device. Normalized (lowercased, deduped). Eliminates the need for a separate vault_tag_add call.",
+			Items: &jsonschema.Schema{
+				Type: "string",
 			},
 		}).
 		Required("vault_path").

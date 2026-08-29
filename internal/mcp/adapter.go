@@ -446,6 +446,12 @@ adapter.`,
 			// per-request raw wire snapshot that backs the dev_* tools.
 			SetTransportFlags(stdioMode, cmd.String("tunnel") == "openai")
 			SetDevTools(cmd.Bool("dev-tools"))
+			SetInvokeTimeout(func() time.Duration {
+				if wizardS.CfgMgr == nil {
+					return 0
+				}
+				return wizardS.CfgMgr.Config().GetDefaultTimeout()
+			})
 
 			// Install the hub's tool-handler adapter (registerTool, which routes
 			// through sdk.AdaptToolHandler with the hub's deps) as the sdk seam's
