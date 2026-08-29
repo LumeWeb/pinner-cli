@@ -259,6 +259,24 @@ func RunMcpInstallWizard(ctx context.Context, cmd mcpInstallFlagGetter, ui Insta
 			// default is safe; stdio installs never reach here.
 			wantService := effectiveManagedService(realCmd.IsSet("service"), s.UseService)
 
+			// Stop the running managed service before the collector probes
+			// tunnel resources (ResolveNgrokSDKURL opens a temp ngrok tunnel
+			// that conflicts with the running service's tunnel, ERR_NGROK_334).
+			// This runs in the Resolve public URL step — which is always
+			// applicable to http installs and never skipped by
+			// configStepSkipIfHeadlessReRun — so the service is freed even on a
+			// headless re-run where the tunnel-config step was skipped.
+			// installManagedService (inside CollectHTTPInstallWithCreated)
+			// reinstalls and starts the service on the success path; the
+			// deferred restart in RunMcpInstallWizard covers the error path.
+			if wantService {
+				stopped, stopErr := mcpadapter.StopManagedServiceIfInstalled(ctx)
+				if stopErr != nil {
+					return stopErr
+				}
+				s.serviceStoppedForProbe = stopped
+			}
+
 			env, sideEffect, err := mcpadapter.CollectHTTPInstallWithCreated(ctx, realCmd, "", wantService, created)
 			if err != nil {
 				// Roll the file back ONLY if the install failed before any
@@ -533,17 +551,7 @@ func buildMcpTunnelSteps(realCmd *cli.Command, ui InstallUI) []wizard.Step[*Inst
 		wrap("Tunnel-specific configuration", tunnelStepAt(inner, 1), tunnelConfigSeeded,
 			func(s *InstallState) bool { return !httpTunnelSkipped(s) && hasTunnelProvider(s) },
 			func(s *InstallState) bool { return configStepSkipIfHeadlessReRun(realCmd, s) },
-			func(ctx context.Context, s *InstallState, _ *mcpadapter.ServiceInstallState) error {
-				if !effectiveManagedService(realCmd.IsSet("service"), s.UseService) {
-					return nil
-				}
-				stopped, err := mcpadapter.StopManagedServiceIfInstalled(ctx)
-				if err != nil {
-					return err
-				}
-				s.serviceStoppedForProbe = stopped
-				return nil
-			}, nil),
+			nil, nil),
 		// The env-write step NEVER skips for http (only for a non-http install
 		// or a tapped serviceEnvErr). On the FRESH path it writes the env from
 		// the service state and (via preWrite) sets EnvFileCreated + applies
