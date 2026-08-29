@@ -79,10 +79,12 @@ type InstallState struct {
 
 	// serviceStoppedForProbe records that the managed service was stopped
 	// by the tunnel-config step's preExecute hook (to free the ngrok
-	// endpoint before ResolveNgrokSDKURL probes it). If the wizard fails
-	// after that point, RunMcpInstallWizard restarts the service so the
-	// endpoint is not left indefinitely down. installManagedService
-	// reinstalls and starts the service on the success path.
+	// endpoint before ngrokFields calls ResolveNgrokSDKURL, which opens a
+	// temp tunnel that collides with the running service's tunnel,
+	// ERR_NGROK_334). If the wizard fails after that point,
+	// RunMcpInstallWizard restarts the service so the endpoint is not left
+	// indefinitely down. installManagedService reinstalls and starts the
+	// service on the success path.
 	serviceStoppedForProbe bool
 }
 
