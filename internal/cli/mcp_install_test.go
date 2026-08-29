@@ -67,6 +67,7 @@ type MockInstallUI struct {
 
 	ReportWrittenCalls  []writtenReport
 	ReportBuildCalls    []buildReport
+	ReportMCPURLCalls   []string // urls passed to each call
 	SetMCPPasswordCalls []string // current values passed to each call
 	ConfirmOAuthCalls   []bool   // assumed values passed to each call
 }
@@ -145,6 +146,14 @@ func (m *MockInstallUI) ReportBuild(agent install.AgentKey, msg string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ReportBuildCalls = append(m.ReportBuildCalls, buildReport{agent, msg})
+	return nil
+}
+
+func (m *MockInstallUI) ReportMCPURL(url string) error {
+	m.RecordCall("ReportMCPURL")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ReportMCPURLCalls = append(m.ReportMCPURLCalls, url)
 	return nil
 }
 
@@ -1461,6 +1470,34 @@ func TestSeedServiceFromEnvFile_FoldsKnownValues(t *testing.T) {
 	}
 }
 
+// TestSeedServiceFromEnvFile_SkipsStaleURLOnTunnelSwitch guards the operator-
+// reported bug: after switching base from a localhost OAuth install to a tunnel
+// (ngrok), the STALE localhost MCP_PUBLIC_URL must NOT be folded into
+// s.PublicURL. Doing so would pre-fill the ngrok PublicURL.Derived hook with the
+// dead 127.0.0.1 URL and short-circuit the real ngrok detection, so the agent
+// config would keep pointing at the old localhost endpoint.
+func TestSeedServiceFromEnvFile_SkipsStaleURLOnTunnelSwitch(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "mcp.env")
+	// A PRIOR localhost OAuth install: empty provider + its resolved URL.
+	writeEnv(t, envFile, "MCP_PUBLIC_URL=http://127.0.0.1:38550\nMCP_AUTH_TOKEN=auth\n")
+
+	// The provider step already decided ngrok this run (the operator switched).
+	s := &mcpadapter.ServiceInstallState{
+		Provider:        tunnel.TunnelProviderNgrok,
+		ProviderDecided: true,
+	}
+	seedServiceFromEnvFile(envFile, s)
+
+	if s.PublicURL != "" {
+		t.Errorf("BUG: stale localhost MCP_PUBLIC_URL (%q) must NOT be folded when switching base to a tunnel; it would pre-fill and block ngrok URL detection", s.PublicURL)
+	}
+	// The shared token is provider-agnostic and still folds.
+	if s.AuthToken != "auth" {
+		t.Errorf("authToken = %q, want 'auth' folded (shared token survives a provider switch)", s.AuthToken)
+	}
+}
+
 // TestSeedServiceFromEnvFile_PreservesExplicitLocalhost guards the audit
 // finding that "localhost" (the EMPTY provider, deliberately chosen = decided)
 // was clobbered back to a persisted tunnel provider by the env fold on a
@@ -1740,27 +1777,33 @@ func TestMcpInstallHTTPNoTunnelPromptsForPassword(t *testing.T) {
 }
 
 // TestMcpInstallHTTPTunnelSkipsPasswordPrompt guard the tunnel context of the
-// context-dependent single ask: on a TUNNEL install the shared auth token is
-// collected by the tunnel-specific configuration step, so the parent MCP
-// Password step must be SKIPPED — never prompting for the same secret twice.
+// context-dependent single ask: on a TUNNEL install the shared auth token is a
+// FRESH decision made this run by the tunnel-specific configuration step
+// (recorded via MarkAuthTokenCollected, mirroring the Gather commit), so the
+// parent MCP Password step must be SKIPPED — never prompting for the same
+// secret twice.
 func TestMcpInstallHTTPTunnelSkipsPasswordPrompt(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	projectDir := t.TempDir()
 	ui := newMockInstallUI()
 
+	// The tunnel-config step ran this run and collected the shared secret as a
+	// fresh decision (decided channel), so the parent MCP Password prompt is
+	// redundant and must be skipped.
+	svc := &mcpadapter.ServiceInstallState{
+		Provider:  tunnel.TunnelProviderNgrok,
+		AuthToken: "collected-in-tunnel-step",
+		PublicURL: "https://mcp.ngrok-free.dev",
+	}
+	svc.MarkAuthTokenCollected("collected-in-tunnel-step")
+
 	state := &InstallState{
 		Agents:     []install.AgentKey{install.AgentClaudeCode},
 		Scope:      scopeGlobal,
 		Transport:  install.TransportHTTP,
 		UseService: true,
-		// A tunnel provider is configured: the tunnel-config step already
-		// gathered the shared secret, so the parent must not ask again.
-		Service: &mcpadapter.ServiceInstallState{
-			Provider:  tunnel.TunnelProviderNgrok,
-			AuthToken: "collected-in-tunnel-step",
-			PublicURL: "https://mcp.ngrok-free.dev",
-		},
+		Service:    svc,
 	}
 
 	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
@@ -1779,6 +1822,88 @@ func TestMcpInstallHTTPTunnelSkipsPasswordPrompt(t *testing.T) {
 	headers, _ := entry["headers"].(map[string]any)
 	if auth, _ := headers["Authorization"]; auth != "Bearer collected-in-tunnel-step" {
 		t.Errorf("entry headers[Authorization] = %v, want 'Bearer collected-in-tunnel-step'", auth)
+	}
+}
+
+// TestMcpInstallHTTPTunnelRerunPromptsForPassword guard the re-run scenario the
+// operator reported: a tunnel install where the shared auth token was merely
+// folded from a persisted env file (an inherited credential — e.g. switching
+// base from a localhost OAuth install to a tunnel) is NOT a fresh decision this
+// run, so the parent MCP Password prompt MUST still run (keep-or-replace).
+func TestMcpInstallHTTPTunnelRerunPromptsForPassword(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+	ui := newMockInstallUI()
+
+	// The token is inherited from a prior localhost install (folded into the
+	// state, never decided this run) — exactly the "switch base to a tunnel"
+	// re-run. The operator must be prompted to confirm/replace it.
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: true,
+		Service: &mcpadapter.ServiceInstallState{
+			Provider:  tunnel.TunnelProviderNgrok,
+			AuthToken: "inherited-from-localhost",
+			PublicURL: "https://mcp.ngrok-free.dev",
+		},
+	}
+
+	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
+	w.collectHTTP = fakeHTTPCollector("https://mcp.ngrok-free.dev", "inherited-from-localhost")
+	// Keep the inherited token (empty input keeps it) so no env-file persistence
+	// is attempted; the point of this test is that the prompt FIRES at all.
+	ui.SetMCPPasswordResult = "inherited-from-localhost"
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+
+	if !ui.WasCalled("SetMCPPassword") {
+		t.Errorf("SetMCPPassword MUST be called on a tunnel re-run that inherited (not decided) the token")
+	}
+}
+
+// TestMcpInstallHTTPReportsFinalMCPURL guard the final notice: an http install
+// reports the exact public MCP endpoint URL (base + /mcp) after Write Config,
+// so the operator knows the URL a client dials.
+func TestMcpInstallHTTPReportsFinalMCPURL(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+	ui := newMockInstallUI()
+
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: true,
+		Service: &mcpadapter.ServiceInstallState{
+			Provider:  tunnel.TunnelProviderNgrok,
+			AuthToken: "tok",
+		},
+	}
+	// The operator chose a base origin (no trailing /mcp); the reported URL must
+	// be the endpoint path. Keep the inherited token (no env-file persist) so
+	// the run focuses on the final URL notice.
+	ui.SetMCPPasswordResult = "tok"
+	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
+	w.collectHTTP = fakeHTTPCollector("https://mcp.ngrok-free.dev", "tok")
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+
+	ui.mu.Lock()
+	urls := append([]string(nil), ui.ReportMCPURLCalls...)
+	ui.mu.Unlock()
+	if len(urls) != 1 {
+		t.Fatalf("ReportMCPURL calls = %d, want exactly 1 on an http install (%v)", len(urls), urls)
+	}
+	if urls[0] != "https://mcp.ngrok-free.dev/mcp" {
+		t.Errorf("ReportMCPURL url = %q, want 'https://mcp.ngrok-free.dev/mcp'", urls[0])
 	}
 }
 

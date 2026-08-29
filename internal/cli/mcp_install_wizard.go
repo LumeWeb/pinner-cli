@@ -267,15 +267,20 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 
 	// The MCP password (the shared auth token that protects the public HTTP
 	// endpoint) is a first-class credential: the single, context-dependent
-	// prompt for the shared secret. On a NO-TUNNEL (localhost) http install the
-	// tunnel step does not gather a secret, so this is the one place it is
-	// asked. On a TUNNEL install the secret was already collected as the shared
-	// "AuthToken" field in the tunnel-specific configuration step, so this step
-	// is skipped (hasTunnelProvider) — never prompting for the same secret
-	// twice. Skipped in non-interactive mode (--non-interactive; token sourced
-	// from flags/env). The prompt only applies to a remote (http) transport —
-	// stdio needs no credential, so the step is dropped there entirely (it is
-	// not numbered and never shows a "skipped" banner).
+	// prompt for the shared secret. It is skipped ONLY when the shared auth
+	// token was already collected as a FRESH operator decision this run (the
+	// tunnel-specific configuration step gathered it, or an explicit
+	// --auth-token/MCP_AUTH_TOKEN source decided it) — asking again then would
+	// double-prompt. A token merely folded from a persisted env file (an
+	// interactive re-run inheriting an existing credential — e.g. switching
+	// base from a localhost OAuth install to a tunnel) is NOT a fresh decision,
+	// so the prompt still runs and lets the operator keep or replace it. A
+	// no-tunnel (localhost) http install never gathers a secret in the tunnel
+	// step, so this is always its one place to ask. Skipped in non-interactive
+	// mode (--non-interactive; token sourced from flags/env). The prompt only
+	// applies to a remote (http) transport — stdio needs no credential, so the
+	// step is dropped there entirely (it is not numbered and never shows a
+	// "skipped" banner).
 	steps = append(steps, wizard.StepFunc[*InstallState]{
 		Name_: "MCP Password",
 		ApplicableFunc: func(s *InstallState) bool {
@@ -283,13 +288,14 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 		},
 		SkipFunc: func(s *InstallState) bool {
 			return s.NonInteractive ||
-				// Context-dependent single ask: on a tunnel install the shared
-				// auth token was already collected by the tunnel-specific
-				// configuration step (the shared "AuthToken" field), so asking
-				// again here would double-prompt. Only a no-tunnel (localhost)
-				// http install has not gathered a secret — that is the single
-				// place it is asked there.
-				hasTunnelProvider(s)
+				// Context-dependent single ask: skip only when the shared auth
+				// token was DECIDED this run (collected by the tunnel config
+				// step or an explicit flag). A token that was merely folded
+				// from a persisted env file was not decided this run, so the
+				// prompt still runs (keep-or-replace) instead of silently
+				// inheriting a credential the operator never confirmed for the
+				// endpoint.
+				mcpadapter.ServiceAuthTokenDecided(s.Service)
 		},
 		ExecuteFunc: func(ctx context.Context, s *InstallState) error {
 			pw, err := w.ui.SetMCPPassword(s.AuthToken)
@@ -333,6 +339,22 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 			Name_: "Write Config",
 			ExecuteFunc: func(ctx context.Context, s *InstallState) error {
 				return w.writeConfig(s)
+			},
+		},
+		// Final notice for a remote (http) install: surface the public MCP
+		// endpoint URL so the operator (and the agent they just configured)
+		// knows exactly which URL to dial. It is internal plumbing (no user
+		// decision), so it is hidden from the step list, but it still prints
+		// the URL notice after Write Config. stdio installs have no URL and
+		// drop the step entirely.
+		wizard.StepFunc[*InstallState]{
+			Name_:   "Report MCP URL",
+			Hidden_: true,
+			ApplicableFunc: func(s *InstallState) bool {
+				return !httpTunnelSkipped(s) && s.PublicURL != ""
+			},
+			ExecuteFunc: func(_ context.Context, s *InstallState) error {
+				return w.ui.ReportMCPURL(httpEndpointURL(s.PublicURL))
 			},
 		},
 	)
