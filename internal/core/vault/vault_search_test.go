@@ -8,6 +8,12 @@ import (
 	"time"
 )
 
+// searchReq builds a SearchRequest from an ANDed predicate list, so tests can
+// express filters concisely.
+func searchReq(preds ...Predicate) SearchRequest {
+	return SearchRequest{Where: preds}
+}
+
 // TestSearchFilters verifies metadata-first search: name substring, tag AND
 // membership, and directory prefix filtering, with AND semantics across
 // filters.
@@ -27,7 +33,7 @@ func TestSearchFilters(t *testing.T) {
 	mk("vault:/photos/beach.jpg", map[string]any{"tags": []any{"vacation"}})
 
 	// Name substring (case-insensitive).
-	res, err := svc.Search(ctx, SearchFilter{Name: "REPORT"})
+	res, err := svc.Search(ctx, SearchRequest{Query: "REPORT"})
 	if err != nil {
 		t.Fatalf("Search name: %v", err)
 	}
@@ -35,8 +41,9 @@ func TestSearchFilters(t *testing.T) {
 		t.Fatalf("name-search report found %d, want 2", len(res))
 	}
 
-	// Tag AND: finance+final matches only report-final.txt.
-	res, err = svc.Search(ctx, SearchFilter{Tags: []string{"finance", "final"}})
+	// Tag AND: finance+final matches only report-final.txt (two separate
+	// single-tag predicates that AND together).
+	res, err = svc.Search(ctx, searchReq(Predicate{Tag: []string{"finance"}}, Predicate{Tag: []string{"final"}}))
 	if err != nil {
 		t.Fatalf("Search tags: %v", err)
 	}
@@ -48,7 +55,7 @@ func TestSearchFilters(t *testing.T) {
 	}
 
 	// Directory prefix: only /docs files.
-	res, err = svc.Search(ctx, SearchFilter{Dir: "vault:/docs"})
+	res, err = svc.Search(ctx, searchReq(Predicate{Dir: []string{"vault:/docs"}}))
 	if err != nil {
 		t.Fatalf("Search dir: %v", err)
 	}
@@ -57,7 +64,7 @@ func TestSearchFilters(t *testing.T) {
 	}
 
 	// Cross-filter AND: tag finance+vacation -> none.
-	res, err = svc.Search(ctx, SearchFilter{Tags: []string{"finance", "vacation"}})
+	res, err = svc.Search(ctx, searchReq(Predicate{Tag: []string{"finance"}}, Predicate{Tag: []string{"vacation"}}))
 	if err != nil {
 		t.Fatalf("Search combined: %v", err)
 	}
@@ -66,12 +73,77 @@ func TestSearchFilters(t *testing.T) {
 	}
 
 	// Empty filter returns all live files.
-	res, err = svc.Search(ctx, SearchFilter{})
+	res, err = svc.Search(ctx, SearchRequest{})
 	if err != nil {
 		t.Fatalf("Search empty: %v", err)
 	}
 	if len(res) != 3 {
 		t.Fatalf("empty search found %d, want 3", len(res))
+	}
+}
+
+// TestSearchTagOrWithinField verifies a single tag predicate with a LIST means
+// "any of these tags" (OR/IN), distinct from two scalar predicates (AND).
+func TestSearchTagOrWithinField(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTagTestService(t)
+
+	mk := func(path string, meta map[string]any) {
+		t.Helper()
+		if _, err := svc.Put(ctx, bytes.NewReader([]byte(path)), int64(len(path)), path, meta); err != nil {
+			t.Fatalf("Put %s: %v", path, err)
+		}
+	}
+	mk("vault:/docs/finance.txt", map[string]any{"tags": []any{"finance"}})
+	mk("vault:/docs/tax.txt", map[string]any{"tags": []any{"tax"}})
+	mk("vault:/docs/other.txt", map[string]any{"tags": []any{"q1"}})
+
+	// One predicate with a list -> either finance OR tax.
+	res, err := svc.Search(ctx, searchReq(Predicate{Tag: []string{"finance", "tax"}}))
+	if err != nil {
+		t.Fatalf("Search tag-or: %v", err)
+	}
+	if len(res) != 2 {
+		t.Fatalf("tag-or [finance,tax] found %d, want 2 (finance.txt, tax.txt)", len(res))
+	}
+
+	// Combined with an AND tag: (finance OR tax) AND q1 -> none (other.txt has
+	// q1 but not finance/tax).
+	res, err = svc.Search(ctx, searchReq(Predicate{Tag: []string{"finance", "tax"}}, Predicate{Tag: []string{"q1"}}))
+	if err != nil {
+		t.Fatalf("Search tag-or-and: %v", err)
+	}
+	if len(res) != 0 {
+		t.Fatalf("(finance|tax) AND q1 should match nothing, got %+v", res)
+	}
+}
+
+// TestSearchNotStatus verifies negation of a column predicate.
+func TestSearchNotStatus(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTagTestService(t)
+
+	if _, err := svc.Put(ctx, bytes.NewReader([]byte("a")), 1, "vault:/docs/a.txt", nil); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if _, err := svc.Put(ctx, bytes.NewReader([]byte("b")), 1, "vault:/docs/b.txt", nil); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	// Mark a.txt lost.
+	rec := File{}
+	if err := svc.db.Where("name = ?", "a.txt").First(&rec).Error; err != nil {
+		t.Fatalf("load a.txt: %v", err)
+	}
+	if err := svc.db.Model(&File{}).Where("id = ?", rec.ID).Update("status", "lost").Error; err != nil {
+		t.Fatalf("mark lost: %v", err)
+	}
+
+	res, err := svc.Search(ctx, searchReq(Predicate{Not: &Predicate{Status: []string{"lost"}}}))
+	if err != nil {
+		t.Fatalf("Search not-status: %v", err)
+	}
+	if len(res) != 1 || res[0].Name != "b.txt" {
+		t.Fatalf("not-status=lost search = %+v, want only b.txt", res)
 	}
 }
 
@@ -93,7 +165,7 @@ func TestSearchWriteContext(t *testing.T) {
 
 	// Projects the columns from stamped metadata on Put.
 	byName := func(n string) *SearchItem {
-		res, err := svc.Search(ctx, SearchFilter{Name: n})
+		res, err := svc.Search(ctx, SearchRequest{Query: n})
 		if err != nil {
 			t.Fatalf("search %s: %v", n, err)
 		}
@@ -116,7 +188,7 @@ func TestSearchWriteContext(t *testing.T) {
 	}
 
 	// Filter by source.
-	res, err := svc.Search(ctx, SearchFilter{Source: "mcp"})
+	res, err := svc.Search(ctx, searchReq(Predicate{Source: []string{"mcp"}}))
 	if err != nil {
 		t.Fatalf("Search source: %v", err)
 	}
@@ -125,7 +197,7 @@ func TestSearchWriteContext(t *testing.T) {
 	}
 
 	// Filter by host.
-	res, err = svc.Search(ctx, SearchFilter{Host: "claude-desktop", Source: "mcp"})
+	res, err = svc.Search(ctx, searchReq(Predicate{Host: []string{"claude-desktop"}}, Predicate{Source: []string{"mcp"}}))
 	if err != nil {
 		t.Fatalf("Search host: %v", err)
 	}
@@ -134,7 +206,7 @@ func TestSearchWriteContext(t *testing.T) {
 	}
 
 	// Filter by agent.
-	res, err = svc.Search(ctx, SearchFilter{Agent: "orchestrator-a"})
+	res, err = svc.Search(ctx, searchReq(Predicate{Agent: []string{"orchestrator-a"}}))
 	if err != nil {
 		t.Fatalf("Search agent: %v", err)
 	}
@@ -173,14 +245,14 @@ func TestSearchStatusFilter(t *testing.T) {
 		t.Fatalf("mark lost: %v", err)
 	}
 
-	res, err := svc.Search(ctx, SearchFilter{Status: "lost"})
+	res, err := svc.Search(ctx, searchReq(Predicate{Status: []string{"lost"}}))
 	if err != nil {
 		t.Fatalf("Search status: %v", err)
 	}
 	if len(res) != 1 || res[0].Status != "lost" {
 		t.Fatalf("status=lost search = %+v, want 1 lost file", res)
 	}
-	res, err = svc.Search(ctx, SearchFilter{Status: "ok"})
+	res, err = svc.Search(ctx, searchReq(Predicate{Status: []string{"ok"}}))
 	if err != nil {
 		t.Fatalf("Search status ok: %v", err)
 	}
@@ -208,7 +280,7 @@ func TestSearchQueryOpaque(t *testing.T) {
 
 	// query="tag:finance" must match the literal filename, not apply a tag
 	// filter (budget.txt has the finance tag but not the literal text).
-	res, err := svc.Search(ctx, SearchFilter{Name: "tag:finance"})
+	res, err := svc.Search(ctx, SearchRequest{Query: "tag:finance"})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -218,7 +290,7 @@ func TestSearchQueryOpaque(t *testing.T) {
 
 	// query contains spaces: treated as one contiguous substring, not AND.
 	mk("vault:/docs/q4 invoice.txt", nil)
-	res, err = svc.Search(ctx, SearchFilter{Name: "q4 invoice"})
+	res, err = svc.Search(ctx, SearchRequest{Query: "q4 invoice"})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -243,7 +315,7 @@ func TestSearchQueryMinLength(t *testing.T) {
 	mk("vault:/docs/abacus.txt")
 
 	// 3 chars -> FTS or LIKE both acceptable; must match.
-	res, err := svc.Search(ctx, SearchFilter{Name: "rep"})
+	res, err := svc.Search(ctx, SearchRequest{Query: "rep"})
 	if err != nil {
 		t.Fatalf("Search 3-char: %v", err)
 	}
@@ -252,7 +324,7 @@ func TestSearchQueryMinLength(t *testing.T) {
 	}
 
 	// 2 chars -> forced to LIKE path.
-	res, err = svc.Search(ctx, SearchFilter{Name: "ab"})
+	res, err = svc.Search(ctx, SearchRequest{Query: "ab"})
 	if err != nil {
 		t.Fatalf("Search 2-char: %v", err)
 	}
@@ -277,7 +349,7 @@ func TestSearchNamePredicateUndefinedWhenEmpty(t *testing.T) {
 	mk("vault:/docs/b.txt", map[string]any{"tags": []any{"ops"}})
 
 	// query="" only honors the tag filter.
-	res, err := svc.Search(ctx, SearchFilter{Tags: []string{"finance"}})
+	res, err := svc.Search(ctx, searchReq(Predicate{Tag: []string{"finance"}}))
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -301,12 +373,146 @@ func TestSearchNameAndStructuredFilters(t *testing.T) {
 		t.Fatalf("Put: %v", err)
 	}
 
-	res, err := svc.Search(ctx, SearchFilter{Name: "report", Tags: []string{"finance"}, Host: "claude-desktop"})
+	res, err := svc.Search(ctx, SearchRequest{
+		Query: "report",
+		Where: []Predicate{{Tag: []string{"finance"}}, {Host: []string{"claude-desktop"}}},
+	})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
 	if len(res) != 1 || res[0].Name != "report.txt" {
 		t.Fatalf("name+tag+host search = %+v, want only report.txt", res)
+	}
+}
+
+// TestSearchSinceBefore verifies the creation-time bounds compile.
+func TestSearchSinceBefore(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTagTestService(t)
+
+	if _, err := svc.Put(ctx, bytes.NewReader([]byte("a")), 1, "vault:/docs/a.txt", nil); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	// All files exist "now"; a since in the past matches both, a since far in
+	// the future matches none.
+	past := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	future := time.Now().Add(time.Hour * 24).UTC().Format(time.RFC3339)
+
+	res, err := svc.Search(ctx, searchReq(Predicate{Since: past}))
+	if err != nil {
+		t.Fatalf("Search since: %v", err)
+	}
+	if len(res) != 1 {
+		t.Fatalf("since(past) found %d, want 1", len(res))
+	}
+	res, err = svc.Search(ctx, searchReq(Predicate{Since: future}))
+	if err != nil {
+		t.Fatalf("Search since-future: %v", err)
+	}
+	if len(res) != 0 {
+		t.Fatalf("since(future) found %d, want 0", len(res))
+	}
+}
+
+// TestParseWhere validates the parsing of the structured where JSON (the MCP
+// surface and the CLI --where escape hatch), including the one-field-per-object
+// rule and closed field names.
+func TestParseWhere(t *testing.T) {
+	// MCP-shaped input: a decoded []any of objects.
+	got, err := ParseWhere([]any{
+		map[string]any{"tag": []any{"finance", "tax"}},
+		map[string]any{"host": "claude-desktop"},
+		map[string]any{"not": map[string]any{"status": "lost"}},
+	})
+	if err != nil {
+		t.Fatalf("ParseWhere: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("ParseWhere len = %d, want 3", len(got))
+	}
+	if len(got[0].Tag) != 2 || got[0].Tag[0] != "finance" {
+		t.Fatalf("tag list predicate = %+v", got[0])
+	}
+	if got[1].Host[0] != "claude-desktop" {
+		t.Fatalf("host predicate = %+v", got[1])
+	}
+	if got[2].Not == nil || got[2].Not.Status[0] != "lost" {
+		t.Fatalf("not predicate = %+v", got[2])
+	}
+
+	// CLI-shaped input: a JSON string.
+	s := `[{"tag":["finance","tax"]},{"host":"claude-desktop"}]`
+	got, err = ParseWhere(s)
+	if err != nil {
+		t.Fatalf("ParseWhere(string): %v", err)
+	}
+	if len(got) != 2 || len(got[0].Tag) != 2 {
+		t.Fatalf("ParseWhere(string) = %+v", got)
+	}
+
+	// Scalar normalization: {tag: "a"} becomes a one-element predicate.
+	got, err = ParseWhere([]any{map[string]any{"tag": "a"}})
+	if err != nil {
+		t.Fatalf("ParseWhere scalar: %v", err)
+	}
+	if len(got[0].Tag) != 1 || got[0].Tag[0] != "a" {
+		t.Fatalf("scalar tag = %+v", got[0])
+	}
+
+	// Unknown field is an error.
+	if _, err := ParseWhere([]any{map[string]any{"bogus": "x"}}); err == nil {
+		t.Fatal("expected error for unknown field")
+	}
+
+	// Multiple field keys in one object is an error.
+	if _, err := ParseWhere([]any{map[string]any{"tag": "a", "host": "b"}}); err == nil {
+		t.Fatal("expected error for multi-field predicate")
+	}
+
+	// Empty list is an error.
+	if _, err := ParseWhere([]any{map[string]any{"tag": []any{}}}); err == nil {
+		t.Fatal("expected error for empty tag list")
+	}
+
+	// Empty where is allowed -> nil.
+	got, err = ParseWhere(nil)
+	if err != nil || got != nil {
+		t.Fatalf("ParseWhere(nil) = %v, %v", got, err)
+	}
+}
+
+// TestParseWhereNormalizesCase verifies status/source predicate values are
+// lowercased at parse time (stored values are canonical lowercase), so a
+// mixed-case where payload still matches stored rows.
+func TestParseWhereNormalizesCase(t *testing.T) {
+	got, err := ParseWhere([]any{
+		map[string]any{"status": "LOST"},
+		map[string]any{"source": "MCP"},
+		map[string]any{"not": map[string]any{"source": "CLI"}},
+		map[string]any{"tag": "FiNaNcE"},
+		map[string]any{"host": "Codex"},
+	})
+	if err != nil {
+		t.Fatalf("ParseWhere: %v", err)
+	}
+	if len(got) != 5 {
+		t.Fatalf("ParseWhere len = %d, want 5", len(got))
+	}
+	if got[0].Status[0] != "lost" {
+		t.Fatalf("status should be lowercased, got %v", got[0].Status)
+	}
+	if got[1].Source[0] != "mcp" {
+		t.Fatalf("source should be lowercased, got %v", got[1].Source)
+	}
+	if got[2].Not == nil || got[2].Not.Source[0] != "cli" {
+		t.Fatalf("not-wrapped source should be lowercased, got %+v", got[2])
+	}
+	// Tags, hosts, and agents are NOT normalized (free-form values).
+	if got[3].Tag[0] != "FiNaNcE" {
+		t.Fatalf("tag should not be lowercased, got %v", got[3].Tag)
+	}
+	if got[4].Host[0] != "Codex" {
+		t.Fatalf("host should not be lowercased, got %v", got[4].Host)
 	}
 }
 
@@ -325,7 +531,7 @@ func TestSearchFTSSyncLifecycle(t *testing.T) {
 	}
 	byName := func(n string) []string {
 		t.Helper()
-		res, err := svc.Search(ctx, SearchFilter{Name: n})
+		res, err := svc.Search(ctx, SearchRequest{Query: n})
 		if err != nil {
 			t.Fatalf("Search %q: %v", n, err)
 		}
@@ -385,7 +591,7 @@ func TestSearchFTSUnavailableFallsBackToLike(t *testing.T) {
 	mk("vault:/docs/report-draft.txt")
 	mk("vault:/docs/budget.txt")
 
-	wantSearch := func(f SearchFilter) []string {
+	wantSearch := func(f SearchRequest) []string {
 		res, err := svc.Search(ctx, f)
 		if err != nil {
 			t.Fatalf("Search: %v", err)
@@ -398,7 +604,7 @@ func TestSearchFTSUnavailableFallsBackToLike(t *testing.T) {
 	}
 
 	// Baseline via the FTS path.
-	base := wantSearch(SearchFilter{Name: "report"})
+	base := wantSearch(SearchRequest{Query: "report"})
 	if len(base) != 2 {
 		t.Fatalf("baseline FTS search matched %v, want 2", base)
 	}
@@ -409,7 +615,7 @@ func TestSearchFTSUnavailableFallsBackToLike(t *testing.T) {
 	if err := svc.db.Exec("DROP TABLE files_fts").Error; err != nil {
 		t.Fatalf("drop files_fts: %v", err)
 	}
-	after := wantSearch(SearchFilter{Name: "report"})
+	after := wantSearch(SearchRequest{Query: "report"})
 	if len(after) != 2 {
 		t.Fatalf("LIKE fallback matched %v, want 2", after)
 	}
@@ -443,7 +649,7 @@ func TestSearchCap500(t *testing.T) {
 		t.Fatalf("bulk insert: %v", err)
 	}
 
-	res, err := svc.Search(ctx, SearchFilter{})
+	res, err := svc.Search(ctx, SearchRequest{})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}

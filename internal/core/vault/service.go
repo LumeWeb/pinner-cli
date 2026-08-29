@@ -48,10 +48,11 @@ type VaultService interface {
 	// List lists files and directories at the given vault path.
 	List(ctx context.Context, vaultPath string) ([]ListItem, error)
 
-	// Search returns live vault FILES matching the filter (metadata-first:
-	// name substring, tag AND, status, time). Empty filters match every live
-	// file. Results are ordered newest-first by creation time.
-	Search(ctx context.Context, f SearchFilter) ([]SearchItem, error)
+	// Search returns live vault FILES matching the request (metadata-first:
+	// name substring in SearchRequest.Query, ANDed where-predicates, result cap
+	// in SearchRequest.Limit). An empty request matches every live file.
+	// Results are ordered newest-first by creation time.
+	Search(ctx context.Context, req SearchRequest) ([]SearchItem, error)
 
 	// Stat returns metadata about a file or directory.
 	Stat(ctx context.Context, vaultPath string) (*StatResult, error)
@@ -190,32 +191,7 @@ type StatResult struct {
 	Agent  string `json:"agent,omitempty"`
 }
 
-// SearchFilter narrows a vault search. All fields are ANDed; empty fields are
-// ignored. Tags are ANDed too (a result must match EVERY tag). Name is a
-// case-insensitive substring of the file name (backed by FTS5 trigram when
-// available, else LIKE). Dir restricts results to files under the given vault
-// directory (inclusive). Other filters cover status, creation time, and the
-// write-context columns (source/host/agent).
-type SearchFilter struct {
-	// Name is a case-insensitive substring of the file name. Empty = any.
-	Name string
-	// Dir restricts to files under this vault directory (inclusive prefix).
-	Dir string
-	// Tags requires a file to carry EVERY listed tag (AND semantics).
-	Tags []string
-	// Status restricts to a specific file status ("ok" | "pending" | "lost").
-	Status string
-	// Since restricts to files created at or after this time (UTC). Zero = any.
-	Since time.Time
-	// Source restricts to files written by a given frontend ("mcp" | "cli").
-	// Empty = any.
-	Source string
-	// Host restricts to files written from a given host platform (e.g.
-	// "claude-desktop", "codex"). Empty = any.
-	Host string
-	// Agent restricts to files whose creator agent matches. Empty = any.
-	Agent string
-}
+
 
 // SearchItem is one file result from Search. It carries a full vault path and
 // the same metadata surfaced by Stat, so the result is directly actionable.

@@ -22,7 +22,7 @@ func (NopVaultService) Get(context.Context, string, io.Writer) error { return ni
 func (NopVaultService) List(context.Context, string) ([]vault.ListItem, error) {
 	return nil, nil
 }
-func (NopVaultService) Search(context.Context, vault.SearchFilter) ([]vault.SearchItem, error) {
+func (NopVaultService) Search(context.Context, vault.SearchRequest) ([]vault.SearchItem, error) {
 	return nil, nil
 }
 func (NopVaultService) Stat(context.Context, string) (*vault.StatResult, error) {

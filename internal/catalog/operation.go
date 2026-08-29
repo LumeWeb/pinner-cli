@@ -3,7 +3,10 @@
 // Go registry of Operation descriptors, not a wire format.
 package catalog
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+)
 
 // Safety classifies what an operation does to state. It is declared on the
 // operation, not inferred from a command name.
@@ -81,6 +84,12 @@ const (
 	// pass either the id's integer form or a string form without being
 	// rejected by the normalizer.
 	ArgTypeFlexibleID
+	// ArgTypeRawJSON is a pass-through argument: the value arrives as-is (a
+	// JSON string on the CLI, a decoded array/object from MCP) and the Handler
+	// is responsible for parsing it. Use it with RawSchema to advertise a
+	// structured JSON Schema on the MCP surface while letting the CLI treat it
+	// as a plain --flag string.
+	ArgTypeRawJSON
 )
 
 // Target is a per-profile presentation variant for the MCP surface only.
@@ -178,6 +187,13 @@ type OperationArg struct {
 	// map (the CLI wiring adapter fills it from the positional). No-op on args
 	// that have no Positional — they must never set it.
 	PositionalOnly bool
+	// RawSchema, when set, is used verbatim as the arg's JSON Schema property on
+	// the MCP surface instead of auto-generating one from ArgType. It lets an
+	// ArgTypeRawJSON (or any) arg advertise a rich, closed structured schema
+	// (e.g. an array of predicate objects) that the flat ArgType-to-JSON-Type
+	// mapping cannot express. RawSchema must be a JSON object; it is merged as
+	// the property object (its "description" wins over Help/AgentHelp).
+	RawSchema json.RawMessage
 }
 
 // Handler.Execute runs the business operation against core. It never touches

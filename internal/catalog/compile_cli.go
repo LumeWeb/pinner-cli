@@ -153,6 +153,10 @@ func flagFor(a OperationArg) cli.Flag {
 		return &cli.DurationFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required, Sources: sources}
 	case ArgTypeStringSlice:
 		return &cli.StringSliceFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required, Sources: sources}
+	case ArgTypeRawJSON:
+		// A raw-JSON arg's CLI flag is a plain string carrying JSON text. The
+		// handler parses it (e.g. --where-json '[{"tag":"finance"}]').
+		return &cli.StringFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required, Sources: sources}
 	default: // ArgTypeString
 		return &cli.StringFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required, Sources: sources}
 	}
@@ -273,6 +277,10 @@ func cliArgValue(cmd *cli.Command, a OperationArg) (value any, set bool, empty b
 	case ArgTypeStringSlice:
 		v := cmd.StringSlice(a.Name)
 		return v, set, len(v) == 0
+	case ArgTypeRawJSON:
+		// The CLI surface of a raw-JSON arg is a string (JSON text).
+		v := cmd.String(a.Name)
+		return v, set, v == ""
 	default: // ArgTypeString
 		v := cmd.String(a.Name)
 		return v, set, v == ""

@@ -594,82 +594,30 @@ func (s *vaultService) List(ctx context.Context, vaultPath string) ([]ListItem, 
 	return items, nil
 }
 
-// Search returns live vault FILES matching the filter. Results are ordered by
+// Search returns live vault FILES matching the request. Results are ordered by
 // creation time (newest-first), except when an FTS5 name match is used, in
-// which case BM25 relevance is preferred then recency. Filters are all ANDed:
-// an optional opaque name substring (case-insensitive, backed by FTS5 trigram
-// when available and LIKE otherwise), tag AND membership, a directory prefix, a
-// status, a creation-time floor, and exact-match write-context columns. Each
-// result carries a full vault path plus the same metadata Stat surfaces, so
-// results are directly actionable.
-func (s *vaultService) Search(_ context.Context, f SearchFilter) ([]SearchItem, error) {
+// which case BM25 relevance is preferred then recency. The Request.Query is an
+// optional opaque name substring (case-insensitive, backed by FTS5 trigram
+// when available and LIKE otherwise). The Request.Where list is ANDed: tag AND
+// membership / OR-within-field, directory prefixes, status / write-context
+// columns, creation-time bounds, and negation — compiled by applyWhere (tags
+// and dirs via join/prefix SQL, the rest through the queryutil GORM builder).
+// Each result carries a full vault path plus the same metadata Stat surfaces,
+// so results are directly actionable.
+func (s *vaultService) Search(_ context.Context, req SearchRequest) ([]SearchItem, error) {
 	q := s.db.Table("files").
 		Select("files.*").
 		Joins("LEFT JOIN directories ON directories.id = files.directory_id").
 		Where("files.is_current = 1 AND files.deleted_at IS NULL")
 
-	if len(f.Tags) > 0 {
-		// AND semantics: a matching file must link to EVERY distinct tag.
-		// Dedupe so COUNT(DISTINCT tags.name) == len(deduped) is exact.
-		want := lo.Uniq(lo.FilterMap(f.Tags, func(t string, _ int) (string, bool) {
-			n := strings.ToLower(strings.TrimSpace(t))
-			return n, n != ""
-		}))
-		if len(want) > 0 {
-			sub := s.db.Table("tags").
-				Select("ft.file_id").
-				Joins("JOIN file_tags ft ON ft.tag_id = tags.id").
-				Where("tags.name IN ?", want).
-				Group("ft.file_id").
-				Having("COUNT(DISTINCT tags.name) = ?", len(want))
-			q = q.Where("files.id IN (?)", sub)
-		}
+	q, err := s.applyWhere(q, req.Where)
+	if err != nil {
+		return nil, err
 	}
+
 	// Note: the name predicate is intentionally NOT applied here. It is added
 	// at query-execution time so the FTS5-vs-LIKE decision (and its distinct
 	// ordering) happens after all structured filters are assembled.
-
-	if f.Dir != "" {
-		// Accept both "vault:/docs" (scheme) and "/docs" (scheme-less): reduce
-		// to the directory path stored on directories.path.
-		dir := f.Dir
-		if IsVaultPath(dir) {
-			if vp, err := ParseVaultPath(dir); err == nil {
-				dir = vp.Directory
-				if vp.Name != "" && !vp.IsDir {
-					dir = JoinDirPath(vp.Directory, vp.Name)
-				}
-			}
-		}
-		dir = strings.TrimSuffix(dir, "/")
-		if dir == "" {
-			dir = "/"
-		}
-		// Escape the directory path before building the LIKE prefix so a directory
-		// whose name contains LIKE metacharacters (% or _) cannot match unrelated
-		// sibling paths (mirrors escapeLike on the Name filter above). The prefix
-		// is escaped as a whole (dir + "/") exactly once for the LIKE pattern.
-		prefix := dir + "/"
-		q = q.Where("(directories.path = ? OR directories.path LIKE ? ESCAPE '\\')", dir, escapeLike(prefix)+"%")
-	}
-	if !f.Since.IsZero() {
-		q = q.Where("files.created_at >= ?", f.Since)
-	}
-	// Exact-match column filters (ANDed; an empty value is ignored).
-	// Table-driven so adding a new equality filter is one row, not a block.
-	for _, c := range []struct {
-		column string
-		value  string
-	}{
-		{column: "files.status", value: f.Status},
-		{column: "files.source", value: f.Source},
-		{column: "files.host", value: f.Host},
-		{column: "files.agent", value: f.Agent},
-	} {
-		if c.value != "" {
-			q = q.Where(c.column+" = ?", c.value)
-		}
-	}
 
 	// Bound results so a metadata search over a large vault never loads every
 	// match into memory at once; the tag/path assembly below is batched so a
@@ -680,17 +628,20 @@ func (s *vaultService) Search(_ context.Context, f SearchFilter) ([]SearchItem, 
 	// substring match. A MATCH error also falls back to LIKE, so behavior never
 	// regresses. FTS orders by BM25 relevance then recency; the LIKE and
 	// no-name paths order by recency alone.
-	const searchLimit = 500
+	searchLimit := req.Limit
+	if searchLimit <= 0 {
+		searchLimit = 500
+	}
 	var records []File
 	searched := false
-	if name := strings.TrimSpace(f.Name); name != "" {
+	if name := strings.TrimSpace(req.Query); name != "" {
 		if param, ok := ftsMatchParam(name); ok && s.ftsAvailable() {
 			// ftsSearch runs on a clone of q so a failed MATCH never corrupts
 			// the base predicates used by the LIKE fallback below.
 			searched = s.ftsSearch(q, param, searchLimit, &records)
 		}
 		if !searched {
-			q = q.Where("files.name LIKE ? ESCAPE '\\'", "%"+escapeLike(f.Name)+"%")
+			q = q.Where("files.name LIKE ? ESCAPE '\\'", "%"+escapeLike(req.Query)+"%")
 		}
 	}
 	if !searched {

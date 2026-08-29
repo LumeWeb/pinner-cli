@@ -12,11 +12,14 @@ package catalogops
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/samber/lo"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
@@ -504,7 +507,7 @@ func vaultSearch(d VaultDeps) catalog.Operation {
 		Name:        "vault_search",
 		Title:       "Search vault files",
 		Summary:     "Search vault files by name, tag, status, or write context",
-		Description: "Search vault files by name and metadata.\n\nquery is a filename substring. It is not a query language. Filter with flags / parameters: tag, status, source, host, agent, since, dir. All filters AND together. Multiple tags all required.\n\nExamples:\n  vault search report --tag finance --host claude-desktop\n  vault search \"q4 invoice\" --since 2024-01-01 --dir reports/\n  vault search --status lost --tag legal",
+		Description: "Search vault files by name and metadata.\n\nquery is a filename substring. It is not a query language. Filter with parameters: tag (repeat for AND), tag_any, status, not_status, source, host, agent, since, before, dir, and the structured `where` predicate list.\n\nwhere is an ANDed list of predicates; a field value that is a list is OR/IN on that field. Each object carries ONE field key (or not).\n\nExamples:\n  vault search report --tag finance --host claude-desktop\n  vault search \"q4 invoice\" --since 2024-01-01 --dir reports/\n  vault search --status lost --tag legal\n  vault search --where '[{\"tag\":[\"finance\",\"tax\"]},{\"host\":\"claude-desktop\"}]'",
 		Category:    "vault",
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
@@ -512,38 +515,25 @@ func vaultSearch(d VaultDeps) catalog.Operation {
 		Args: []catalog.OperationArg{
 			{Name: "query", Type: catalog.ArgTypeString, Help: "Case-insensitive substring of the file name", AgentHelp: "A substring of the file name to match (case-insensitive)."},
 			{Name: "tag", Type: catalog.ArgTypeStringSlice, Help: "Require ALL of these tags (repeatable; AND)", AgentHelp: "One or more tags; a file must have all of them. Repeat for multiple."},
+			{Name: "tag_any", Type: catalog.ArgTypeStringSlice, Help: "Require ANY of these tags (list = OR/IN)", AgentHelp: "A file must have at least one of these tags."},
 			{Name: "dir", Type: catalog.ArgTypeString, Help: "Restrict to files under this vault directory", AgentHelp: "A vault directory to restrict results to (inclusive)."},
 			{Name: "status", Type: catalog.ArgTypeString, Enum: []string{"ok", "pending", "lost"}, Help: "Only files with this status"},
-			{Name: "since", Type: catalog.ArgTypeString, Help: "Only files created at/after this time (RFC3339, e.g. 2026-08-01T00:00:00Z)"},
+			{Name: "not_status", Type: catalog.ArgTypeString, Enum: []string{"ok", "pending", "lost"}, Help: "Only files NOT with this status"},
+			{Name: "since", Type: catalog.ArgTypeString, Help: "Only files created at/after this time (RFC3339 or YYYY-MM-DD)"},
+			{Name: "before", Type: catalog.ArgTypeString, Help: "Only files created before this time (RFC3339 or YYYY-MM-DD)"},
 			{Name: "source", Type: catalog.ArgTypeString, Enum: []string{"mcp", "cli"}, Help: "Only files written by this frontend (mcp|cli)"},
+			{Name: "source_any", Type: catalog.ArgTypeStringSlice, Help: "Any of these frontends (mcp|cli)"},
 			{Name: "host", Type: catalog.ArgTypeString, Help: "Only files written from this host platform (e.g. claude-desktop)"},
+			{Name: "host_any", Type: catalog.ArgTypeStringSlice, Help: "Any of these host platforms"},
 			{Name: "agent", Type: catalog.ArgTypeString, Help: "Only files whose creator agent matches"},
+			{Name: "agent_any", Type: catalog.ArgTypeStringSlice, Help: "Any of these creator agents"},
+			{Name: "where", Type: catalog.ArgTypeRawJSON, RawSchema: vaultSearchWhereSchema, Help: "Structured ANDed predicate list (JSON; --where)", AgentHelp: "A list of predicates to filter by. Items are ANDed. Each object has exactly one field (or not): tag/status/source/host/agent/dir accept a string OR a list (a list means match ANY of them); since/before are scalar times (RFC3339 or YYYY-MM-DD)."},
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to the active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
-			// Normalize status to lowercase: the resolveArg enum gate is
-			// case-insensitive, so 'OK'/'Pending' pass it, and the guard below
-			// compares against the canonical lowercase members. Normalizing here
-			// keeps the gate and the guard consistent.
-			status := strings.ToLower(catalog.StrArg(input, "status", ""))
-			f := vault.SearchFilter{
-				Name:   catalog.StrArg(input, "query", ""),
-				Tags:   catalog.StrSliceArg(input, "tag"),
-				Dir:    catalog.StrArg(input, "dir", ""),
-				Status: status,
-				Source: catalog.StrArg(input, "source", ""),
-				Host:   catalog.StrArg(input, "host", ""),
-				Agent:  catalog.StrArg(input, "agent", ""),
-			}
-			if sinceStr := catalog.StrArg(input, "since", ""); sinceStr != "" {
-				since, err := time.Parse(time.RFC3339, sinceStr)
-				if err != nil {
-					return nil, fmt.Errorf("vault_search: invalid since %q: %w", sinceStr, err)
-				}
-				f.Since = since
-			}
-			if f.Status != "" && f.Status != "ok" && f.Status != "pending" && f.Status != "lost" {
-				return nil, fmt.Errorf("vault_search: invalid status %q (want ok|pending|lost)", f.Status)
+			preds, err := vaultSearchPredicates(input)
+			if err != nil {
+				return nil, err
 			}
 			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
@@ -554,7 +544,10 @@ func vaultSearch(d VaultDeps) catalog.Operation {
 				return nil, err
 			}
 			defer svc.Close()
-			items, err := svc.Search(ctx, f)
+			items, err := svc.Search(ctx, vault.SearchRequest{
+				Query: catalog.StrArg(input, "query", ""),
+				Where: preds,
+			})
 			if err != nil {
 				return nil, err
 			}
@@ -564,9 +557,120 @@ func vaultSearch(d VaultDeps) catalog.Operation {
 				paths = append(paths, it.Path)
 				detail[it.Path] = vaultItem{Path: it.Path, Size: it.Size, Tags: it.Tags, Source: it.Source, Host: it.Host, Agent: it.Agent}
 			}
-			return &VaultSearchResult{Query: f.Name, Count: len(items), Results: paths, Detail: detail}, nil
+			return &VaultSearchResult{Query: catalog.StrArg(input, "query", ""), Count: len(items), Results: paths, Detail: detail}, nil
 		}),
 	})
+}
+
+// searchPredicateFields metadata for the `where` arg's structured JSON Schema.
+var vaultSearchWhereSchema = buildWhereSchema()
+
+// buildWhereSchema returns the JSON Schema for the vault_search `where` arg: an
+// array of predicate objects. Each object carries exactly one field key (or a
+// `not` wrapper); the list-field values accept a string or a string array.
+func buildWhereSchema() json.RawMessage {
+	anyField := func(desc string) map[string]any {
+		return map[string]any{
+			"type":        []string{"string", "array"},
+			"items":       map[string]any{"type": "string"},
+			"description": desc,
+		}
+	}
+	item := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"tag":    anyField("Tag name(s): a single string or a list (list = match ANY of these tags)"),
+			"status": anyField("File status: a single string or a list (list = any of ok|pending|lost)"),
+			"source": anyField("Frontend that wrote the file (mcp|cli): a single string or a list"),
+			"host":   anyField("Host platform (e.g. claude-desktop, codex): a single string or a list"),
+			"agent":  anyField("Creator agent: a single string or a list"),
+			"dir":    anyField("Vault directory prefix (exact or prefix, e.g. contracts/): a single string or a list"),
+			"since":  map[string]any{"type": "string", "description": "Created at/after this time (RFC3339 or YYYY-MM-DD)"},
+			"before": map[string]any{"type": "string", "description": "Created before this time (RFC3339 or YYYY-MM-DD)"},
+			"not":    map[string]any{"type": "object", "description": "Negate a single predicate"},
+		},
+		"additionalProperties": false,
+	}
+	arr := map[string]any{
+		"type":  "array",
+		"items": item,
+		"description": "A list of predicates. Items are ANDed. A field value that is a list is OR/IN on that field. " +
+			"Each object carries exactly one field key (or a not wrapper): tag/status/source/host/agent/dir accept a string or a list of strings; since/before are scalar times.",
+	}
+	raw, _ := json.Marshal(arr)
+	return raw
+}
+
+// vaultSearchPredicates compiles the CLI flags and the structured `where`
+// parameter into a single ANDed []vault.Predicate list. Flag predicates and
+// where predicates are ANDed together (no precedence). This is the single
+// compiler shared by the CLI flags, --where, and the MCP `where` parameter.
+func vaultSearchPredicates(input map[string]any) ([]vault.Predicate, error) {
+	var preds []vault.Predicate
+	// --tag: each value becomes its own scalar predicate -> AND across repeats.
+	for _, t := range catalog.StrSliceArg(input, "tag") {
+		if t != "" {
+			preds = append(preds, vault.Predicate{Tag: []string{t}})
+		}
+	}
+	// --tag-any: one predicate with a list -> OR/IN on the tag field.
+	if any := catalog.StrSliceArg(input, "tag_any"); len(any) > 0 {
+		preds = append(preds, vault.Predicate{Tag: any})
+	}
+	// --host / --host-any. host/source/agent are scalar ArgTypeString args, so
+	// they must be read with StrArg (StrSliceArg returns nil for a scalar,
+	// which silently dropped these filters) and wrapped in a one-element slice.
+	if h := catalog.StrArg(input, "host", ""); h != "" {
+		preds = append(preds, vault.Predicate{Host: []string{h}})
+	}
+	if any := catalog.StrSliceArg(input, "host_any"); len(any) > 0 {
+		preds = append(preds, vault.Predicate{Host: any})
+	}
+	// --source / --source-any. Source is lowercased to match the stored
+	// write-context values ("mcp"/"cli"): the enum gate accepts any case via
+	// EqualFold, but columnFilter matches case-sensitively, so an uppercase
+	// --source MCP would otherwise pass validation yet match no rows.
+	if s := strings.ToLower(catalog.StrArg(input, "source", "")); s != "" {
+		preds = append(preds, vault.Predicate{Source: []string{s}})
+	}
+	if any := catalog.StrSliceArg(input, "source_any"); len(any) > 0 {
+		preds = append(preds, vault.Predicate{Source: lo.Map(any, func(v string, _ int) string { return strings.ToLower(v) })})
+	}
+	// --agent / --agent-any.
+	if a := catalog.StrArg(input, "agent", ""); a != "" {
+		preds = append(preds, vault.Predicate{Agent: []string{a}})
+	}
+	if any := catalog.StrSliceArg(input, "agent_any"); len(any) > 0 {
+		preds = append(preds, vault.Predicate{Agent: any})
+	}
+	// --dir.
+	if d := catalog.StrArg(input, "dir", ""); d != "" {
+		preds = append(preds, vault.Predicate{Dir: []string{d}})
+	}
+	// --status (lowercased to match the catalog enum gate).
+	if st := strings.ToLower(catalog.StrArg(input, "status", "")); st != "" {
+		preds = append(preds, vault.Predicate{Status: []string{st}})
+	}
+	// --not-status.
+	if ns := strings.ToLower(catalog.StrArg(input, "not_status", "")); ns != "" {
+		preds = append(preds, vault.Predicate{Not: &vault.Predicate{Status: []string{ns}}})
+	}
+	// --since / --before (validated at compile in Search).
+	if since := catalog.StrArg(input, "since", ""); since != "" {
+		preds = append(preds, vault.Predicate{Since: since})
+	}
+	if before := catalog.StrArg(input, "before", ""); before != "" {
+		preds = append(preds, vault.Predicate{Before: before})
+	}
+	// --where / MCP where: ANDed with the flag predicates.
+	if w, ok := input["where"]; ok && w != nil {
+		parsed, err := vault.ParseWhere(w)
+		if err != nil {
+			return nil, err
+		}
+		preds = append(preds, parsed...)
+	}
+	return preds, nil
 }
 
 func vaultTagAdd(d VaultDeps) catalog.Operation {
