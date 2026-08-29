@@ -316,7 +316,9 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	// Persist the user-supplied metadata map on the local File row so it
 	// survives cache rebuilds and is returned by Stat. The Sia object already
 	// carries it in its encrypted metadata; this is the local copy.
-	userMetaJSON, err := json.Marshal(metadata)
+	// Marshal the normalized metadata (with putTags merged) into the row so it
+	// matches the sealed object exactly, preventing divergence on sync-down.
+	userMetaJSON, err := json.Marshal(fileMeta.Metadata)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
 	}

@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/url"
@@ -299,5 +300,20 @@ func TestShareAcceptTagsApplied(t *testing.T) {
 	}
 	if len(tags2) != 2 {
 		t.Fatalf("tag list = %v, want 2 tags", tags2)
+	}
+
+	// Regression: the local File row must carry the same normalized metadata
+	// (tags) as the sealed object's metadata map, or sync-down would
+	// reconstruct a diverging row with un-normalized tags.
+	var row File
+	if err := db.Where("name = ?", "tagged.txt").First(&row).Error; err != nil {
+		t.Fatalf("load File row: %v", err)
+	}
+	sealedMetaJSON, err := json.Marshal(sealedMeta.Metadata)
+	if err != nil {
+		t.Fatalf("marshal sealed metadata map: %v", err)
+	}
+	if !bytes.Equal(row.Metadata, sealedMetaJSON) {
+		t.Fatalf("local row metadata diverges from sealed object metadata:\nrow=%s\nsealed=%s", row.Metadata, sealedMetaJSON)
 	}
 }
