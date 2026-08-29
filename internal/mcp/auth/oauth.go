@@ -42,6 +42,12 @@ type OAuthServer struct {
 
 	store *oauthstore.Store
 
+	// clockSkew is the grace window applied to expired access tokens
+	// by the bearer middleware. An access token that expired less than
+	// this long ago is still accepted so an in-flight request that
+	// started before expiry is not killed mid-pin.
+	clockSkew time.Duration
+
 	// registered clients keyed by client ID (backed by store)
 	clients map[string]oauthClient
 	// authorization codes, one-time use (in-memory)
@@ -82,9 +88,10 @@ func NewOAuthServer(secret, BaseURL string, store *oauthstore.Store) *OAuthServe
 		clients:  make(map[string]oauthClient),
 		codes:    make(map[string]authorizationCode),
 		tokens:   make(map[string]time.Time),
-		tokenTTL: time.Hour,
-		codeTTL:  10 * time.Minute,
-		done:     make(chan struct{}),
+		tokenTTL:  time.Hour,
+		codeTTL:   10 * time.Minute,
+		clockSkew: 2 * time.Minute,
+		done:      make(chan struct{}),
 		logger:   log,
 	}
 	// Repopulate the in-memory client registry from the durable store so a
@@ -150,7 +157,7 @@ func (o *OAuthServer) sweep() {
 func (o *OAuthServer) reapLocked() {
 	now := time.Now()
 	for tok, exp := range o.tokens {
-		if now.After(exp) {
+		if now.After(exp.Add(o.clockSkew)) {
 			delete(o.tokens, tok)
 		}
 	}
@@ -190,7 +197,7 @@ func (o *OAuthServer) ProtectedResourceHandler(mcpPath string) http.HandlerFunc 
 			"resource":                 o.BaseURL + mcpPath,
 			"authorization_servers":    []string{o.Issuer},
 			"bearer_methods_supported": []string{"header"},
-			"scopes_supported":         []string{},
+			"scopes_supported":         []string{"offline_access"},
 		}
 		writeJSON(w, http.StatusOK, doc)
 	}
@@ -474,7 +481,7 @@ func (o *OAuthServer) exchangeCode(w http.ResponseWriter, r *http.Request) error
 	pair := o.newTokens()
 	o.storeTokens(pair, entry.clientID, entry.resource)
 	o.logf().Info("OAuth token issued (authorization_code)", zap.String("client_id", entry.clientID), zap.String("resource", entry.resource), zap.String("remote", r.RemoteAddr))
-	issueTokens(w, pair)
+	issueTokens(w, pair, o.tokenTTL)
 	return nil
 }
 
@@ -503,17 +510,27 @@ func (o *OAuthServer) exchangeRefreshToken(w http.ResponseWriter, r *http.Reques
 		o.mu.Unlock()
 		_ = client
 		o.logf().Info("OAuth token issued (refresh_token)", zap.String("client_id", clientID), zap.String("resource", resource), zap.String("remote", r.RemoteAddr))
-		issueTokens(w, pair)
+		issueTokens(w, pair, o.tokenTTL)
 	default:
 		// RotateReplay (rotated beyond reuse window, revoked, expired, or
 		// unknown) → invalid_grant per RFC 6749 §5.2.
+		desc := "the refresh token is invalid, expired, or unknown"
+		if status == oauthstore.RotateReplay {
+			desc = "the refresh token has been replayed and the grant has been revoked"
+		}
 		o.logf().Warn("OAuth refresh token rejected", zap.String("client_id", clientID), zap.String("resource", resource))
-		writeInvalidGrant(w)
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error":             "invalid_grant",
+			"error_description": desc,
+		})
 	}
 }
 
 func writeInvalidGrant(w http.ResponseWriter) {
-	writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_grant"})
+	writeJSON(w, http.StatusBadRequest, map[string]string{
+		"error":             "invalid_grant",
+		"error_description": "the refresh token is invalid, expired, or unknown",
+	})
 }
 
 func (o *OAuthServer) newTokens() tokenPair {
@@ -535,12 +552,12 @@ func (o *OAuthServer) storeTokens(pair tokenPair, clientID, resource string) {
 	}
 }
 
-func issueTokens(w http.ResponseWriter, pair tokenPair) {
+func issueTokens(w http.ResponseWriter, pair tokenPair, ttl time.Duration) {
 	// Storage is performed by the caller's OAuthServer before this response.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"access_token":  pair.access,
 		"token_type":    "Bearer",
-		"expires_in":    3600,
+		"expires_in":    int(ttl.Seconds()),
 		"refresh_token": pair.refresh,
 	})
 }
@@ -582,14 +599,30 @@ func (o *OAuthServer) tokenExpiry(tok string) (time.Time, bool) {
 
 func (o *OAuthServer) OfficialMiddleware(next http.Handler) http.Handler {
 	verifier := func(_ context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
-		exp, ok := o.tokenExpiry(token)
-		if !ok {
-			return nil, auth.ErrInvalidToken
+		o.mu.Lock()
+		exp, ok := o.tokens[token]
+		if ok {
+			// Keep the token in the map while it is still within the
+			// ClockSkew grace window so concurrent in-flight requests
+			// that present the same expired token also receive the
+			// TokenInfo and let the SDK apply the same tolerance.
+			// Tokens expired beyond the skew are reaped by the periodic
+			// sweep (reapLocked); delete here only if beyond the skew
+			// to bound map growth without breaking sibling requests.
+			if time.Now().After(exp.Add(o.clockSkew)) {
+				delete(o.tokens, token)
+				o.mu.Unlock()
+				return nil, fmt.Errorf("%w: the access token has expired", auth.ErrInvalidToken)
+			}
+			o.mu.Unlock()
+			return &auth.TokenInfo{Expiration: exp, UserID: tokenPrincipal(token)}, nil
 		}
-		return &auth.TokenInfo{Expiration: exp, UserID: tokenPrincipal(token)}, nil
+		o.mu.Unlock()
+		return nil, fmt.Errorf("%w: the access token is unknown or has been revoked", auth.ErrInvalidToken)
 	}
 	return auth.RequireBearerToken(verifier, &auth.RequireBearerTokenOptions{
 		ResourceMetadataURL: strings.TrimRight(o.BaseURL, "/") + "/.well-known/oauth-protected-resource",
+		ClockSkew:           o.clockSkew,
 	})(next)
 }
 
@@ -622,11 +655,17 @@ func (o *OAuthServer) protectMCP(mcpPath string, next http.Handler) http.Handler
 			next.ServeHTTP(w, r)
 			return
 		}
+		var desc string
+		if token == "" {
+			desc = "a valid bearer token is required"
+		} else {
+			desc = "the access token has expired or been revoked"
+		}
 		o.logf().Warn("MCP endpoint denied: missing or invalid bearer token",
 			zap.String("path", r.URL.Path), zap.String("remote", r.RemoteAddr), zap.Bool("presented_token", token != ""))
 		deny(w, fmt.Sprintf(
-			`Bearer resource_metadata="%s/.well-known/oauth-protected-resource", error="invalid_token", error_description="OAuth authorization required"`,
-			o.BaseURL))
+			`Bearer resource_metadata="%s/.well-known/oauth-protected-resource", error="invalid_token", error_description="%s"`,
+			o.BaseURL, desc))
 	})
 }
 

@@ -203,9 +203,11 @@ func (vu *VaultHTTPUpload) putHandler(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, vu.maxByte)
 
-	// The vault write itself is synchronous and outlives nothing; keep it on
-	// the request context but bound by a transfer budget like the relay path.
-	transferCtx, cancel := context.WithTimeout(r.Context(), SyncUploadBudget(r.ContentLength))
+	// Detach the vault write from the HTTP request context so a client
+	// disconnect (token refresh, host dispatcher death) does not cancel an
+	// in-flight vault write. The request body has already been received by
+	// the time vu.put reads it; the write must finish regardless.
+	transferCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), SyncUploadBudget(r.ContentLength))
 	defer cancel()
 	result, err := vu.put(transferCtx, r.Body, r.ContentLength, vaultPath, metadata)
 	if err != nil {
