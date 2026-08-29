@@ -28,6 +28,7 @@ import (
 	"go.lumeweb.com/pinner-cli/build"
 	opcat "go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	corevault "go.lumeweb.com/pinner-cli/internal/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oauthstore"
 	"go.lumeweb.com/pinner-cli/internal/mcp/services"
@@ -268,6 +269,12 @@ func mcpServerFlags() []cli.Flag {
 			Name:    "dev-tools",
 			Usage:   "Enable developer introspection tools (dev_host_env, dev_profile, dev_request) and capture the raw wire snapshot of the connected host. Intended for debugging the MCP server and host-env detection; these tools are read-only and absent from the surface unless this flag is set",
 			Sources: cli.EnvVars("MCP_DEV_TOOLS"),
+		},
+		&cli.DurationFlag{
+			Name:    "vault-sync-interval",
+			Value:   corevault.SyncLoopInterval,
+			Usage:   "Idle cadence of the background vault sync loop that keeps the active vault's local cache converged with the indexer (0 disables it). Ticks that find pending events re-run immediately, so this is the idle interval, not a worst-case bound",
+			Sources: cli.EnvVars("PINNER_VAULT_SYNC_INTERVAL"),
 		},
 	}
 }
@@ -532,6 +539,16 @@ adapter.`,
 				return srvH
 			}
 
+			// Start the background continuous vault sync loop for any active
+			// vault before blocking on the transport. A nil factory (or
+			// --vault-sync-interval 0) disables it. The returned shutdown
+			// (cancels the loop's context and waits for any in-flight tick to
+			// finish) is deferred so a signal-driven server exit does not leak
+			// a running sync goroutine.
+			if err := startVaultSync(ctx, cmd, mcpOpts); err != nil {
+				return err
+			}
+
 			if cmd.String("tunnel") == "openai" {
 				log.Debug("serving MCP server through embedded OpenAI Secure MCP Tunnel")
 				return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload, dl, wizardS.CfgMgr, hostServerFactory)
@@ -545,6 +562,42 @@ adapter.`,
 			return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload, dl, wizardS.CfgMgr, hostServerFactory)
 		},
 	}
+}
+
+// startVaultSync starts the background continuous vault sync loop for the
+// active vault profile if it was wired (WithVaultSync) and not disabled via
+// --vault-sync-interval 0. It returns immediately after starting the loop; the
+// loop runs until the server's ctx is cancelled. A VaultSyncLoop reuses one
+// VaultService across idle ticks and rebuilds it only when the resolved active
+// profile changes (see corevault.VaultSyncLoop).
+func startVaultSync(ctx context.Context, cmd *cli.Command, mcpOpts *mcpServerOptions) error {
+	if mcpOpts.vaultSyncCfg.Service == nil {
+		// No WithVaultSync wiring; no continuous sync.
+		return nil
+	}
+	interval := cmd.Duration("vault-sync-interval")
+	if interval <= 0 {
+		// --vault-sync-interval 0 explicitly disables continuous sync.
+		log.Debug("continuous vault sync disabled (vault-sync-interval=0)")
+		return nil
+	}
+
+	syncCtx, cancel := context.WithCancel(ctx)
+	loop := corevault.NewVaultSyncLoop(mcpOpts.vaultSyncCfg)
+	sched := corevault.NewServiceScheduler()
+	sched.Register("vaultSync", interval, loop.Tick)
+	sched.Start(syncCtx)
+	go func() {
+		// Shutdown when the server context is done (signal/file-server exit),
+		// so the sync goroutine never outlives the process and the held service
+		// (SDK/DB handles) is released.
+		<-ctx.Done()
+		cancel()
+		sched.Shutdown()
+		loop.Close()
+	}()
+	log.Debug("continuous vault sync started", zap.Duration("interval", interval))
+	return nil
 }
 
 // oauthStorePath returns the filesystem path of the OAuth state SQLite file.
@@ -1116,6 +1169,10 @@ type mcpServerOptions struct {
 	// is the only source, a nil bundle fails fast at buildCatalog time rather
 	// than silently serving an empty catalog.
 	catalogDeps func() *CatalogDepsBundle
+	// vaultSyncCfg, when its Service function is set, starts a background
+	// continuous vault sync loop ("for any active vault") while the MCP server
+	// runs. A zero-value cfg disables the loop (no background syncing).
+	vaultSyncCfg corevault.SyncLoopConfig
 }
 
 // MCPServerOption configures the MCP command served by MCPCommand.
@@ -1281,6 +1338,26 @@ func WithMaxMCPUploadSize(supplier func() uint64) MCPServerOption {
 func WithCatalogOps(factory func() *CatalogDepsBundle) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.catalogDeps = factory
+	}
+}
+
+// WithVaultSync enables the background continuous vault sync loop for any
+// active vault while the MCP server runs. cfg carries the profile resolver and
+// service builder used by the loop; a zero-value cfg (nil Service) disables
+// the loop.
+//
+// The idle cadence and on/off switch are controlled by the
+// --vault-sync-interval flag (default corevault.SyncLoopInterval; 0 disables
+// the loop entirely).
+//
+// The loop mirrors the Sia Storage App's event-cursor sync-down: it drains the
+// active vault's pending indexer events into the local cache every interval so
+// an agent does not need to call vault_sync explicitly to see another device's
+// writes. Writes stay synchronous (vault_put_file / vault cp pin to the indexer
+// immediately), so there is no sync-up or dirty-flag component.
+func WithVaultSync(cfg corevault.SyncLoopConfig) MCPServerOption {
+	return func(o *mcpServerOptions) {
+		o.vaultSyncCfg = cfg
 	}
 }
 

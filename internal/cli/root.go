@@ -675,6 +675,35 @@ For more help on any command: pinner <command> --help`,
 		// invocations. The bundle resolves config and services lazily per
 		// request via buildCatalogOpsDeps, so live token reload is preserved.
 		mcpadapter.WithCatalogOps(buildCatalogOpsDeps),
+		// Enable the background continuous vault sync loop ("for any active
+		// vault") while the MCP server runs. Each tick resolves the active
+		// profile (flag/env/default) and drains its pending indexer events into
+		// the local cache, so another device's writes surface without an
+		// explicit vault_sync call. A not-yet-provisioned profile (no app key)
+		// or no active vault makes the tick a silent no-op. One VaultService is
+		// reused across idle ticks and rebuilt only when the active profile
+		// changes, so the Sia SDK/DB are not reconstructed every interval.
+		// Cadence/on-off are controlled by --vault-sync-interval /
+		// PINNER_VAULT_SYNC_INTERVAL.
+		mcpadapter.WithVaultSync(vault.SyncLoopConfig{
+			Profile: func() (string, bool) {
+				profileName, err := vault.ResolveProfile("")
+				if err != nil {
+					// No active vault configured (none, or ambiguous
+					// multi-profile without a default). Nothing to sync.
+					return "", false
+				}
+				// A pending/unprovisioned profile (no recovery app key yet) has
+				// no cache to converge; skip rather than erroring.
+				if _, ok := vault.ProfileVaultID(profileName); !ok {
+					return "", false
+				}
+				return profileName, true
+			},
+			Service: func(profileName string) (vault.VaultService, error) {
+				return newVaultService(profileName)
+			},
+		}),
 	)
 
 	// Attach the `pinner mcp install` golden-path subcommand to the `mcp`
