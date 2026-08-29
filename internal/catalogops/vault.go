@@ -1042,7 +1042,12 @@ func vaultShareAccept(d VaultDeps) catalog.Operation {
 				return nil, err
 			}
 			defer svc.Close()
-			f, err := svc.ShareAccept(ctx, vaultPath, shareURL, targetPrincipal, metadata)
+			// Detach from the MCP request context so a token expiry or
+			// client disconnect does not cancel an in-flight download+pin
+			// that has already received the share body.
+			taskCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
+			defer cancel()
+			f, err := svc.ShareAccept(taskCtx, vaultPath, shareURL, targetPrincipal, metadata)
 			if err != nil {
 				return nil, err
 			}
