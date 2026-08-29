@@ -1498,6 +1498,34 @@ func TestSeedServiceFromEnvFile_SkipsStaleURLOnTunnelSwitch(t *testing.T) {
 	}
 }
 
+// TestSeedServiceFromEnvFile_SkipsStaleURLBeforeProviderDecided guards the
+// REAL production bug: seedServiceFromEnvFile is called from each wrapped
+// step's SeedFunc, which runs BEFORE the provider step has decided the provider.
+// At that point s.Provider is "" (not yet decided) and the env file from a
+// prior localhost install has no MCP_TUNNEL_PROVIDER. The OLD condition
+// (s.Provider == "") folded the stale localhost MCP_PUBLIC_URL anyway,
+// pre-filling the ngrok PublicURL.Derived hook with the dead 127.0.0.1 URL.
+// The fix: only fold when the env file carries a non-empty matching provider.
+func TestSeedServiceFromEnvFile_SkipsStaleURLBeforeProviderDecided(t *testing.T) {
+	root := t.TempDir()
+	envFile := filepath.Join(root, "mcp.env")
+	// A PRIOR localhost OAuth install: empty provider + its resolved URL.
+	writeEnv(t, envFile, "MCP_PUBLIC_URL=http://127.0.0.1:38550\nMCP_AUTH_TOKEN=auth\n")
+
+	// The SeedFunc_ runs before the provider step has decided — s.Provider
+	// is still empty (not yet set by the interactive select).
+	s := &mcpadapter.ServiceInstallState{}
+	seedServiceFromEnvFile(envFile, s)
+
+	if s.PublicURL != "" {
+		t.Errorf("BUG: stale localhost MCP_PUBLIC_URL (%q) was folded before provider was decided; it would pre-fill and block ngrok URL detection", s.PublicURL)
+	}
+	// The shared token is provider-agnostic and still folds.
+	if s.AuthToken != "auth" {
+		t.Errorf("authToken = %q, want 'auth' folded (shared token survives a provider switch)", s.AuthToken)
+	}
+}
+
 // TestSeedServiceFromEnvFile_PreservesExplicitLocalhost guards the audit
 // finding that "localhost" (the EMPTY provider, deliberately chosen = decided)
 // was clobbered back to a persisted tunnel provider by the env fold on a

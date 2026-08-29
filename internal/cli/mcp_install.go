@@ -751,13 +751,18 @@ func seedServiceFromEnvFile(envFile string, s *mcpadapter.ServiceInstallState) {
 	if s.TunnelToken == "" {
 		set(&s.TunnelToken, "NGROK_AUTHTOKEN")
 	}
-	// Fold MCP_PUBLIC_URL only when it is not a stale cross-provider value. A
-	// tunnel provider derives/detects its OWN public URL; a persisted URL that
-	// belongs to a DIFFERENT provider (or a prior localhost install) must not
-	// pre-fill and short-circuit that derivation with a dead endpoint (e.g. the
-	// old 127.0.0.1:port after the operator switches base from a localhost OAuth
-	// install to an ngrok tunnel). provider was folded from the env just above.
-	if s.Provider == "" || tunnel.TunnelProvider(env["MCP_TUNNEL_PROVIDER"]) == s.Provider {
+	// Fold MCP_PUBLIC_URL only when the env file carries a non-empty provider
+	// that matches the CURRENT provider. A tunnel provider derives/detects its
+	// OWN public URL; a persisted URL that belongs to a DIFFERENT provider — or
+	// a prior localhost install (which has no MCP_TUNNEL_PROVIDER in the env
+	// file) — must not pre-fill and short-circuit that derivation with a dead
+	// endpoint (e.g. the old 127.0.0.1:port after the operator switches base
+	// from a localhost OAuth install to an ngrok tunnel). The env file's
+	// provider was folded into s.Provider just above when it matched, so at
+	// this point s.Provider already reflects the persisted provider on a
+	// same-provider re-run. A localhost install writes no MCP_TUNNEL_PROVIDER,
+	// so envProvider is "" and the fold never fires — exactly what we want.
+	if envProvider := tunnel.TunnelProvider(env["MCP_TUNNEL_PROVIDER"]); envProvider != "" && envProvider == s.Provider {
 		set(&s.PublicURL, "MCP_PUBLIC_URL")
 	}
 	set(&s.Host, "MCP_HOST")
