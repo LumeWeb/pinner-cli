@@ -677,28 +677,33 @@ For more help on any command: pinner <command> --help`,
 		mcpadapter.WithCatalogOps(buildCatalogOpsDeps),
 		// Enable the background continuous vault sync loop ("for any active
 		// vault") while the MCP server runs. Each tick resolves the active
-		// profile (flag/env/default) and drains its pending indexer events into
-		// the local cache, so another device's writes surface without an
-		// explicit vault_sync call. A not-yet-provisioned profile (no app key)
-		// or no active vault makes the tick a silent no-op. One VaultService is
-		// reused across idle ticks and rebuilt only when the active profile
-		// changes, so the Sia SDK/DB are not reconstructed every interval.
-		// Cadence/on-off are controlled by --vault-sync-interval /
-		// PINNER_VAULT_SYNC_INTERVAL.
+		// profiles) and drains each one's pending indexer events into its local
+		// cache, so another device's writes surface without an explicit
+		// vault_sync call. A not-yet-provisioned profile (no app key) is skipped.
+		// Each profile's VaultService is reused across idle ticks and rebuilt
+		// when the profile is re-added, so the Sia SDK/DB are not reconstructed
+		// every interval. Cadence/on-off are controlled by
+		// --vault-sync-interval / PINNER_VAULT_SYNC_INTERVAL.
 		mcpadapter.WithVaultSync(vault.SyncLoopConfig{
-			Profile: func() (string, bool) {
-				profileName, err := vault.ResolveProfile("")
+			Profiles: func() []string {
+				reg, err := vault.LoadRegistry()
 				if err != nil {
-					// No active vault configured (none, or ambiguous
-					// multi-profile without a default). Nothing to sync.
-					return "", false
+					return nil
 				}
-				// A pending/unprovisioned profile (no recovery app key yet) has
-				// no cache to converge; skip rather than erroring.
-				if _, ok := vault.ProfileVaultID(profileName); !ok {
-					return "", false
+				out := make([]string, 0, len(reg.Profiles))
+				for name := range reg.Profiles {
+					// Guard against a hand-edited registry carrying a path
+					// traversal name (same check ResolveProfile applies).
+					if err := vault.ValidateProfileName(name); err != nil {
+						continue
+					}
+					// Access = a provisioned profile with a readable app key;
+					// a pending/unprovisioned profile has no cache to converge.
+					if _, ok := vault.ProfileVaultID(name); ok {
+						out = append(out, name)
+					}
 				}
-				return profileName, true
+				return out
 			},
 			Service: func(profileName string) (vault.VaultService, error) {
 				return newVaultService(profileName)
