@@ -53,9 +53,12 @@ type InstallUI interface {
 	ReportWritten(agent install.AgentKey, path string, local bool) error
 	// ReportBuild reports a non-fatal note about an agent during the build.
 	ReportBuild(agent install.AgentKey, msg string) error
-	// ReportMCPURL prints the final public MCP endpoint URL for a remote (http)
-	// install, so the operator knows the exact URL a client dials.
-	ReportMCPURL(url string) error
+	// ReportMCPURL prints the final confirmation for a remote (http) install as
+	// a distinct INFO panel, so the operator gets one clean "it is running"
+	// notice apart from the per-agent Write Config lines. endpointURL is the
+	// full /mcp URL a client dials; oauthURL is the OAuth 2.1 authorize page
+	// and is non-empty only when the endpoint uses the OAuth handshake.
+	ReportMCPURL(endpointURL, oauthURL string) error
 }
 
 // PTermInstallUI implements InstallUI using pterm for display.
@@ -296,10 +299,17 @@ func (ui *PTermInstallUI) ReportBuild(agent install.AgentKey, msg string) error 
 	return nil
 }
 
-// ReportMCPURL prints the final public MCP endpoint URL for a remote (http)
-// install. The URL passed in is the full endpoint path (e.g.
-// https://you.ngrok-free.dev/mcp), the exact URL a client dials.
-func (ui *PTermInstallUI) ReportMCPURL(url string) error {
-	pterm.Success.Printf("MCP server is running. Point your MCP client at: %s\n", url)
+// ReportMCPURL prints the final confirmation for a remote (http) install as a
+// distinct INFO panel separated from the per-agent Write Config lines.
+// endpointURL is the full endpoint path (e.g. https://you.ngrok-free.dev/mcp),
+// the exact URL a client dials; oauthURL is the OAuth 2.1 authorize page and is
+// printed only when the endpoint uses the OAuth handshake.
+func (ui *PTermInstallUI) ReportMCPURL(endpointURL, oauthURL string) error {
+	pterm.Println()
+	lines := []string{"MCP server is running.", "Point your MCP client at: " + endpointURL}
+	if oauthURL != "" {
+		lines = append(lines, "Authorize MCP clients at: "+oauthURL)
+	}
+	pterm.DefaultBox.WithTitle("MCP server").WithTitleBottomCenter().Println(strings.Join(lines, "\n"))
 	return nil
 }

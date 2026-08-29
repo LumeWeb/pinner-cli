@@ -67,7 +67,8 @@ type MockInstallUI struct {
 
 	ReportWrittenCalls  []writtenReport
 	ReportBuildCalls    []buildReport
-	ReportMCPURLCalls   []string // urls passed to each call
+	ReportMCPURLCalls      []string // endpoint urls passed to each call
+	ReportMCPURLOAuthCalls []string // oauth urls passed to each call
 	SetMCPPasswordCalls []string // current values passed to each call
 	ConfirmOAuthCalls   []bool   // assumed values passed to each call
 }
@@ -149,11 +150,12 @@ func (m *MockInstallUI) ReportBuild(agent install.AgentKey, msg string) error {
 	return nil
 }
 
-func (m *MockInstallUI) ReportMCPURL(url string) error {
+func (m *MockInstallUI) ReportMCPURL(endpointURL, oauthURL string) error {
 	m.RecordCall("ReportMCPURL")
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.ReportMCPURLCalls = append(m.ReportMCPURLCalls, url)
+	m.ReportMCPURLCalls = append(m.ReportMCPURLCalls, endpointURL)
+	m.ReportMCPURLOAuthCalls = append(m.ReportMCPURLOAuthCalls, oauthURL)
 	return nil
 }
 
@@ -1926,12 +1928,57 @@ func TestMcpInstallHTTPReportsFinalMCPURL(t *testing.T) {
 
 	ui.mu.Lock()
 	urls := append([]string(nil), ui.ReportMCPURLCalls...)
+	oauthURLs := append([]string(nil), ui.ReportMCPURLOAuthCalls...)
 	ui.mu.Unlock()
 	if len(urls) != 1 {
 		t.Fatalf("ReportMCPURL calls = %d, want exactly 1 on an http install (%v)", len(urls), urls)
 	}
 	if urls[0] != "https://mcp.ngrok-free.dev/mcp" {
 		t.Errorf("ReportMCPURL url = %q, want 'https://mcp.ngrok-free.dev/mcp'", urls[0])
+	}
+	// OAuth is not decided in this state, so no OAuth authorize URL is reported.
+	if len(oauthURLs) != 1 || oauthURLs[0] != "" {
+		t.Errorf("ReportMCPURL oauth urls = %v, want exactly 1 empty (OAuth off)", oauthURLs)
+	}
+}
+
+// TestMcpInstallHTTPReportsOAuthURL guards that the final Report MCP URL step
+// reports the OAuth 2.1 authorize page URL derived from the same base origin as
+// the /mcp endpoint when the endpoint uses the OAuth handshake.
+func TestMcpInstallHTTPReportsOAuthURL(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	projectDir := t.TempDir()
+	ui := newMockInstallUI()
+
+	state := &InstallState{
+		Agents:     []install.AgentKey{install.AgentClaudeCode},
+		Scope:      scopeGlobal,
+		Transport:  install.TransportHTTP,
+		UseService: true,
+		Service: &mcpadapter.ServiceInstallState{
+			Provider: tunnel.TunnelProviderNgrok,
+			AuthToken: "tok",
+			OAuth:    new(true),
+		},
+	}
+	ui.SetMCPPasswordResult = "tok"
+	w := NewInstallWizard(ui, state, tempPathResolver(root, projectDir))
+	w.collectHTTP = fakeHTTPCollector("https://mcp.ngrok-free.dev", "tok")
+
+	if _, err := w.Run(ctx); err != nil {
+		t.Fatalf("wizard run failed: %v", err)
+	}
+
+	ui.mu.Lock()
+	endpoints := append([]string(nil), ui.ReportMCPURLCalls...)
+	oauthURLs := append([]string(nil), ui.ReportMCPURLOAuthCalls...)
+	ui.mu.Unlock()
+	if len(endpoints) != 1 || endpoints[0] != "https://mcp.ngrok-free.dev/mcp" {
+		t.Fatalf("ReportMCPURL endpoint = %v, want ['https://mcp.ngrok-free.dev/mcp']", endpoints)
+	}
+	if len(oauthURLs) != 1 || oauthURLs[0] != "https://mcp.ngrok-free.dev/oauth/authorize" {
+		t.Errorf("ReportMCPURL oauth url = %v, want ['https://mcp.ngrok-free.dev/oauth/authorize']", oauthURLs)
 	}
 }
 

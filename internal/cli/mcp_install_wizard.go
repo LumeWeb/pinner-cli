@@ -364,7 +364,11 @@ func (w *InstallWizard) getSteps() []wizard.Step[*InstallState] {
 				return !httpTunnelSkipped(s) && s.PublicURL != ""
 			},
 			ExecuteFunc: func(_ context.Context, s *InstallState) error {
-				return w.ui.ReportMCPURL(httpEndpointURL(s.PublicURL))
+				oauthURL := ""
+				if mcpOAuthEnabled(s) {
+					oauthURL = httpOAuthURL(s.PublicURL)
+				}
+				return w.ui.ReportMCPURL(httpEndpointURL(s.PublicURL), oauthURL)
 			},
 		},
 	)
@@ -441,6 +445,18 @@ func httpEndpointURL(publicURL string) string {
 		return base
 	}
 	return base + "/mcp"
+}
+
+// httpOAuthURL returns the OAuth 2.1 authorize page URL for a remote (http)
+// install, derived from the same base origin as the /mcp endpoint. It is the
+// URL an operator (or an OAuth client) opens to authorize MCP access on an
+// OAuth-protected endpoint.
+func httpOAuthURL(publicURL string) string {
+	base := strings.TrimRight(publicURL, "/")
+	if strings.HasSuffix(base, "/mcp") {
+		base = strings.TrimSuffix(base, "/mcp")
+	}
+	return strings.TrimRight(base, "/") + "/oauth/authorize"
 }
 
 // writeConfig writes the server entry for each selected agent at each scope.
