@@ -28,6 +28,7 @@ type fakeSDK struct {
 	deleted        []string // object keys passed to DeleteObject
 	uploadCalled   bool
 	pinCalled      bool
+	pinCount       int    // number of times PinObject was called
 	downloadCalled bool   // whether Download was invoked
 	delErr         error  // error to return from DeleteObject (nil = success)
 	objErr         error  // error to return from Object (nil = success)
@@ -51,6 +52,7 @@ func (f *fakeSDK) Upload(_ context.Context, _ *siastorage.Object, r io.Reader, _
 }
 func (f *fakeSDK) PinObject(_ context.Context, obj siastorage.Object) error {
 	f.pinCalled = true
+	f.pinCount++
 	f.pinnedMeta = obj.Metadata()
 	return nil
 }
@@ -59,9 +61,11 @@ func (f *fakeSDK) Object(_ context.Context, _ types.Hash256) (siastorage.Object,
 		return siastorage.Object{}, f.objErr
 	}
 	obj := siastorage.NewEmptyObject()
-	if f.metaContentDigest != "" {
-		// Stamp a content digest into the object metadata so Verify's shallow
-		// integrity path can match it against the local row.
+	// If a backfill re-pinned metadata, serve that so subsequent verifies
+	// see the updated digest.
+	if len(f.pinnedMeta) > 0 {
+		obj.UpdateMetadata(f.pinnedMeta)
+	} else if f.metaContentDigest != "" {
 		meta := FileMetadata{ContentDigest: f.metaContentDigest}
 		if raw, merr := meta.JSON(); merr == nil {
 			obj.UpdateMetadata(raw)

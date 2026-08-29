@@ -225,6 +225,9 @@ func vaultVerify(d VaultDeps) catalog.Operation {
 		Title:       "Verify vault file integrity",
 		Summary:     "Verify content integrity of a vault file",
 		Description: "Check a vault file's integrity: verifies its recorded SHA-256 digest matches and that the object exists on the Sia indexer. Returns an OK/FAIL result with digest and object facts. Does NOT stream or return file content.",
+		MCPTargets: catalog.MCPTargets(
+			catalog.Fallback("Verify a vault file's integrity: checks that the object exists on the Sia indexer and compares the recorded SHA-256 digest. Returns digest_verified (verified/unverified/mismatch), digest_match, object_exists, and the recorded digest. An accepted share has no digest until first decrypt; in that state digest_verified is 'unverified' (not FAIL). Use deep=true to download the full content, recompute the hash, and backfill the digest if missing. Does NOT stream or return file content."),
+		),
 		Category:    "vault",
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,

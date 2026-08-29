@@ -453,7 +453,11 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	return record, nil
 }
 
-// Get downloads a file from the vault to the given writer.
+// Get downloads a file from the vault to the given writer. If the local row
+// has no recorded content digest (e.g. an accepted share that nobody has
+// decrypted yet), Get computes the SHA-256 from the download stream and
+// backfills it onto the local row and sealed object metadata. This backfill is
+// best-effort: a failure to persist the digest does not fail the download.
 func (s *vaultService) Get(ctx context.Context, vaultPath string, w io.Writer) error {
 	vp, err := ParseVaultPath(vaultPath)
 	if err != nil {
@@ -487,6 +491,20 @@ func (s *vaultService) Get(ctx context.Context, vaultPath string, w io.Writer) e
 		return fmt.Errorf("failed to start download: %w", err)
 	}
 	defer reader.Close()
+
+	if record.ContentDigest == "" {
+		// Tee through a hasher so the download backfills the digest in a
+		// single pass — no second download needed.
+		hasher := sha256.New()
+		if _, err := io.Copy(io.MultiWriter(w, hasher), reader); err != nil {
+			return fmt.Errorf("failed to read content: %w", err)
+		}
+		computedDigest := hex.EncodeToString(hasher.Sum(nil))
+		// Best-effort backfill: the download already succeeded, so a failure
+		// to persist the digest must not turn it into a failed Get.
+		_ = s.backfillDigest(ctx, vaultPath, computedDigest, obj)
+		return nil
+	}
 
 	_, err = io.Copy(w, reader)
 	return err
@@ -820,11 +838,23 @@ func (s *vaultService) Cat(ctx context.Context, vaultPath string, w io.Writer) e
 // the object's metadata against the local row's ContentDigest WITHOUT
 // downloading the full file content, so it is cheap even for large encrypted
 // files. Use VerifyDeep for a true full-content re-hash.
+//
+// An accepted share has no recorded digest until someone decrypts the content
+// (via Get or VerifyDeep). Until then, DigestVerified is "unverified" — the
+// file may be perfectly fine; the tool simply has no digest to compare against.
 func (s *vaultService) Verify(ctx context.Context, vaultPath string) (*VerifyResult, error) {
 	res, obj, exists, err := s.resolveVerifyObject(ctx, vaultPath)
 	if err != nil || !exists {
 		return res, err
 	}
+
+	if res.ContentDigest == "" {
+		// No digest has ever been recorded. This is expected for accepted
+		// shares before first decrypt. It is NOT a corruption signal.
+		res.DigestVerified = DigestVerifiedUnverified
+		return res, nil
+	}
+
 	// Shallow integrity: trust the digest the object's metadata declares, and
 	// compare it to the local row's ContentDigest. No content download.
 	objDigest := ""
@@ -833,20 +863,27 @@ func (s *vaultService) Verify(ctx context.Context, vaultPath string) (*VerifyRes
 			objDigest = m.ContentDigest
 		}
 	}
-	res.DigestMatch = objDigest != "" && objDigest == res.ContentDigest
-	// Only a matching digest proves the object is present and correct; a
-	// divergence (present-but-corrupt object) must NOT clear lost state, or a
-	// recovering-but-still-broken file would drop out of vault_status --lost.
-	if res.DigestMatch {
+	if objDigest != "" && objDigest == res.ContentDigest {
+		res.DigestMatch = true
+		res.DigestVerified = DigestVerifiedVerified
+		// Only a matching digest proves the object is present and correct; a
+		// divergence (present-but-corrupt object) must NOT clear lost state.
 		s.clearLostStatus(ctx, vaultPath)
+	} else {
+		res.DigestVerified = DigestVerifiedMismatch
 	}
 	return res, nil
 }
 
-// VerifyDeep is like Verify, but additionally downloads the full object content
-// and recomputes SHA-256 so DigestMatch reflects actual bytes on the indexer
-// rather than the metadata-declared digest. This transfers the entire file over
-// the network; use it only when a true integrity check is required.
+// VerifyDeep downloads the full object content and recomputes SHA-256 so
+// DigestMatch reflects actual bytes on the indexer rather than the
+// metadata-declared digest. This transfers the entire file over the network;
+// use it only when a true integrity check is required.
+//
+// If no digest has been recorded (e.g. an accepted share that nobody has
+// decrypted yet), VerifyDeep populates it: it downloads, hashes, and writes
+// the computed digest back to the local row and the sealed object metadata.
+// Subsequent shallow verifies then match without a download.
 func (s *vaultService) VerifyDeep(ctx context.Context, vaultPath string) (*VerifyResult, error) {
 	res, obj, exists, err := s.resolveVerifyObject(ctx, vaultPath)
 	if err != nil || !exists {
@@ -868,12 +905,27 @@ func (s *vaultService) VerifyDeep(ctx context.Context, vaultPath string) (*Verif
 		return nil, fmt.Errorf("failed to read content for verification: %w", err)
 	}
 	computedDigest := hex.EncodeToString(hasher.Sum(nil))
-	res.DigestMatch = computedDigest == res.ContentDigest
-	// Only a matching digest proves the bytes are present and correct; a
-	// divergence must NOT clear lost state, or a recovering-but-still-broken
-	// file would drop out of vault_status --lost.
-	if res.DigestMatch {
+
+	if res.ContentDigest == "" {
+		// Backfill: persist the computed digest to the local row and the
+		// sealed object metadata so future shallow verifies match without a
+		// download.
+		if err := s.backfillDigest(ctx, vaultPath, computedDigest, obj); err != nil {
+			return nil, fmt.Errorf("failed to backfill content digest: %w", err)
+		}
+		res.ContentDigest = computedDigest
+		res.DigestMatch = true
+		res.DigestVerified = DigestVerifiedVerified
 		s.clearLostStatus(ctx, vaultPath)
+		return res, nil
+	}
+
+	if computedDigest == res.ContentDigest {
+		res.DigestMatch = true
+		res.DigestVerified = DigestVerifiedVerified
+		s.clearLostStatus(ctx, vaultPath)
+	} else {
+		res.DigestVerified = DigestVerifiedMismatch
 	}
 	return res, nil
 }
@@ -905,6 +957,72 @@ func (s *vaultService) clearLostStatus(ctx context.Context, vaultPath string) {
 				"lost_reason": "",
 			}).Error
 	}
+}
+
+// DigestVerified tri-state values for VerifyResult.
+const (
+	DigestVerifiedVerified   = "verified"
+	DigestVerifiedUnverified = "unverified"
+	DigestVerifiedMismatch   = "mismatch"
+)
+
+// backfillDigest persists a computed SHA-256 digest onto the local File row
+// and the sealed object metadata (re-pin). This is called from Get (after a
+// successful download) and VerifyDeep (after hashing) when the row has no
+// recorded digest — the expected state for an accepted share that nobody has
+// decrypted yet.
+//
+// The re-pin updates the object's sealed FileMetadata so other devices
+// syncing from the indexer also receive the digest. A failure here is
+// best-effort from Get's perspective (the download already succeeded) but
+// fatal from VerifyDeep's perspective (the caller asked for verification).
+func (s *vaultService) backfillDigest(ctx context.Context, vaultPath, computedDigest string, obj siastorage.Object) error {
+	vp, err := ParseVaultPath(vaultPath)
+	if err != nil {
+		return err
+	}
+	vp, err = RequireActiveProfile(vp)
+	if err != nil {
+		return err
+	}
+	dirID, err := s.getDirectoryID(vp.Directory)
+	if err != nil {
+		return err
+	}
+	rec, err := s.findCurrentFile(vp.Name, dirID)
+	if err != nil {
+		return err
+	}
+
+	// Update the sealed object metadata so the digest syncs to other devices.
+	var meta FileMetadata
+	if raw := obj.Metadata(); len(raw) > 0 {
+		if m, merr := ParseFileMetadata(raw); merr == nil {
+			meta = m
+		}
+	}
+	meta.ContentDigest = computedDigest
+	metaJSON, err := meta.JSON()
+	if err != nil {
+		return err
+	}
+	obj.UpdateMetadata(metaJSON)
+
+	sdk, err := s.ensureSDK()
+	if err != nil {
+		return err
+	}
+	if err := sdk.PinObject(ctx, obj); err != nil {
+		return fmt.Errorf("failed to re-pin object with backfilled digest: %w", err)
+	}
+
+	// Update the local row.
+	return s.db.Model(&File{}).
+		Where("id = ?", rec.ID).
+		Updates(map[string]any{
+			"content_digest": computedDigest,
+			"updated_at":     time.Now().UTC(),
+		}).Error
 }
 
 // resolveVerifyObject resolves the file record and its indexer object. It
