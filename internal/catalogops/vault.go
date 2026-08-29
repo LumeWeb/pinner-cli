@@ -615,29 +615,25 @@ func vaultSearchPredicates(input map[string]any) ([]vault.Predicate, error) {
 	if any := catalog.StrSliceArg(input, "tag_any"); len(any) > 0 {
 		preds = append(preds, vault.Predicate{Tag: any})
 	}
-	// --host / --host-any.
-	for _, h := range catalog.StrSliceArg(input, "host") {
-		if h != "" {
-			preds = append(preds, vault.Predicate{Host: []string{h}})
-		}
+	// --host / --host-any. host/source/agent are scalar ArgTypeString args, so
+	// they must be read with StrArg (StrSliceArg returns nil for a scalar,
+	// which silently dropped these filters) and wrapped in a one-element slice.
+	if h := catalog.StrArg(input, "host", ""); h != "" {
+		preds = append(preds, vault.Predicate{Host: []string{h}})
 	}
 	if any := catalog.StrSliceArg(input, "host_any"); len(any) > 0 {
 		preds = append(preds, vault.Predicate{Host: any})
 	}
 	// --source / --source-any.
-	for _, s := range catalog.StrSliceArg(input, "source") {
-		if s != "" {
-			preds = append(preds, vault.Predicate{Source: []string{s}})
-		}
+	if s := catalog.StrArg(input, "source", ""); s != "" {
+		preds = append(preds, vault.Predicate{Source: []string{s}})
 	}
 	if any := catalog.StrSliceArg(input, "source_any"); len(any) > 0 {
 		preds = append(preds, vault.Predicate{Source: any})
 	}
 	// --agent / --agent-any.
-	for _, a := range catalog.StrSliceArg(input, "agent") {
-		if a != "" {
-			preds = append(preds, vault.Predicate{Agent: []string{a}})
-		}
+	if a := catalog.StrArg(input, "agent", ""); a != "" {
+		preds = append(preds, vault.Predicate{Agent: []string{a}})
 	}
 	if any := catalog.StrSliceArg(input, "agent_any"); len(any) > 0 {
 		preds = append(preds, vault.Predicate{Agent: any})
