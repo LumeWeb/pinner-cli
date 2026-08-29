@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/samber/lo"
 	queryutil "go.lumeweb.com/queryutil/filter"
 	"go.lumeweb.com/queryutil/filter/builder"
 	"gorm.io/gorm"
@@ -134,9 +135,13 @@ func parseOnePredicate(raw any) (Predicate, error) {
 	case "tag":
 		p.Tag = vals
 	case "status":
-		p.Status = vals
+		// Status and source values are stored lowercase ("ok"/"pending"/"lost",
+		// "mcp"/"cli"). Lower them here so a mixed-case where payload that
+		// passes the schema matches stored rows (column matching is
+		// case-sensitive).
+		p.Status = lowerList(vals)
 	case "source":
-		p.Source = vals
+		p.Source = lowerList(vals)
 	case "host":
 		p.Host = vals
 	case "agent":
@@ -145,6 +150,13 @@ func parseOnePredicate(raw any) (Predicate, error) {
 		p.Dir = vals
 	}
 	return p, nil
+}
+
+// lowerList lowercases every element of vals. Status/source are the only two
+// predicate values that are normalized to a canonical lowercase form at write
+// time, so they are the only fields lowered on parse.
+func lowerList(vals []string) []string {
+	return lo.Map(vals, func(v string, _ int) string { return strings.ToLower(v) })
 }
 
 // presentPredicateFields returns the field keys present in m (excluding not).

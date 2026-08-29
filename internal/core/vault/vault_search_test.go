@@ -481,6 +481,41 @@ func TestParseWhere(t *testing.T) {
 	}
 }
 
+// TestParseWhereNormalizesCase verifies status/source predicate values are
+// lowercased at parse time (stored values are canonical lowercase), so a
+// mixed-case where payload still matches stored rows.
+func TestParseWhereNormalizesCase(t *testing.T) {
+	got, err := ParseWhere([]any{
+		map[string]any{"status": "LOST"},
+		map[string]any{"source": "MCP"},
+		map[string]any{"not": map[string]any{"source": "CLI"}},
+		map[string]any{"tag": "FiNaNcE"},
+		map[string]any{"host": "Codex"},
+	})
+	if err != nil {
+		t.Fatalf("ParseWhere: %v", err)
+	}
+	if len(got) != 5 {
+		t.Fatalf("ParseWhere len = %d, want 5", len(got))
+	}
+	if got[0].Status[0] != "lost" {
+		t.Fatalf("status should be lowercased, got %v", got[0].Status)
+	}
+	if got[1].Source[0] != "mcp" {
+		t.Fatalf("source should be lowercased, got %v", got[1].Source)
+	}
+	if got[2].Not == nil || got[2].Not.Source[0] != "cli" {
+		t.Fatalf("not-wrapped source should be lowercased, got %+v", got[2])
+	}
+	// Tags, hosts, and agents are NOT normalized (free-form values).
+	if got[3].Tag[0] != "FiNaNcE" {
+		t.Fatalf("tag should not be lowercased, got %v", got[3].Tag)
+	}
+	if got[4].Host[0] != "Codex" {
+		t.Fatalf("host should not be lowercased, got %v", got[4].Host)
+	}
+}
+
 // TestSearchFTSSyncLifecycle verifies files_fts follows the files table: new
 // rows are indexed, renames move the index entry, and soft-deleted rows are no
 // longer searchable.
