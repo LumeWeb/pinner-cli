@@ -53,6 +53,9 @@ type InstallUI interface {
 	ReportWritten(agent install.AgentKey, path string, local bool) error
 	// ReportBuild reports a non-fatal note about an agent during the build.
 	ReportBuild(agent install.AgentKey, msg string) error
+	// ReportMCPURL prints the final public MCP endpoint URL for a remote (http)
+	// install, so the operator knows the exact URL a client dials.
+	ReportMCPURL(url string) error
 }
 
 // PTermInstallUI implements InstallUI using pterm for display.
@@ -290,5 +293,13 @@ func (ui *PTermInstallUI) ReportWritten(agent install.AgentKey, path string, loc
 // ReportBuild reports a non-fatal note about an agent during the build.
 func (ui *PTermInstallUI) ReportBuild(agent install.AgentKey, msg string) error {
 	pterm.Info.Printf("%s: %s\n", agent, msg)
+	return nil
+}
+
+// ReportMCPURL prints the final public MCP endpoint URL for a remote (http)
+// install. The URL passed in is the full endpoint path (e.g.
+// https://you.ngrok-free.dev/mcp), the exact URL a client dials.
+func (ui *PTermInstallUI) ReportMCPURL(url string) error {
+	pterm.Success.Printf("MCP server is running. Point your MCP client at: %s\n", url)
 	return nil
 }

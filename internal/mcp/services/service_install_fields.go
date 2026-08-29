@@ -64,6 +64,31 @@ func (s *ServiceInstallState) unmarkDecided(name string) {
 	delete(s.decisions, name)
 }
 
+// ServiceAuthTokenDecided reports whether the shared auth token (the MCP
+// password / MCP_AUTH_TOKEN) was a FRESH operator decision this run — collected
+// by the tunnel-specific configuration step's Gather, or decided by an explicit
+// --auth-token / MCP_AUTH_TOKEN source — as opposed to merely folded from a
+// persisted env file. The host install wizard uses it to decide whether its
+// separate MCP Password prompt is redundant: a decided token was already asked
+// for this run (skip), while a folded/inherited token was not (prompt with a
+// keep-or-replace default). An empty/nil service state is never decided.
+func ServiceAuthTokenDecided(s *ServiceInstallState) bool {
+	if s == nil {
+		return false
+	}
+	return s.decidedFor("AuthToken") != nil
+}
+
+// MarkAuthTokenCollected records the shared auth token as a fresh operator
+// decision this run (the tunnel-specific configuration step gathered it),
+// mirroring what the fieldform Gather commit does when the secret is collected.
+// Callers (and the install wizard's tests, which build service state directly)
+// use ServiceAuthTokenDecided to observe that decision. Re-recording an
+// already-decided value is idempotent and harmless.
+func (s *ServiceInstallState) MarkAuthTokenCollected(v string) {
+	s.commitDecided("AuthToken", v)
+}
+
 // decisionsBinding is the shared Decided channel for all install fields: a
 // name-keyed map on the state. Write records only the decision map; the field's
 // Str Commit applies the value write via its own Setter.
