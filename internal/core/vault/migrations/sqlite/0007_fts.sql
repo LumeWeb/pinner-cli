@@ -57,9 +57,16 @@ END;
 
 -- UPDATE: drop the old row, then re-insert iff the row is still live+current.
 -- This covers name changes on a live row, is_current demotion/promotion, and
--- soft-delete (deleted_at getting set) in one trigger.
+-- soft-delete (deleted_at getting set) in one trigger. The WHEN guard keeps
+-- other per-write Updates (size/status/host/source/updated_at/etc.) from
+-- triggering a full DELETE+INSERT FTS re-index when no searchable column
+-- changed, avoiding write amplification on a vault-scale table.
 -- +goose StatementBegin
-CREATE TRIGGER `files_fts_au` AFTER UPDATE ON `files` BEGIN
+CREATE TRIGGER `files_fts_au` AFTER UPDATE ON `files`
+WHEN NEW.`name` IS NOT OLD.`name`
+  OR NEW.`is_current` IS NOT OLD.`is_current`
+  OR (NEW.`deleted_at` IS NULL) IS NOT (OLD.`deleted_at` IS NULL)
+BEGIN
     DELETE FROM `files_fts` WHERE `rowid` = OLD.`id`;
     INSERT INTO `files_fts`(`rowid`, `name`)
     SELECT NEW.`id`, NEW.`name`
