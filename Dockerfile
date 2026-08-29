@@ -12,7 +12,7 @@
 # the shipped OCI image and shipped binaries are byte-identical builds.
 
 # ---- Build stage: static musl binary with cgo ----
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine AS build
 
 # golang:alpine ships musl; gcc + musl-dev provide the C toolchain for
 # go-sqlite3. tzdata/ca-certificates are not needed at build time.

@@ -60,7 +60,7 @@ jobs:
             -e GITHUB_TOKEN \
             -e GO_VERSION \
             -e PROJECT_DIR=/go/src/go.lumeweb.com/pinner-cli \
-            ghcr.io/goreleaser/goreleaser-cross:v1.26 \
+            ghcr.io/goreleaser/goreleaser-cross:v1.27 \
             release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
