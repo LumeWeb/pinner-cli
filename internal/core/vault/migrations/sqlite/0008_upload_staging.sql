@@ -17,6 +17,13 @@
 
 ALTER TABLE `files` ADD COLUMN `staged_path` TEXT NOT NULL DEFAULT '';
 
+-- Partial index over the (tiny) set of rows with a staged buffer. The flush
+-- engine scans staged rows every cycle (`WHERE staged_path <> '' AND deleted_at
+-- IS NULL`); only the not-yet-durable rows need indexing, and a partial index
+-- keeps that set tiny even as the full files table grows with every version.
+CREATE INDEX `idx_files_staged` ON `files`(`staged_path`) WHERE `staged_path` <> '';
+
 -- +goose Down
 
+DROP INDEX IF EXISTS `idx_files_staged`;
 ALTER TABLE `files` DROP COLUMN `staged_path`;

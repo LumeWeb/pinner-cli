@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -163,6 +164,85 @@ func TestStage_DiskBackpressure(t *testing.T) {
 	_, err := svc.Put(context.Background(), strings.NewReader("zz"), 2, "vault:/c.txt", nil)
 	if !errors.Is(err, ErrSlowDown) {
 		t.Fatalf("third Put error = %v, want ErrSlowDown", err)
+	}
+}
+
+// TestDiskBackpressure_WakeOnRelease regression for the diskWake nil-channel
+// bug: a Put that is over the disk limit must wake as soon as space is released
+// (via a flush), not block the full timeout and then return ErrSlowDown.
+func TestDiskBackpressure_WakeOnRelease(t *testing.T) {
+	uploads := t.TempDir()
+	svc, _ := newStagingService(t, uploads)
+	svc.diskUsageLimit = 10
+	svc.diskUsageTimeout = 5 * time.Second // long: a broken wake would hang then error
+
+	// First write reserves 5 bytes (fits).
+	if _, err := svc.Put(context.Background(), strings.NewReader("aaaaa"), 5, "vault:/a.txt", nil); err != nil {
+		t.Fatalf("Put a: %v", err)
+	}
+
+	// Second write (6 bytes) exceeds the remaining 5 — it must block until the
+	// first is flushed (releasing its 5-byte reservation) and then proceed.
+	done := make(chan error, 1)
+	go func() {
+		_, err := svc.Put(context.Background(), strings.NewReader("bbbbbb"), 6, "vault:/b.txt", nil)
+		done <- err
+	}()
+
+	// Give the blocked Put a beat to hit the diskWait, then flush the first
+	// file to free capacity.
+	time.Sleep(50 * time.Millisecond)
+	if err := svc.FlushPath(context.Background(), "vault:/a.txt"); err != nil {
+		t.Fatalf("FlushPath a: %v", err)
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("blocked Put b returned %v, want nil (should wake on release)", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("blocked Put b did not wake after space was released")
+	}
+}
+
+// TestFlush_ConcurrentNoRace regression for the concurrent Flush/FlushPath race
+// on the same pending row: serialized flush work must leave a single durable
+// result and never double-remove a staged buffer. Run under -race.
+func TestFlush_ConcurrentNoRace(t *testing.T) {
+	uploads := t.TempDir()
+	svc, _ := newStagingService(t, uploads)
+	for i, p := range []string{"vault:/a.txt", "vault:/b.txt"} {
+		content := strings.Repeat("x", i+1)
+		if _, err := svc.Put(context.Background(), strings.NewReader(content), int64(len(content)), p, nil); err != nil {
+			t.Fatalf("Put %s: %v", p, err)
+		}
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 4)
+	wg.Add(4)
+	go func() { defer wg.Done(); _, err := svc.Flush(context.Background()); errs <- err }()
+	go func() { defer wg.Done(); _, err := svc.Flush(context.Background()); errs <- err }()
+	go func() { defer wg.Done(); errs <- svc.FlushPath(context.Background(), "vault:/a.txt") }()
+	go func() { defer wg.Done(); errs <- svc.FlushPath(context.Background(), "vault:/b.txt") }()
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent flush error: %v", err)
+		}
+	}
+
+	// Both files must be durable with the staged buffer removed exactly once.
+	for _, p := range []string{"vault:/a.txt", "vault:/b.txt"} {
+		rec, err := svc.resolveFile(parseTestVault(t, p))
+		if err != nil {
+			t.Fatalf("resolve %s: %v", p, err)
+		}
+		if rec.Status != FileStatusOK || rec.StagedPath != "" {
+			t.Fatalf("%s after concurrent flush: status=%q staged=%q", p, rec.Status, rec.StagedPath)
+		}
 	}
 }
 

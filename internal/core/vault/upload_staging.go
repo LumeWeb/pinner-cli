@@ -355,6 +355,8 @@ func (s *vaultService) stagedAdopt(vp *VaultPath, rec *File) func() (bool, error
 // of files flushed. Used by the MCP background engine, the `vault flush` CLI
 // command, and as the forced-flush primitive for share links on pending objects.
 func (s *vaultService) Flush(ctx context.Context) (int, error) {
+	s.flushMu.Lock()
+	defer s.flushMu.Unlock()
 	rows, err := s.stagedRows(ctx)
 	if err != nil {
 		return 0, err
@@ -369,6 +371,8 @@ func (s *vaultService) Flush(ctx context.Context) (int, error) {
 // FlushPath flushes a single vault path to durable storage (used by CLI
 // `--flush` and share's forced flush). It is a no-op if the file is already ok.
 func (s *vaultService) FlushPath(ctx context.Context, vaultPath string) error {
+	s.flushMu.Lock()
+	defer s.flushMu.Unlock()
 	vp, err := ParseVaultPath(vaultPath)
 	if err != nil {
 		return err
@@ -551,6 +555,13 @@ func (s *vaultService) addDiskUsage(ctx context.Context, size int64) error {
 			s.diskUsage += size
 			s.diskUsageMu.Unlock()
 			return nil
+		}
+		// The wake channel is created lazily the first time a Put backs up (so
+		// a service that never hits the limit allocates nothing); it must be
+		// non-nil before we select on it, otherwise the waiter blocks forever
+		// and the "space freed" wake never fires.
+		if s.diskWake == nil {
+			s.diskWake = make(chan struct{})
 		}
 		wake := s.diskWake
 		s.diskUsageMu.Unlock()

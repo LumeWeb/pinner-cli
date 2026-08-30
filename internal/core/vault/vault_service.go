@@ -117,6 +117,13 @@ type vaultService struct {
 	diskUsageMu sync.Mutex
 	diskUsage   int64
 	diskWake    chan struct{}
+
+	// flushMu serializes all flush work on this service so a Flush and a
+	// FlushPath (or two Flushes) can never race on the same pending row's
+	// staged buffer — both might otherwise snapshot the same StagedPath,
+	// UploadPacked it twice, and each finalizeDurable deletes it. Mirrors
+	// s3d's uploadMu around uploadObjects.
+	flushMu sync.Mutex
 }
 
 // ensureSDK returns the Sia SDK, building it (and hitting the network) only on
