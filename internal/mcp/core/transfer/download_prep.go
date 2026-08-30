@@ -22,8 +22,10 @@ type IPFSDownloadHandler func(ctx context.Context, ipfsPath string, w io.Writer)
 
 // VaultGetHandler streams a single encrypted vault file (vault:/...) to dest.
 // It is the authenticated vault-read executor, homed in the CLI layer where
-// the vault service lives (mirror of VaultPutHandler).
-type VaultGetHandler func(ctx context.Context, vaultPath string, w io.Writer) error
+// the vault service lives (mirror of VaultPutHandler). profile is the vault
+// profile the object is read from; an empty value means the active/default
+// profile.
+type VaultGetHandler func(ctx context.Context, vaultPath, profile string, w io.Writer) error
 
 // DownloadSinkInput is the shared argument shape for how a download's bytes are
 // delivered. A single `sink` union plus the local output path / filedrop TTL

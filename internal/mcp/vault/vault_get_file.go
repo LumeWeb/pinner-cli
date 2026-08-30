@@ -22,6 +22,11 @@ type VaultGetFileInput struct {
 	// VaultPath is the encrypted vault file to retrieve (e.g. vault:/docs/f.pdf
 	// or the profile-scoped form). It must be a file path.
 	VaultPath string `json:"vault_path" jsonschema:"description=Vault file path to download, e.g. vault:/docs/f.pdf. Required."`
+	// Profile is the vault profile the file is read from. Defaults to the
+	// active profile when omitted; specify it to read from another vault
+	// without switching the default (avoids a swarm flipping the active
+	// profile via vault_profile_use).
+	Profile string `json:"profile,omitempty" jsonschema:"description=Vault profile name to read from (defaults to the active profile). Specify a different profile to read from another vault without changing the default."`
 	// Sink tells where the bytes land: "local" writes to a host-side path
 	// (available on every transport); "drop" mints a one-time HTTP GET
 	// filedrop (only when a reachable HTTP mux exists).
@@ -82,12 +87,12 @@ func NewVaultGetFileDescriptor(getFn transfer.VaultGetHandler, hd *transfer.Down
 					return model.ToolResult{}, errors.New("vault get handler is not configured")
 				}
 				res, err := transfer.ExecuteLocalSink(ctx, in.VaultPath, name, in.OutputPath, downloadRoot, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
-					return getFn(ctx, in.VaultPath, w)
+					return getFn(ctx, in.VaultPath, in.Profile, w)
 				})
 				return toolargs.WrapResult(res, err, "Downloaded from the vault.")
 			case transfer.SinkDrop:
 				res, err := transfer.ExecuteDropSink(ctx, in.VaultPath, name, hd, in.TTL, maxDownloadBytes, func(ctx context.Context, w io.Writer) error {
-					return getFn(ctx, in.VaultPath, w)
+					return getFn(ctx, in.VaultPath, in.Profile, w)
 				})
 				return toolargs.WrapResult(res, err, "Filedrop minted; pull the bytes from fetch_url.")
 			default:

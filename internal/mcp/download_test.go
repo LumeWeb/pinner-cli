@@ -377,8 +377,9 @@ func TestDownloadFileRequiresPathAndValidSink(t *testing.T) {
 
 func TestVaultGetFileLocalSink(t *testing.T) {
 	root := t.TempDir()
-	vg := transfer.VaultGetHandler(func(ctx context.Context, vaultPath string, w io.Writer) error {
+	vg := transfer.VaultGetHandler(func(ctx context.Context, vaultPath, profile string, w io.Writer) error {
 		require.Equal(t, "vault:/docs/f.pdf", vaultPath)
+		require.Equal(t, "", profile, "profile defaults to empty (active)")
 		_, err := w.Write([]byte("vault plaintext"))
 		return err
 	})
@@ -393,6 +394,42 @@ func TestVaultGetFileLocalSink(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(root, "docs", "f.pdf"))
 	require.NoError(t, err)
 	require.Equal(t, "vault plaintext", string(data))
+}
+
+// TestVaultGetFileThreadsProfile verifies the vault_get_file tool forwards an
+// explicit profile argument to the CLI VaultGetHandler so it reads from the
+// targeted vault without switching the active profile, and leaves it empty when
+// omitted.
+func TestVaultGetFileThreadsProfile(t *testing.T) {
+	root := t.TempDir()
+	var gotProfile string
+	vg := transfer.VaultGetHandler(func(ctx context.Context, vaultPath, profile string, w io.Writer) error {
+		gotProfile = profile
+		_, err := w.Write([]byte("vault plaintext"))
+		return err
+	})
+	desc := vault.NewVaultGetFileDescriptor(vg, nil, root, 0, false)
+
+	// Explicit profile is threaded through.
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
+		"vault_path":  "vault:/docs/f.pdf",
+		"sink":        "local",
+		"output_path": "docs/f.pdf",
+		"profile":     "work",
+	}})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "unexpected error: %s", res.Text)
+	require.Equal(t, "work", gotProfile)
+
+	// Omitted profile is empty (active profile resolves at the CLI layer).
+	res, err = desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
+		"vault_path":  "vault:/docs/f.pdf",
+		"sink":        "local",
+		"output_path": "docs/g.pdf",
+	}})
+	require.NoError(t, err)
+	require.False(t, res.IsError, "unexpected error: %s", res.Text)
+	require.Equal(t, "", gotProfile)
 }
 
 // Ensure the tool survives an httptest round-trip of the coordinator headers,

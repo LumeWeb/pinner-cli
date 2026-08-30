@@ -57,6 +57,11 @@ type VaultPutFileInput struct {
 	// Any vault file path is allowed (e.g. vault:/docs/f.pdf); there is no
 	// single-folder restriction — see ValidateVaultFilePath.
 	VaultPath string `json:"vault_path" jsonschema:"description=Vault destination file path (e.g. vault:/docs/f.pdf or vault:/uploads/report.pdf). Required. Must be a file path, not a directory; traversal (.. or .) segments are rejected. Any vault file path is allowed."`
+	// Profile is the vault profile the file is written into. Defaults to the
+	// active profile when omitted; specify it to write into another vault
+	// without switching the default (avoids a swarm flipping the active
+	// profile via vault_profile_use).
+	Profile string `json:"profile,omitempty" jsonschema:"description=Vault profile name to write into (defaults to the active profile). Specify a different profile to store in another vault without changing the default."`
 	// ArchiveMode controls how an archive path is handled: 'convert' (default)
 	// extracts and stores the contents; 'preserve' keeps the archive intact.
 	// Only used for source mode path.
@@ -159,9 +164,12 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 
 			// Build the metadata the vault write seals into the object. The
 			// environment stamps src=mcp and, when the request carries a
-			// detected host profile, host=<host type>. The CLI closure stamps
-			// profile. Caller-supplied KV (agent, kind, project, ...) is merged
-			// on top; the reserved write-context keys are never overridable.
+			// detected host profile, host=<host type>. An explicit profile
+			// argument stamps the destination profile so the CLI write closure
+			// (which owns service construction) routes to that vault; an empty
+			// profile omits the key and the closure resolves the active one.
+			// Caller-supplied KV (agent, kind, project, ...) is merged on top;
+			// the reserved write-context keys are never overridable.
 			callerKV := in.Metadata
 			if in.Agent != "" {
 				if callerKV == nil {
@@ -179,7 +187,7 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 			if request.Caps != nil && request.Caps.Profile != nil {
 				hostType = string(request.Caps.Profile.HostType)
 			}
-			metadata := corevault.StampedMetadata("mcp", hostType, "", callerKV)
+			metadata := corevault.StampedMetadata("mcp", hostType, in.Profile, callerKV)
 
 			// OpenAI/host-provided generated-file handoff. The host passes a
 			// temporary download_url + file_id; Pinner fetches/streams the bytes
@@ -281,6 +289,7 @@ func vaultPutFileSchema(features hostenv.FeatureSet) json.RawMessage {
 		Property("source", toolargs.SchemaFor[transfer.UploadSource](), toolforge.Transform(transfer.VaultSourceSchemaTransform)).
 		Property("file", toolargs.SchemaFor[transfer.ChatGPTFileInput](), toolforge.When(hostenv.FeatFileHostInput)).
 		StringProperty("vault_path", "Vault destination file path (e.g. vault:/docs/f.pdf or vault:/uploads/report.pdf). Required. Must be a file path, not a directory; traversal (.. or .) segments are rejected. Any vault file path is allowed.").
+		StringProperty("profile", "Vault profile name to write into (defaults to the active profile). Specify a different profile to store in another vault without changing the default.").
 		// archive_mode is only meaningful for source.mode=path (co-located
 		// stdio): the mint and url/data branches stream raw bytes with no
 		// in-band archive contract. Declaring it solely for FeatSourcePath

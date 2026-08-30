@@ -297,5 +297,32 @@ func TestVaultPutFileStampsMetadata(t *testing.T) {
 	require.Equal(t, "orchestrator-a", got["agent"])
 	require.Equal(t, "artifact", got["kind"])
 	require.Equal(t, "reports", got["project"])
+	// No explicit profile argument was passed, so the tool surface must NOT
+	// stamp one; the CLI closure resolves and stamps the active profile.
 	require.NotContains(t, got, corevault.MetaKeyProfile, "profile is stamped by the CLI closure, not the tool handler")
+}
+
+// TestVaultPutFileStampsRequestedProfile verifies that when the caller passes
+// an explicit profile argument, the tool surface stamps it into the write
+// metadata so the CLI closure routes to that vault instead of the active one.
+func TestVaultPutFileStampsRequestedProfile(t *testing.T) {
+	var got map[string]any
+	desc := vaultPutDescriptor(true, false, func(ctx context.Context, path, vaultPath, archiveMode string, meta map[string]any) (any, error) {
+		got = meta
+		return map[string]any{"vault_path": vaultPath}, nil
+	}, nil, nil)
+
+	req := model.ToolRequest{
+		Arguments: map[string]any{
+			"source":     map[string]any{"mode": "path", "path": "/tmp/x.bin"},
+			"vault_path": "vault:/docs/x.bin",
+			"profile":    "work",
+		},
+		Caps: &model.RequestCaps{Profile: &hostenv.PlatformProfile{HostType: hostenv.HostCodex}},
+	}
+	_, err := desc.Handler(context.Background(), req)
+	require.NoError(t, err)
+
+	require.Equal(t, "mcp", got[corevault.MetaKeySrc])
+	require.Equal(t, "work", got[corevault.MetaKeyProfile], "explicit profile must be stamped into the write metadata")
 }
