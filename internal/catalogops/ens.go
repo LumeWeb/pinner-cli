@@ -106,12 +106,15 @@ func ensUnpoint(d ENSDeps) catalog.Operation {
 		Positional: "<name>",
 		Args: []catalog.OperationArg{
 			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "Onchain/ENS domain to unpoint (e.g. vitalik.eth)"},
-			{Name: "confirm", Type: catalog.ArgTypeBool, AgentRequired: true, Default: "true", Help: "Confirm the destructive delete", AgentHelp: "Must be true to delete the key; this is destructive and cannot be undone. Only a human sets this on confirmation; a model alone cannot confirm a destructive delete."},
+			{Name: "confirm", Type: catalog.ArgTypeBool, AgentRequired: true, Default: "false", Help: "Confirm the destructive delete", AgentHelp: "Must be true to delete the key; this is destructive and cannot be undone. Only a human sets this on confirmation; a model alone cannot confirm a destructive delete."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			// Enforce confirm here, not just on the MCP schema: a human or app
 			// actor outside the model ActorModel gate could otherwise pass
-			// confirm:false and still delete. Mirrors ipns_keys_delete.
+			// confirm:false (or omit it, defaulting to false) and still delete.
+			// The default is deliberately "false" (no CLI wiring needs a
+			// delete-without-confirm contract), so an omitted confirm fails
+			// this gate and only an explicit confirm=true deletes.
 			if !catalog.BoolArg(input, "confirm", false) {
 				return nil, fmt.Errorf("ens_unpoint: confirmation is required to delete the key")
 			}

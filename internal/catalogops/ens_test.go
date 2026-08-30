@@ -236,6 +236,16 @@ func TestENSOperationsInvoke(t *testing.T) {
 		require.Contains(t, err.Error(), "confirmation is required")
 	})
 
+	t.Run("human unpoint with confirm omitted is rejected", func(t *testing.T) {
+		// confirm defaults to false, so a non-model actor that omits it must
+		// NOT delete the key: "defaults are filled before the handler runs",
+		// so an omitted confirm resolves to false and the gate fails. This
+		// guards the destructive-op confirmation contract for app/human actors.
+		_, err := cat.Invoke(context.Background(), "ens_unpoint", map[string]any{"name": "vitalik.eth"}, catalog.ActorHuman)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "confirmation is required")
+	})
+
 	t.Run("human unpoint success after confirm", func(t *testing.T) {
 		res, err := cat.Invoke(context.Background(), "ens_unpoint", map[string]any{"name": "vitalik.eth", "confirm": true}, catalog.ActorHuman)
 		require.NoError(t, err)
