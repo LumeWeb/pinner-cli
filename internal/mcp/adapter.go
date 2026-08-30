@@ -503,12 +503,12 @@ adapter.`,
 					tunnelOpenAI: cmd.String("tunnel") == "openai",
 					// Register the dev_* introspection tools only when the server
 					// was launched with --dev-tools.
-					devTools: cmd.Bool("dev-tools"),
-					hasWizard:    hasWizard,
-					wizardW:      wizardW,
-					wizardS:      wizardS,
-					wizardD:      wizardD,
-					hostProfile:  hostProfile,
+					devTools:    cmd.Bool("dev-tools"),
+					hasWizard:   hasWizard,
+					wizardW:     wizardW,
+					wizardS:     wizardS,
+					wizardD:     wizardD,
+					hostProfile: hostProfile,
 				}); err != nil {
 					return nil, nil, err
 				}
@@ -590,17 +590,24 @@ func startVaultSync(ctx context.Context, cmd *cli.Command, mcpOpts *mcpServerOpt
 
 	syncCtx, cancel := context.WithCancel(ctx)
 	loop := corevault.NewVaultSyncLoop(mcpOpts.vaultSyncCfg)
+	// The background upload flush reuses the same per-profile service factory:
+	// it drains staged ("pending") writes to durable Sia storage, packing them
+	// into shared slabs. It runs as a sibling worker on the same scheduler so
+	// staged uploads converge while the server runs.
+	uploadLoop := corevault.NewVaultUploadLoop(mcpOpts.vaultSyncCfg)
 	sched := corevault.NewServiceScheduler()
 	sched.Register("vaultSync", interval, loop.Tick)
+	sched.Register("vaultUpload", interval, uploadLoop.Tick)
 	sched.Start(syncCtx)
 	go func() {
 		// Shutdown when the server context is done (signal/file-server exit),
-		// so the sync goroutine never outlives the process and the held service
-		// (SDK/DB handles) is released.
+		// so the sync/upload goroutines never outlive the process and the held
+		// services (SDK/DB handles) are released.
 		<-ctx.Done()
 		cancel()
 		sched.Shutdown()
 		loop.Close()
+		uploadLoop.Close()
 	}()
 	log.Debug("continuous vault sync started", zap.Duration("interval", interval))
 	return nil

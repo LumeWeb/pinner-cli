@@ -8,6 +8,10 @@ type vaultCpResponse struct {
 	ObjectID      string `json:"object_id"`
 	Size          int64  `json:"size"`
 	ContentDigest string `json:"content_digest"`
+	// Status reflects durability: "pending" means the bytes are staged locally
+	// (readable, but not yet uploaded/pinned to Sia); "ok" means durable.
+	// Pending status arises when the CLI put staged a buffer without --flush.
+	Status string `json:"status,omitempty"`
 }
 
 // vaultProfileEntry is a single profile in the `vault profile list` JSON output.
@@ -83,4 +87,9 @@ type vaultStatusResponse struct {
 // vaultSyncResponse is the JSON output for `vault sync`.
 type vaultSyncResponse struct {
 	EventsProcessed int `json:"events_processed"`
+}
+
+// vaultFlushResponse is the JSON output for `vault flush`.
+type vaultFlushResponse struct {
+	Flushed int `json:"flushed"`
 }

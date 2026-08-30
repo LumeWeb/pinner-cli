@@ -65,6 +65,8 @@ func (NopVaultService) ShareAccept(context.Context, string, string, string, map[
 	return nil, nil
 }
 func (NopVaultService) Sync(context.Context) (int, bool, error) { return 0, false, nil }
+func (NopVaultService) Flush(context.Context) (int, error)      { return 0, nil }
+func (NopVaultService) FlushPath(context.Context, string) error { return nil }
 func (NopVaultService) Status(context.Context) (*vault.StatusResult, error) {
 	return nil, nil
 }

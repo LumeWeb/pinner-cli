@@ -25,7 +25,7 @@ const OpenVaultManagerToolName = "open_vault_manager"
 // openVaultManagerDescription is shared between the static Description and the
 // Fallback MCPTarget so the launcher descriptor carries a target list.
 const openVaultManagerDescription = "Open the interactive Upload to Vault file picker. This is a UI launcher: it renders an HTML iframe so the user can pick a file. It is not a headless primitive. " +
-	"It returns a presigned PUT URL plus the vault_path; the iframe's Uppy uploader POSTs file bytes to that URL directly, and the vault write is synchronous (the PUT response is the result). " +
+	"It returns a presigned PUT URL plus the vault_path; the iframe's Uppy uploader POSTs file bytes to that URL directly, and the PUT returns after staging locally (status: pending) — durability on Sia happens in the background or via `vault flush`. " +
 	"Prefer vault_put_file (headless) for autonomous workflows; call this only when a human file picker is actually desired."
 
 // OpenVaultManagerInput is the typed argument shape for the model-facing
@@ -89,7 +89,7 @@ func NewOpenVaultManagerDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescr
 			}
 			return model.ToolResult{
 				StructuredContent: sc,
-				Text:              toolargs.ResultJSONText(sc) + " The Upload to Vault UI is open; pick a file to PUT. The vault write is synchronous on the PUT.",
+				Text:              toolargs.ResultJSONText(sc) + " The Upload to Vault UI is open; pick a file to PUT. The PUT stages the bytes locally (status: pending); durability on Sia happens in the background or via `vault flush`.",
 			}, nil
 		},
 	}

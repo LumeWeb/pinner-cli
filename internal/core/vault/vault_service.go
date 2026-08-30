@@ -27,11 +27,27 @@ import (
 	"gorm.io/gorm"
 )
 
+// packedUpload is the subset of siastorage.PackedUpload used by the vault flush
+// engine. Abstracted as an interface (rather than the concrete
+// *siastorage.PackedUpload) so tests can inject a fake owning the add/finalize
+// behavior. The real *siastorage.PackedUpload satisfies it.
+type packedUpload interface {
+	Add(ctx context.Context, r io.Reader) (int64, error)
+	Finalize(ctx context.Context) ([]siastorage.Object, error)
+	Close() error
+}
+
 // sdkClient is the subset of siastorage.SDK methods used by vaultService.
 // Defined as an interface so tests can use a fake.
 type sdkClient interface {
 	Account(ctx context.Context) (app.AccountResponse, error)
 	Upload(ctx context.Context, obj *siastorage.Object, r io.Reader, opts ...siastorage.UploadOption) error
+	// UploadPacked creates a packed upload that batches multiple objects into
+	// shared slabs (erasure-coded + encrypted by the SDK). Returns a
+	// PackedUpload to Add readers to and Finalize. Used by the background flush
+	// so several small vault files share a slab set instead of each paying for a
+	// full host-set write.
+	UploadPacked(opts ...siastorage.UploadOption) (packedUpload, error)
 	PinObject(ctx context.Context, obj siastorage.Object) error
 	Object(ctx context.Context, objectKey types.Hash256) (siastorage.Object, error)
 	ObjectEvents(ctx context.Context, cursor slabs.Cursor, limit int) ([]siastorage.ObjectEvent, error)
@@ -41,6 +57,19 @@ type sdkClient interface {
 	DownloadSharedObject(ctx context.Context, sharedURL string, opts ...siastorage.DownloadOption) (io.ReadCloser, error)
 	Close() error
 	AppKey() types.PrivateKey
+}
+
+// realSDK adapts the concrete *siastorage.SDK to the sdkClient interface. It is
+// only needed because Go interface satisfaction does not allow a covariant
+// return type: the SDK's UploadPacked returns the concrete
+// *siastorage.PackedUpload, while sdkClient declares the packedUpload interface
+// so tests can fake it. The adapter narrows the return type.
+type realSDK struct {
+	*siastorage.SDK
+}
+
+func (r *realSDK) UploadPacked(opts ...siastorage.UploadOption) (packedUpload, error) {
+	return r.SDK.UploadPacked(opts...)
 }
 
 // vaultService implements VaultService.
@@ -72,6 +101,29 @@ type vaultService struct {
 	// in ShareAccept. When nil, an app.Client is built from indexerURL. Tests
 	// inject it to serve slab metadata without an HTTP server.
 	sharedObjectFn func(ctx context.Context, shareURL string) (slabs.SharedObject, []byte, error)
+
+	// uploadsDir is the per-profile directory where Put buffers plaintext bytes
+	// before they are uploaded+pinned to Sia. Set at construction; "" disables
+	// staging (Put then performs a synchronous durable upload instead).
+	uploadsDir string
+
+	// diskUsageLimit caps the total bytes buffered in uploadsDir awaiting
+	// upload. 0 = unlimited. When exceeded, Put blocks (up to diskUsageTimeout)
+	// waiting for the flush loop to drain+delete staged files, then returns
+	// ErrSlowDown. Mirrors s3d's addDiskUsage backpressure.
+	diskUsageLimit   int64
+	diskUsageTimeout time.Duration
+
+	diskUsageMu sync.Mutex
+	diskUsage   int64
+	diskWake    chan struct{}
+
+	// flushMu serializes all flush work on this service so a Flush and a
+	// FlushPath (or two Flushes) can never race on the same pending row's
+	// staged buffer — both might otherwise snapshot the same StagedPath,
+	// UploadPacked it twice, and each finalizeDurable deletes it. Mirrors
+	// s3d's uploadMu around uploadObjects.
+	flushMu sync.Mutex
 }
 
 // ensureSDK returns the Sia SDK, building it (and hitting the network) only on
@@ -91,14 +143,19 @@ func (s *vaultService) ensureSDK() (sdkClient, error) {
 		return s.sdk, nil
 	}
 	builder := siastorage.NewBuilder(s.indexerURL, s.metadata)
-	s.sdk, s.sdkErr = builder.SDK(s.appKey)
-	return s.sdk, s.sdkErr
+	real, err := builder.SDK(s.appKey)
+	if err != nil {
+		s.sdkErr = err
+		return nil, err
+	}
+	s.sdk = &realSDK{SDK: real}
+	return s.sdk, nil
 }
 
 // NewVaultService creates a vault service from an SDK and an open database.
 func NewVaultService(sdk *siastorage.SDK, db *gorm.DB) VaultService {
 	return &vaultService{
-		sdk:    sdk,
+		sdk:    &realSDK{SDK: sdk},
 		db:     db,
 		appKey: sdk.AppKey(),
 	}
@@ -152,11 +209,27 @@ func NewVaultServiceForProfile(profileName string, indexerURL string) (VaultServ
 	}
 
 	return &vaultService{
-		db:         db,
-		appKey:     appKey,
-		indexerURL: indexerURL,
-		metadata:   metadata,
+		db:               db,
+		appKey:           appKey,
+		indexerURL:       indexerURL,
+		metadata:         metadata,
+		uploadsDir:       ProfileUploadsDir(profileName),
+		diskUsageTimeout: DefaultDiskUsageTimeout,
 	}, nil
+}
+
+// VaultServiceOption configures a vaultService at construction.
+type VaultServiceOption func(*vaultService)
+
+// WithDiskUsageLimit sets the maximum bytes buffered in the staging directory
+// before Put blocks (see addDiskUsage). 0 leaves it unlimited.
+func WithDiskUsageLimit(limit int64) VaultServiceOption {
+	return func(s *vaultService) { s.diskUsageLimit = limit }
+}
+
+// WithUploadsDir overrides the staging directory (tests and embedding use).
+func WithUploadsDir(dir string) VaultServiceOption {
+	return func(s *vaultService) { s.uploadsDir = dir }
 }
 
 // CheckReady verifies the indexer has propagated the account registration.
@@ -177,8 +250,12 @@ func (s *vaultService) CheckReady(ctx context.Context) error {
 	return nil
 }
 
-// Put uploads a file to the vault at the given vault path.
-func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPath string, metadata map[string]any) (*File, error) {
+// putImmediate performs a synchronous, durable vault write (upload + pin now)
+// with no local staging buffer. It is the legacy path used when a service has
+// no staging directory configured (e.g. unit tests that inject a fake SDK
+// directly and expect a completed object) — production uses the staging Put in
+// upload_staging.go.
+func (s *vaultService) putImmediate(ctx context.Context, r io.Reader, size int64, vaultPath string, metadata map[string]any) (*File, error) {
 	vp, err := ParseVaultPath(vaultPath)
 	if err != nil {
 		return nil, err
@@ -253,16 +330,16 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	// the object) and searchable. Enables `--tags` at upload.
 	putTags := tagsFromMetadata(metadata)
 	fileMeta := FileMetadata{
-		ID:          fileID,
-		VersionID:   versionID,
-		Seq:         versionSeq,
-		Name:        vp.Name,
-		Directory:   vp.Directory,
-		MediaType:   mediaType,
-		Size:        size,
-		CreatedAt:   now,
-		Metadata:    metadata,
-		Status:      FileStatusOK,
+		ID:        fileID,
+		VersionID: versionID,
+		Seq:       versionSeq,
+		Name:      vp.Name,
+		Directory: vp.Directory,
+		MediaType: mediaType,
+		Size:      size,
+		CreatedAt: now,
+		Metadata:  metadata,
+		Status:    FileStatusOK,
 	}
 	// Seed the planar tags array in the sealed object metadata so sync-down
 	// reconstructs file_tags on every device without an extra call.
@@ -311,7 +388,6 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	// Capture the prior object key is NOT needed: with versioning we preserve
 	// every version's content (each prior current row retains its ObjectKey),
 	// so no post-write orphan deletion occurs on overwrite.
-	var record *File
 	nowTs := time.Now().UTC()
 	// Persist the user-supplied metadata map on the local File row so it
 	// survives cache rebuilds and is returned by Stat. The Sia object already
@@ -328,12 +404,14 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 	// the local searchable cache, reconciled on sync-down like tags.
 	recSource, recHost, recAgent := WriteContextColumns(metadata)
 	rec := File{
-		UUID:          fileID,
-		Name:          vp.Name,
-		DirectoryID:   dirID,
-		Source:        recSource,
-		Host:          recHost,
-		Agent:         recAgent,
+		UUID:        fileID,
+		VersionID:   versionID,
+		Seq:         versionSeq,
+		Name:        vp.Name,
+		DirectoryID: dirID,
+		Source:      recSource,
+		Host:        recHost,
+		Agent:       recAgent,
 		// A freshly-minted path inserts as is_current=true so the partial
 		// unique index idx_files_live_name_dir (which only constrains
 		// is_current=1) still fires when a concurrent writer claims the same
@@ -343,7 +421,7 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 		// existing winner's own live row, so promoteCurrent below does that
 		// final demote+promote. (adoptPreflight resets this to false on the
 		// adopt path so the adopted row never races the winner's live row.)
-		IsCurrent: mintedFresh, // promoteCurrent demotes the prior current + promotes this row atomically
+		IsCurrent:     mintedFresh, // promoteCurrent demotes the prior current + promotes this row atomically
 		ObjectKey:     objectKey.String(),
 		Size:          size,
 		MediaType:     mediaType,
@@ -353,104 +431,15 @@ func (s *vaultService) Put(ctx context.Context, r io.Reader, size int64, vaultPa
 		CreatedAt:     nowTs,
 		UpdatedAt:     nowTs,
 	}
-	// The store below is wrapped in a bounded retry to resolve the concurrent-
-	// create race WITHOUT ever running network I/O inside the single-connection
-	// SQLite write transaction. OpenDB caps the pool at SetMaxOpenConns(1), so
-	// holding the open transaction across an indexer round-trip would block every
-	// other vault DB operation (Get/List/Stat/Sync) for the full network latency
-	// and risk the 5000ms busy_timeout. Every network call in this block runs in
-	// the adoptPreflight helper OUTSIDE the transaction.
-	//
-	// adoptPreflight re-resolves (name, dir) for a freshly-minted path. If a
-	// concurrent writer claimed the path after we minted our UUID, we are the
-	// loser: adopt the winner's UUID and re-stamp + re-pin the object with it
-	// here, before any write transaction opens. Re-pinning first guarantees the
-	// remote object and the committed row share the adopted identity; a re-pin
-	// failure returns before anything is committed, so Sync can never mint a
-	// duplicate from stale-metadata (the no-divergence invariant, now enforced
-	// without holding the connection).
-	//
-	// If the transaction still hits a create-conflict (a writer committed
-	// between adoptPreflight and tx.Create), we retry: the next preflight finds
-	// that winner, adopts + re-pins it outside the transaction, and the retry's
-	// transaction takes the overwrite path (no conflict). The object's content
-	// ID is unaffected by metadata, so re-pinning only rewrites the UUID stamp.
-	const maxAdoptRetries = 4
-	for attempt := 0; attempt < maxAdoptRetries; attempt++ {
-		if mintedFresh {
-			if adopted, aerr := s.adoptPreflight(ctx, &obj, &fileMeta, vp.Name, dirID, &rec); aerr != nil {
-				return nil, fmt.Errorf("failed to adopt concurrent winner: %w", aerr)
-			} else if adopted {
-				// The object now carries the adopted UUID; the transaction below
-				// must target that identity (overwrite path), not our old UUID.
-				fileID = rec.UUID
-			}
+	// Persist + promote the row. See commitFileRecord for the concurrency
+	// notes; adoptPreflight (network) runs outside the write transaction.
+	return s.commitFileRecord(ctx, vp, dirID, &rec, putTags, mintedFresh, func() (bool, error) {
+		adopted, aerr := s.adoptPreflight(ctx, &obj, &fileMeta, vp.Name, dirID, &rec)
+		if aerr != nil {
+			return false, fmt.Errorf("failed to adopt concurrent winner: %w", aerr)
 		}
-
-		err = s.db.Transaction(func(tx *gorm.DB) error {
-			// Versioning: EVERY Put inserts a fresh version row and promotes it
-			// to the live current winner for its (name, dir). The prior current
-			// row is demoted by promoteCurrent but RETAINS its ObjectKey, so its
-			// content survives as an older version. We never mutate a version
-			// row in place: that is what previously destroyed history.
-			//
-			// version_id comes from the encrypted object metadata (set up front,
-			// so the local row matches what other devices sync down). seq is
-			// re-derived inside the single-connection write transaction so two
-			// concurrent Puts to the same logical file can't race to the same
-			// seq (take the max of the up-front read and the committed max, in
-			// case a cross-process writer landed between).
-			var maxSeq uint
-			if err := tx.Model(&File{}).
-				Where("uuid = ?", rec.UUID).
-				Select("COALESCE(MAX(seq), 0)").
-				Scan(&maxSeq).Error; err != nil {
-				return fmt.Errorf("failed to compute next version seq: %w", err)
-			}
-			if versionSeq > maxSeq {
-				maxSeq = versionSeq
-			}
-			rec.Seq = maxSeq + 1
-			rec.VersionID = versionID
-
-			// Insert the new version row. On a concurrent-create conflict
-			// (partial unique index on (name, dir, is_current)) the caller's
-			// retry loop re-runs adoptPreflight OUTSIDE the transaction, adopts
-			// the winner's UUID, and re-inserts as a new version of that group.
-			if err := tx.Create(&rec).Error; err != nil {
-				return err
-			}
-			// Reconcile the freshly-Put file's tag joins inside the SAME write
-			// transaction as the row insert, so a tag-cache write failure
-			// cannot leave the object pinned + row committed with the caller
-			// seeing a failed Put (which would prompt a duplicate-version
-			// retry). Tags are authoritative in the sealed object metadata; the
-			// local file_tags join is a cache seeded here so vault_tag_ls /
-			// search are correct immediately after an upload with --tags.
-			if len(putTags) > 0 {
-				if rerr := reconcileTagsTx(tx, rec.ID, putTags); rerr != nil {
-					return rerr
-				}
-			}
-			return promoteCurrent(tx, vp.Name, dirID, rec.ID)
-		})
-		if err == nil {
-			record = &rec
-			break
-		}
-		if !isLiveNameConflict(err) {
-			return nil, fmt.Errorf("failed to store file record: %w", err)
-		}
-		// A create-conflict: go around again. On retry adoptPreflight re-pins
-		// the object with the winner's UUID before the write transaction, so a
-		// re-pin failure still surfaces (a) after any commit and (b) before any
-		// adoption is persisted.
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to store file record after %d attempts: %w", maxAdoptRetries, err)
-	}
-
-	return record, nil
+		return adopted, nil
+	})
 }
 
 // Get downloads a file from the vault to the given writer. If the local row
@@ -471,6 +460,15 @@ func (s *vaultService) Get(ctx context.Context, vaultPath string, w io.Writer) e
 	record, err := s.resolveFile(vp)
 	if err != nil {
 		return err
+	}
+
+	// A not-yet-durable object (still buffered locally awaiting background
+	// upload+pin) is served straight from its staged plaintext buffer — no Sia
+	// interaction needed, and no ObjectKey to fetch yet. This is what makes a
+	// locally-staged write immediately readable within the same MCP instance
+	// without forcing a flush.
+	if record.StagedPath != "" {
+		return copyStaged(w, record.StagedPath)
 	}
 
 	objHash, err := parseHash256(record.ObjectKey)
@@ -1263,7 +1261,7 @@ func (s *vaultService) ShareAccept(ctx context.Context, vaultPath, shareURL, tar
 		return nil, rerr
 	}
 
-// Rewrite the agent-supplied share URL to the profile's configured indexer
+	// Rewrite the agent-supplied share URL to the profile's configured indexer
 	// origin (scheme + host). The path, query, and fragment (which carries
 	// the encryption key) are preserved. This guarantees the HTTP GET issued
 	// by app.Client.SharedObject always targets the trusted indexer,
@@ -1385,20 +1383,20 @@ func (s *vaultService) ShareAccept(ctx context.Context, vaultPath, shareURL, tar
 	}
 	recSource, recHost, recAgent := WriteContextColumns(metadata)
 	rec := File{
-		UUID:          fileID,
-		Name:          vp.Name,
-		DirectoryID:   dirID,
-		Source:        recSource,
-		Host:          recHost,
-		Agent:         recAgent,
-		IsCurrent:     mintedFresh,
-		ObjectKey:     objectKey,
-		Size:          size,
-		MediaType:     mediaType,
-		Metadata:      datatypes.JSON(userMetaJSON),
-		Status:        FileStatusOK,
-		CreatedAt:     time.Now().UTC(),
-		UpdatedAt:     time.Now().UTC(),
+		UUID:        fileID,
+		Name:        vp.Name,
+		DirectoryID: dirID,
+		Source:      recSource,
+		Host:        recHost,
+		Agent:       recAgent,
+		IsCurrent:   mintedFresh,
+		ObjectKey:   objectKey,
+		Size:        size,
+		MediaType:   mediaType,
+		Metadata:    datatypes.JSON(userMetaJSON),
+		Status:      FileStatusOK,
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
 	}
 
 	const maxAdoptRetries = 4
@@ -2586,4 +2584,3 @@ func (s *vaultService) SetTags(ctx context.Context, vaultPath string, tags []str
 		return newSet, nil
 	})
 }
-

@@ -239,7 +239,7 @@ const mintUploadCompletion = "upload_file(source.mode=mint) is asynchronous: it 
 // completion contract. It is emitted only when vault_put_file is registered.
 // The PUT response is the completed vault write and there is NO upload_status
 // poll: upload_status tracks upload_file's IPFS uploads, not vault writes.
-const mintVaultCompletion = "vault_put_file(source.mode=mint, vault_path=...) is synchronous: it returns a one-time presigned PUT url bound to vault_path — PUT the agent-local file to it, and the PUT response IS the completed vault write. There is no upload_status to poll (upload_status tracks upload_file's IPFS uploads, not vault writes)."
+const mintVaultCompletion = "vault_put_file(source.mode=mint, vault_path=...) is non-blocking: it returns a one-time presigned PUT url bound to vault_path — PUT the agent-local file to it and the PUT returns quickly after staging the bytes locally (status: pending). The file is immediately readable from this instance; durability on Sia (upload + pin) happens in the background, or immediately via `vault flush` / sharing the file. There is no upload_status to poll (upload_status tracks upload_file's IPFS uploads, not vault writes)."
 
 // uploadToolsFor lists the upload tools actually registered on THIS server, in
 // chooser order: upload_file first, then the relay tools. It gates each tool

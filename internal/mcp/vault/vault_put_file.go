@@ -248,7 +248,7 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 					StructuredContent: sc,
 					// Text carries the same JSON so a text-only client sees the
 					// actual presigned URL and curl command, not just prose.
-					Text: toolargs.ResultJSONText(sc) + " Run the curl command with your file; the vault write completes synchronously and the response carries the vault result.",
+					Text: toolargs.ResultJSONText(sc) + " Run the curl command with your file; the PUT stages the bytes locally (status: pending) — durability on Sia happens in the background or via `vault flush`.",
 				}, nil
 			default: // TransportOpenAI
 				if src.Mode != transfer.SourceURL && src.Mode != transfer.SourceData {
