@@ -26,7 +26,14 @@ type FlushJob struct {
 	Flushed int    `json:"flushed,omitempty"`
 	Error   string `json:"error,omitempty"`
 
-	done chan struct{}
+	// done/doneClosed/finalized are synchronization state, guarded by the
+	// manager lock. done is closed exactly once when the job reaches a terminal
+	// state. finalized marks a job terminally settled by shutdown (its status
+	// can no longer be flipped by a worker that returns late, nor its done
+	// channel re-closed).
+	done       chan struct{}
+	doneClosed bool
+	finalized  bool
 }
 
 // FlushManager runs one flush worker per profile, so two profiles never share a
@@ -202,15 +209,22 @@ func (m *FlushManager) popPending(profile string) *FlushJob {
 func (m *FlushManager) setStatus(job *FlushJob, status string, flushed int, errMsg string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// A job terminally finalized by shutdown is immutable: a worker that returns
+	// late (after Close() timed out on it) must not flip Status back to "done"
+	// nor re-close the completion channel.
+	if job.finalized {
+		return
+	}
 	job.Status = status
 	if status == FlushJobDone {
 		job.Flushed = flushed
 	}
 	job.Error = errMsg
-	// Only close the completion channel once, when the job reaches a terminal
+	// Close the completion channel exactly once, when the job reaches a terminal
 	// state. process() first calls setStatus(Running) then setStatus(Done|Failed),
 	// so closing here unconditionally would double-close the channel and panic.
-	if job.done != nil && (status == FlushJobDone || status == FlushJobFailed) {
+	if job.done != nil && (status == FlushJobDone || status == FlushJobFailed) && !job.doneClosed {
+		job.doneClosed = true
 		close(job.done)
 	}
 }
@@ -298,7 +312,8 @@ func (m *FlushManager) Close() {
 		for _, j := range q {
 			j.Status = FlushJobFailed
 			j.Error = "flush manager closed"
-			if j.done != nil {
+			if j.done != nil && !j.doneClosed {
+				j.doneClosed = true
 				close(j.done)
 			}
 		}
@@ -317,27 +332,48 @@ func (m *FlushManager) Close() {
 	go func() { m.wg.Wait(); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(flushShutdownTimeout):
-		m.failStuckJobs(workers)
-	}
-	for _, w := range workers {
-		if w.svc != nil {
-			_ = w.svc.Close()
+		// Every worker exited: it is safe to close the services it used (no
+		// worker is mid-process() touching one).
+		for _, w := range workers {
+			if w.svc != nil {
+				_ = w.svc.Close()
+			}
 		}
+	case <-time.After(flushShutdownTimeout):
+		// A worker is stuck in a live service (e.g. blocked on the per-profile
+		// flush lock). Permanently fail its job so polls resolve, but do NOT
+		// close the worker's service here — that would dispose the DB/SDK while
+		// the worker is still mid-Flush (panic/fail on a live service). The
+		// service is left for process exit to reclaim; the finalized job is
+		// immutable so a late-returning worker cannot flip it back to done.
+		m.failStuckJobs(workers)
 	}
 }
 
-// failStuckJobs marks any in-flight job of workers that failed to observe the
-// cancelled context as failed (without closing its completion channel, since
-// the stuck worker may later return and call setStatus), so a polling agent's
-// vault_flush_status resolves instead of hanging on a permanently "running" job.
+// failStuckJobs permanently fails any in-flight job of a worker that failed to
+// observe the cancelled manager context, then closes its completion channel.
+// The job is marked finalized so, if the stuck worker ever returns, its
+// setStatus call is a no-op: it can neither flip the job back to done nor
+// double-close the channel.
 func (m *FlushManager) failStuckJobs(workers map[string]*profileFlushWorker) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, w := range workers {
-		if w.active != nil && w.active.Status == FlushJobRunning {
-			w.active.Status = FlushJobFailed
-			w.active.Error = "flush manager shutdown timed out"
+		if w.active == nil {
+			continue
+		}
+		j := w.active
+		if j.done != nil && !j.doneClosed {
+			j.doneClosed = true
+			close(j.done)
+		}
+		if j.finalized {
+			continue
+		}
+		j.finalized = true
+		j.Status = FlushJobFailed
+		if j.Error == "" {
+			j.Error = "flush manager shutdown timed out"
 		}
 	}
 }

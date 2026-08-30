@@ -178,4 +178,18 @@ func TestFlushManagerCloseBoundsStuckWorker(t *testing.T) {
 	if j.Status != FlushJobFailed {
 		t.Fatalf("stuck job after Close = %q, want %q (failed so a poll resolves)", j.Status, FlushJobFailed)
 	}
+
+	// Invariant: a finalized job is immutable. Simulate the stuck worker finally
+	// returning (setStatus(Done)) after Close() — it must NOT flip the job back
+	// to "done" nor panic from double-closing the completion channel.
+	mgr.setStatus(j, FlushJobDone, 1, "")
+	after, ok := mgr.Job(job.JobID)
+	if !ok || after.Status != FlushJobFailed {
+		t.Fatalf("stuck job was flipped after Close = %+v, want it to stay failed", after)
+	}
+
+	// Invariant: a stuck worker's service is never closed beneath an active
+	// Flush (would dispose the DB/SDK mid-flush). Close() must leave it open for
+	// process-exit reclamation rather than closing under the running worker.
+	svc.AssertNotCalled(t, "Close", mock.Anything)
 }
