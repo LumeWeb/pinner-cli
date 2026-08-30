@@ -89,7 +89,3 @@ type vaultSyncResponse struct {
 	EventsProcessed int `json:"events_processed"`
 }
 
-// vaultFlushResponse is the JSON output for `vault flush`.
-type vaultFlushResponse struct {
-	Flushed int `json:"flushed"`
-}

@@ -24,9 +24,10 @@ import (
 // channel. Instead it mirrors the Upload to IPFS app: a helper mints a
 // one-time presigned PUT endpoint bound to the destination vault path, and the
 // iframe's Uppy XHR uploader PUTs the raw file body straight to that endpoint
-// (formData off, HTTP PUT). The vault write is synchronous, so the PUT
-// response itself carries the vault result - no async handle or poll round
-// trip is needed.
+// (formData off, HTTP PUT). The vault write is non-blocking: the PUT response
+// returns after staging the bytes locally (status: pending) — durability on
+// Sia happens in the background or via the vault_flush tool; there is no async
+// handle or poll round trip.
 
 // VaultUploadAppURI is the ui:// resource serving the "Upload to Vault" app.
 const VaultUploadAppURI = "ui://uploads/vault.html"

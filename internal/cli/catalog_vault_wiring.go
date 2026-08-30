@@ -281,9 +281,12 @@ func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 			return output.PrintJSON(r)
 		}
 		status := "FAIL"
-		if r.DigestVerified == "verified" && r.ObjectExists {
+		switch {
+		case r.Pending:
+			status = "PENDING"
+		case r.DigestVerified == "verified" && r.ObjectExists:
 			status = "OK"
-		} else if r.DigestVerified == "unverified" && r.ObjectExists {
+		case r.DigestVerified == "unverified" && r.ObjectExists:
 			status = "UNVERIFIED"
 		}
 		output.PrintFields(FieldGroup{
@@ -314,11 +317,26 @@ func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 
 	case *catalogops.VaultShareResult:
 		if output.IsJSON() {
-			return output.PrintJSON(map[string]any{"share_url": r.ShareURL, "expires": r.Expires})
+			return output.PrintJSON(map[string]any{"share_url": r.ShareURL, "expires": r.Expires, "status": r.Status, "message": r.Message})
+		}
+		if r.Status == "pending" {
+			output.Printfln("File is not yet durable on Sia: %s", r.Message)
+			return nil
 		}
 		output.Print(r.ShareURL)
 		output.Printfln("")
 		output.Printfln("Share link expires: %s", r.Expires)
+		return nil
+
+	case *catalogops.VaultFlushResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"flushed": r.Flushed})
+		}
+		if r.Flushed == 0 {
+			output.Printfln("No pending files to flush.")
+			return nil
+		}
+		output.Printfln("Flushed %d pending file(s) to durable storage.", r.Flushed)
 		return nil
 
 	case *catalogops.VaultShareAcceptResult:

@@ -409,8 +409,9 @@ adapter.`,
 			// The vaultUpload coordinator mirrors curlUpload for the "Upload to
 			// Vault" MCP App: it mints a one-time presigned PUT endpoint bound
 			// to a vault destination path, and the raw PUT body is drained
-			// through the authenticated vault write (vaultPutHandler)
-			// synchronously. It is only wired when that vault write handler is
+			// through the authenticated vault write (vaultPutHandler), staging
+			// the bytes locally before returning. It is only wired when that
+			// vault write handler is
 			// present, and must exist here (before registerCustomTools and
 			// serveHTTP) so both the app helper and the transport-mounted PUT
 			// route can be registered against the same instance.
@@ -1366,8 +1367,9 @@ func WithCatalogOps(factory func() *CatalogDepsBundle) MCPServerOption {
 // The loop mirrors the Sia Storage App's event-cursor sync-down: it drains the
 // active vault's pending indexer events into the local cache every interval so
 // an agent does not need to call vault_sync explicitly to see another device's
-// writes. Writes stay synchronous (vault_put_file / vault cp pin to the indexer
-// immediately), so there is no sync-up or dirty-flag component.
+// writes. Writes are non-blocking (vault_put_file stages locally, status
+// pending; durability on Sia follows in the background or via vault_flush), so
+// there is no sync-up or dirty-flag component.
 func WithVaultSync(cfg corevault.SyncLoopConfig) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.vaultSyncCfg = cfg

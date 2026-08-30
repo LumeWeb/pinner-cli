@@ -194,7 +194,7 @@ func CurrentCapabilities(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, down
 // deliberately does NOT name any source.mode=mint completion contract — that
 // copy is tool-scoped in capabilitiesDescriptionFor so it can respect
 // registration-time wiring (upload_file mints poll upload_status; vault_put_file
-// mints complete synchronously with no poll). The "host file first" clause is
+// mints non-blocking with no poll). The "host file first" clause is
 // gated on FeatFileHostInput (only OpenAI/ChatGPT hosts can build a
 // {download_url, file_id} file object). Resolving against the calling profile
 // prevents the description from promising a `file` parameter a host (e.g. Grok)
@@ -239,7 +239,7 @@ const mintUploadCompletion = "upload_file(source.mode=mint) is asynchronous: it 
 // completion contract. It is emitted only when vault_put_file is registered.
 // The PUT response is the completed vault write and there is NO upload_status
 // poll: upload_status tracks upload_file's IPFS uploads, not vault writes.
-const mintVaultCompletion = "vault_put_file(source.mode=mint, vault_path=...) is non-blocking: it returns a one-time presigned PUT url bound to vault_path — PUT the agent-local file to it and the PUT returns quickly after staging the bytes locally (status: pending). The file is immediately readable from this instance; durability on Sia (upload + pin) happens in the background, or immediately via `vault flush` / sharing the file. There is no upload_status to poll (upload_status tracks upload_file's IPFS uploads, not vault writes)."
+const mintVaultCompletion = "vault_put_file(source.mode=mint, vault_path=...) is non-blocking: it returns a one-time presigned PUT url bound to vault_path — PUT the agent-local file to it and the PUT returns quickly after staging the bytes locally (status: pending). The file is immediately readable from this instance; durability on Sia (upload + pin) happens in the background, or immediately via the vault_flush tool. There is no upload_status to poll (upload_status tracks upload_file's IPFS uploads, not vault writes)."
 
 // uploadToolsFor lists the upload tools actually registered on THIS server, in
 // chooser order: upload_file first, then the relay tools. It gates each tool
@@ -276,9 +276,10 @@ func uploadToolsFor(feats hostenv.FeatureSet, uploadFile, relayURLWired, dataURI
 //   - upload_file(source.mode=mint) is asynchronous: <host PUT> then poll
 //     upload_status — the byte-route chooser and this clause render only when
 //     upload_file is actually wired.
-//   - vault_put_file(source.mode=mint, vault_path=...) is synchronous: the PUT
-//     response IS the completed vault write and there is no upload_status poll
-//     — that clause renders only when vault_put_file is actually wired.
+//   - vault_put_file(source.mode=mint, vault_path=...) is non-blocking: the PUT
+//     stages bytes locally (status: pending) and returns; durability happens in
+//     the background or via vault_flush, and there is no upload_status poll —
+//     that clause renders only when vault_put_file is actually wired.
 //
 // Neither tool's clause names the other, so a single sentence can never be
 // read as "every mint operation polls upload_status", and an unwired tool is

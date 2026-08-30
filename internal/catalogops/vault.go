@@ -93,6 +93,7 @@ func VaultOperations(d VaultDeps) []catalog.Operation {
 		vaultTagLs(d),
 		vaultRm(d),
 		vaultSync(d),
+		vaultFlush(d),
 		vaultShare(d),
 		vaultShareAccept(d),
 		vaultForget(d),
@@ -920,14 +921,84 @@ func vaultSync(d VaultDeps) catalog.Operation {
 }
 
 // ---------------------------------------------------------------------------
+// vault flush
+// ---------------------------------------------------------------------------
+
+// vaultFlushTimeout bounds how long vault_probe waits for a (possibly large)
+// packed upload from a staged file to finish. It is deliberately much longer
+// than the ~120s request deadline so a full host-set upload is not killed
+// mid-flight; the flush runs on a detached context derived from Background.
+const vaultFlushTimeout = 10 * time.Minute
+
+// VaultFlushResult is returned by vault_flush: the number of staged files made
+// durable on Sia.
+type VaultFlushResult struct {
+	Flushed int `json:"flushed"`
+}
+
+func vaultFlush(d VaultDeps) catalog.Operation {
+	return catalog.NewOperation(catalog.OperationSpec{
+		Name:        "vault_flush",
+		Title:       "Flush staged vault files to durable storage",
+		Summary:     "Upload and pin pending vault files",
+		Description: "Upload and pin staged (pending) vault files so they become durable on Sia. vault_put_file is non-blocking: it stages bytes locally and returns immediately with status pending. This packs the staged bytes into shared slabs, uploads and pins the objects, and marks them ok. Flush all staged files, or a single path via the path argument. A share link requires a durable object, so flush before sharing a freshly written file. Returns the number of files flushed.",
+		MCPTargets: catalog.MCPTargets(
+			catalog.Fallback("Make staged vault files durable on Sia. vault_put_file returns before bytes are on Sia (status: pending); call this to upload + pin them. Flush all pending files by default, or pass path to flush a single file. A full host-set upload can take a while, so this tool waits without a request-timeout kill. Returns the number of files flushed. A share link requires a durable object — run this (or wait for the background flush) before vault_share on a freshly written file."),
+		),
+		Category:    "vault",
+		Safety:      catalog.SafetyMutate,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Positional:  "[<path>]",
+		Args: []catalog.OperationArg{
+			{Name: "path", Type: catalog.ArgTypeString, Help: "Vault path to flush (flush only this file if set; otherwise flush every pending file)", AgentHelp: "An optional vault:/ path restricting the flush to a single file; when omitted, every staged (pending) file is flushed."},
+			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
+		},
+		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
+			if err != nil {
+				return nil, err
+			}
+			svc, err := d.service(profileName)
+			if err != nil {
+				return nil, err
+			}
+			defer svc.Close()
+			// Run the flush on a detached context so a slow full host-set upload
+			// is not cancelled by the invocation/request deadline (~120s). The
+			// whole point of this dedicated tool is to let durability finish.
+			flushCtx, cancel := context.WithTimeout(context.Background(), vaultFlushTimeout)
+			defer cancel()
+			path := catalog.StrArg(input, "path", "")
+			if path == "" {
+				n, ferr := svc.Flush(flushCtx)
+				if ferr != nil {
+					return nil, fmt.Errorf("vault_flush: %w", ferr)
+				}
+				return &VaultFlushResult{Flushed: n}, nil
+			}
+			// Flush a single path: FlushPath is a no-op when already durable.
+			if ferr := svc.FlushPath(flushCtx, path); ferr != nil {
+				return nil, fmt.Errorf("vault_flush %s: %w", path, ferr)
+			}
+			return &VaultFlushResult{Flushed: 1}, nil
+		}),
+	})
+}
+
+// ---------------------------------------------------------------------------
 // vault share
 // ---------------------------------------------------------------------------
 
 // VaultShareResult is the data returned by a successful vault share: the
-// share URL and its expiry timestamp.
+// share URL and its expiry timestamp. When the target file is still staging
+// (not yet durable), Status is "pending" and Message explains the next step
+// — no share URL is produced because a share link must point at a Sia object.
 type VaultShareResult struct {
-	ShareURL string `json:"share_url"`
-	Expires  string `json:"expires"`
+	ShareURL string `json:"share_url,omitempty"`
+	Expires  string `json:"expires,omitempty"`
+	Status   string `json:"status,omitempty"`
+	Message  string `json:"message,omitempty"`
 }
 
 // parseVaultExpiry parses a duration string like "7d", "30d", "1h", "0"
@@ -993,17 +1064,32 @@ func vaultShare(d VaultDeps) catalog.Operation {
 				return nil, err
 			}
 			defer svc.Close()
-			// A share link grants read access to a Sia-stored object, so a
-			// pending (staged-only) file must be flushed to durable first.
-			// FlushPath is a no-op when the object is already durable.
-			if err := svc.FlushPath(ctx, vaultPath); err != nil {
-				return nil, fmt.Errorf("vault_share: file must be uploaded before sharing: %w", err)
+			// A share link grants read access to a Sia-stored object, so the
+			// file must be durable (status ok) before a link can be issued. A
+			// freshly written file is staged locally (status pending/uploaded)
+			// with no Sia object yet.
+			//
+			// We deliberately do NOT force a synchronous flush here: a full
+			// host-set packed upload can exceed the ~120s invocation deadline
+			// (which used to fail vault_share with a context deadline
+			// exceeded). Instead, surface the pending state and point the agent
+			// at the explicit vault_flush tool (or the background flush), then
+			// re-share once durable.
+			st, serr := svc.Stat(ctx, vaultPath)
+			if serr != nil {
+				return nil, serr
+			}
+			if st.Status != vault.FileStatusOK {
+				return &VaultShareResult{
+					Status:  "pending",
+					Message: "file is staged locally but not yet durable on Sia (status: " + st.Status + "). Run vault_flush (or wait for the background flush) to pin it, then share again.",
+				}, nil
 			}
 			shareURL, err := svc.Share(ctx, vaultPath, validUntil)
 			if err != nil {
 				return nil, err
 			}
-			return &VaultShareResult{ShareURL: shareURL, Expires: validUntil.Format(time.RFC3339)}, nil
+			return &VaultShareResult{ShareURL: shareURL, Expires: validUntil.Format(time.RFC3339), Status: "ok"}, nil
 		}),
 	})
 }

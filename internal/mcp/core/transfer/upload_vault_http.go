@@ -24,7 +24,8 @@ import (
 // returns quickly (status: pending); a PUT drains the request body through
 // that handler and returns the pending vault result directly in the response —
 // no async task handle or poll round-trip. Durability on Sia is handled by the
-// background flush (or an explicit `vault flush` / sharing the file).
+// background flush (or the explicit vault_flush tool; sharing a pending file
+// requires a flush first).
 //
 // Like Upload it works over BOTH transports:
 //   - stdio mode: there is no transport server, so mint() spins up a loopback
