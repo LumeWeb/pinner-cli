@@ -43,9 +43,26 @@ func startupProfile() hostenv.PlatformProfile {
 // compiledHandler wraps the operation catalog's Invoke gate for a single
 // compiled operation and returns its result as a ToolResult. It is the Handler
 // installed on the ToolEntry for every operation compiled from the catalog.
-func compiledHandler(cat catalog.Catalog, name string) model.PinnerToolHandler {
+//
+// A hosted (Portal-embedded) server supplies resolveToken so each per-request
+// invocation resolves the authenticated principal's Portal API token and
+// threads it through the reserved auth-token input override. catalogops
+// service construction honors that override (authTokenFromInput) before the
+// config default, so a hosted server authenticates every request as the
+// calling user rather than sharing a single config credential. Nil (CLI/local
+// path) means no injection — services fall back to their config token.
+func compiledHandler(cat catalog.Catalog, name string, resolveToken func(ctx context.Context) (string, error)) model.PinnerToolHandler {
 	return func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
-		return DispatchCatalogOp(ctx, cat, catalog.ActorModel, name, req.Arguments, name)
+		args := req.Arguments
+		if resolveToken != nil {
+			if tok, err := resolveToken(ctx); err == nil && tok != "" {
+				if args == nil {
+					args = map[string]any{}
+				}
+				args[catalog.ReservedAuthTokenKey] = tok
+			}
+		}
+		return DispatchCatalogOp(ctx, cat, catalog.ActorModel, name, args, name)
 	}
 }
 
@@ -60,7 +77,7 @@ func compiledHandler(cat catalog.Catalog, name string) model.PinnerToolHandler {
 //
 // DirectVisible is left to markCurated (the curated product surface), matching
 // how every other tool is promoted to tools/list.
-func catalogDescriptorToEntry(d catalog.ToolDescriptor, cat catalog.Catalog) *model.ToolEntry {
+func catalogDescriptorToEntry(d catalog.ToolDescriptor, cat catalog.Catalog, resolveToken func(ctx context.Context) (string, error)) *model.ToolEntry {
 	entry := model.ToolEntryFromDescriptor(model.ToolDescriptor{
 		Name:         d.Name,
 		Title:        d.Title,
@@ -71,7 +88,7 @@ func catalogDescriptorToEntry(d catalog.ToolDescriptor, cat catalog.Catalog) *mo
 		ReadOnly:     d.Safety == catalog.SafetyRead,
 		Destructive:  d.Safety == catalog.SafetyDestructive,
 		MCPTargets:   toModelTargets(d.MCPTargets),
-		Handler:      compiledHandler(cat, d.Name),
+		Handler:      compiledHandler(cat, d.Name, resolveToken),
 	})
 	return entry
 }
@@ -157,6 +174,15 @@ func populateCatalogSurface(tc *ToolCatalog, cat catalog.Catalog) (map[string]bo
 	if err != nil {
 		return nil, fmt.Errorf("populateCatalogSurface: compile operation catalog: %w", err)
 	}
+	// A hosted server's per-request credential resolver (on the catalog deps
+	// bundle) is captured here so every compiled op authenticates as the
+	// calling user; nil on the CLI/local path (config-token fallback).
+	var resolveToken func(ctx context.Context) (string, error)
+	if tc.CatalogDeps != nil {
+		if bundle := tc.CatalogDeps(); bundle != nil && bundle.CredentialResolver != nil {
+			resolveToken = bundle.CredentialResolver.TokenForRequest
+		}
+	}
 	compiled := make(map[string]bool, len(descs))
 	for _, d := range descs {
 		if d.Name == "" {
@@ -171,7 +197,7 @@ func populateCatalogSurface(tc *ToolCatalog, cat catalog.Catalog) (map[string]bo
 		if d.Name == "account_update_email" || d.Name == "account_update_password" {
 			continue
 		}
-		tc.Add(catalogDescriptorToEntry(d, cat))
+		tc.Add(catalogDescriptorToEntry(d, cat, resolveToken))
 		compiled[d.Name] = true
 	}
 	return compiled, nil

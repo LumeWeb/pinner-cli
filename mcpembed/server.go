@@ -20,6 +20,13 @@ type Options struct {
 	// service factories against its API endpoint and a CredentialResolver).
 	CatalogDeps func() *mcp.CatalogDepsBundle
 
+	// CredentialResolver maps the OAuth-authenticated caller of a request onto
+	// the Portal API token used to serve that request. It is threaded through
+	// the operation dispatch so every hosted operation authenticates as the
+	// calling user instead of a shared config token. When nil, ops fall back to
+	// their config-token source.
+	CredentialResolver CredentialResolver
+
 	// ResourceFactory builds the pinner:// resource providers (account status,
 	// websites platform domains, ...). The vault resource is omitted for a
 	// hosted surface by construction. Optional.
@@ -55,8 +62,19 @@ func New(opts Options) (http.Handler, error) {
 		surface = SurfaceHosted
 	}
 	srv, _, err := mcp.BuildHostedServer(mcp.HostedServerConfig{
-		Surface:         surface.toInternal(),
-		CatalogDeps:     opts.CatalogDeps,
+		Surface: surface.toInternal(),
+		// Seed the caller-supplied CredentialResolver onto the bundle so the
+		// per-request token it resolves is threaded through operation dispatch.
+		CatalogDeps: func() *mcp.CatalogDepsBundle {
+			if opts.CatalogDeps == nil {
+				return nil
+			}
+			bundle := opts.CatalogDeps()
+			if bundle != nil && opts.CredentialResolver != nil {
+				bundle.CredentialResolver = opts.CredentialResolver
+			}
+			return bundle
+		},
 		ResourceFactory: opts.ResourceFactory,
 		Options:         opts.ServerOptions,
 	})

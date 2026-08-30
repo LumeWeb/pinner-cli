@@ -101,11 +101,17 @@ func authStatus(d AuthDeps) catalog.Operation {
 			if cfgMgr == nil {
 				return nil, fmt.Errorf("auth_status: no config manager available")
 			}
-			token := ""
-			if d.ResolveAuthToken != nil {
-				token = d.ResolveAuthToken(cfgMgr)
-			} else {
-				token = cfgMgr.Config().AuthToken
+			// A per-request auth-token override (threaded by the MCP dispatch
+			// from a hosted server's CredentialResolver, or the CLI --auth-token
+			// flag) takes precedence over the config default, so auth_status
+			// reflects the calling principal rather than a shared config token.
+			token := authTokenFromInput(input)
+			if token == "" {
+				if d.ResolveAuthToken != nil {
+					token = d.ResolveAuthToken(cfgMgr)
+				} else {
+					token = cfgMgr.Config().AuthToken
+				}
 			}
 			if token == "" {
 				return &AuthStatusResult{Authenticated: false, Message: "Not authenticated: no auth token configured"}, nil

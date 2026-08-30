@@ -202,6 +202,13 @@ func registerCustomTools(deps customToolDeps) error {
 	// tools/list while the catalog entry supplies search/describe/invoke. When
 	// the wizard transport is absent oob is nil and both tools return a
 	// structured not-configured hand-off instead of hanging.
+	//
+	// These CLI out-of-band sign-in and account-credential tools are gated on
+	// the presence of the OOB coordinator (deps.oob). A hosted server has no
+	// such coordinator — Portal handles authentication via its own OAuth IdP —
+	// so hosting must never advertise (or let a model attempt) a CLI SSO
+	// browser flow, an account password/email OOB change, or their app views.
+	if deps.oob != nil {
 	authSSO := auth.NewAuthSSODescriptor(deps.oob, deps.authHandles, deps.handoffReg)
 	authSSO.DirectVisible = true
 	authResume := auth.NewAuthResumeDescriptor(deps.handoffReg, deps.authHandles)
@@ -251,6 +258,7 @@ func registerCustomTools(deps customToolDeps) error {
 		Category:    model.CategoryAccount,
 		ResourceURI: auth.AccountEmailAppURI,
 	}), auth.RegisterAccountEmailApp))
+	} // end of CLI OOB / account-credential tool gating
 
 	// Vault create/restore OOB hand-offs ride the SAME generic handoff-resume
 	// framework: the invoke path (buildCatalog) mints a handle and registers a
