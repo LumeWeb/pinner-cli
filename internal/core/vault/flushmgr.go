@@ -41,17 +41,27 @@ type FlushManager struct {
 	jobs    map[string]*FlushJob
 	seq     int64
 	closed  bool
+
+	// ctx/cancel is the manager's own lifetime, decoupled from any single
+	// Enqueue request context. Workers run on it so a request returning (and
+	// cancelling its ctx) never kills a worker or aborts an in-flight upload;
+	// Close() cancels it to stop all per-profile workers.
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
-// NewFlushManager creates a manager over cfg. Start must be called once per
-// known profile (or jobs are still accepted and a worker is created lazily on
-// first Enqueue — you choose).
+// NewFlushManager creates a manager over cfg with a manager-scoped lifecycle
+// context. Workers are created lazily on first Enqueue. Close() must be called
+// to stop them (it cancels the manager context and releases held services).
 func NewFlushManager(cfg SyncLoopConfig) *FlushManager {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &FlushManager{
 		cfg:     cfg,
 		workers: map[string]*profileFlushWorker{},
 		pending: map[string][]*FlushJob{},
 		jobs:    map[string]*FlushJob{},
+		ctx:     ctx,
+		cancel:  cancel,
 	}
 }
 
@@ -63,9 +73,12 @@ type profileFlushWorker struct {
 }
 
 // Enqueue accepts a flush request for profile (path may be empty = flush all
-// staged files) and returns an accepted job immediately (non-blocking). It is
-// idempotent-safe: it records the job and kicks the per-profile worker.
-func (m *FlushManager) Enqueue(ctx context.Context, profile, path string) (*FlushJob, error) {
+// staged files) and returns an accepted job immediately (non-blocking). The
+// request context is NOT threaded into the worker: workers and their uploads
+// run on the manager's own context so a returning request cannot cancel an
+// in-flight flush or kill the per-profile worker. It is idempotent-safe: it
+// records the job and kicks the per-profile worker.
+func (m *FlushManager) Enqueue(_ context.Context, profile, path string) (*FlushJob, error) {
 	m.mu.Lock()
 	if m.closed {
 		m.mu.Unlock()
@@ -84,7 +97,7 @@ func (m *FlushManager) Enqueue(ctx context.Context, profile, path string) (*Flus
 	worker, ok := m.workers[profile]
 	m.mu.Unlock()
 	if !ok {
-		worker = m.ensureWorker(ctx, profile)
+		worker = m.ensureWorker(profile)
 	}
 	select {
 	case worker.wake <- struct{}{}:
@@ -109,7 +122,7 @@ func (m *FlushManager) Job(jobID string) (*FlushJob, bool) {
 	return &c, true
 }
 
-func (m *FlushManager) ensureWorker(ctx context.Context, profile string) *profileFlushWorker {
+func (m *FlushManager) ensureWorker(profile string) *profileFlushWorker {
 	m.mu.Lock()
 	if w, ok := m.workers[profile]; ok {
 		m.mu.Unlock()
@@ -118,11 +131,15 @@ func (m *FlushManager) ensureWorker(ctx context.Context, profile string) *profil
 	w := &profileFlushWorker{mgr: m, profile: profile, wake: make(chan struct{}, 1)}
 	m.workers[profile] = w
 	m.mu.Unlock()
-	go m.runWorker(ctx, w)
+	// The worker runs on the manager's context, not any request context, so it
+	// survives the request that created it and keeps draining its profile's
+	// queue until Close() cancels the manager.
+	go m.runWorker(w)
 	return w
 }
 
-func (m *FlushManager) runWorker(ctx context.Context, w *profileFlushWorker) {
+func (m *FlushManager) runWorker(w *profileFlushWorker) {
+	ctx := m.ctx
 	for {
 		job := m.popPending(w.profile)
 		if job == nil {
@@ -200,8 +217,9 @@ func (w *profileFlushWorker) service(ctx context.Context) (VaultService, error) 
 	return svc, nil
 }
 
-// Close releases every per-profile worker's VaultService and prevents further
-// Enqueue. Safe to call more than once.
+// Close releases every per-profile worker's VaultService, cancels the manager
+// context (stopping each worker goroutine), and prevents further Enqueue. Safe
+// to call more than once.
 func (m *FlushManager) Close() {
 	m.mu.Lock()
 	if m.closed {
@@ -211,7 +229,11 @@ func (m *FlushManager) Close() {
 	m.closed = true
 	workers := m.workers
 	m.workers = map[string]*profileFlushWorker{}
+	cancel := m.cancel
 	m.mu.Unlock()
+	// Cancel after dropping the lock so in-flight workers draining their queue
+	// can still observe jobs; the selected ctx is the manager's own.
+	cancel()
 	for _, w := range workers {
 		if w.svc != nil {
 			_ = w.svc.Close()
