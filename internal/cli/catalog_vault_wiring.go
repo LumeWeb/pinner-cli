@@ -216,7 +216,16 @@ func vaultFlushSyncAction() cli.ActionFunc {
 		// every staged (pending) file.
 		path := c.Args().First()
 		if path != "" {
-			// FlushPath is a no-op for an already-durable/lost file.
+			// FlushPath is a silent no-op for an already-durable or lost file, so
+			// resolve its state first and report accurately rather than claiming
+			// a flush that did not happen.
+			if st, serr := svc.Stat(dctx, path); serr == nil && (st.Status == vault.FileStatusOK || st.Status == vault.FileStatusLost) {
+				if output.IsJSON() {
+					return output.PrintJSON(map[string]any{"status": st.Status, "flushed": 0, "path": path})
+				}
+				output.Printfln("%s is already %s on Sia; nothing to flush", path, st.Status)
+				return nil
+			}
 			if err := svc.FlushPath(dctx, path); err != nil {
 				return err
 			}
