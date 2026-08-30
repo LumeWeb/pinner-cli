@@ -131,6 +131,10 @@ func TestWithDownloadAuthService(t *testing.T) {
 	assert.NotNil(t, svc.authService)
 }
 
+// makeJWTWithAudience mints a signed JWT with the given audience for unit
+// tests. The signing key is a fixed, obviously-fake literal used ONLY to
+// exercise the GetJWTPurpose decode + API-key exchange logic; it is not a
+// credential and must never be used outside test code.
 func makeJWTWithAudience(audience string) string {
 	claims := jwt.RegisteredClaims{
 		Audience: []string{audience},
@@ -181,6 +185,20 @@ func TestDownloadService_resolveAuthToken(t *testing.T) {
 		token, err := svc.resolveAuthToken(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, ctxJWT, token)
+	})
+
+	t.Run("exchanges API key JWT from context when purpose is api", func(t *testing.T) {
+		apiKeyJWT := makeJWTWithAudience("api")
+		mockAccountAPI := portalsdkmocks.NewMockAccountAPI(t)
+		mockAccountAPI.EXPECT().LoginWithAPIKey(mock.Anything, apiKeyJWT).Return("login-jwt", nil)
+
+		svc := newDownloadSvc(t, "", WithDownloadAuthService(NewMockAuthService(t)))
+		svc.accountClient = mockAccountAPI
+
+		ctx := mcp.WithCredential(context.Background(), apiKeyJWT)
+		token, err := svc.resolveAuthToken(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "login-jwt", token)
 	})
 
 	t.Run("falls back to config when no context JWT", func(t *testing.T) {

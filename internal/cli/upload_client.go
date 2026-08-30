@@ -245,16 +245,21 @@ func (s *UploadServiceDefault) Upload(ctx context.Context, filesystem fs.FS, nam
 // If the stored token is an API key JWT, it exchanges it for a login JWT
 // (required by TUS endpoint which rejects API key tokens).
 func (s *UploadServiceDefault) resolveAuthToken(ctx context.Context) (string, error) {
-	// A hosted OOB transfer stamps the caller's Portal API JWT on the context
-	// (via credctx). It is already a login JWT, so prefer it directly over the
-	// override/config token and skip the API-key exchange.
+	// A hosted OOB transfer stamps the caller's Portal API token on the context
+	// (via credctx). Prefer it over the override/config token, applying the same
+	// API-key JWT → login JWT exchange as the config branch: the resolver may
+	// have minted an API-key token, which the TUS endpoint rejects unexchanged.
 	if tok := mcp.CredentialFromContext(ctx); tok != "" {
-		return tok, nil
+		return s.exchangeIfAPIKey(ctx, tok)
 	}
+	return s.exchangeIfAPIKey(ctx, s.getAuthToken())
+}
 
-	authToken := s.getAuthToken()
-
-	// If we have an AuthService, use it to exchange API key for login JWT
+// exchangeIfAPIKey returns the token to use for upload, exchanging an API-key
+// JWT for a login JWT when an authService is available (the TUS endpoint
+// rejects API-key JWTs). Decode errors fall back to the raw token; tokens whose
+// purpose is not "api" are returned as-is.
+func (s *UploadServiceDefault) exchangeIfAPIKey(ctx context.Context, authToken string) (string, error) {
 	if s.authService != nil {
 		purpose, err := GetJWTPurpose(authToken)
 		if err != nil {
@@ -270,7 +275,6 @@ func (s *UploadServiceDefault) resolveAuthToken(ctx context.Context) (string, er
 			return loginJWT, nil
 		}
 	}
-
 	return authToken, nil
 }
 

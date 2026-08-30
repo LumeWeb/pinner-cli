@@ -450,6 +450,20 @@ func TestUploadServiceDefault_resolveAuthToken(t *testing.T) {
 		assert.Equal(t, ctxJWT, token)
 	})
 
+	t.Run("exchanges API key JWT from context when purpose is api", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.service.authService = NewMockAuthService(t)
+
+		apiKeyJWT := createUploadTestJWT(t, "api")
+		loginJWT := "login-jwt-token"
+		h.accountClient.EXPECT().LoginWithAPIKey(mock.Anything, apiKeyJWT).Return(loginJWT, nil)
+
+		ctx := mcp.WithCredential(context.Background(), apiKeyJWT)
+		token, err := h.service.resolveAuthToken(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, loginJWT, token)
+	})
+
 	t.Run("falls back to config when no context JWT", func(t *testing.T) {
 		h := newUploadTestHelpers(t)
 		h.service.authService = NewMockAuthService(t)
