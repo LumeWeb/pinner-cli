@@ -59,6 +59,20 @@ type buildCatalogConfig struct {
 	// exposes. The zero value is the full surface (applied via
 	// buildCatalogConfig.resolveSurface).
 	surface Surface
+	// hosted declares whether this is a hosted (Portal-embedded) assembly. It
+	// is set only by the hosted construction path (BuildHostedServer) and
+	// drives which Environment operations may be registered (EnvCLIOnly /
+	// EnvLocalOnly are excluded when hosted).
+	hosted bool
+}
+
+// withHosted marks the assembly as hosted. It is supplied only by the hosted
+// construction path (BuildHostedServer); the CLI/local path never sets it.
+func withHosted(hosted bool) buildCatalogOpt {
+	return func(cfg *buildCatalogConfig) error {
+		cfg.hosted = hosted
+		return nil
+	}
 }
 
 // withCatalogDeps sets the operation-catalog dependency factory that buildCatalog

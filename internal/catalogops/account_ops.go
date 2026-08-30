@@ -199,6 +199,7 @@ func accountUpdateEmail(d AccountDeps) catalog.Operation {
 		Safety:           catalog.SafetyMutate,
 		Interaction:      catalog.InteractionAgentSafe,
 		Visibility:       catalog.VisibilityBoth,
+		Environment:      catalog.EnvCLIOnly,
 		Positional:       "<email>",
 		Args: []catalog.OperationArg{
 			{Name: "email", Type: catalog.ArgTypeString, Required: true, Help: "New email address", AgentHelp: "The new email address for the account."},
@@ -239,6 +240,7 @@ func accountUpdatePassword(d AccountDeps) catalog.Operation {
 		Safety:           catalog.SafetyMutate,
 		Interaction:      catalog.InteractionAgentSafe,
 		Visibility:       catalog.VisibilityBoth,
+		Environment:      catalog.EnvCLIOnly,
 		Positional:       "",
 		Args: []catalog.OperationArg{
 			{Name: "current_password", Type: catalog.ArgTypeString, Required: true, Sensitive: true, Help: "Current password", AgentHelp: "The user's current account password."},

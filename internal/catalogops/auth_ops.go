@@ -160,6 +160,7 @@ func authLogin(d AuthDeps) catalog.Operation {
 		Safety:           catalog.SafetyMutate,
 		Interaction:      catalog.InteractionAgentSafe,
 		Visibility:       catalog.VisibilityBoth,
+		Environment:      catalog.EnvLocalOnly,
 		Positional:       "",
 		Args: []catalog.OperationArg{
 			{Name: "token", Type: catalog.ArgTypeString, Required: true, Sensitive: true, Help: "Pinner.xyz auth token (JWT) to save", AgentHelp: "The Pinner.xyz auth token (JWT) to store as the active credential. Sensitive: never echo it back."},
@@ -201,6 +202,7 @@ func authLogout(d AuthDeps) catalog.Operation {
 		Safety:           catalog.SafetyMutate,
 		Interaction:      catalog.InteractionAgentSafe,
 		Visibility:       catalog.VisibilityBoth,
+		Environment:      catalog.EnvLocalOnly,
 		Positional:       "",
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			cfgMgr := d.config()

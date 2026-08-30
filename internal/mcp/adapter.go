@@ -1450,7 +1450,7 @@ func buildCatalog(root *cli.Command, seedDrop *oobpkg.SeedDrop, oobRestore *oobp
 	var opsCat opcat.Catalog
 	if cfg.catalogDeps != nil {
 		if deps := cfg.catalogDeps(); deps != nil {
-			oc, err := AssembleCatalogOps(deps, surface)
+			oc, err := AssembleCatalogOps(deps, surface, cfg.hosted)
 			if err != nil {
 				return nil, err
 			}

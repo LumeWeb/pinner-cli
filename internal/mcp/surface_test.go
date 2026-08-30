@@ -16,29 +16,131 @@ import (
 // hosted" guarantee.
 func TestAssembleCatalogOpsHostedExcludesVault(t *testing.T) {
 	bundle := &CatalogDepsBundle{
-		Auth:      catalogops.AuthDeps{},
-		Account:   catalogops.AccountDeps{},
-		Vault:     catalogops.VaultDeps{},
+		Auth:       catalogops.AuthDeps{},
+		Account:    catalogops.AccountDeps{},
+		Vault:      catalogops.VaultDeps{},
 		VaultSetup: catalogops.VaultDeps{},
-		Pins:      catalogops.PinsDeps{},
-		Websites:  catalogops.WebsitesDeps{},
-		DNS:       catalogops.DNSDeps{},
-		IPNS:      catalogops.IPNSDeps{},
-		ENS:       catalogops.ENSDeps{},
-		APIKeys:   catalogops.APIKeysDeps{},
+		Pins:       catalogops.PinsDeps{},
+		Websites:   catalogops.WebsitesDeps{},
+		DNS:        catalogops.DNSDeps{},
+		IPNS:       catalogops.IPNSDeps{},
+		ENS:        catalogops.ENSDeps{},
+		APIKeys:    catalogops.APIKeysDeps{},
 		Operations: catalogops.OperationsDeps{},
-		Admin:     catalogops.AdminDeps{},
+		Admin:      catalogops.AdminDeps{},
 	}
 
-	hosted, err := AssembleCatalogOps(bundle, HostedSurface)
+	hosted, err := AssembleCatalogOps(bundle, HostedSurface, true)
 	require.NoError(t, err, "hosted catalog must assemble")
 	_, vaultHosted := hosted.Get("vault_status")
 	assert.False(t, vaultHosted, "hosted surface must not register the Sia vault domain")
 
-	full, err := AssembleCatalogOps(bundle, FullSurface)
+	full, err := AssembleCatalogOps(bundle, FullSurface, false)
 	require.NoError(t, err, "full catalog must assemble")
 	_, vaultFull := full.Get("vault_status")
 	assert.True(t, vaultFull, "full surface must register the Sia vault domain")
+}
+
+// TestAssembleCatalogOpsHostedExcludesEnvLocal verifies that a hosted assembly
+// drops the EnvLocalOnly operations (auth_login / auth_logout, which mutate
+// shared local config and are moot in a stateless Portal-embedded server) and
+// the EnvCLIOnly operations (account_update_email / account_update_password),
+// while the full/local surface keeps them in the operation catalog (for the
+// urfave CLI frontend and, for the local ops, the local MCP surface).
+func TestAssembleCatalogOpsHostedExcludesEnvLocal(t *testing.T) {
+	// Hosted is declared explicitly; it is not inferred from the presence of a
+	// CredentialResolver (that only supplies the per-request token).
+	hostedBundle := &CatalogDepsBundle{
+		Auth:    catalogops.AuthDeps{},
+		Account: catalogops.AccountDeps{},
+	}
+
+	hosted, err := AssembleCatalogOps(hostedBundle, HostedSurface, true)
+	require.NoError(t, err, "hosted catalog must assemble")
+	for _, name := range []string{"auth_login", "auth_logout", "account_update_email", "account_update_password"} {
+		if _, ok := hosted.Get(name); ok {
+			t.Errorf("hosted assembly must not register %q", name)
+		}
+	}
+	if _, ok := hosted.Get("auth_status"); !ok {
+		t.Errorf("hosted assembly must keep auth_status")
+	}
+
+	localBundle := &CatalogDepsBundle{
+		Auth:    catalogops.AuthDeps{},
+		Account: catalogops.AccountDeps{},
+	}
+
+	full, err := AssembleCatalogOps(localBundle, FullSurface, false)
+	require.NoError(t, err, "full catalog must assemble")
+	// EnvLocalOnly + EnvCLIOnly ops remain in the full/local catalog so the
+	// urfave CLI frontend (and, for auth_login/auth_logout, the local MCP) can
+	// use them; they are filtered from the MCP surface presentation separately.
+	for _, name := range []string{"auth_login", "auth_logout", "account_update_email", "account_update_password"} {
+		if _, ok := full.Get(name); !ok {
+			t.Errorf("full surface must keep %q in the operation catalog", name)
+		}
+	}
+}
+
+// TestAssembleCatalogOpsRestrictedLocalKeepsEnvLocal verifies that a surface
+// restriction alone does NOT turn a local stdio server into hosted mode: a
+// local server that disables Vault/Admin keeps the EnvLocalOnly ops
+// (auth_login / auth_logout) because hosted is declared explicitly and remains
+// false here. This is the regression guard for the design footgun where hosted
+// was inferred from surface equality / CredentialResolver presence.
+func TestAssembleCatalogOpsRestrictedLocalKeepsEnvLocal(t *testing.T) {
+	bundle := &CatalogDepsBundle{
+		Auth:    catalogops.AuthDeps{},
+		Account: catalogops.AccountDeps{},
+	}
+	// Restricted but NOT hosted: Vault and Admin disabled. This surface field-
+	// equals HostedSurface, but because hosted is passed explicitly as false, it
+	// must stay local.
+	restricted := FullSurface
+	restricted.Vault = false
+	restricted.Admin = false
+	restrictedLocal, err := AssembleCatalogOps(bundle, restricted, false)
+	require.NoError(t, err, "restricted local catalog must assemble")
+	for _, name := range []string{"auth_login", "auth_logout"} {
+		if _, ok := restrictedLocal.Get(name); !ok {
+			t.Errorf("restricted local surface (field-equals HostedSurface, hosted=false) must keep %q", name)
+		}
+	}
+}
+
+// TestAssembleCatalogOpsHostedExplicitRegardlessOfSurface verifies that hosted
+// mode is declared explicitly by the construction path, not by the surface: a
+// full surface assembled as hosted still excludes EnvLocalOnly ops, and the
+// hosted preset assembled as local keeps them. The hosted argument is the
+// single source of truth.
+func TestAssembleCatalogOpsHostedExplicitRegardlessOfSurface(t *testing.T) {
+	bundle := &CatalogDepsBundle{
+		Auth:    catalogops.AuthDeps{},
+		Account: catalogops.AccountDeps{},
+	}
+
+	// FullSurface but hosted=true: still drops EnvLocalOnly/EnvCLIOnly.
+	fullHosted, err := AssembleCatalogOps(bundle, FullSurface, true)
+	require.NoError(t, err, "hosted full-surface catalog must assemble")
+	for _, name := range []string{"auth_login", "auth_logout", "account_update_email", "account_update_password"} {
+		if _, ok := fullHosted.Get(name); ok {
+			t.Errorf("hosted=true must drop %q regardless of full surface", name)
+		}
+	}
+
+	// HostedSurface with no resolver and hosted=true: drops EnvLocalOnly. This
+	// is the construction path mcpembed.New uses by default.
+	hosted, err := AssembleCatalogOps(bundle, HostedSurface, true)
+	require.NoError(t, err, "hosted-preset catalog must assemble")
+	for _, name := range []string{"auth_login", "auth_logout"} {
+		if _, ok := hosted.Get(name); ok {
+			t.Errorf("hosted-preset assembly must not register %q", name)
+		}
+	}
+	if _, ok := hosted.Get("auth_status"); !ok {
+		t.Errorf("hosted-preset assembly must keep auth_status")
+	}
 }
 
 // TestAgentGuideFiltersVaultFlowsOnHosted verifies that the agent guide's flow

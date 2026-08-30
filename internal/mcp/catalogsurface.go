@@ -188,13 +188,15 @@ func populateCatalogSurface(tc *ToolCatalog, cat catalog.Catalog) (map[string]bo
 		if d.Name == "" {
 			continue
 		}
-		// Drop the plain SDK-call account credential ops from the MCP surface.
-		// They pass credentials through the LLM channel and duplicate the OOB
-		// tools (account_password_update / account_email_change) that hand off
-		// to a hosted browser form instead. They remain available to the CLI
-		// frontend through the operation catalog; only the MCP adapter omits
-		// them.
-		if d.Name == "account_update_email" || d.Name == "account_update_password" {
+		// EnvCLIOnly operations (e.g. the plain SDK-call account credential ops
+		// account_update_email / account_update_password) are valid only on the
+		// urfave CLI frontend: they pass credentials through the LLM channel
+		// and duplicate the OOB tools (account_password_update /
+		// account_email_change) that hand off to a browser form. They remain
+		// available to the CLI frontend through the operation catalog; only the
+		// MCP surface omits them. This is declared on the operation, not by a
+		// hard-coded name list here.
+		if op, ok := cat.Get(d.Name); ok && op.Environment() == catalog.EnvCLIOnly {
 			continue
 		}
 		tc.Add(catalogDescriptorToEntry(d, cat, resolveToken))

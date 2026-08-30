@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
@@ -170,5 +171,25 @@ func TestPinsServiceExported(t *testing.T) {
 	}
 	if gotToken != "config-token" {
 		t.Fatalf("Service config fallback: got %q, want config-token", gotToken)
+	}
+}
+
+// TestAuthLoginLogoutEnvironmentLocalOnly verifies auth_login and auth_logout
+// are declared EnvLocalOnly (valid on the CLI and local MCP, excluded from the
+// hosted surface) while auth_status stays EnvBoth, so hosted mode never
+// advertises credential-mutation ops against shared local config.
+func TestAuthLoginLogoutEnvironmentLocalOnly(t *testing.T) {
+	envs := map[string]catalog.Environment{}
+	for _, op := range AuthOperations(AuthDeps{}) {
+		envs[op.Name()] = op.Environment()
+	}
+	if envs["auth_login"] != catalog.EnvLocalOnly {
+		t.Errorf("auth_login.Environment() = %v, want EnvLocalOnly", envs["auth_login"])
+	}
+	if envs["auth_logout"] != catalog.EnvLocalOnly {
+		t.Errorf("auth_logout.Environment() = %v, want EnvLocalOnly", envs["auth_logout"])
+	}
+	if envs["auth_status"] != catalog.EnvBoth {
+		t.Errorf("auth_status.Environment() = %v, want EnvBoth", envs["auth_status"])
 	}
 }
