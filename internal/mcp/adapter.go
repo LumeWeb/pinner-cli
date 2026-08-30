@@ -30,10 +30,11 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	corevault "go.lumeweb.com/pinner-cli/internal/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
-	"go.lumeweb.com/pinner-cli/internal/mcp/oauthstore"
 	"go.lumeweb.com/pinner-cli/internal/mcp/services"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
+
+	oauthlib "go.lumeweb.com/oauth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 	"go.uber.org/zap"
 
@@ -795,11 +796,15 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 				fmt.Println("Enter this secret on the authorize page when prompted by your MCP client.")
 			}
 		}
-		store, err := oauthstore.Open(oauthStorePath(), 30*24*time.Hour)
+		// The shared authorization server treats the MCP endpoint itself as
+		// the RFC 8707 resource, so its issuer is the base URL plus /mcp.
+		oauthCfg := oauthlib.DefaultConfig()
+		oauthCfg.Issuer = strings.TrimRight(baseURL, "/") + "/mcp"
+		as, store, err := auth.OpenOAuthStore(oauthStorePath(), oauthCfg)
 		if err != nil {
 			return fmt.Errorf("open oauth state store: %w", err)
 		}
-		oauth = auth.NewOAuthServer(authToken, baseURL, store).WithLogger(log)
+		oauth = auth.NewOAuthServer(authToken, baseURL, as, store).WithLogger(log)
 	}
 
 	// Serve the streamable-HTTP handler over our own http.Server bound to
