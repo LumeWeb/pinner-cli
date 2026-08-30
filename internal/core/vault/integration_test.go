@@ -137,7 +137,7 @@ func TestVaultRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Verify failed: %v", err)
 		}
-		if !result.DigestMatch {
+		if result.DigestMatch == nil || !*result.DigestMatch {
 			t.Error("expected DigestMatch=true")
 		}
 		if !result.ObjectExists {

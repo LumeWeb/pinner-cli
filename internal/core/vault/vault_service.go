@@ -871,13 +871,21 @@ func (s *vaultService) Verify(ctx context.Context, vaultPath string) (*VerifyRes
 		}
 	}
 	if objDigest != "" && objDigest == res.ContentDigest {
-		res.DigestMatch = true
+		res.DigestMatch = boolPtr(true)
 		res.DigestVerified = DigestVerifiedVerified
 		// Only a matching digest proves the object is present and correct; a
 		// divergence (present-but-corrupt object) must NOT clear lost state.
 		s.clearLostStatus(ctx, vaultPath)
-	} else {
+	} else if objDigest != "" {
+		// Both hashes exist and differ: a genuine mismatch.
+		res.DigestMatch = boolPtr(false)
 		res.DigestVerified = DigestVerifiedMismatch
+	} else {
+		// Cache miss: the object's sealed metadata carries no digest to compare
+		// against the local row. There is only one hash, so this is NOT a
+		// mismatch — we simply cannot verify without re-hashing. Leave
+		// DigestMatch nil ("no verdict").
+		res.DigestVerified = DigestVerifiedUnverified
 	}
 	return res, nil
 }
@@ -928,17 +936,18 @@ func (s *vaultService) VerifyDeep(ctx context.Context, vaultPath string) (*Verif
 		// discard the verification result.
 		_ = s.backfillDigest(ctx, vaultPath, computedDigest, obj)
 		res.ContentDigest = computedDigest
-		res.DigestMatch = true
+		res.DigestMatch = boolPtr(true)
 		res.DigestVerified = DigestVerifiedVerified
 		s.clearLostStatus(ctx, vaultPath)
 		return res, nil
 	}
 
 	if computedDigest == res.ContentDigest {
-		res.DigestMatch = true
+		res.DigestMatch = boolPtr(true)
 		res.DigestVerified = DigestVerifiedVerified
 		s.clearLostStatus(ctx, vaultPath)
 	} else {
+		res.DigestMatch = boolPtr(false)
 		res.DigestVerified = DigestVerifiedMismatch
 	}
 	return res, nil
@@ -979,6 +988,11 @@ const (
 	DigestVerifiedUnverified = "unverified"
 	DigestVerifiedMismatch   = "mismatch"
 )
+
+// boolPtr returns a pointer to b for nullable boolean fields (e.g.
+// VerifyResult.DigestMatch), keeping the tri-state "nil = no verdict"
+// distinguishable from an explicit false.
+func boolPtr(b bool) *bool { return &b }
 
 // backfillDigest persists a computed SHA-256 digest onto the local File row
 // and the sealed object metadata (re-pin). This is called from Get (after a
@@ -1082,7 +1096,7 @@ func (s *vaultService) resolveVerifyObject(ctx context.Context, vaultPath string
 	if err != nil {
 		if errors.Is(err, slabs.ErrObjectNotFound) {
 			result.ObjectExists = false
-			result.DigestMatch = false
+			result.DigestMatch = boolPtr(false)
 			// Mark the local row lost so the lifecycle state is visible in
 			// vault_ls / vault_status / vault_stat even before anyone re-verifies.
 			// A lost file stays listed (never tombstoned) so an agent can
@@ -1557,48 +1571,107 @@ func (s *vaultService) VersionDownload(ctx context.Context, vaultPath string, ve
 	return err
 }
 
-// VersionRestore re-uploads a specific version's content as a NEW current
-// version of the file at vaultPath. The historical version's bytes are copied
-// via a fresh Put, which mints a new version row (new ObjectKey + version_id)
-// and promotes it to current; all prior version rows are preserved. This is a
-// restore-as-new-version (not an in-place pointer flip), matching s3d's
-// CopyObject semantics.
+// VersionRestore retargets a specific historical version to be the NEW current
+// version of the file at vaultPath. Unlike an overwrite, the historical
+// version's slabs remain pinned on the Sia indexer from its original PIN, so a
+// restore is a RETARGET, not a re-upload: we mint a fresh current version row
+// pointing at the SAME ObjectKey as the historical version and promote it,
+// tombstoning the previous current winner. No Sia network call is made, so a
+// restore carries no pin deadline and cannot fail on a slow/hung Sia pin. All
+// prior version rows are preserved (restore-as-new-version, matching s3d's
+// CopyObject semantics).
 func (s *vaultService) VersionRestore(ctx context.Context, vaultPath string, versionID string) (*File, error) {
 	vp, err := ParseVaultPath(vaultPath)
 	if err != nil {
 		return nil, err
 	}
-	// Resolve the target version up front (validates it exists and gives its
-	// declared Size, which Put streams against). An empty/broken version
-	// errors here before any write occurs.
-	_, row, err := s.resolveVersionGroup(vp, versionID)
+	// Resolve the target version (validates it exists and supplies its
+	// ObjectKey, digest, size, media type) and the logical file's stable UUID
+	// group. An empty/broken version errors here before any write occurs.
+	uuid, row, err := s.resolveVersionGroup(vp, versionID)
 	if err != nil {
 		return nil, err
 	}
-
-	// Preserve the live file's tags onto the restored winner row. A restore
-	// mints a NEW current version; without this the new row would come up with
-	// no tags, silently dropping the label set.
-	var meta map[string]any
-	if rec, err := s.resolveFile(vp); err == nil {
-		if tags, err := s.currentTags(rec.ID); err == nil && len(tags) > 0 {
-			meta = map[string]any{"tags": tags}
-		}
+	if uuid == "" {
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, vaultPath)
 	}
 
-	// Stream the historical version's bytes into Put via a pipe, rather than
-	// buffering the whole object in RAM. Put consumes the reader once
-	// (io.TeeReader -> sdk.Upload) and mints a new version row that reuses
-	// the same logical file's UUID group (findCurrentFile resolves the
-	// current winner by path). A failed/truncated historical download is
-	// propagated via CloseWithError so Put's io.Copy surfaces it as a read
-	// error and the restore aborts instead of committing a partial/empty
-	// version as the new current winner.
-	pr, pw := io.Pipe()
-	go func() {
-		pw.CloseWithError(s.VersionDownload(ctx, vp.Raw, versionID, pw))
-	}()
-	return s.Put(ctx, pr, row.Size, vp.Raw, meta)
+	// Resolve the current live winner: its directory anchors the (name, dir)
+	// unique-index scope, and its tags must be preserved onto the restored
+	// winner row (otherwise the new row comes up with no tags, silently
+	// dropping the label set).
+	current, err := s.resolveFile(vp)
+	if err != nil {
+		return nil, err
+	}
+	var meta map[string]any
+	if tags, err := s.currentTags(current.ID); err == nil && len(tags) > 0 {
+		meta = map[string]any{"tags": tags}
+	}
+	putTags := tagsFromMetadata(meta)
+	recSource, recHost, recAgent := WriteContextColumns(meta)
+
+	now := time.Now().UTC()
+	rec := File{
+		UUID:          uuid,
+		Name:          vp.Name,
+		DirectoryID:   current.DirectoryID,
+		Source:        recSource,
+		Host:          recHost,
+		Agent:         recAgent,
+		IsCurrent:     false, // promoteCurrent demotes the prior current + promotes this row atomically
+		ObjectKey:     row.ObjectKey,
+		Size:          row.Size,
+		MediaType:     row.MediaType,
+		ContentDigest: row.ContentDigest,
+		Status:        FileStatusOK,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+
+	// The restored row's opaque metadata starts from the restored content's own
+	// metadata and has the preserved tags stamped on top, so the local copy
+	// matches what a fresh Put of that content would have sealed.
+	userMeta := map[string]any{}
+	if len(row.Metadata) > 0 {
+		if err := json.Unmarshal(row.Metadata, &userMeta); err != nil {
+			return nil, fmt.Errorf("failed to decode restored version metadata: %w", err)
+		}
+	}
+	if len(putTags) > 0 {
+		userMeta["tags"] = putTags
+	}
+	userMetaJSON, err := json.Marshal(userMeta)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+	rec.Metadata = datatypes.JSON(userMetaJSON)
+
+	// Mint and promote the restored winner in one write transaction (mirroring
+	// Put's versioning path: fresh row insert + tag reconcile + promoteCurrent).
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		var maxSeq uint
+		if err := tx.Model(&File{}).
+			Where("uuid = ?", uuid).
+			Select("COALESCE(MAX(seq), 0)").
+			Scan(&maxSeq).Error; err != nil {
+			return fmt.Errorf("failed to compute next version seq: %w", err)
+		}
+		rec.Seq = maxSeq + 1
+		rec.VersionID = newVersionID()
+		if err := tx.Create(&rec).Error; err != nil {
+			return err
+		}
+		if len(putTags) > 0 {
+			if rerr := reconcileTagsTx(tx, rec.ID, putTags); rerr != nil {
+				return rerr
+			}
+		}
+		return promoteCurrent(tx, vp.Name, current.DirectoryID, rec.ID)
+	}); err != nil {
+		return nil, fmt.Errorf("failed to restore version %q of %s: %w", versionID, vaultPath, err)
+	}
+	return &rec, nil
 }
 
 // Status reports live vault health and usage. Remote fields come from a real

@@ -350,6 +350,7 @@ func vaultVersionLs(d VaultDeps) catalog.Operation {
 					UpdatedAt:     f.UpdatedAt.UTC().Format(time.RFC3339),
 				})
 			}
+			totalVersions := len(items)
 			page := catalog.ParseList(input)
 			items = slicePage(items, page.Start, page.Limit)
 			headers := []string{"Version ID", "Seq", "Current", "Size", "Updated"}
@@ -362,7 +363,7 @@ func vaultVersionLs(d VaultDeps) catalog.Operation {
 				rows = append(rows, []string{v.VersionID, fmt.Sprintf("%d", v.Seq), cur, fmt.Sprintf("%d", v.Size), v.UpdatedAt})
 			}
 			return NewListResult(items, ListResultMeta{
-				Noun: "vault version(s)", Headers: headers, Rows: rows,
+				Noun: "vault version(s)", Headers: headers, Rows: rows, Total: totalVersions,
 			}), nil
 		}),
 	})
