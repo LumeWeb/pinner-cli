@@ -234,7 +234,13 @@ func vaultFlushSyncAction() cli.ActionFunc {
 			// Status is neither ok nor lost (e.g. a crashed "uploaded" row whose
 			// staged file is gone). Only claim a flush once the file has actually
 			// reached durable state.
-			if st, serr := svc.Stat(dctx, path); serr == nil && st.Status == vault.FileStatusOK {
+			st, serr := svc.Stat(dctx, path)
+			if serr != nil {
+				// The flush may have succeeded but we could not confirm it; a
+				// verification failure must not be reported as a clean no-op.
+				return serr
+			}
+			if st.Status == vault.FileStatusOK {
 				if output.IsJSON() {
 					return output.PrintJSON(map[string]any{"status": "ok", "flushed": 1, "path": path})
 				}
