@@ -76,5 +76,6 @@ bin/
 
 
 # MCP Apps JS build / local tooling artifacts
-node_modules/
-.venv/
+# (no trailing slash: also ignore the worktree symlinks to shared caches)
+node_modules
+.venv

@@ -3,9 +3,9 @@
 `internal/mcp/tunnel` is a dedicated sub-package (package `tunnel`) that owns the MCP
 server's tunnel domain: exposing a locally bound HTTP MCP server to the public internet
 through a third-party tunnel provider. It is kept as its own package (alongside
-`internal/mcp/install` and `internal/mcp/oauthstore`) so the tunnel runtime can be
-reasoned about, tested, and reused in isolation from the flat `internal/mcp` command
-surface.
+`internal/mcp/install` and the OAuth storage migrated into `internal/mcp/auth`)
+so the tunnel runtime can be reasoned about, tested, and reused in isolation from
+the flat `internal/mcp` command surface.
 
 ## Scope
 

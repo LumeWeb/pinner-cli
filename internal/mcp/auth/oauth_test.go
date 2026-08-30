@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"html"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +18,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/internal/mcp/oauthstore"
+	"go.lumeweb.com/oauth"
 )
 
 // testSecret is an arbitrary non-secret fixture value used only to exercise
@@ -28,10 +29,19 @@ const testSecret = "fixture-test-secret"
 
 func newTestOAuth(t *testing.T) *OAuthServer {
 	t.Helper()
-	store, err := oauthstore.Open(filepath.Join(t.TempDir(), "oauth.db"), 30*24*time.Hour)
+	cfg := oauth.DefaultConfig()
+	cfg.Issuer = "https://mcp.example.com/mcp"
+	as, store, err := OpenOAuthStore(filepath.Join(t.TempDir(), "oauth.db"), cfg)
 	require.NoError(t, err)
-	o := NewOAuthServer(testSecret, "https://mcp.example.com", store)
-	o.clients["cli"] = oauthClient{redirectURIs: []string{"http://localhost/cb"}}
+	o := NewOAuthServer(testSecret, "https://mcp.example.com", as, store)
+	require.NoError(t, store.SaveClient(oauth.Client{
+		ClientID:          "cli",
+		RedirectURIs:      []string{"http://localhost/cb"},
+		GrantTypes:        []string{"authorization_code", "refresh_token"},
+		ResponseTypes:     []string{"code"},
+		TokenEndpointAuth: "none",
+		IsActive:          true,
+	}))
 	t.Cleanup(o.Stop) // stop the background reaper goroutine
 	return o
 }
@@ -74,8 +84,7 @@ func TestOAuthRegistration(t *testing.T) {
 	assert.Equal(t, "none", doc["token_endpoint_auth_method"])
 
 	// Registered HTTPS callbacks are valid for hosted clients.
-	assert.True(t, allowedClientRedirect("https://chatgpt.com/oauth/callback"))
-	assert.False(t, allowedRedirect("https://chatgpt.com/oauth/callback"))
+	assert.True(t, oauth.AllowedClientRedirect("https://chatgpt.com/oauth/callback"))
 }
 
 func TestOAuthASMetadata(t *testing.T) {
@@ -351,11 +360,10 @@ func TestOAuthChallengeWriterUnwrap(t *testing.T) {
 // without Unwrap, Flush behind OAuth returns http.ErrNotSupported.
 func TestOAuthMiddlewareFlushReachable(t *testing.T) {
 	o := newTestOAuth(t)
-	o.clockSkew = 0
-	o.mu.Lock()
 	access := "valid-token-for-flush"
-	o.tokens[access] = time.Now().Add(time.Hour)
-	o.mu.Unlock()
+	require.NoError(t, o.store.SaveAccessToken(oauth.AccessToken{
+		Token: access, ClientID: "cli", UserID: 0, ExpiresAt: time.Now().Add(time.Hour),
+	}))
 
 	var flushErr error
 	bound := o.OfficialMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -378,9 +386,9 @@ func TestOAuthMiddlewareFlushReachable(t *testing.T) {
 // must NOT be relabeled as an invalid_token OAuth challenge.
 func TestOAuthMiddlewareDownstream401Untouched(t *testing.T) {
 	o := newTestOAuth(t)
-	o.mu.Lock()
-	o.tokens["ok"] = time.Now().Add(time.Hour)
-	o.mu.Unlock()
+	require.NoError(t, o.store.SaveAccessToken(oauth.AccessToken{
+		Token: "ok", ClientID: "cli", UserID: 0, ExpiresAt: time.Now().Add(time.Hour),
+	}))
 
 	// A valid bearer passes the auth gate; the downstream handler then returns
 	// its own non-OAuth 401 (e.g. an inner resource rejecting for its own
@@ -469,23 +477,23 @@ func TestOAuthMiddleware401DoesNotBreakValidTokens(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
-func TestAllowedRedirect(t *testing.T) {
+func TestAllowedClientRedirect(t *testing.T) {
 	for _, ok := range []string{
 		"http://localhost/cb",
 		"http://127.0.0.1:8080/cb",
 		"http://localhost:3000/cb?x=1",
 		"https://localhost/cb",
+		"https://evil.example.net", // any HTTPS callback is allowed for hosted clients
 	} {
-		assert.True(t, allowedRedirect(ok), "expected allowed: %s", ok)
+		assert.True(t, oauth.AllowedClientRedirect(ok), "expected allowed: %s", ok)
 	}
 	for _, bad := range []string{
-		"http://attacker.com/cb",
-		"https://evil.example.net",
+		"http://attacker.com/cb", // loopback-only for plain HTTP
 		"ftp://localhost/cb",
 		"javascript:alert(1)",
 		"not a url",
 	} {
-		assert.False(t, allowedRedirect(bad), "expected rejected: %s", bad)
+		assert.False(t, oauth.AllowedClientRedirect(bad), "expected rejected: %s", bad)
 	}
 }
 
@@ -502,23 +510,21 @@ func TestOAuthRejectsCrossHostRedirect(t *testing.T) {
 
 func TestOAuthReapExpired(t *testing.T) {
 	o := newTestOAuth(t)
-	o.tokenTTL = -time.Second // force expiry
-	o.codeTTL = -time.Second
-	o.clockSkew = 0            // disable grace for reaping test
-
-	code := o.newCode(authorizationCode{clientID: "cli", expiry: time.Now().Add(-time.Second)})
-	o.mu.Lock()
-	o.tokens["expiredtok"] = time.Now().Add(-time.Second)
-	o.mu.Unlock()
+	// Persist an expired code and access token directly, as a long-running
+	// server would leave them for the reaper.
+	require.NoError(t, o.store.SaveCode(oauth.AuthorizationCode{
+		Code: "expiredcode", ClientID: "cli", UserID: 0, ExpiresAt: time.Now().Add(-time.Second),
+	}))
+	require.NoError(t, o.store.SaveAccessToken(oauth.AccessToken{
+		Token: "expiredtok", ClientID: "cli", UserID: 0, ExpiresAt: time.Now().Add(-time.Second),
+	}))
 
 	o.reapLocked()
 
-	o.mu.Lock()
-	_, codeStill := o.codes[code]
-	_, tokStill := o.tokens["expiredtok"]
-	o.mu.Unlock()
-	assert.False(t, codeStill, "expired code should have been reaped")
-	assert.False(t, tokStill, "expired token should have been reaped")
+	_, err := o.store.GetCode("expiredcode")
+	assert.True(t, errors.Is(err, oauth.ErrCodeNotFound), "expired code should be reaped")
+	_, err = o.store.GetAccessToken("expiredtok")
+	assert.True(t, errors.Is(err, oauth.ErrTokenNotFound), "expired token should be reaped")
 	assert.False(t, o.validToken("expiredtok"))
 	assert.False(t, o.validToken("nevertissued"))
 }
@@ -653,7 +659,7 @@ func TestMatchRedirectURI_LoopbackPortAgnostic(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, matchRedirectURI(tt.registered, tt.requested))
+			assert.Equal(t, tt.want, oauth.MatchRedirectURI(tt.registered, tt.requested))
 		})
 	}
 }
@@ -714,10 +720,9 @@ func TestCIMDFetchAndAuthorize(t *testing.T) {
 	assert.Equal(t, "st", loc.Query().Get("state"))
 	assert.Equal(t, "http://localhost:9999/callback", loc.Scheme+"://"+loc.Host+loc.Path)
 
-	o.mu.Lock()
-	_, registered := o.clients[cimdClientID]
-	o.mu.Unlock()
-	assert.True(t, registered, "CIMD client should be registered in memory after authorize")
+	registered, err := o.store.GetClient(cimdClientID)
+	require.NoError(t, err, "CIMD client should be registered in the store after authorize")
+	assert.True(t, registered.IsActive)
 }
 
 func TestCIMDCacheTTL(t *testing.T) {
@@ -968,22 +973,19 @@ func TestCIMDCacheEvictionInReap(t *testing.T) {
 	cimdClientID = srv.URL + "/metadata"
 
 	o := newTestOAuth(t)
-	cimdClient, err := o.resolveCIMDClient(cimdClientID)
+	_, err := o.resolveCIMDClient(cimdClientID)
 	require.NoError(t, err)
 
-	// Simulate what validateAuthorizeRequest does: register the CIMD client
-	// transiently in o.clients.
-	o.mu.Lock()
-	o.clients[cimdClientID] = cimdClient
-	o.mu.Unlock()
+	// Simulate what validateAuthorizeQuery does: register the CIMD client in
+	// the store so the authorization server can validate it.
+	require.NoError(t, o.ensureClient(cimdClientID))
 
 	o.cimdCacheMu.Lock()
 	assert.NotEmpty(t, o.cimdCache)
 	o.cimdCacheMu.Unlock()
-	o.mu.Lock()
-	_, registered := o.clients[cimdClientID]
-	o.mu.Unlock()
-	assert.True(t, registered)
+	registered, err := o.store.GetClient(cimdClientID)
+	require.NoError(t, err)
+	assert.True(t, registered.IsActive, "CIMD client should be registered active")
 
 	// Expire the cache entry and reap.
 	o.cimdCacheMu.Lock()
@@ -992,19 +994,76 @@ func TestCIMDCacheEvictionInReap(t *testing.T) {
 	o.cimdCache[cimdClientID] = e
 	o.cimdCacheMu.Unlock()
 
-	o.mu.Lock()
 	o.reapLocked()
-	o.mu.Unlock()
 
 	o.cimdCacheMu.Lock()
 	_, cachedStill := o.cimdCache[cimdClientID]
 	o.cimdCacheMu.Unlock()
 	assert.False(t, cachedStill, "expired CIMD cache entry should be reaped")
 
-	o.mu.Lock()
-	_, registeredStill := o.clients[cimdClientID]
-	o.mu.Unlock()
-	assert.False(t, registeredStill, "expired CIMD client registration should be reaped")
+	registeredAfter, err := o.store.GetClient(cimdClientID)
+	require.NoError(t, err)
+	assert.False(t, registeredAfter.IsActive, "expired CIMD client should be deactivated in the store")
+}
+
+// TestCIMDReactivatesAfterReap guards the CIMD TTL eviction path. When a CIMD
+// client's metadata cache entry expires, reap deactivates the client in the
+// store AND evicts the cache entry. The next authorize must re-resolve the
+// metadata document and re-activate the client, so a rotated document is picked
+// up and the flow still succeeds — not a permanent "client is inactive" reject.
+func TestCIMDReactivatesAfterReap(t *testing.T) {
+	cimdClientID := ""
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/metadata", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"client_id": "` + cimdClientID + `",
+			"client_name": "Claude Code",
+			"redirect_uris": ["http://localhost/callback"],
+			"token_endpoint_auth_method": "none"
+		}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	allowTestServerHost(t, srv.URL)
+	cimdClientID = srv.URL + "/metadata"
+
+	o := newTestOAuth(t)
+	_, challenge := testPKCE()
+	const res = "https://mcp.example.com/mcp"
+
+	// A successful authorize registers the CIMD client active and caches it.
+	require.NoError(t, o.ensureClient(cimdClientID))
+
+	// Expire the cache entry and reap: the client is deactivated in the store.
+	o.cimdCacheMu.Lock()
+	e := o.cimdCache[cimdClientID]
+	e.fetchedAt = time.Now().Add(-cimdCacheTTL - time.Second)
+	o.cimdCache[cimdClientID] = e
+	o.cimdCacheMu.Unlock()
+	o.reapLocked()
+
+	registered, err := o.store.GetClient(cimdClientID)
+	require.NoError(t, err)
+	assert.False(t, registered.IsActive, "precondition: CIMD client is deactivated by reap")
+
+	// The next authorize must re-resolve and re-activate instead of rejecting.
+	rec := httptest.NewRecorder()
+	o.AuthorizePOST(rec, formPost(map[string]string{
+		"response_type":        "code",
+		"client_id":            cimdClientID,
+		"redirect_uri":         "http://localhost:9999/callback",
+		"state":                "st",
+		"password":             testSecret,
+		"code_challenge":        challenge,
+		"code_challenge_method": "S256",
+		"resource":             res,
+	}))
+	require.Equal(t, http.StatusFound, rec.Code, "authorize must succeed after CIMD cache eviction re-activates the client")
+	loc, err := url.Parse(rec.Header().Get("Location"))
+	require.NoError(t, err)
+	require.NotEmpty(t, loc.Query().Get("code"))
 }
 
 // TestAccessTokenSurvivesServerRestart verifies the Grok fix: a connector (Grok's
@@ -1018,14 +1077,24 @@ func TestAccessTokenSurvivesServerRestart(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "oauth.db")
 
+	cfg := oauth.DefaultConfig()
+	cfg.Issuer = "https://mcp.example.com/mcp"
 	newServer := func() *OAuthServer {
-		store, err := oauthstore.Open(path, 30*24*time.Hour)
+		as, store, err := OpenOAuthStore(path, cfg)
 		require.NoError(t, err)
-		return NewOAuthServer(testSecret, "https://mcp.example.com", store)
+		srv := NewOAuthServer(testSecret, "https://mcp.example.com", as, store)
+		require.NoError(t, store.SaveClient(oauth.Client{
+			ClientID:          "cli",
+			RedirectURIs:      []string{"http://localhost/cb"},
+			GrantTypes:        []string{"authorization_code", "refresh_token"},
+			ResponseTypes:     []string{"code"},
+			TokenEndpointAuth: "none",
+			IsActive:          true,
+		}))
+		return srv
 	}
 
 	o := newServer()
-	o.clients["cli"] = oauthClient{redirectURIs: []string{"http://localhost/cb"}}
 
 	// Complete an authorization-code exchange, capturing the access token.
 	verifier, challenge := testPKCE()
