@@ -14,6 +14,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	coreerrors "go.lumeweb.com/pinner-cli/internal/core/errors"
 	statuspkg "go.lumeweb.com/pinner-cli/internal/core/status"
+	"go.lumeweb.com/pinner-cli/internal/mcp"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 
@@ -244,6 +245,13 @@ func (s *UploadServiceDefault) Upload(ctx context.Context, filesystem fs.FS, nam
 // If the stored token is an API key JWT, it exchanges it for a login JWT
 // (required by TUS endpoint which rejects API key tokens).
 func (s *UploadServiceDefault) resolveAuthToken(ctx context.Context) (string, error) {
+	// A hosted OOB transfer stamps the caller's Portal API JWT on the context
+	// (via credctx). It is already a login JWT, so prefer it directly over the
+	// override/config token and skip the API-key exchange.
+	if tok := mcp.CredentialFromContext(ctx); tok != "" {
+		return tok, nil
+	}
+
 	authToken := s.getAuthToken()
 
 	// If we have an AuthService, use it to exchange API key for login JWT

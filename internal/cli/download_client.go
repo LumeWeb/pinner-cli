@@ -13,6 +13,7 @@ import (
 	"github.com/ipfs/go-cid"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/mcp"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 
@@ -72,6 +73,13 @@ func (s *DownloadServiceDefault) getAuthToken() string {
 }
 
 func (s *DownloadServiceDefault) resolveAuthToken(ctx context.Context) (string, error) {
+	// A hosted OOB transfer stamps the caller's Portal API JWT on the context
+	// (via credctx). It is already a login JWT, so prefer it directly over the
+	// override/config token and skip the API-key exchange.
+	if tok := mcp.CredentialFromContext(ctx); tok != "" {
+		return tok, nil
+	}
+
 	authToken := s.getAuthToken()
 
 	if s.authService != nil {

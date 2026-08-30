@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
+	"go.lumeweb.com/pinner-cli/internal/mcp"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
 )
@@ -164,6 +165,31 @@ func TestDownloadService_resolveAuthToken(t *testing.T) {
 		token, err := svc.resolveAuthToken(context.Background())
 		require.NoError(t, err)
 		assert.Equal(t, "config-token", token)
+	})
+
+	t.Run("returns context JWT as-is when present, no exchange attempted", func(t *testing.T) {
+		// Config holds an API key JWT; if the context preference were missing,
+		// LoginWithAPIKey would be invoked and (being unset on the gomock mock)
+		// fail the test. Its absence proves the exchange is skipped entirely.
+		apiKeyJWT := makeJWTWithAudience("api")
+		svc := newDownloadSvc(t, apiKeyJWT, WithDownloadAuthService(NewMockAuthService(t)))
+		svc.accountClient = portalsdkmocks.NewMockAccountAPI(t)
+
+		ctxJWT := "hosted-caller-login-jwt"
+		ctx := mcp.WithCredential(context.Background(), ctxJWT)
+
+		token, err := svc.resolveAuthToken(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, ctxJWT, token)
+	})
+
+	t.Run("falls back to config when no context JWT", func(t *testing.T) {
+		loginJWT := makeJWTWithAudience("login")
+		svc := newDownloadSvc(t, loginJWT, WithDownloadAuthService(NewMockAuthService(t)))
+
+		token, err := svc.resolveAuthToken(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, loginJWT, token)
 	})
 
 	t.Run("returns override token when no auth service", func(t *testing.T) {
