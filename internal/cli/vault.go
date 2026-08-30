@@ -1,9 +1,6 @@
 package cli
 
 import (
-	"context"
-	"fmt"
-
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
 )
@@ -49,47 +46,6 @@ func newVaultService(profileName string) (vault.VaultService, error) {
 	return vaultServiceFactory(profileName, indexerURL)
 }
 
-func newVaultFlushCommand() *cli.Command {
-	return &cli.Command{
-		Name:      "flush",
-		Usage:     "Upload and pin every pending (staged) vault file now",
-		ArgsUsage: "",
-		Description: `Force every pending vault file (staged locally, not yet durable on Sia) to be
-uploaded, packed into shared slabs, and pinned now, rather than waiting for the
-background flush. Returns the number of files made durable. This is the explicit
-counterpart to the fast staging write: staged files are readable locally, but
-` + "`vault flush`" + ` (or a --flush put, or sharing the file) is what makes them
-durable on the Sia network.
-
-Examples:
-  pinner vault flush --profile work
-
-If there are no pending files, nothing happens and it reports 0.`,
-		Flags: []cli.Flag{ProfileFlag()},
-		Action: func(ctx context.Context, c *cli.Command) error {
-			output := setupOutput(c)
-			svc, profileName, err := vaultServiceForCommand(c)
-			if err != nil {
-				return err
-			}
-			defer svc.Close()
-
-			n, err := svc.Flush(ctx)
-			if err != nil {
-				return fmt.Errorf("vault flush (%s): %w", profileName, err)
-			}
-			if output.IsJSON() {
-				return output.PrintJSON(vaultFlushResponse{Flushed: n})
-			}
-			if n > 0 {
-				output.Printfln("Flushed %d pending file(s) → durable (profile %s)", n, profileName)
-			} else {
-				output.Printfln("No pending files to flush (profile %s)", profileName)
-			}
-			return nil
-		},
-	}
-}
 
 func newVaultCommand() *cli.Command {
 	// The vault parent is catalog-driven: most subcommands are compiled from
@@ -105,7 +61,6 @@ func newVaultCommand() *cli.Command {
 		newVaultRestoreCommand(),
 		newVaultCpCommand(),
 		newVaultCatCommand(),
-		newVaultFlushCommand(),
 	)
 
 	return &cli.Command{

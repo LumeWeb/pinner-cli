@@ -298,8 +298,9 @@ func TestAgentGuideStepsAreFeatureGated(t *testing.T) {
 //     upload_status poll (a step chain that ends at upload_file looks complete
 //     when it is not).
 //   - vault_put_file mint: vault_put_file -> <host PUT>, and the PUT response
-//     completes the vault write synchronously. The ordered vault_upload flow
-//     must name the host PUT but MUST NOT name upload_status (there is no poll).
+//     completes the vault write non-blocking (stages locally, status pending).
+//     The ordered vault_upload flow must name the host PUT but MUST NOT name
+//     upload_status (there is no poll).
 //
 // On non-mint transports both host PUT steps are absent.
 func TestAgentGuideNamesHostPUTOnMintSteps(t *testing.T) {
@@ -315,7 +316,7 @@ func TestAgentGuideNamesHostPUTOnMintSteps(t *testing.T) {
 
 		vu := guideFlowByName(t, buildAgentGuide(p), "vault_upload")
 		require.True(t, flowStepsContain(vu, "<host PUT>"), "%s: vault mint flow must name the host PUT", p.Transport)
-		require.False(t, flowStepsContain(vu, "upload_status"), "%s: vault mint flow must NOT name upload_status (vault mint is synchronous — the PUT response is the result)", p.Transport)
+		require.False(t, flowStepsContain(vu, "upload_status"), "%s: vault mint flow must NOT name upload_status (vault mint is non-blocking)", p.Transport)
 	}
 
 	nonMintProfiles := []*hostenv.PlatformProfile{

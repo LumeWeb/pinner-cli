@@ -25,12 +25,13 @@ const OpenVaultManagerToolName = "open_vault_manager"
 // openVaultManagerDescription is shared between the static Description and the
 // Fallback MCPTarget so the launcher descriptor carries a target list.
 const openVaultManagerDescription = "Open the interactive Upload to Vault file picker. This is a UI launcher: it renders an HTML iframe so the user can pick a file. It is not a headless primitive. " +
-	"It returns a presigned PUT URL plus the vault_path; the iframe's Uppy uploader POSTs file bytes to that URL directly, and the PUT returns after staging locally (status: pending) — durability on Sia happens in the background or via `vault flush`. " +
+	"It returns a presigned PUT URL plus the vault_path; the iframe's Uppy uploader POSTs file bytes to that URL directly, and the PUT returns after staging locally (status: pending) — durability on Sia happens in the background or via the vault_flush tool. " +
 	"Prefer vault_put_file (headless) for autonomous workflows; call this only when a human file picker is actually desired."
 
 // OpenVaultManagerInput is the typed argument shape for the model-facing
-// Vault upload launcher. Vault uploads are synchronous: bytes land in the
-// vault when the iframe's Uppy XHR PUT completes (no async poll loop).
+// Vault upload launcher. Vault uploads are non-blocking: bytes are staged
+// locally when the iframe's Uppy XHR PUT completes (no async poll loop);
+// durability on Sia follows in the background or via vault_flush.
 type OpenVaultManagerInput struct {
 	VaultPath string `json:"vault_path" jsonschema:"description=Vault destination path, e.g. vault:/uploads/report.pdf. Required."`
 	TTL       string `json:"ttl,omitempty" jsonschema:"description=Optional presigned endpoint lifetime, e.g. 5m (default 5 minutes)."`
@@ -42,8 +43,9 @@ type OpenVaultManagerInput struct {
 //
 // This is a UI launcher: it renders an HTML iframe so the user can pick a
 // file. It returns the presigned PUT URL the iframe's Uppy uploader writes
-// to, plus the vault_path. The vault write is synchronous, so the iframe
-// PUT response carries the result directly.
+// to, plus the vault_path. The vault write is non-blocking: the iframe PUT
+// response confirms the bytes were staged locally (status: pending); durability
+// on Sia follows in the background or via the vault_flush tool.
 func NewOpenVaultManagerDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescriptor {
 	appMeta, _ := sdk.MarshalToolMeta(model.AppToolMeta{
 		ResourceURI: OpenVaultManagerURI,
@@ -89,7 +91,7 @@ func NewOpenVaultManagerDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescr
 			}
 			return model.ToolResult{
 				StructuredContent: sc,
-				Text:              toolargs.ResultJSONText(sc) + " The Upload to Vault UI is open; pick a file to PUT. The PUT stages the bytes locally (status: pending); durability on Sia happens in the background or via `vault flush`.",
+				Text:              toolargs.ResultJSONText(sc) + " The Upload to Vault UI is open; pick a file to PUT. The PUT stages the bytes locally (status: pending); durability on Sia happens in the background or via the vault_flush tool.",
 			}, nil
 		},
 	}

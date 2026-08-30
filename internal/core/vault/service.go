@@ -264,6 +264,11 @@ type VerifyResult struct {
 	DigestVerified string `json:"digest_verified"` // "verified" | "unverified" | "mismatch"
 	ObjectExists   bool   `json:"object_exists"`
 	ObjectID       string `json:"object_id"`
+	// Pending marks a not-yet-durable file (staged locally, no Sia object yet).
+	// There is nothing on the indexer to verify, so DigestVerified is
+	// "unverified" — NOT a mismatch and NOT an error. Set only for staged
+	// "pending"/"uploaded" files; empty object keys never reach parseHash256.
+	Pending bool `json:"pending"`
 }
 
 // StatusResult is the output of Status. Remote fields reflect a live probe of

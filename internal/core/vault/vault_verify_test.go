@@ -321,3 +321,67 @@ func TestGet_BackfillsDigest(t *testing.T) {
 		t.Fatalf("second Get should not trigger backfill (pinCount was %d, now %d)", pinCountAfter, fake.pinCount)
 	}
 }
+
+// TestVerify_PendingFile_Unverified is a regression: a freshly staged (pending)
+// file has an empty ObjectKey and no Sia object yet. Verify (shallow and deep)
+// must report "unverified"/pending — NOT throw "invalid object key" — and must
+// not try to download a non-existent object.
+func TestVerify_PendingFile_Unverified(t *testing.T) {
+	ctx := context.Background()
+	svc, fake, _ := newVerifyTestService(t)
+
+	dirID, err := svc.getOrCreateDirectory("/staging")
+	if err != nil {
+		t.Fatalf("getOrCreateDirectory: %v", err)
+	}
+	row := File{
+		UUID:        "uuid-pending",
+		Name:        "put-probe.txt",
+		DirectoryID: dirID,
+		IsCurrent:   true,
+		// ObjectKey is intentionally empty: the bytes are staged locally and the
+		// background flush / vault_flush will upload+pin them later.
+		ObjectKey:   "",
+		Size:        4,
+		MediaType:   "text/plain",
+		ContentDigest: sha256Hex([]byte("data")),
+		Status:      FileStatusPending,
+		StagedPath:  t.TempDir() + "/pending-buffer",
+	}
+	if err := svc.db.Create(&row).Error; err != nil {
+		t.Fatalf("create pending file row: %v", err)
+	}
+
+	// Deep verify must not attempt a download for a pending object: no Sia
+	// object exists yet, so Download would fail. All we can report is pending.
+	res, err := svc.VerifyDeep(ctx, "vault:/staging/put-probe.txt")
+	if err != nil {
+		t.Fatalf("VerifyDeep on pending file must not error, got: %v", err)
+	}
+	if !res.Pending {
+		t.Fatal("res.Pending should be true for a staged file")
+	}
+	if res.ObjectExists {
+		t.Fatal("ObjectExists should be false (no Sia object yet)")
+	}
+	if res.DigestVerified != DigestVerifiedUnverified {
+		t.Fatalf("DigestVerified = %q, want %q", res.DigestVerified, DigestVerifiedUnverified)
+	}
+
+	// Shallow verify reports the same pending state.
+	res, err = svc.Verify(ctx, "vault:/staging/put-probe.txt")
+	if err != nil {
+		t.Fatalf("Verify on pending file must not error, got: %v", err)
+	}
+	if !res.Pending {
+		t.Fatal("res.Pending should be true for a staged file")
+	}
+	if res.DigestVerified != DigestVerifiedUnverified {
+		t.Fatalf("DigestVerified = %q, want %q", res.DigestVerified, DigestVerifiedUnverified)
+	}
+
+	// Deep verify should never have downloaded content for the pending file.
+	if fake.downloadCalled {
+		t.Fatal("pending file must not be downloaded")
+	}
+}

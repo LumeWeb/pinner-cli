@@ -843,7 +843,7 @@ func (s *vaultService) Cat(ctx context.Context, vaultPath string, w io.Writer) e
 func (s *vaultService) Verify(ctx context.Context, vaultPath string) (*VerifyResult, error) {
 	res, obj, exists, err := s.resolveVerifyObject(ctx, vaultPath)
 	if err != nil || !exists {
-		if res != nil {
+		if res != nil && !res.Pending {
 			if res.ObjectExists {
 				res.DigestVerified = DigestVerifiedUnverified
 			} else {
@@ -900,7 +900,7 @@ func (s *vaultService) Verify(ctx context.Context, vaultPath string) (*VerifyRes
 func (s *vaultService) VerifyDeep(ctx context.Context, vaultPath string) (*VerifyResult, error) {
 	res, obj, exists, err := s.resolveVerifyObject(ctx, vaultPath)
 	if err != nil || !exists {
-		if res != nil {
+		if res != nil && !res.Pending {
 			if res.ObjectExists {
 				res.DigestVerified = DigestVerifiedUnverified
 			} else {
@@ -1076,6 +1076,19 @@ func (s *vaultService) resolveVerifyObject(ctx context.Context, vaultPath string
 		Path:          vaultPath,
 		ContentDigest: record.ContentDigest,
 		ObjectID:      record.ObjectKey,
+	}
+
+	// A not-yet-durable file (staged locally under StatusPending/StatusUploaded)
+	// has no Sia object yet, so its ObjectKey is empty. There is nothing on the
+	// indexer to verify; this is "pending/unverified", NOT an error. The object
+	// exists (with a real key) once the background flush or vault_flush makes it
+	// durable. Guarding here keeps an empty ObjectKey from reaching
+	// parseHash256, which would otherwise surface as "invalid object key".
+	if record.ObjectKey == "" {
+		result.ObjectExists = false
+		result.Pending = true
+		result.DigestVerified = DigestVerifiedUnverified
+		return result, siastorage.Object{}, false, nil
 	}
 
 	objHash, err := parseHash256(record.ObjectKey)

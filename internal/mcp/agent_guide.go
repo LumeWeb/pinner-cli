@@ -119,7 +119,7 @@ var vaultUploadDetailDesc = toolforge.Static(
 		"Use a transport-scoped source ({{SOURCES}}) plus the destination vault_path.",
 	).
 	When(hostenv.FeatSourceMint,
-		"When using source.mode=mint + vault_path, mint returns a one-time presigned PUT url bound to vault_path (it has NOT stored bytes yet). PUT the agent-local file to the returned url; the PUT returns quickly after staging the bytes locally (status: pending). The file is immediately readable from this instance; durability on Sia happens in the background or via `vault flush` — there is no upload_status to poll.",
+		"When using source.mode=mint + vault_path, mint returns a one-time presigned PUT url bound to vault_path (it has NOT stored bytes yet). PUT the agent-local file to the returned url; the PUT returns quickly after staging the bytes locally (status: pending). The file is immediately readable from this instance; durability on Sia happens in the background or via the vault_flush tool — there is no upload_status to poll.",
 	).
 	WhenSentence(hostenv.FeatSourceMint,
 		"On this mint-only transport there is no direct vault path for a public URL or inline bytes: materialize them to an agent-local file first, then vault_put_file(source.mode=mint) + PUT.",
@@ -188,7 +188,7 @@ var guideSummary = toolforge.Static(
 		"This host has no `file` parameter it can fill: use a transport-scoped source ({{SOURCES}}). Do NOT invent a file_id or OpenAI download_url, and do NOT base64-encode a file as upload_data.",
 	).
 	When(hostenv.FeatSourceMint,
-		"For source.mode=mint, completion differs by tool: upload_file is asynchronous — PUT the agent-local file to the returned url, then poll upload_status; vault_put_file is non-blocking — PUT the file and it returns after staging locally (status: pending), with durability on Sia happening in the background or via `vault flush`, so there is no upload_status poll (see the upload and vault_upload flows).",
+		"For source.mode=mint, completion differs by tool: upload_file is asynchronous — PUT the agent-local file to the returned url, then poll upload_status; vault_put_file is non-blocking — PUT the file and it returns after staging locally (status: pending), with durability on Sia happening in the background or via the vault_flush tool, so there is no upload_status poll (see the upload and vault_upload flows).",
 	).
 	When(hostenv.FeatSourcePath,
 		"For source.mode=path, point the source at the host-side file/directory/archive path — the server reads it directly, so there is no PUT.",
@@ -272,7 +272,7 @@ func vaultByteRouteDecision() *toolforge.GuideDecisionBuilder {
 			StepWhen(hostenv.FeatSourceMint, "<host PUT>").
 			Detail(toolforge.Static("vault_put_file with source.mode=mint + vault_path mints a one-time presigned PUT url bound to vault_path; it has not stored bytes yet.").
 				StaticSentence("PUT the agent-local file to the returned url.").
-				StaticSentence("The vault write is non-blocking: the PUT returns after staging the bytes locally (status: pending); the file is immediately readable from this instance, and durability on Sia happens in the background or via `vault flush`. There is no upload_status to poll.")),
+				StaticSentence("The vault write is non-blocking: the PUT returns after staging the bytes locally (status: pending); the file is immediately readable from this instance, and durability on Sia happens in the background or via the vault_flush tool. There is no upload_status to poll.")),
 		toolforge.Branch("bytes already at a public HTTPS URL").
 			// vault_put_file's url source exists ONLY on the OpenAI tunnel
 			// transport. Gate on the transport, not FeatSourceURL: Grok declares
