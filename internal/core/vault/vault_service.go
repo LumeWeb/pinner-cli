@@ -1574,12 +1574,14 @@ func (s *vaultService) VersionDownload(ctx context.Context, vaultPath string, ve
 // VersionRestore retargets a specific historical version to be the NEW current
 // version of the file at vaultPath. Unlike an overwrite, the historical
 // version's slabs remain pinned on the Sia indexer from its original PIN, so a
-// restore is a RETARGET, not a re-upload: we mint a fresh current version row
-// pointing at the SAME ObjectKey as the historical version and promote it,
-// tombstoning the previous current winner. No Sia network call is made, so a
-// restore carries no pin deadline and cannot fail on a slow/hung Sia pin. All
-// prior version rows are preserved (restore-as-new-version, matching s3d's
-// CopyObject semantics).
+// restore does NOT re-upload the bytes: it mints a fresh current version row
+// pointing at the SAME ObjectKey as the historical version and promotes it,
+// tombstoning the previous current winner. Version identity is computed up
+// front and re-sealed onto the object's metadata (a metadata-only re-pin, no
+// content transfer) BEFORE the DB commit, mirroring Put, so sync-down on other
+// devices reconstructs the restored (uuid, version_id) row instead of the stale
+// historical one. All prior version rows are preserved (restore-as-new-version,
+// matching s3d's CopyObject semantics).
 func (s *vaultService) VersionRestore(ctx context.Context, vaultPath string, versionID string) (*File, error) {
 	vp, err := ParseVaultPath(vaultPath)
 	if err != nil {
@@ -1612,22 +1614,6 @@ func (s *vaultService) VersionRestore(ctx context.Context, vaultPath string, ver
 	recSource, recHost, recAgent := WriteContextColumns(meta)
 
 	now := time.Now().UTC()
-	rec := File{
-		UUID:          uuid,
-		Name:          vp.Name,
-		DirectoryID:   current.DirectoryID,
-		Source:        recSource,
-		Host:          recHost,
-		Agent:         recAgent,
-		IsCurrent:     false, // promoteCurrent demotes the prior current + promotes this row atomically
-		ObjectKey:     row.ObjectKey,
-		Size:          row.Size,
-		MediaType:     row.MediaType,
-		ContentDigest: row.ContentDigest,
-		Status:        FileStatusOK,
-		CreatedAt:     now,
-		UpdatedAt:     now,
-	}
 
 	// The restored row's opaque metadata starts from the restored content's own
 	// metadata and has the preserved tags stamped on top, so the local copy
@@ -1645,20 +1631,82 @@ func (s *vaultService) VersionRestore(ctx context.Context, vaultPath string, ver
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
 	}
-	rec.Metadata = datatypes.JSON(userMetaJSON)
 
-	// Mint and promote the restored winner in one write transaction (mirroring
-	// Put's versioning path: fresh row insert + tag reconcile + promoteCurrent).
+	// Compute the restored version identity UP FRONT so the object's sealed
+	// metadata and the local row carry the same version_id/seq (Put does the
+	// same: identity is stamped into the object before the row is committed,
+	// and sync reconstructs rows from the sealed metadata).
+	newVersionID := newVersionID()
+	var curSeq uint
+	s.db.Model(&File{}).Where("uuid = ?", uuid).Select("COALESCE(MAX(seq), 0)").Scan(&curSeq)
+	versionSeq := curSeq + 1
+
+	rec := File{
+		UUID:          uuid,
+		Name:          vp.Name,
+		DirectoryID:   current.DirectoryID,
+		Source:        recSource,
+		Host:          recHost,
+		Agent:         recAgent,
+		IsCurrent:     false, // promoteCurrent demotes the prior current + promotes this row atomically
+		ObjectKey:     row.ObjectKey,
+		Size:          row.Size,
+		MediaType:     row.MediaType,
+		ContentDigest: row.ContentDigest,
+		Status:        FileStatusOK,
+		CreatedAt:     now,
+		UpdatedAt:     now,
+		Seq:           versionSeq,
+		VersionID:     newVersionID,
+		Metadata:      datatypes.JSON(userMetaJSON),
+	}
+
+	// Re-seal the object's metadata with the restored version identity and
+	// re-pin (metadata-only — no content is transferred, so this is NOT the
+	// content upload whose pin deadline killed restores). Without this, sync-down
+	// reads the object's stale historical version_id/seq and reconstructs the
+	// historical row, silently undoing the restore on other devices.
+	objHash, err := parseHash256(row.ObjectKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse restored object key: %w", err)
+	}
+	sdk, err := s.ensureSDK()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Sia SDK: %w", err)
+	}
+	obj, err := sdk.Object(ctx, objHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch restored object from indexer: %w", err)
+	}
+	restoredMeta := FileMetadata{
+		ID:            uuid,
+		VersionID:     newVersionID,
+		Seq:           versionSeq,
+		Name:          vp.Name,
+		Directory:     vp.Directory,
+		MediaType:     row.MediaType,
+		Size:          row.Size,
+		CreatedAt:     now.Format(time.RFC3339),
+		ContentDigest: row.ContentDigest,
+		Metadata:      userMeta,
+		Status:        FileStatusOK,
+	}
+	restoredMetaJSON, err := restoredMeta.JSON()
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode restored object metadata: %w", err)
+	}
+	obj.UpdateMetadata(restoredMetaJSON)
+	if err := sdk.PinObject(ctx, obj); err != nil {
+		return nil, fmt.Errorf("failed to re-pin restored object: %w", err)
+	}
+
+	// Mint and promote the restored winner in one write transaction (fresh row
+	// insert + tag reconcile + promoteCurrent). rec.VersionID/Seq were already
+	// stamped into the object metadata before this commit, so the row uses the
+	// SAME values — the vault DB is a single-connection SQLite (SetMaxOpenConns
+	// 1), so write transactions serialize and there is no cross-writer seq race
+	// to defend against here (matching how the object and row stay in lockstep).
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		var maxSeq uint
-		if err := tx.Model(&File{}).
-			Where("uuid = ?", uuid).
-			Select("COALESCE(MAX(seq), 0)").
-			Scan(&maxSeq).Error; err != nil {
-			return fmt.Errorf("failed to compute next version seq: %w", err)
-		}
-		rec.Seq = maxSeq + 1
-		rec.VersionID = newVersionID()
 		if err := tx.Create(&rec).Error; err != nil {
 			return err
 		}
