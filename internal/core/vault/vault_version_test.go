@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"path/filepath"
@@ -45,6 +46,9 @@ type versionSDK struct {
 	uploads        [][]byte      // every byte stream Upload received, in order
 	downloads      int           // number of Download calls served
 	downloadErr    error         // injected error to fail Download mid-read (nil = serve normally)
+
+	pinCount      int              // number of PinObject calls
+	lastPinnedMeta json.RawMessage // object metadata of the most recent PinObject call
 }
 
 func newVersionSDK(t *testing.T) *versionSDK {
@@ -76,7 +80,13 @@ func (f *versionSDK) Upload(_ context.Context, _ *siastorage.Object, r io.Reader
 	f.uploads = append(f.uploads, b)
 	return nil
 }
-func (f *versionSDK) PinObject(_ context.Context, _ siastorage.Object) error { return nil }
+func (f *versionSDK) PinObject(_ context.Context, obj siastorage.Object) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.pinCount++
+	f.lastPinnedMeta = obj.Metadata()
+	return nil
+}
 func (f *versionSDK) Object(_ context.Context, hash types.Hash256) (siastorage.Object, error) {
 	f.mu.Lock()
 	f.lastObjectHash = hash
@@ -233,11 +243,13 @@ func TestVersion_OverwriteCreatesMultipleVersions(t *testing.T) {
 	}
 }
 
-// TestVersion_RestoreReuploadsOldContentAsNewVersion proves VersionRestore
-// works end to end: it RETRIEVES an old version's content through the real
-// VersionDownload -> SDK.Download path, re-uploads it via Put as a NEW current
-// version (a brand-new version_id), and preserves every prior version row.
-func TestVersion_RestoreReuploadsOldContentAsNewVersion(t *testing.T) {
+// TestVersion_RestoreRetargetsOldObject proves VersionRestore works end to end
+// as a RETARGET, not a content re-upload: it mints a NEW current version row
+// pointing at the historical version's existing ObjectKey (whose slabs remain
+// pinned on Sia), re-seals the object metadata with the new version identity
+// and re-pins it (metadata-only, no content transfer), promotes the row to
+// current, and preserves every prior version row.
+func TestVersion_RestoreRetargetsOldObject(t *testing.T) {
 	ctx := context.Background()
 	const path = "vault:/docs/doc.txt"
 
@@ -265,13 +277,15 @@ func TestVersion_RestoreReuploadsOldContentAsNewVersion(t *testing.T) {
 		}
 	}
 
-	// (4) Restore the OLD version's content (v1) as a NEW current version.
+	// Restore the OLD version (v1) as a NEW current version.
 	restored, err := svc.VersionRestore(ctx, path, "version-v1")
 	if err != nil {
 		t.Fatalf("VersionRestore failed: %v", err)
 	}
 
-	// Restore minted a brand-new current version (new version_id, higher seq).
+	// Restore minted a brand-new current version (new version_id, higher seq)
+	// that RETARGETS the v1 object: the restored row carries v1's ObjectKey,
+	// content digest-agnostic fields, size and media type.
 	if restored.VersionID == "" {
 		t.Fatal("restored version has empty version_id")
 	}
@@ -281,37 +295,42 @@ func TestVersion_RestoreReuploadsOldContentAsNewVersion(t *testing.T) {
 	if restored.Seq <= c2.Seq {
 		t.Errorf("restored seq %d should be > prior newest seq %d", restored.Seq, c2.Seq)
 	}
-
-	// NOTE: Put/VersionRestore return the in-memory record with IsCurrent=false
-	// (promoteCurrent flips is_current in the DB, not on the returned struct).
-	// Currentness is therefore asserted from VersionList, which re-reads the DB:
-	// exactly one row is current and it is the freshly-restored one.
-	listBeforeCurrentCheck, err := svc.VersionList(ctx, path)
-	if err != nil {
-		t.Fatalf("VersionList (current check) failed: %v", err)
+	if restored.ObjectKey != keyV1 {
+		t.Errorf("restored ObjectKey = %q, want the v1 object %q (retarget, not re-upload)", restored.ObjectKey, keyV1)
 	}
-	{
-		var currents int
-		for _, f := range listBeforeCurrentCheck {
-			if f.IsCurrent {
-				currents++
-				if f.VersionID != restored.VersionID {
-					t.Errorf("current row version_id %q, want restored %q", f.VersionID, restored.VersionID)
-				}
-			}
-		}
-		if currents != 1 {
-			t.Fatalf("expected exactly 1 current row after restore, got %d", currents)
-		}
+	if restored.Size != int64(len("v1 content")) {
+		t.Errorf("restored Size = %d, want %d", restored.Size, int64(len("v1 content")))
 	}
 
-	// Restore actually RETRIEVED the old content and re-uploaded it: the last
-	// Put the fake SDK saw must be exactly the v1 bytes.
-	if got := fake.lastUpload(); !bytes.Equal(got, []byte("v1 content")) {
-		t.Errorf("restore re-uploaded %q, want the old version content %q", got, "v1 content")
+	// The retarget must not re-upload or fetch content bytes: no Upload stream,
+	// no content Download.
+	if got := fake.lastUpload(); len(got) != 0 {
+		t.Errorf("restore re-uploaded bytes %q — restore must not upload content", got)
+	}
+	if fake.downloads != 0 {
+		t.Errorf("restore triggered %d SDK content downloads — restore must not retrieve content", fake.downloads)
 	}
 
-	// All prior version rows are preserved (v1 and v2 still listed).
+	// The object metadata WAS re-sealed with the restored version identity and
+	// re-pinned (metadata-only), so sync-down reconstructs the restored row on
+	// other devices instead of the stale historical one. Regression: restore
+	// previously never re-sealed, silently undoing the restore on sync.
+	if fake.lastPinnedMeta == nil {
+		t.Fatal("restore never re-pinned the object metadata")
+	}
+	var sealed FileMetadata
+	if err := json.Unmarshal(fake.lastPinnedMeta, &sealed); err != nil {
+		t.Fatalf("unmarshal re-sealed metadata: %v", err)
+	}
+	if sealed.VersionID != restored.VersionID {
+		t.Errorf("re-sealed object VersionID = %q, want restored %q", sealed.VersionID, restored.VersionID)
+	}
+	if sealed.Seq != restored.Seq {
+		t.Errorf("re-sealed object Seq = %d, want restored %d", sealed.Seq, restored.Seq)
+	}
+
+	// All prior version rows are preserved (v1 and v2 still listed), and the
+	// freshly-restored row is the single current winner.
 	list, err := svc.VersionList(ctx, path)
 	if err != nil {
 		t.Fatalf("VersionList after restore failed: %v", err)
@@ -319,8 +338,6 @@ func TestVersion_RestoreReuploadsOldContentAsNewVersion(t *testing.T) {
 	if len(list) != 3 {
 		t.Fatalf("after restore expected 3 version rows (v1, v2, restored), got %d", len(list))
 	}
-
-	// Exactly one current, and it is the freshly-restored (max-seq) row.
 	var currents int
 	for _, f := range list {
 		if f.IsCurrent {
@@ -342,17 +359,14 @@ func TestVersion_RestoreReuploadsOldContentAsNewVersion(t *testing.T) {
 	if old.VersionID != "version-v1" || old.IsCurrent {
 		t.Errorf("old version should remain non-current and fetchable, got id=%q is_current=%v", old.VersionID, old.IsCurrent)
 	}
-
-	if fake.downloads == 0 {
-		t.Error("VersionRestore never invoked SDK.Download — content was not retrieved")
-	}
 }
 
-// TestVersion_RestorePropagatesDownloadError verifies that a failed/truncated
-// historical download surfaces as a VersionRestore error and does NOT mint a
-// partial/empty version as the new current winner. Regression for the
-// CloseWithError propagation.
-func TestVersion_RestorePropagatesDownloadError(t *testing.T) {
+// TestVersion_RestoreNoContentTransfer proves restore doesn't fetch or
+// re-upload the content bytes: even when the SDK's content download fails, a
+// restore succeeds, because no bytes are transferred — only the object's
+// metadata is re-sealed and re-pinned. Regression for the "restore is a full
+// re-upload" path inheriting the pin deadline.
+func TestVersion_RestoreNoContentTransfer(t *testing.T) {
 	ctx := context.Background()
 	const path = "vault:/docs/doc.txt"
 
@@ -369,23 +383,27 @@ func TestVersion_RestorePropagatesDownloadError(t *testing.T) {
 		t.Fatalf("seed version row: %v", err)
 	}
 
-	// Inject a mid-read failure into the historical download.
+	// Break the SDK content download so any byte-fetch would fail mid-read.
 	fake.downloadErr = errors.New("simulated download failure after partial bytes")
 
-	if _, err := svc.VersionRestore(ctx, path, "version-v1"); err == nil {
-		t.Fatal("VersionRestore succeeded on a failed download; want an error")
-	}
-
-	// No new (current) version row may have been minted from the partial stream.
-	rows, err := svc.VersionList(ctx, path)
+	restored, err := svc.VersionRestore(ctx, path, "version-v1")
 	if err != nil {
-		t.Fatalf("VersionList: %v", err)
+		t.Fatalf("VersionRestore failed: %v", err)
 	}
-	if len(rows) != 1 {
-		t.Fatalf("failed restore minted %d version rows, want 1 (original only)", len(rows))
+	if restored.ObjectKey != keyV1 {
+		t.Fatalf("restored ObjectKey = %q, want %q", restored.ObjectKey, keyV1)
 	}
-	if !rows[0].IsCurrent || rows[0].VersionID != "version-v1" {
-		t.Fatalf("original row altered by failed restore: current=%v version=%q", rows[0].IsCurrent, rows[0].VersionID)
+	if restored.Seq <= 1 {
+		t.Errorf("restored seq %d should be > 1", restored.Seq)
+	}
+	if fake.downloads != 0 {
+		t.Errorf("restore invoked %d SDK content downloads — restore must not read bytes", fake.downloads)
+	}
+	if got := fake.lastUpload(); len(got) != 0 {
+		t.Errorf("restore re-uploaded %q — restore must not transfer content", got)
+	}
+	if fake.lastPinnedMeta == nil {
+		t.Error("restore should still re-pin the object metadata on the new version")
 	}
 }
 

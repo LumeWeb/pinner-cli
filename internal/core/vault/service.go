@@ -232,12 +232,15 @@ type SearchItem struct {
 //     the caller should deep-verify or get the file to populate it.
 //   - "mismatch"   — a digest is recorded but does not match.
 //
-// DigestMatch remains true only when DigestVerified == "verified". Agents
-// should prefer DigestVerified over DigestMatch.
+// DigestMatch is a tri-state pointer: true when both hashes exist and agree,
+// false when both exist and disagree, and nil when there is no second hash to
+// compare (DigestVerified == "unverified"). Agents that only read a boolean
+// must treat nil as "no verdict", not as a failure. Prefer DigestVerified over
+// DigestMatch.
 type VerifyResult struct {
 	Path           string `json:"path"`
 	ContentDigest  string `json:"content_digest"`
-	DigestMatch    bool   `json:"digest_match"`
+	DigestMatch    *bool  `json:"digest_match"` // nil = no digest to compare (unverified)
 	DigestVerified string `json:"digest_verified"` // "verified" | "unverified" | "mismatch"
 	ObjectExists   bool   `json:"object_exists"`
 	ObjectID       string `json:"object_id"`

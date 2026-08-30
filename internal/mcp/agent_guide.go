@@ -381,8 +381,8 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 			Steps("capabilities", "vault_get_file").
 			Detail(vaultDownloadDetailDesc)).
 		Flow(toolforge.Flow("vault_share", "Share from a vault").
-			Steps("vault_status", "vault_share").
-			Detail(toolforge.Static("Ensure the vault is unlocked (vault_status), then call vault_share with the vault_path and the recipient identifier; it returns a shareable link. The recipient accepts the share with vault_share_accept, which is directly visible on tools/list. Verify with vault_status after the exchange."))).
+			Steps("vault_status", "vault_share", "vault_verify").
+			Detail(toolforge.Static("Ensure the vault is unlocked (vault_status), then call vault_share with the vault_path to generate a shareable link (control its lifetime with expiry). The recipient accepts the share with vault_share_accept, which is directly visible on tools/list. Verify the shared content with vault_verify after the exchange."))).
 		Flow(toolforge.Flow("vault_sync", "Sync and verify vault state").
 			Steps("vault_status", "vault_sync", "vault_verify").
 			Detail(toolforge.Static("vault_sync reconciles the local vault cache from the indexer; vault_verify checks file integrity. Run both after creating or restoring on a new device, or when share state may have changed. Related utilities are discoverable via search_tools(category=vault): vault_ls, vault_stat, vault_tag_add, vault_tag_rm, vault_version_restore."))).

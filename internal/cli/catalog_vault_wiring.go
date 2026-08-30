@@ -291,7 +291,7 @@ func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 			Fields: []Field{
 				{"Path", r.Path}, {"Status", status}, {"Content Digest", r.ContentDigest},
 				{"Digest Verified", r.DigestVerified},
-				{"Digest Match", fmt.Sprintf("%v", r.DigestMatch)},
+				{"Digest Match", vaultDigestMatchDisplay(r.DigestMatch)},
 				{"Object Exists", fmt.Sprintf("%v", r.ObjectExists)},
 				{"Object ID", r.ObjectID},
 			},
@@ -464,4 +464,13 @@ func renderVaultStatusHuman(output Output, c *cli.Command, res *vault.StatusResu
 	}
 	output.PrintFields(FieldGroup{Title: "Vault Status", Fields: fields})
 	return nil
+}
+
+// vaultDigestMatchDisplay renders the tri-state DigestMatch for human output:
+// "n/a" when there is no verdict (nil), otherwise the boolean as a string.
+func vaultDigestMatchDisplay(dm *bool) string {
+	if dm == nil {
+		return "n/a"
+	}
+	return fmt.Sprintf("%v", *dm)
 }

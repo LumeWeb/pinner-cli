@@ -83,8 +83,8 @@ func TestVerifyShallow_NoDigest_Unverified(t *testing.T) {
 	if !res.ObjectExists {
 		t.Fatal("ObjectExists should be true")
 	}
-	if res.DigestMatch {
-		t.Fatal("DigestMatch should be false when no digest is recorded")
+	if res.DigestMatch != nil {
+		t.Fatal("DigestMatch should be nil (no verdict) when no digest is recorded")
 	}
 	if res.DigestVerified != DigestVerifiedUnverified {
 		t.Fatalf("DigestVerified = %q, want %q", res.DigestVerified, DigestVerifiedUnverified)
@@ -115,11 +115,49 @@ func TestVerifyShallow_DigestMatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Verify failed: %v", err)
 	}
-	if !res.DigestMatch {
+	if res.DigestMatch == nil || !*res.DigestMatch {
 		t.Fatal("DigestMatch should be true")
 	}
 	if res.DigestVerified != DigestVerifiedVerified {
 		t.Fatalf("DigestVerified = %q, want %q", res.DigestVerified, DigestVerifiedVerified)
+	}
+}
+
+// TestVerifyShallow_CacheMiss_Unverified is a regression: when a digest is
+// recorded locally but the object's sealed metadata carries no digest to
+// compare (cold cache), shallow verify must report "unverified", NOT
+// "mismatch" — "mismatch" is only valid when two real hashes exist and differ.
+func TestVerifyShallow_CacheMiss_Unverified(t *testing.T) {
+	ctx := context.Background()
+	svc, fake, content := newVerifyTestService(t)
+
+	// A digest is recorded on the local row...
+	digest := sha256Hex(content)
+	dirID, _ := svc.getDirectoryID("/docs")
+	if err := svc.db.Model(&File{}).
+		Where("name = ? AND directory_id = ?", "charter.md", dirID).
+		Update("content_digest", digest).Error; err != nil {
+		t.Fatalf("update digest: %v", err)
+	}
+	// ...but the object's sealed metadata carries NO digest (cold cache).
+	obj := siastorage.NewEmptyObject()
+	meta := FileMetadata{ContentDigest: ""}
+	metaJSON, _ := meta.JSON()
+	obj.UpdateMetadata(metaJSON)
+	fake.pinnedMeta = metaJSON
+
+	res, err := svc.Verify(ctx, "vault:/docs/charter.md")
+	if err != nil {
+		t.Fatalf("Verify failed: %v", err)
+	}
+	if !res.ObjectExists {
+		t.Fatal("ObjectExists should be true")
+	}
+	if res.DigestVerified != DigestVerifiedUnverified {
+		t.Fatalf("DigestVerified = %q, want %q (cache miss is unverified, not mismatch)", res.DigestVerified, DigestVerifiedUnverified)
+	}
+	if res.DigestMatch != nil {
+		t.Fatalf("DigestMatch = %v, want nil (no verdict on cache miss)", res.DigestMatch)
 	}
 }
 
@@ -136,7 +174,7 @@ func TestVerifyDeep_NoDigest_Backfills(t *testing.T) {
 	if !res.ObjectExists {
 		t.Fatal("ObjectExists should be true")
 	}
-	if !res.DigestMatch {
+	if res.DigestMatch == nil || !*res.DigestMatch {
 		t.Fatal("DigestMatch should be true after deep verify backfill")
 	}
 	if res.DigestVerified != DigestVerifiedVerified {
@@ -193,7 +231,7 @@ func TestVerifyDeep_DigestMatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VerifyDeep failed: %v", err)
 	}
-	if !res.DigestMatch {
+	if res.DigestMatch == nil || !*res.DigestMatch {
 		t.Fatal("DigestMatch should be true")
 	}
 	if res.DigestVerified != DigestVerifiedVerified {
@@ -225,7 +263,7 @@ func TestVerifyDeep_DigestMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VerifyDeep failed: %v", err)
 	}
-	if res.DigestMatch {
+	if res.DigestMatch == nil || *res.DigestMatch {
 		t.Fatal("DigestMatch should be false on mismatch")
 	}
 	if res.DigestVerified != DigestVerifiedMismatch {
