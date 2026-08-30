@@ -924,16 +924,23 @@ func vaultSync(d VaultDeps) catalog.Operation {
 // vault flush
 // ---------------------------------------------------------------------------
 
-// vaultFlushTimeout bounds how long vault_probe waits for a (possibly large)
-// packed upload from a staged file to finish. It is deliberately much longer
-// than the ~120s request deadline so a full host-set upload is not killed
-// mid-flight; the flush runs on a detached context derived from Background.
+// vaultFlushTimeout bounds how long a non-blocking vault_flush background
+// goroutine is allowed to run a (possibly large) packed upload from staged
+// files to finish. The flush is detached from the invocation: it runs on a
+// context derived from Background so a slow full host-set upload is not killed
+// by the MCP transport deadline. vault_flush itself returns immediately with a
+// job-accepted result; the agent polls vault_stat until status is ok.
 const vaultFlushTimeout = 10 * time.Minute
 
-// VaultFlushResult is returned by vault_flush: the number of staged files made
-// durable on Sia.
+// VaultFlushResult is returned by vault_flush. vault_flush is non-blocking: it
+// kick-starts durability for staged files on a detached background context and
+// returns immediately. Status is "idle" when there is nothing to do (file
+// already durable or lost) and "accepted" when a flush was launched. The caller
+// should poll vault_stat until status is ok before sharing a freshly written
+// file.
 type VaultFlushResult struct {
-	Flushed int `json:"flushed"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
 }
 
 func vaultFlush(d VaultDeps) catalog.Operation {
@@ -941,9 +948,9 @@ func vaultFlush(d VaultDeps) catalog.Operation {
 		Name:        "vault_flush",
 		Title:       "Flush staged vault files to durable storage",
 		Summary:     "Upload and pin pending vault files",
-		Description: "Upload and pin staged (pending) vault files so they become durable on Sia. vault_put_file is non-blocking: it stages bytes locally and returns immediately with status pending. This packs the staged bytes into shared slabs, uploads and pins the objects, and marks them ok. Flush all staged files, or a single path via the path argument. A share link requires a durable object, so flush before sharing a freshly written file. Returns the number of files flushed.",
+		Description: "Upload and pin staged (pending) vault files so they become durable on Sia. vault_put_file is non-blocking: it stages bytes locally and returns immediately with status pending. This packs the staged bytes into shared slabs, uploads and pins the objects, and marks them ok. Flush all staged files, or a single path via the path argument. The flush runs in the background: this tool returns immediately with status accepted, so poll vault_stat until status: ok before sharing a freshly written file (a share link requires a durable object).",
 		MCPTargets: catalog.MCPTargets(
-			catalog.Fallback("Make staged vault files durable on Sia. vault_put_file returns before bytes are on Sia (status: pending); call this to upload + pin them. Flush all pending files by default, or pass path to flush a single file. A full host-set upload can take a while, so this tool waits without a request-timeout kill. Returns the number of files flushed. A share link requires a durable object — run this (or wait for the background flush) before vault_share on a freshly written file."),
+			catalog.Fallback("Make staged vault files durable on Sia. vault_put_file returns before bytes are on Sia (status: pending); call this to kick off upload + pin. Flush all pending files by default, or pass path to flush a single file. This tool is non-blocking: it returns immediately with status accepted and the durability work runs in the background (it is the same worker the idle background flush uses). Poll vault_stat until status: ok to confirm the file is durable, then vault_share. A full host-set upload can take a while, so do not treat the immediate accepted response as completion."),
 		),
 		Category:    "vault",
 		Safety:      catalog.SafetyMutate,
@@ -963,32 +970,46 @@ func vaultFlush(d VaultDeps) catalog.Operation {
 			if err != nil {
 				return nil, err
 			}
-			defer svc.Close()
-			// Run the flush on a detached context so a slow full host-set upload
-			// is not cancelled by the invocation/request deadline (~120s). The
-			// whole point of this dedicated tool is to let durability finish.
-			flushCtx, cancel := context.WithTimeout(context.Background(), vaultFlushTimeout)
-			defer cancel()
 			path := catalog.StrArg(input, "path", "")
-			if path == "" {
-				n, ferr := svc.Flush(flushCtx)
-				if ferr != nil {
-					return nil, fmt.Errorf("vault_flush: %w", ferr)
+
+			// Single-path case: short-circuit synchronously when there is nothing
+			// to flush. FlushPath silently no-ops for an already-durable or lost
+			// file (returns nil without doing work), so resolve it first and
+			// report idle instead of launching a useless job. A lost file has no
+			// staged buffer, so it is not going to become durable via a flush.
+			if path != "" {
+				if st, serr := svc.Stat(ctx, path); serr == nil && (st.Status == vault.FileStatusOK || st.Status == vault.FileStatusLost) {
+					svc.Close()
+					return &VaultFlushResult{
+						Status:  "idle",
+						Message: "file is already " + st.Status + " on Sia; nothing to flush.",
+					}, nil
 				}
-				return &VaultFlushResult{Flushed: n}, nil
 			}
-			// Flush a single path. FlushPath silently no-ops when the file is
-			// already durable (returns nil without doing work), so look it up
-			// first and only report a flush when there is a staged buffer to
-			// actually upload. A lost file also has no staged buffer, so it
-			// must not be reported as flushed either.
-			if st, serr := svc.Stat(flushCtx, path); serr == nil && (st.Status == vault.FileStatusOK || st.Status == vault.FileStatusLost) {
-				return &VaultFlushResult{Flushed: 0}, nil
+
+			// Launch the flush on a detached background context so the request is
+			// not pinned for the (possibly long) full host-set upload, and so the
+			// MCP transport deadline cannot kill the durability work mid-flight.
+			// Close the service inside the goroutine once the flush completes.
+			flushCtx, cancel := context.WithTimeout(context.Background(), vaultFlushTimeout)
+			go func() {
+				defer cancel()
+				defer svc.Close()
+				if path != "" {
+					_ = svc.FlushPath(flushCtx, path)
+				} else {
+					_, _ = svc.Flush(flushCtx)
+				}
+			}()
+
+			scope := "all pending files"
+			if path != "" {
+				scope = "file " + path
 			}
-			if ferr := svc.FlushPath(flushCtx, path); ferr != nil {
-				return nil, fmt.Errorf("vault_flush %s: %w", path, ferr)
-			}
-			return &VaultFlushResult{Flushed: 1}, nil
+			return &VaultFlushResult{
+				Status:  "accepted",
+				Message: "flush initiated for " + scope + "; poll vault_stat until status: ok before sharing.",
+			}, nil
 		}),
 	})
 }

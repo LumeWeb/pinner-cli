@@ -332,13 +332,9 @@ func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 
 	case *catalogops.VaultFlushResult:
 		if output.IsJSON() {
-			return output.PrintJSON(map[string]any{"flushed": r.Flushed})
+			return output.PrintJSON(map[string]any{"status": r.Status, "message": r.Message})
 		}
-		if r.Flushed == 0 {
-			output.Printfln("No pending files to flush.")
-			return nil
-		}
-		output.Printfln("Flushed %d pending file(s) to durable storage.", r.Flushed)
+		output.Printfln("%s: %s", r.Status, r.Message)
 		return nil
 
 	case *catalogops.VaultShareAcceptResult:
