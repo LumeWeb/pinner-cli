@@ -204,7 +204,13 @@ func TestAsyncUploadToolsTextCarriesData(t *testing.T) {
 }
 
 func TestUploadTaskManagerTTLEviction(t *testing.T) {
+	// Detect completion from the executor itself, not by poking Get/List:
+	// those calls prune, so with a short TTL a poll delayed by a loaded runner
+	// can evict the just-completed task (and its tombstone) before the poll
+	// ever observes it, reading back "unknown upload handle" forever.
+	done := make(chan struct{})
 	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
+		defer close(done)
 		io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmE"}, nil
 	}, 50*time.Millisecond)
@@ -212,16 +218,24 @@ func TestUploadTaskManagerTTLEviction(t *testing.T) {
 	id, err := mgr.Start(context.Background(), io.NopCloser(strings.NewReader("e")), 1, "e.txt", false)
 	require.NoError(t, err)
 
-	// Wait for completion, then confirm present immediately.
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("upload executor never finished")
+	}
+
+	// Confirm the freshly-finished task is present and completed before the
+	// TTL elapses; FinishedAt is milliseconds old here, so it cannot be pruned.
 	require.Eventually(t, func() bool {
-		t, _ := mgr.Get(id)
-		return t != nil && t.State == transfer.UploadStateCompleted
-	}, 2*time.Second, 5*time.Millisecond)
+		tk, _ := mgr.Get(id)
+		return tk != nil && tk.State == transfer.UploadStateCompleted
+	}, time.Second, time.Millisecond)
 	require.Len(t, mgr.List(), 1)
 
-	// After TTL passes and a List triggers prune, the terminal task is gone.
-	time.Sleep(80 * time.Millisecond)
-	require.Empty(t, mgr.List())
+	// After the TTL passes and a List triggers prune, the terminal task is gone.
+	require.Eventually(t, func() bool {
+		return len(mgr.List()) == 0
+	}, 2*time.Second, 20*time.Millisecond)
 	_, err = mgr.Get(id)
 	require.Error(t, err)
 }
