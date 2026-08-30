@@ -13,6 +13,7 @@ import (
 	"github.com/ipfs/go-cid"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner-cli/internal/mcp"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 
@@ -72,8 +73,20 @@ func (s *DownloadServiceDefault) getAuthToken() string {
 }
 
 func (s *DownloadServiceDefault) resolveAuthToken(ctx context.Context) (string, error) {
-	authToken := s.getAuthToken()
+	// A hosted OOB transfer stamps the caller's Portal API token on the context
+	// (via credctx). Prefer it over the override/config token, applying the same
+	// API-key JWT → login JWT exchange as the config branch: the resolver may
+	// have minted an API-key token.
+	if tok := mcp.CredentialFromContext(ctx); tok != "" {
+		return s.exchangeIfAPIKey(ctx, tok)
+	}
+	return s.exchangeIfAPIKey(ctx, s.getAuthToken())
+}
 
+// exchangeIfAPIKey returns the token to use for download, exchanging an API-key
+// JWT for a login JWT when an authService is available. Decode errors fall back
+// to the raw token; non-"api" tokens are returned as-is.
+func (s *DownloadServiceDefault) exchangeIfAPIKey(ctx context.Context, authToken string) (string, error) {
 	if s.authService != nil {
 		purpose, err := GetJWTPurpose(authToken)
 		if err != nil {
@@ -89,7 +102,6 @@ func (s *DownloadServiceDefault) resolveAuthToken(ctx context.Context) (string, 
 			return loginJWT, nil
 		}
 	}
-
 	return authToken, nil
 }
 

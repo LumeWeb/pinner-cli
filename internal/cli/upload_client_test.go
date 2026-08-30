@@ -23,9 +23,10 @@ import (
 	"github.com/stretchr/testify/require"
 	contentfs "go.lumeweb.com/ipfs-content/fs"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/pinner-cli/internal/car"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
-	"go.lumeweb.com/pinner-cli/internal/car"
+	"go.lumeweb.com/pinner-cli/internal/mcp"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
 )
 
@@ -429,6 +430,51 @@ func TestUploadServiceDefault_resolveAuthToken(t *testing.T) {
 		token, err := h.service.resolveAuthToken(context.Background())
 		require.NoError(t, err)
 		assert.Equal(t, configToken, token)
+	})
+
+	t.Run("returns context JWT as-is when present, no exchange attempted", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.service.authService = NewMockAuthService(t)
+
+		// Config holds an API key JWT; if the context preference were missing,
+		// LoginWithAPIKey would be invoked and (being unset on the gomock mock)
+		// fail the test. Its absence proves the exchange is skipped entirely.
+		h.cfg.AuthToken = createUploadTestJWT(t, "api")
+		h.cfgMgr.EXPECT().Config().Return(h.cfg)
+
+		ctxJWT := "hosted-caller-login-jwt"
+		ctx := mcp.WithCredential(context.Background(), ctxJWT)
+
+		token, err := h.service.resolveAuthToken(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, ctxJWT, token)
+	})
+
+	t.Run("exchanges API key JWT from context when purpose is api", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.service.authService = NewMockAuthService(t)
+
+		apiKeyJWT := createUploadTestJWT(t, "api")
+		loginJWT := "login-jwt-token"
+		h.accountClient.EXPECT().LoginWithAPIKey(mock.Anything, apiKeyJWT).Return(loginJWT, nil)
+
+		ctx := mcp.WithCredential(context.Background(), apiKeyJWT)
+		token, err := h.service.resolveAuthToken(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, loginJWT, token)
+	})
+
+	t.Run("falls back to config when no context JWT", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.service.authService = NewMockAuthService(t)
+
+		loginJWT := createUploadTestJWT(t, "login")
+		h.cfg.AuthToken = loginJWT
+		h.cfgMgr.EXPECT().Config().Return(h.cfg)
+
+		token, err := h.service.resolveAuthToken(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, loginJWT, token)
 	})
 
 	t.Run("returns raw token when JWT decode fails", func(t *testing.T) {
