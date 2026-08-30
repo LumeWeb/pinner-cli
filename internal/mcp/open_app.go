@@ -100,7 +100,7 @@ func newOpenAppDescriptor(catalog *ToolCatalog) model.ToolDescriptor {
 	return model.ToolDescriptor{
 		Name:        "open_app",
 		Title:       "Open an app",
-		Description: openAppDescriptionFor(hostenv.ProfileStdioGeneric),
+		Description: openAppDescriptionFor(hostenv.ProfileStdioMCPApps),
 		Category:    model.CategoryCore,
 		MCPTargets:  openAppTargets(),
 		InputSchema: toolargs.ToolSchemaFor[openAppInput](),
