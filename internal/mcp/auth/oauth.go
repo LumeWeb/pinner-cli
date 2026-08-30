@@ -849,7 +849,14 @@ func (o *OAuthServer) validToken(tok string) bool {
 func (o *OAuthServer) tokenExpiry(tok string) (time.Time, bool) {
 	o.mu.Lock()
 	exp, ok := o.tokens[tok]
-	if ok && time.Now().After(exp) {
+	if !ok {
+		o.mu.Unlock()
+		return exp, false
+	}
+	now := time.Now()
+	if now.After(exp.Add(o.clockSkew)) {
+		// Beyond the clock-skew grace: drop from memory AND the durable store so
+		// a restart does not resurrect an already-invalidated token.
 		delete(o.tokens, tok)
 		o.mu.Unlock()
 		if o.store != nil {
@@ -857,8 +864,15 @@ func (o *OAuthServer) tokenExpiry(tok string) (time.Time, bool) {
 		}
 		return exp, false
 	}
+	if now.After(exp) {
+		// Strictly expired but within the skew grace: report as expired while
+		// keeping it in memory and in the store, so an in-flight request and a
+		// restart-reload still observe it exactly as OfficialMiddleware does.
+		o.mu.Unlock()
+		return exp, false
+	}
 	o.mu.Unlock()
-	return exp, ok
+	return exp, true
 }
 
 func (o *OAuthServer) OfficialMiddleware(next http.Handler) http.Handler {
