@@ -66,6 +66,9 @@ type VaultService interface {
 	// WITHOUT downloading the full file content, so it is cheap even for
 	// large encrypted files. Use VerifyDeep for a true full-content
 	// re-hash.
+	//
+	// When no digest is recorded (e.g. an accepted share before first
+	// decrypt), DigestVerified is "unverified" — not a failure.
 	Verify(ctx context.Context, vaultPath string) (*VerifyResult, error)
 
 	// VerifyDeep is like Verify but additionally downloads the full object
@@ -221,12 +224,23 @@ type SearchItem struct {
 }
 
 // VerifyResult is the output of Verify.
+//
+// DigestVerified is a tri-state that prevents conflation of "never checked"
+// with "failed":
+//   - "verified"   — a digest is recorded and matches (shallow or deep).
+//   - "unverified" — no digest has been recorded yet. The file may be fine;
+//     the caller should deep-verify or get the file to populate it.
+//   - "mismatch"   — a digest is recorded but does not match.
+//
+// DigestMatch remains true only when DigestVerified == "verified". Agents
+// should prefer DigestVerified over DigestMatch.
 type VerifyResult struct {
-	Path          string `json:"path"`
-	ContentDigest string `json:"content_digest"`
-	DigestMatch   bool   `json:"digest_match"`
-	ObjectExists  bool   `json:"object_exists"`
-	ObjectID      string `json:"object_id"`
+	Path           string `json:"path"`
+	ContentDigest  string `json:"content_digest"`
+	DigestMatch    bool   `json:"digest_match"`
+	DigestVerified string `json:"digest_verified"` // "verified" | "unverified" | "mismatch"
+	ObjectExists   bool   `json:"object_exists"`
+	ObjectID       string `json:"object_id"`
 }
 
 // StatusResult is the output of Status. Remote fields reflect a live probe of

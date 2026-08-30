@@ -281,13 +281,16 @@ func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 			return output.PrintJSON(r)
 		}
 		status := "FAIL"
-		if r.DigestMatch && r.ObjectExists {
+		if r.DigestVerified == "verified" && r.ObjectExists {
 			status = "OK"
+		} else if r.DigestVerified == "unverified" && r.ObjectExists {
+			status = "UNVERIFIED"
 		}
 		output.PrintFields(FieldGroup{
 			Title: "Verification Result",
 			Fields: []Field{
 				{"Path", r.Path}, {"Status", status}, {"Content Digest", r.ContentDigest},
+				{"Digest Verified", r.DigestVerified},
 				{"Digest Match", fmt.Sprintf("%v", r.DigestMatch)},
 				{"Object Exists", fmt.Sprintf("%v", r.ObjectExists)},
 				{"Object ID", r.ObjectID},
