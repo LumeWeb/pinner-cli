@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/credctx"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transport"
 )
 
@@ -33,6 +34,11 @@ type downloadToken struct {
 	// invoked on a best-effort basis and must be safe to call with a nil
 	// receiver's absence (i.e. nil means no-op).
 	cleanup func()
+	// jwt is the Portal API JWT captured at mint time and stamped (via
+	// credctx) onto the context handed to the serve closure, so a hosted
+	// (Portal-embedded) download authenticates as the calling user. Empty on
+	// the CLI/local path.
+	jwt string
 }
 
 // release invokes the token's cleanup hook (if any). The hook is best-effort
@@ -112,7 +118,7 @@ func (hd *Download) RegisterHandlers(mux *http.ServeMux) {
 // ensures the loopback listener is running in stdio mode so the URL is always
 // reachable. The token is single-use: the GET that claims it is the only GET
 // that will ever be served for this file.
-func (hd *Download) Mint(name string, size int64, serve func(ctx context.Context, w io.Writer) error, ttl time.Duration, cleanup ...func()) (string, error) {
+func (hd *Download) Mint(ctx context.Context, name string, size int64, serve func(ctx context.Context, w io.Writer) error, ttl time.Duration, cleanup ...func()) (string, error) {
 	if serve == nil {
 		return "", errors.New("no download source configured")
 	}
@@ -141,7 +147,7 @@ func (hd *Download) Mint(name string, size int64, serve func(ctx context.Context
 			delete(hd.tokens, t)
 		}
 	}
-	hd.tokens[token] = downloadToken{name: name, size: size, serve: serve, expiresAt: now.Add(ttl), cleanup: cleanupFn}
+	hd.tokens[token] = downloadToken{name: name, size: size, serve: serve, expiresAt: now.Add(ttl), cleanup: cleanupFn, jwt: credctx.From(ctx)}
 	hd.mu.Unlock()
 	return hd.loopback.URLFor("download", token), nil
 }
@@ -199,7 +205,12 @@ func (hd *Download) getHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dw := &deferredResponseWriter{ResponseWriter: w}
-	if err := tkn.serve(r.Context(), dw); err != nil {
+	// Stamp the mint-time Portal API JWT onto the context handed to the serve
+	// closure so a hosted (Portal-embedded) download authenticates as the
+	// calling user. jwt is "" (and the credctx read yields "") on the CLI/local
+	// path.
+	serveCtx := credctx.With(r.Context(), tkn.jwt)
+	if err := tkn.serve(serveCtx, dw); err != nil {
 		tkn.release()
 		if dw.wroteHeader {
 			// Some body bytes are already committed; we cannot change the

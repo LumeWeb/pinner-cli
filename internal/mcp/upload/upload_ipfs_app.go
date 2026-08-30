@@ -79,7 +79,7 @@ func ipfsUploadSubmitDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 		Title:       "Prepare a one-time upload endpoint",
 		Description: "Prepare (or continue) a one-time presigned HTTP PUT endpoint bound to a canonical upload handle; the app's Uppy XHR uploader writes file bytes to it out of band. Passing a handle prepared by upload_file fulfills that same operation. App-only helper for the Upload to IPFS view.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"handle":{"type":"string"},"name":{"type":"string"},"ttl":{"type":"string"}}}`),
-		Handler: func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
+		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[IPFSUploadSubmitInput](req)
 			if err != nil {
 				return model.ToolResult{}, err
@@ -152,7 +152,7 @@ func ipfsUploadSubmitDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 			if name == "" {
 				name = transfer.DefaultUploadName
 			}
-			url, handle := hp.Prepare(name, ttl)
+			url, handle := hp.Prepare(ctx, name, ttl)
 			if url == "" || handle == "" {
 				return model.ToolResult{}, fmt.Errorf("failed to prepare one-time upload endpoint")
 			}

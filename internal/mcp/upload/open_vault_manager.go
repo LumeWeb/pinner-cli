@@ -80,7 +80,7 @@ func NewOpenVaultManagerDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescr
 			if request.Caps != nil && request.Caps.Profile != nil {
 				hostType = string(request.Caps.Profile.HostType)
 			}
-			url, err := vu.Mint(in.VaultPath, ttl, corevault.StampedMetadata("mcp", hostType, "", nil))
+			url, err := vu.Mint(ctx, in.VaultPath, ttl, corevault.StampedMetadata("mcp", hostType, "", nil))
 			if err != nil {
 				return model.ToolResult{}, err
 			}

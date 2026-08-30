@@ -284,7 +284,7 @@ func ExecuteDropSink(ctx context.Context, source, sourceName string, hd *Downloa
 		_, err = io.Copy(w, f)
 		return err
 	}
-	fetchURL, err := hd.Mint(sourceName, info.Size(), serve, d, func() {
+	fetchURL, err := hd.Mint(ctx, sourceName, info.Size(), serve, d, func() {
 		_ = os.Remove(tmpPath)
 	})
 	if err != nil {

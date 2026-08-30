@@ -93,12 +93,12 @@ func NewOpenUploadManagerDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 					handle = in.Handle
 					continued = true
 				} else {
-					url, handle = hp.Prepare("upload", ttl)
+					url, handle = hp.Prepare(ctx, "upload", ttl)
 				}
 			} else {
 				// Fresh operation: mint a presigned endpoint AND its canonical
 				// upload_handle so the app picker continues this exact task.
-				url, handle = hp.Prepare("upload", ttl)
+				url, handle = hp.Prepare(ctx, "upload", ttl)
 			}
 			if url == "" || handle == "" {
 				return model.ToolResult{}, fmt.Errorf("failed to prepare one-time upload endpoint")

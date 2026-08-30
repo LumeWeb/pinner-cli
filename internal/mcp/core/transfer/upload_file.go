@@ -262,7 +262,7 @@ func newUploadFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenA
 				if in.Wrap {
 					opts = append(opts, WithWrap(true))
 				}
-				url, handle := hp.Prepare(name, ttl, opts...)
+				url, handle := hp.Prepare(ctx, name, ttl, opts...)
 				if url == "" || handle == "" {
 					return model.ToolResult{}, errors.New("failed to prepare one-time upload endpoint")
 				}

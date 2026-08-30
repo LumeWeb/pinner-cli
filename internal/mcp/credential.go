@@ -4,30 +4,24 @@ import (
 	"context"
 	"net/http"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/credctx"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
-// credentialCtxKey is the context key under which the per-request Portal API
-// JWT is stored. The credential is resolved once per request at the transport
-// boundary (credentialMiddleware) or on the stdio path (compiledHandler) and
-// read by every authenticated handler, so identity has a single injection
-// point instead of being threaded ad hoc through handlers and executors.
-type credentialCtxKey struct{}
-
 // WithCredential stores the resolved Portal API JWT in the context. It is the
-// single way identity is injected for the current request.
+// single way identity is injected for the current request. It is a thin
+// delegate to the shared credctx leaf package so internal/mcp/core/transfer
+// (which cannot import internal/mcp without an import cycle) and internal/mcp
+// read and write the same credential from a context.
 func WithCredential(ctx context.Context, jwt string) context.Context {
-	return context.WithValue(ctx, credentialCtxKey{}, jwt)
+	return credctx.With(ctx, jwt)
 }
 
 // CredentialFromContext returns the Portal API JWT for the current request, or
 // "" when none is set (unauthenticated or CLI/local mode, where services fall
-// back to the config token).
+// back to the config token). It is a thin delegate to credctx.From.
 func CredentialFromContext(ctx context.Context) string {
-	if v, ok := ctx.Value(credentialCtxKey{}).(string); ok {
-		return v
-	}
-	return ""
+	return credctx.From(ctx)
 }
 
 // credentialMiddleware resolves the Portal API JWT once per request and stores

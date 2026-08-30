@@ -189,7 +189,7 @@ type SourceResolver struct {
 
 // MintURL returns the presigned PUT URL for SourceMint. Only valid on the HTTP
 // transport.
-func (r *SourceResolver) MintURL(s UploadSource, name string, ttl time.Duration) (string, error) {
+func (r *SourceResolver) MintURL(ctx context.Context, s UploadSource, name string, ttl time.Duration) (string, error) {
 	if err := s.Validate(r.Transport); err != nil {
 		return "", err
 	}
@@ -199,7 +199,7 @@ func (r *SourceResolver) MintURL(s UploadSource, name string, ttl time.Duration)
 	if r.HTTPUpload == nil {
 		return "", fmt.Errorf("presigned upload endpoint is not configured for HTTP mode")
 	}
-	url := r.HTTPUpload.Mint(name, ttl)
+	url := r.HTTPUpload.Mint(ctx, name, ttl)
 	if url == "" {
 		return "", errors.New("failed to mint one-time upload endpoint")
 	}
