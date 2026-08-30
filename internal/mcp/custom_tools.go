@@ -60,7 +60,7 @@ type customToolDeps struct {
 	// vaultUpload, when non-nil, backs the presigned HTTP PUT vault-write route
 	// (the VaultHTTPUpload coordinator). It mints a one-time endpoint bound to
 	// a destination vault path whose PUT body streams into the authenticated
-	// vault write, staging the bytes locally (status: pending) before returning.
+	// vault write, staging the bytes locally (status: staged) before returning.
 	// It feeds the "Upload to Vault" MCP App.
 	vaultUpload *transfer.VaultHTTPUpload
 	// downloadDrop, when non-nil, backs the one-time filedrop GET route (the

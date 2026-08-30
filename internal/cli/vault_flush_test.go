@@ -48,8 +48,8 @@ func TestVaultFlush_PathDoesNotClaimFlushOnNoop(t *testing.T) {
 		flushNoop bool
 		wantFlush bool // whether the run should report a real flush
 	}{
-		{name: "already durable", statSeq: []string{"ok"}, wantFlush: false},
-		{name: "flush no-ops (empty staged buffer)", statSeq: []string{"pending", "pending"}, flushNoop: true, wantFlush: false},
+		{name: "already durable", statSeq: []string{vault.FileStatusDurable}, wantFlush: false},
+		{name: "flush no-ops (empty staged buffer)", statSeq: []string{vault.FileStatusStaged, vault.FileStatusStaged}, flushNoop: true, wantFlush: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -117,8 +117,8 @@ func TestVaultFlush_PathReportsRealFlush(t *testing.T) {
 
 	orig := vaultServiceFactory
 	t.Cleanup(func() { vaultServiceFactory = orig })
-	// pre-check status=pending, then after a real flush status=ok.
-	stub := &flushCmdStub{statSeq: []string{"pending", "ok"}}
+	// pre-check status=staged, then after a real flush status=durable.
+	stub := &flushCmdStub{statSeq: []string{vault.FileStatusStaged, vault.FileStatusDurable}}
 	vaultServiceFactory = func(profileName, indexerURL string) (vault.VaultService, error) {
 		return stub, nil
 	}

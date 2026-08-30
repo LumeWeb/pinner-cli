@@ -249,15 +249,17 @@ func TestSearchStatusFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search status: %v", err)
 	}
-	if len(res) != 1 || res[0].Status != "lost" {
-		t.Fatalf("status=lost search = %+v, want 1 lost file", res)
+	if len(res) != 1 || res[0].Status != FileStatusFailed {
+		t.Fatalf("status=lost search = %+v, want 1 lost (normalized failed) file", res)
 	}
-	res, err = svc.Search(ctx, searchReq(Predicate{Status: []string{"ok"}}))
+	// b.txt is stored "durable"; the status filter matches the stored value and
+	// the result surfaces the canonical normalized status.
+	res, err = svc.Search(ctx, searchReq(Predicate{Status: []string{"durable"}}))
 	if err != nil {
-		t.Fatalf("Search status ok: %v", err)
+		t.Fatalf("Search status durable: %v", err)
 	}
-	if len(res) != 1 || res[0].Status != "ok" {
-		t.Fatalf("status=ok search = %+v, want 1 ok file", res)
+	if len(res) != 1 || res[0].Status != FileStatusDurable {
+		t.Fatalf("status=durable search = %+v, want 1 durable file", res)
 	}
 }
 

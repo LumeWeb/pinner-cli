@@ -80,6 +80,8 @@ func TestCommandRegistration_VaultSubcommands(t *testing.T) {
 		"version", // vault version ls/get/restore (catalog-compiled, nested)
 		"tag",     // vault tag add/rm/set/ls (catalog-compiled, nested)
 		"search",  // vault search (catalog-compiled)
+		"profiles", // vault profiles (list unlocked profiles; catalog-compiled)
+		"send",     // vault send (cross-profile handoff; catalog-compiled)
 	}
 	names := commandNames(vaultCmd.Commands)
 	nameSet := make(map[string]bool, len(names))

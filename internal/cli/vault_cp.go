@@ -238,7 +238,7 @@ func flushUploadDurability(ctx context.Context, c *cli.Command, output Output, s
 		return vault.FileStatusOK, nil
 	}
 	if !output.IsJSON() {
-		output.Printfln("warning: staged %s for background upload (status: pending) — run `pinner vault flush` or re-run with --flush to make it durable on Sia now", vaultPath)
+		output.Printfln("warning: staged %s for background upload (status: staged) — run `pinner vault flush` or re-run with --flush to make it durable on Sia now", vaultPath)
 	}
 	return vault.FileStatusPending, nil
 }

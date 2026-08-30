@@ -25,7 +25,7 @@ import (
 // one-time presigned PUT endpoint bound to the destination vault path, and the
 // iframe's Uppy XHR uploader PUTs the raw file body straight to that endpoint
 // (formData off, HTTP PUT). The vault write is non-blocking: the PUT response
-// returns after staging the bytes locally (status: pending) — durability on
+// returns after staging the bytes locally (status: staged) — durability on
 // Sia happens in the background or via the vault_flush tool; there is no async
 // handle or poll round trip.
 

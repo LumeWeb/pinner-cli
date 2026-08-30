@@ -52,7 +52,7 @@ var vaultPutFileDesc = Static(
 		"If your host provides a generated file directly, pass it in the file input (a temporary download_url + file_id) and Pinner fetches and stores its bytes at vault_path. Do NOT mint a presigned URL to curl a file when the host already holds it; pass the file reference instead.",
 	).
 	When(hostenv.FeatSourceMint,
-		"Use source.mode=mint plus vault_path: mint returns a one-time presigned PUT url bound to vault_path (it has NOT stored bytes yet). PUT the agent-local file to the returned url (curl -sS -T <file> \"<url>\"); the PUT is non-blocking — it returns after staging the bytes locally (status: pending), so the file is immediately readable but durability on Sia (upload + pin) happens in the background or via vault_flush. There is no upload_status to poll (upload_status tracks upload_file's IPFS uploads, not vault writes).",
+		"Use source.mode=mint plus vault_path: mint returns a one-time presigned PUT url bound to vault_path (it has NOT stored bytes yet). PUT the agent-local file to the returned url (curl -sS -T <file> \"<url>\"); the PUT is non-blocking — it returns after staging the bytes locally (status: staged), so the file is immediately readable but durability on Sia (upload + pin) happens in the background or via vault_flush. There is no upload_status to poll (upload_status tracks upload_file's IPFS uploads, not vault writes).",
 	).
 	When(hostenv.FeatSourcePath,
 		"In this co-located stdio mode you may instead set source.mode=path and source.path to a host-side file/directory/archive path; the server reads it directly.",

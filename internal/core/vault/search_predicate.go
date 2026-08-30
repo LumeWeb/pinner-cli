@@ -355,7 +355,7 @@ func columnFilter(p Predicate, negated bool) queryutil.CrudFilter {
 	case len(p.Agent) > 0:
 		column, vals = "files.agent", p.Agent
 	case len(p.Status) > 0:
-		column, vals = "files.status", p.Status
+		column, vals = "files.status", statusFilterValues(p.Status)
 	default:
 		return nil
 	}
@@ -373,6 +373,41 @@ func columnFilter(p Predicate, negated bool) queryutil.CrudFilter {
 		f = queryutil.Not(f)
 	}
 	return f
+}
+
+// statusFilterValues expands a set of status filter values to EVERY stored
+// spelling that represents the same lifecycle state, so a canonical filter
+// ("durable") also matches rows persisted under the legacy alias ("ok") and
+// vice versa. The files.status column may hold either generation, so the
+// filter must not assume only canonical values are stored.
+func statusFilterValues(vals []string) []string {
+	set := map[string]struct{}{}
+	for _, v := range vals {
+		for _, alias := range statusAliases(NormalizeFileStatus(v)) {
+			set[alias] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	return out
+}
+
+// statusAliases returns the stored spellings of one canonical lifecycle state.
+func statusAliases(status string) []string {
+	switch status {
+	case FileStatusDurable:
+		return []string{FileStatusDurable, "ok"}
+	case FileStatusStaged:
+		return []string{FileStatusStaged, "pending"}
+	case FileStatusFlushing:
+		return []string{FileStatusFlushing, "uploaded"}
+	case FileStatusFailed:
+		return []string{FileStatusFailed, "lost"}
+	default:
+		return []string{status}
+	}
 }
 
 // tagSubquery returns a query-modifier applying a tag predicate. Positive:
