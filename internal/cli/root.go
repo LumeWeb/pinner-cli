@@ -39,6 +39,19 @@ func notInitErr(label string) error {
 	return fmt.Errorf("%s dependencies are not initialized", label)
 }
 
+// vaultRequestedProfile returns the vault profile a tool explicitly targeted,
+// as stamped into the write metadata by the tool surface. It is empty when the
+// caller did not specify one, in which case the active profile is used.
+func vaultRequestedProfile(meta map[string]any) string {
+	if meta == nil {
+		return ""
+	}
+	if p, ok := meta[vault.MetaKeyProfile].(string); ok {
+		return p
+	}
+	return ""
+}
+
 // NewRootCommand creates and returns the root CLI command.
 func NewRootCommand() *cli.Command {
 	root := &cli.Command{
@@ -362,7 +375,11 @@ For more help on any command: pinner <command> --help`,
 				return result, nil
 			}
 			vaultPutHandler = func(ctx context.Context, reader io.Reader, size int64, path string, meta map[string]any) (any, error) {
-				profile, err := vault.ResolveProfile("")
+				// A tool-requested profile is stamped into the metadata by the
+				// tool surface; resolve that when set, otherwise the active
+				// profile (so an agent can target one vault without flipping
+				// the default).
+				profile, err := vault.ResolveProfile(vaultRequestedProfile(meta))
 				if err != nil {
 					return nil, err
 				}
@@ -386,12 +403,14 @@ For more help on any command: pinner <command> --help`,
 			// resolved against the active profile at call time (mirroring
 			// vaultPutHandler); the tool surface owns sink selection and path
 			// validation.
-			vaultGet = func(ctx context.Context, vaultPath string, w io.Writer) error {
-				profile, err := vault.ResolveProfile("")
+			vaultGet = func(ctx context.Context, vaultPath, profile string, w io.Writer) error {
+				// The tool surface passes the caller-requested profile (empty
+				// when omitted); resolve that or the active profile.
+				resolved, err := vault.ResolveProfile(profile)
 				if err != nil {
 					return err
 				}
-				vaultSvc, err := newVaultService(profile)
+				vaultSvc, err := newVaultService(resolved)
 				if err != nil {
 					return err
 				}
@@ -439,7 +458,10 @@ For more help on any command: pinner <command> --help`,
 				if err != nil {
 					return nil, err
 				}
-				profile, err := vault.ResolveProfile("")
+				// A tool-requested profile is stamped into the metadata by the
+				// tool surface; resolve that when set, otherwise the active
+				// profile.
+				profile, err := vault.ResolveProfile(vaultRequestedProfile(meta))
 				if err != nil {
 					return nil, err
 				}
@@ -591,11 +613,11 @@ For more help on any command: pinner <command> --help`,
 			}
 			return ipfsDownload(ctx, ipfsPath, w)
 		}),
-		mcpadapter.WithVaultGet(func(ctx context.Context, vaultPath string, w io.Writer) error {
+		mcpadapter.WithVaultGet(func(ctx context.Context, vaultPath, profile string, w io.Writer) error {
 			if vaultGet == nil {
 				return notInitErr("vault download")
 			}
-			return vaultGet(ctx, vaultPath, w)
+			return vaultGet(ctx, vaultPath, profile, w)
 		}),
 		// Confine download_file / vault_get_file local-sink writes to the
 		// configured download root (default <config-dir>/downloads). Resolved
