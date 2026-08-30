@@ -773,6 +773,10 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 		dl.SetBaseURL(baseURL)
 	}
 	var oauth *auth.OAuthServer
+	// as is the library authorization server. It is hoisted to function scope
+	// so the tunnel setup below can re-point its issuer once the public URL is
+	// known.
+	var as *oauthlib.AuthorizationServer
 	if enableOAuth {
 		if authToken == "" {
 			if tun != nil || publicURL != "" {
@@ -804,10 +808,11 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 		// connectors like Grok's rmcp/connectors-manager that treat a 401 as
 		// fatal: a still-valid 24h access token survives a restart.
 		oauthCfg.Issuer = strings.TrimRight(baseURL, "/") + "/mcp"
-		as, store, err := auth.OpenOAuthStore(oauthStorePath(), oauthCfg)
+		newAS, store, err := auth.OpenOAuthStore(oauthStorePath(), oauthCfg)
 		if err != nil {
 			return fmt.Errorf("open oauth state store: %w", err)
 		}
+		as = newAS
 		oauth = auth.NewOAuthServer(authToken, baseURL, as, store).WithLogger(log)
 	}
 
@@ -1070,6 +1075,15 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 			// Advertise endpoints against the provider-approved URL.
 			oauth.BaseURL = strings.TrimRight(oauthURL, "/")
 			oauth.Issuer = oauth.BaseURL
+			// Re-point the authorization server's RFC 8707 expected resource at
+			// the public origin too. The AS is constructed before the tunnel
+			// allocates its URL, so without this it keeps validating resources
+			// against the loopback base and rejects every provider-approved
+			// authorize request with "invalid resource".
+			if err := as.SetIssuer(oauth.BaseURL + "/mcp"); err != nil {
+				shutdown(context.Background())
+				return fmt.Errorf("repoint oauth issuer to tunnel URL: %w", err)
+			}
 		}
 		if provider == "openai" {
 			fmt.Printf("OpenAI Secure MCP Tunnel ID: %s\n", tunnelID)
