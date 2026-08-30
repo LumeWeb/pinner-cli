@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -90,6 +91,49 @@ const cimdCacheTTL = 5 * time.Minute
 // cimdFetchTimeout bounds the outbound HTTP GET so a slow or hostile host
 // cannot stall the authorize flow.
 const cimdFetchTimeout = 10 * time.Second
+
+// cimdAllowedHosts is the allowlist of hosts whose CIMD documents the server
+// will fetch. This prevents SSRF — an attacker cannot use a client_id URL
+// pointing at internal/cloud-metadata endpoints. Loopback hosts are
+// permitted for development and testing.
+var cimdAllowedHosts = map[string]bool{
+	"claude.ai":  true,
+	"vscode.dev": true,
+}
+
+// allowedCIMDHost reports whether host is an allowlisted CIMD metadata host
+// or a loopback address (for dev/test). It also rejects hosts that resolve to
+// private/link-local IP ranges to prevent DNS-based SSRF bypasses.
+func allowedCIMDHost(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	if host == "" {
+		return false
+	}
+	if cimdAllowedHosts[host] {
+		return true
+	}
+	switch host {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	// Reject any host that resolves to a private/link-local/multicast IP.
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return false
+	}
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+			return false
+		}
+	}
+	// Public IP but not in the allowlist — reject. Only known hosts and
+	// loopback are fetched.
+	return false
+}
 
 type authorizationCode struct {
 	clientID            string
@@ -174,8 +218,10 @@ func (o *OAuthServer) sweep() {
 	}
 }
 
-// reapLocked removes expired in-memory access tokens and codes, and expired
-// durable refresh tokens/clients via the store. Caller must hold o.mu.
+// reapLocked removes expired in-memory access tokens and codes, expired
+// durable refresh tokens/clients via the store, and expired CIMD cache
+// entries (including their transient registrations in o.clients). Caller
+// must hold o.mu.
 func (o *OAuthServer) reapLocked() {
 	now := time.Now()
 	for tok, exp := range o.tokens {
@@ -188,6 +234,20 @@ func (o *OAuthServer) reapLocked() {
 			delete(o.codes, code)
 		}
 	}
+	// Evict expired CIMD cache entries and their transient client registrations
+	// to bound memory growth from unique CIMD client_ids.
+	o.cimdCacheMu.Lock()
+	for k, e := range o.cimdCache {
+		if now.Sub(e.fetchedAt) >= cimdCacheTTL {
+			delete(o.cimdCache, k)
+			// CIMD-resolved clients are keyed by their URL client_id, which
+			// is also in cimdCache. If the cache entry is expired, remove
+			// the transient registration too — it will be re-fetched on
+			// the next authorize request if needed.
+			delete(o.clients, k)
+		}
+	}
+	o.cimdCacheMu.Unlock()
 	if o.store != nil {
 		_ = o.store.Reap()
 	}
@@ -502,6 +562,11 @@ func (o *OAuthServer) resolveCIMDClient(clientID string) (oauthClient, error) {
 		}
 	}
 	o.cimdCacheMu.Unlock()
+
+	if !allowedCIMDHost(clientID) {
+		o.logf().Warn("CIMD fetch rejected: host not allowlisted", zap.String("client_id", clientID))
+		return oauthClient{}, fmt.Errorf("client metadata host is not allowlisted")
+	}
 
 	client := &http.Client{
 		Timeout: cimdFetchTimeout,

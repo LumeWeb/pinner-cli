@@ -707,3 +707,101 @@ func TestOAuthRefreshReuseTolerated(t *testing.T) {
 	o.TokenHandler(rec, formPost(map[string]string{"grant_type": "refresh_token", "refresh_token": refresh}))
 	require.Equal(t, http.StatusOK, rec.Code, "benign refresh-token reuse within the window must not invalid_grant")
 }
+
+func TestAllowedCIMDHost(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want bool
+	}{
+		{"claude.ai allowlisted", "https://claude.ai/oauth/mcp-oauth-client-metadata", true},
+		{"vscode.dev allowlisted", "https://vscode.dev/oauth/client-metadata.json", true},
+		{"localhost allowed", "http://localhost:8080/metadata", true},
+		{"127.0.0.1 allowed", "http://127.0.0.1:9090/metadata", true},
+		{"unknown public host rejected", "https://evil.example.com/metadata", false},
+		{"private IP rejected", "https://192.168.1.1/metadata", false},
+		{"link-local rejected", "https://169.254.169.254/metadata", false},
+		{"invalid url rejected", "not-a-url", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, allowedCIMDHost(tt.url))
+		})
+	}
+}
+
+func TestCIMDSSRFRejectsUnknownHost(t *testing.T) {
+	origHosts := cimdAllowedHosts
+	t.Cleanup(func() { cimdAllowedHosts = origHosts })
+	cimdAllowedHosts = map[string]bool{}
+
+	o := newTestOAuth(t)
+
+	// 127.0.0.1 is still allowed as a loopback host even with an empty
+	// allowlist, so block it explicitly to simulate an unknown external host.
+	_, err := o.resolveCIMDClient("https://169.254.169.254/latest/meta-data")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not allowlisted")
+
+	_, err = o.resolveCIMDClient("https://evil.example.com/metadata")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not allowlisted")
+}
+
+func TestCIMDCacheEvictionInReap(t *testing.T) {
+	cimdClientID := ""
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/metadata", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"client_id": "` + cimdClientID + `",
+			"client_name": "Test",
+			"redirect_uris": ["http://localhost/callback"],
+			"token_endpoint_auth_method": "none"
+		}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cimdClientID = srv.URL + "/metadata"
+
+	o := newTestOAuth(t)
+	cimdClient, err := o.resolveCIMDClient(cimdClientID)
+	require.NoError(t, err)
+
+	// Simulate what validateAuthorizeRequest does: register the CIMD client
+	// transiently in o.clients.
+	o.mu.Lock()
+	o.clients[cimdClientID] = cimdClient
+	o.mu.Unlock()
+
+	o.cimdCacheMu.Lock()
+	assert.NotEmpty(t, o.cimdCache)
+	o.cimdCacheMu.Unlock()
+	o.mu.Lock()
+	_, registered := o.clients[cimdClientID]
+	o.mu.Unlock()
+	assert.True(t, registered)
+
+	// Expire the cache entry and reap.
+	o.cimdCacheMu.Lock()
+	e := o.cimdCache[cimdClientID]
+	e.fetchedAt = time.Now().Add(-cimdCacheTTL - time.Second)
+	o.cimdCache[cimdClientID] = e
+	o.cimdCacheMu.Unlock()
+
+	o.mu.Lock()
+	o.reapLocked()
+	o.mu.Unlock()
+
+	o.cimdCacheMu.Lock()
+	_, cachedStill := o.cimdCache[cimdClientID]
+	o.cimdCacheMu.Unlock()
+	assert.False(t, cachedStill, "expired CIMD cache entry should be reaped")
+
+	o.mu.Lock()
+	_, registeredStill := o.clients[cimdClientID]
+	o.mu.Unlock()
+	assert.False(t, registeredStill, "expired CIMD client registration should be reaped")
+}
