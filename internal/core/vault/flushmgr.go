@@ -340,13 +340,24 @@ func (m *FlushManager) Close() {
 			}
 		}
 	case <-time.After(flushShutdownTimeout):
-		// A worker is stuck in a live service (e.g. blocked on the per-profile
-		// flush lock). Permanently fail its job so polls resolve, but do NOT
-		// close the worker's service here — that would dispose the DB/SDK while
-		// the worker is still mid-Flush (panic/fail on a live service). The
-		// service is left for process exit to reclaim; the finalized job is
-		// immutable so a late-returning worker cannot flip it back to done.
+		// At least one worker is (or was) stuck in a live service (e.g. blocked
+		// on the per-profile flush lock). Permanently fail its job so polls
+		// resolve. The select may have picked this branch at the boundary even
+		// when most workers finished, so close the service of any worker that is
+		// NOT mid-Flush (active==nil) and only leave genuinely stuck workers'
+		// services open for process-exit reclamation — never dispose a live
+		// service beneath an active flush. The finalized job is immutable, so a
+		// late-returning worker cannot flip it back to done.
 		m.failStuckJobs(workers)
+		for _, w := range workers {
+			m.mu.Lock()
+			closeIt := w.active == nil && w.svc != nil
+			svc := w.svc
+			m.mu.Unlock()
+			if closeIt {
+				_ = svc.Close()
+			}
+		}
 	}
 }
 

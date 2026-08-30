@@ -2,6 +2,7 @@ package vault
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -192,4 +193,67 @@ func TestFlushManagerCloseBoundsStuckWorker(t *testing.T) {
 	// Flush (would dispose the DB/SDK mid-flush). Close() must leave it open for
 	// process-exit reclamation rather than closing under the running worker.
 	svc.AssertNotCalled(t, "Close", mock.Anything)
+}
+
+// TestFlushManagerCloseTimeoutClosesFinishedWorkersOnly is a regression test
+// for the Kody finding that the timeout branch leaked EVERY worker's service:
+// when a flush finished at the shutdown boundary the select could pick
+// time.After, and that branch skipped the service-close loop. On timeout the
+// service of any worker that finished (active==nil) must be closed, while a
+// genuinely stuck worker's live service stays open (never closed mid-Flush).
+func TestFlushManagerCloseTimeoutClosesFinishedWorkersOnly(t *testing.T) {
+	oldTimeout := flushShutdownTimeout
+	flushShutdownTimeout = 50 * time.Millisecond
+	defer func() { flushShutdownTimeout = oldTimeout }()
+
+	alphaSvc := NewMockVaultService(t) // finishes its job promptly
+	alphaSvc.On("Flush", mock.Anything).Return(1, nil)
+	alphaSvc.On("Close").Return(nil)
+
+	never := make(chan struct{}) // ignores the context: stays stuck
+	betaSvc := NewMockVaultService(t)
+	betaSvc.On("Flush", mock.Anything).
+		Run(func(mock.Arguments) { <-never }).
+		Return(0, nil).
+		Maybe()
+	betaSvc.On("Close").Return(nil).Maybe()
+
+	mgr := NewFlushManager(SyncLoopConfig{
+		Profiles: func() []string { return []string{"alpha", "beta"} },
+		Service: func(profile string) (VaultService, error) {
+			switch profile {
+			case "alpha":
+				return alphaSvc, nil
+			case "beta":
+				return betaSvc, nil
+			default:
+				return nil, fmt.Errorf("unknown profile %q", profile)
+			}
+		},
+	})
+	jobAlpha, err := mgr.Enqueue(context.Background(), "alpha", "")
+	if err != nil {
+		t.Fatalf("Enqueue(alpha): %v", err)
+	}
+	if _, err := mgr.Enqueue(context.Background(), "beta", ""); err != nil {
+		t.Fatalf("Enqueue(beta): %v", err)
+	}
+
+	// Give the alpha worker time to actually build its service and finish its
+	// job (so its svc is initialized and active==nil) before Close() runs, so
+	// the timeout path deterministically closes it while beta stays stuck.
+	if got := waitFlushTerminal(t, mgr, jobAlpha.JobID, 2*time.Second); got == nil {
+		t.Fatalf("alpha job never started/finished: %s", jobAlpha.JobID)
+	}
+
+	start := time.Now()
+	mgr.Close()
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("Close() took %v: it hung on the stuck beta worker", elapsed)
+	}
+
+	// alpha finished (its worker is idle) -> its service is closed.
+	alphaSvc.AssertNumberOfCalls(t, "Close", 1)
+	// beta is stuck mid-Flush -> its live service is NOT closed beneath it.
+	betaSvc.AssertNotCalled(t, "Close", mock.Anything)
 }
