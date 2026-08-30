@@ -25,7 +25,16 @@ func newStagingService(t *testing.T, uploadsDir string) (*vaultService, *fakeSDK
 		t.Fatalf("OpenDB: %v", err)
 	}
 	fake := &fakeSDK{t: t}
-	return &vaultService{db: db, sdk: fake, appKey: types.PrivateKey{}, uploadsDir: uploadsDir}, fake
+	svc := &vaultService{db: db, sdk: fake, appKey: types.PrivateKey{}, uploadsDir: uploadsDir}
+	// Close the SQLite connection before TempDir cleanup: on Windows a TempDir
+	// cannot be removed while its DB file is still open, which failed every
+	// staging test on the CI Windows runner.
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	return svc, fake
 }
 
 func TestStage_PutReturnsPendingAndStagesBytes(t *testing.T) {
