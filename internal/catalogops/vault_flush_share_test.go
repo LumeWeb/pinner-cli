@@ -3,6 +3,7 @@ package catalogops
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -83,27 +84,37 @@ func TestVaultShareDurable_IssuesLink(t *testing.T) {
 	msvc.AssertCalled(t, "Share", mock.Anything, "vault:/docs/a.txt", mock.Anything)
 }
 
-// TestVaultFlushAll verifies vault_flush without a path drains every staged file.
+// TestVaultFlushAll verifies vault_flush without a path is non-blocking: it
+// returns accepted immediately and launches a background Flush of every staged
+// file (never touching FlushPath).
 func TestVaultFlushAll(t *testing.T) {
 	msvc := vault.NewMockVaultService(t)
-	msvc.On("Flush", mock.Anything).Return(2, nil)
+	done := make(chan struct{})
+	msvc.On("Flush", mock.Anything).Return(2, nil).Run(func(mock.Arguments) { close(done) })
 
 	res, err := newVaultOps(t, msvc, "vault_flush", map[string]any{"profile": "work"})
 	require.NoError(t, err)
 	fr, ok := res.(*VaultFlushResult)
 	require.True(t, ok, "want *VaultFlushResult, got %T", res)
-	require.Equal(t, 2, fr.Flushed)
+	require.Equal(t, "accepted", fr.Status, "flush must return accepted, not block")
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("background flush did not run")
+	}
 	msvc.AssertCalled(t, "Flush", mock.Anything)
 	msvc.AssertNotCalled(t, "FlushPath", mock.Anything, mock.Anything)
 }
 
-// TestVaultFlushSinglePath verifies vault_flush with a staged path flushes that
-// file (reported as 1) and never touches the all-files Flush.
+// TestVaultFlushSinglePath verifies vault_flush with a staged path is
+// non-blocking: it returns accepted and launches a background FlushPath for
+// that file (never touching the all-files Flush).
 func TestVaultFlushSinglePath(t *testing.T) {
 	msvc := vault.NewMockVaultService(t)
 	msvc.On("Stat", mock.Anything, "vault:/docs/a.txt").
 		Return(&vault.StatResult{Path: "vault:/docs/a.txt", Status: vault.FileStatusPending}, nil)
-	msvc.On("FlushPath", mock.Anything, "vault:/docs/a.txt").Return(nil)
+	done := make(chan struct{})
+	msvc.On("FlushPath", mock.Anything, "vault:/docs/a.txt").Return(nil).Run(func(mock.Arguments) { close(done) })
 
 	res, err := newVaultOps(t, msvc, "vault_flush", map[string]any{
 		"path":    "vault:/docs/a.txt",
@@ -111,12 +122,17 @@ func TestVaultFlushSinglePath(t *testing.T) {
 	})
 	require.NoError(t, err)
 	fr := res.(*VaultFlushResult)
-	require.Equal(t, 1, fr.Flushed)
+	require.Equal(t, "accepted", fr.Status, "flush must return accepted, not block")
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("background flush did not run")
+	}
 	msvc.AssertCalled(t, "FlushPath", mock.Anything, "vault:/docs/a.txt")
 	msvc.AssertNotCalled(t, "Flush", mock.Anything)
 }
 
-// TestVaultFlushDurableNoop verifies vault_flush <path> reports 0 (and skips
+// TestVaultFlushDurableNoop verifies vault_flush <path> reports idle (and skips
 // FlushPath, which would be a silent no-op) when the file is already durable.
 func TestVaultFlushDurableNoop(t *testing.T) {
 	msvc := vault.NewMockVaultService(t)
@@ -129,14 +145,14 @@ func TestVaultFlushDurableNoop(t *testing.T) {
 	})
 	require.NoError(t, err)
 	fr := res.(*VaultFlushResult)
-	require.Equal(t, 0, fr.Flushed, "already-durable file must not report a flush")
+	require.Equal(t, "idle", fr.Status, "already-durable file must report idle")
 	msvc.AssertNotCalled(t, "FlushPath", mock.Anything, mock.Anything)
 	msvc.AssertNotCalled(t, "Flush", mock.Anything)
 }
 
-// TestVaultFlushLostNoop verifies vault_flush <path> does NOT report a phantom
-// flush for a lost file: it has no staged buffer, so FlushPath would be a
-// silent no-op and must be reported as 0 flushed.
+// TestVaultFlushLostNoop verifies vault_flush <path> reports idle for a lost
+// file: it has no staged buffer, so FlushPath would be a silent no-op and no
+// job should be launched.
 func TestVaultFlushLostNoop(t *testing.T) {
 	msvc := vault.NewMockVaultService(t)
 	msvc.On("Stat", mock.Anything, "vault:/docs/a.txt").
@@ -148,7 +164,7 @@ func TestVaultFlushLostNoop(t *testing.T) {
 	})
 	require.NoError(t, err)
 	fr := res.(*VaultFlushResult)
-	require.Equal(t, 0, fr.Flushed, "lost file must not report a phantom flush")
+	require.Equal(t, "idle", fr.Status, "lost file must report idle, not accepted")
 	msvc.AssertNotCalled(t, "FlushPath", mock.Anything, mock.Anything)
 	msvc.AssertNotCalled(t, "Flush", mock.Anything)
 }
