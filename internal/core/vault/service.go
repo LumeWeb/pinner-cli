@@ -242,15 +242,17 @@ type StatResult struct {
 	ObjectID      string `json:"object_id,omitempty"`
 	Status        string `json:"status,omitempty"`      // "ok" | "pending" | "lost"
 	LostReason    string `json:"lost_reason,omitempty"` // detail when Status == "lost"
-	// FlushAttempts/FlushError surface a stuck "pending" file: how many flush
-	// passes have tried to durable-upload it and the most recent failure. They
-	// are pointer fields so a not-yet-durable file always reports them (even at
-	// zero) while durable files omit them (see flushVisibility).
-	FlushAttempts *int           `json:"flush_attempts,omitempty"`
-	FlushError    *string        `json:"flush_error,omitempty"`
-	CreatedAt     string         `json:"created_at"`
-	UpdatedAt     string         `json:"updated_at,omitempty"`
-	Metadata      map[string]any `json:"metadata,omitempty"`
+	// FlushAttempts/FlushError/FlushStartedAt surface a stuck "pending" file:
+	// how many flush passes have tried to durable-upload it, the most recent
+	// failure, and when the current attempt began. They are pointer fields so a
+	// not-yet-durable file always reports them (even at zero) while durable
+	// files omit them (see flushVisibility).
+	FlushAttempts  *int           `json:"flush_attempts,omitempty"`
+	FlushError     *string        `json:"flush_error,omitempty"`
+	FlushStartedAt *string        `json:"flush_started_at,omitempty"` // RFC3339; begin of current attempt
+	CreatedAt      string         `json:"created_at"`
+	UpdatedAt      string         `json:"updated_at,omitempty"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
 	// Tags are the file's first-class tags (normalized, most-recently used not
 	// ranked here; they surface the live set). Empty when the file has none.
 	Tags []string `json:"tags,omitempty"`
@@ -268,12 +270,19 @@ type StatResult struct {
 // count or empty error — so a polling agent always sees the file's flush state.
 // Once the file is durable it returns nil pointers, letting omitempty drop the
 // fields from the payload. A failed file therefore always surfaces its error.
-func flushVisibility(status string, attempts int, flushErr string) (*int, *string) {
+func flushVisibility(status string, attempts int, flushErr string, startedAt ...string) (*int, *string, *string) {
 	if status == FileStatusDurable || status == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 	a, e := attempts, flushErr
-	return &a, &e
+	st := ""
+	if len(startedAt) > 0 {
+		st = startedAt[0]
+	}
+	// Always return a non-nil pointer for a not-yet-durable file (even an empty
+	// string) so a polling agent sees the field and can tell "never started"
+	// (empty) from "in progress" (a timestamp), mirroring attempts/error.
+	return &a, &e, &st
 }
 
 // SearchItem is one file result from Search. It carries a full vault path and
@@ -286,13 +295,15 @@ type SearchItem struct {
 	ContentDigest string `json:"content_digest,omitempty"`
 	ObjectID      string `json:"object_id,omitempty"`
 	Status        string `json:"status,omitempty"`
-	// FlushAttempts/FlushError surface a stuck "pending" file (see StatResult).
-	FlushAttempts *int           `json:"flush_attempts,omitempty"`
-	FlushError    *string        `json:"flush_error,omitempty"`
-	CreatedAt     string         `json:"created_at"`
-	UpdatedAt     string         `json:"updated_at,omitempty"`
-	Tags          []string       `json:"tags,omitempty"`
-	Metadata      map[string]any `json:"metadata,omitempty"`
+	// FlushAttempts/FlushError/FlushStartedAt surface a stuck "pending" file
+	// (see StatResult).
+	FlushAttempts  *int           `json:"flush_attempts,omitempty"`
+	FlushError     *string        `json:"flush_error,omitempty"`
+	FlushStartedAt *string        `json:"flush_started_at,omitempty"`
+	CreatedAt      string         `json:"created_at"`
+	UpdatedAt      string         `json:"updated_at,omitempty"`
+	Tags           []string       `json:"tags,omitempty"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
 	// Source, Host, Agent are the normalized write-context columns (which
 	// frontend/host/creator wrote the object), surfaced for filtering/filtering
 	// feedback. Empty when the object carries no write-context metadata.
@@ -303,12 +314,17 @@ type SearchItem struct {
 
 // VerifyResult is the output of Verify.
 //
-// DigestVerified is a tri-state that prevents conflation of "never checked"
+// DigestVerified is a state that prevents conflation of "never checked"
 // with "failed":
-//   - "verified"   — a digest is recorded and matches (shallow or deep).
-//   - "unverified" — no digest has been recorded yet. The file may be fine;
-//     the caller should deep-verify or get the file to populate it.
-//   - "mismatch"   — a digest is recorded but does not match.
+//   - "verified"       — a digest is recorded and matches (shallow or deep).
+//   - "unverified"     — a digest is recorded locally (or a cold cache) but
+//     there is no second digest to compare yet.
+//   - "mismatch"       — a digest is recorded but does not match.
+//   - "not_applicable" — no digest has ever been recorded (e.g. an accepted
+//     share or vault_send before first decrypt/get/deep-verify). The file may
+//     be perfectly fine; there is literally nothing to compare. NOT a failure:
+//     this is the "accepted + pinned, not yet decrypted" success-adjacent state
+//     that agents must not treat as a failed pin.
 //
 // DigestMatch is a tri-state pointer: true when both hashes exist and agree,
 // false when both exist and disagree, and nil when there is no second hash to
@@ -318,8 +334,8 @@ type SearchItem struct {
 type VerifyResult struct {
 	Path           string `json:"path"`
 	ContentDigest  string `json:"content_digest"`
-	DigestMatch    *bool  `json:"digest_match"`    // nil = no digest to compare (unverified)
-	DigestVerified string `json:"digest_verified"` // "verified" | "unverified" | "mismatch"
+	DigestMatch    *bool  `json:"digest_match"`    // nil = no digest to compare (unverified / not_applicable)
+	DigestVerified string `json:"digest_verified"` // "verified" | "unverified" | "mismatch" | "not_applicable"
 	ObjectExists   bool   `json:"object_exists"`
 	ObjectID       string `json:"object_id"`
 	// Pending marks a not-yet-durable file (staged locally, no Sia object yet).

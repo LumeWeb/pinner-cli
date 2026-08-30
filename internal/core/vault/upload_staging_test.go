@@ -304,6 +304,19 @@ func TestFlushVisibility_RecordsAndClearsError(t *testing.T) {
 		t.Fatalf("status after failure = %q, want failed", row.Status)
 	}
 
+	// markFlushing records when the current attempt began so a swarm can detect
+	// a hung pin (attempts alone stuck at 1 for a long host upload).
+	svc.markFlushing(&rec)
+	if err := svc.db.First(&row, rec.ID).Error; err != nil {
+		t.Fatalf("reload after markFlushing: %v", err)
+	}
+	if row.FlushStartedAt == "" {
+		t.Fatal("flush_started_at must be set when a flush worker starts")
+	}
+	if _, err := time.Parse(time.RFC3339, row.FlushStartedAt); err != nil {
+		t.Fatalf("flush_started_at %q must be RFC3339: %v", row.FlushStartedAt, err)
+	}
+
 	// A successful flush must clear the visibility and mark the row durable.
 	if err := svc.finalizeDurable(&row, "abc123"); err != nil {
 		t.Fatalf("finalizeDurable: %v", err)
@@ -315,8 +328,8 @@ func TestFlushVisibility_RecordsAndClearsError(t *testing.T) {
 	if done.Status != FileStatusOK {
 		t.Fatalf("status = %q, want ok", done.Status)
 	}
-	if done.FlushAttempts != 0 || done.FlushError != "" {
-		t.Fatalf("clear on success failed: attempts=%d error=%q", done.FlushAttempts, done.FlushError)
+	if done.FlushAttempts != 0 || done.FlushError != "" || done.FlushStartedAt != "" {
+		t.Fatalf("clear on success failed: attempts=%d error=%q started_at=%q", done.FlushAttempts, done.FlushError, done.FlushStartedAt)
 	}
 }
 
@@ -340,29 +353,35 @@ func TestStatJSONSurfacesFlushVisibilityOnPending(t *testing.T) {
 	}
 
 	// Pending with a recorded failure: fields present with values.
-	failAttempts, failErr := flushVisibility(FileStatusPending, 3, "host pin timed out")
+	failAttempts, failErr, _ := flushVisibility(FileStatusPending, 3, "host pin timed out")
 	failed := marshal(StatResult{Type: "file", Status: FileStatusPending, FlushAttempts: failAttempts, FlushError: failErr})
 	if failed["flush_attempts"].(float64) != 3 || failed["flush_error"] != "host pin timed out" {
 		t.Errorf("pending-failed payload must carry values, got %v", failed)
 	}
 
 	// Pending, nothing failed yet: fields must STILL be present (at zero).
-	zeroAttempts, zeroErr := flushVisibility(FileStatusPending, 0, "")
-	pending := marshal(StatResult{Type: "file", Status: FileStatusPending, FlushAttempts: zeroAttempts, FlushError: zeroErr})
+	zeroAttempts, zeroErr, zeroAt := flushVisibility(FileStatusPending, 0, "", "2026-08-30T00:00:00Z")
+	pending := marshal(StatResult{Type: "file", Status: FileStatusPending, FlushAttempts: zeroAttempts, FlushError: zeroErr, FlushStartedAt: zeroAt})
 	if _, ok := pending["flush_attempts"]; !ok {
 		t.Errorf("pending payload must carry flush_attempts, got %v", pending)
 	}
 	if _, ok := pending["flush_error"]; !ok {
 		t.Errorf("pending payload must carry flush_error, got %v", pending)
 	}
+	if pending["flush_started_at"] != "2026-08-30T00:00:00Z" {
+		t.Errorf("pending payload must carry flush_started_at, got %v", pending)
+	}
 
 	// Durable: fields omitted.
-	okAttempts, okErr := flushVisibility(FileStatusOK, 0, "")
-	ok := marshal(StatResult{Type: "file", Status: FileStatusOK, FlushAttempts: okAttempts, FlushError: okErr})
+	okAttempts, okErr, okAt := flushVisibility(FileStatusOK, 0, "", "")
+	ok := marshal(StatResult{Type: "file", Status: FileStatusOK, FlushAttempts: okAttempts, FlushError: okErr, FlushStartedAt: okAt})
 	if _, present := ok["flush_attempts"]; present {
 		t.Errorf("ok payload must omit flush_attempts, got %v", ok)
 	}
 	if _, present := ok["flush_error"]; present {
 		t.Errorf("ok payload must omit flush_error, got %v", ok)
+	}
+	if _, present := ok["flush_started_at"]; present {
+		t.Errorf("ok payload must omit flush_started_at, got %v", ok)
 	}
 }

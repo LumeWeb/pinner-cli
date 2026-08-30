@@ -25,6 +25,10 @@ type FlushJob struct {
 	Status  string `json:"status"` // queued|running|done|failed
 	Flushed int    `json:"flushed,omitempty"`
 	Error   string `json:"error,omitempty"`
+	// StartedAt is the RFC3339 time the worker began processing the job ("" when
+	// still queued). It lets a swarm measure how long a running job has been in
+	// flight and fail a pin that exceeds its hang threshold.
+	StartedAt string `json:"started_at,omitempty"`
 
 	// done/doneClosed/finalized are synchronization state, guarded by the
 	// manager lock. done is closed exactly once when the job reaches a terminal
@@ -47,9 +51,9 @@ type FlushManager struct {
 	workers map[string]*profileFlushWorker
 	pending map[string][]*FlushJob // profile -> queued jobs
 	jobs    map[string]*FlushJob
-	seq      int64
-	closed   bool
-	wg       sync.WaitGroup // joins per-profile worker goroutines in Close()
+	seq     int64
+	closed  bool
+	wg      sync.WaitGroup // joins per-profile worker goroutines in Close()
 
 	// ctx/cancel is the manager's own lifetime, decoupled from any single
 	// Enqueue request context. Workers run on it so a request returning (and
@@ -206,6 +210,15 @@ func (m *FlushManager) popPending(profile string) *FlushJob {
 	return job
 }
 
+func (m *FlushManager) setStartedAt(job *FlushJob, startedAt string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if job.finalized {
+		return
+	}
+	job.StartedAt = startedAt
+}
+
 func (m *FlushManager) setStatus(job *FlushJob, status string, flushed int, errMsg string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -239,6 +252,7 @@ func (m *FlushManager) process(ctx context.Context, w *profileFlushWorker, job *
 	m.setActive(w, job)
 	defer m.setActive(w, nil)
 	m.setStatus(job, FlushJobRunning, 0, "")
+	m.setStartedAt(job, time.Now().UTC().Format(time.RFC3339))
 	svc, err := w.service(ctx)
 	if err != nil {
 		m.setStatus(job, FlushJobFailed, 0, err.Error())

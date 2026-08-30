@@ -2,6 +2,7 @@ package catalogops
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -65,6 +66,9 @@ func TestCrossProfileProbe_ProfileRequiredRule(t *testing.T) {
 		op    string
 		input map[string]any
 	}{
+		{"vault_status", map[string]any{}},
+		{"vault_ls", map[string]any{}},
+		{"vault_sync", map[string]any{}},
 		{"vault_stat", map[string]any{"path": "vault:/docs/a.txt"}},
 		{"vault_verify", map[string]any{"path": "vault:/docs/a.txt"}},
 		{"vault_search", map[string]any{}},
@@ -186,4 +190,80 @@ func TestCrossProfileProbe_AcceptStatePinned(t *testing.T) {
 	require.Equal(t, "not_applicable", ar.DigestVerified)
 	require.Equal(t, destPath, ar.Path)
 	require.Equal(t, "objAcc", ar.ObjectKey)
+}
+
+// TestCrossProfileProbe_SendRequiresAllFourArgs verifies vault_send's input
+// schema requires path, from_profile, to_profile, and dest_path (the tool
+// description claims all four). This guards the leftover where the description
+// promised four required args but the schema only enforced path + dest_path.
+func TestCrossProfileProbe_SendRequiresAllFourArgs(t *testing.T) {
+	svcA := vault.NewMockVaultService(t)
+	svcB := vault.NewMockVaultService(t)
+	deps := crossProfileProbeDeps(svcA, svcB)
+
+	// Missing from_profile and to_profile must be rejected by required-arg
+	// validation (like path/dest_path), never a silent invalid_profiles fallback
+	// and never a service hit.
+	_, err := invokeProbe(t, deps, "vault_send", map[string]any{
+		"path":      "vault:/docs/a.txt",
+		"dest_path": "vault:/docs/b.txt",
+	})
+	require.Error(t, err, "vault_send without from_profile/to_profile must fail required-arg validation")
+	require.Contains(t, err.Error(), "from_profile")
+	svcA.AssertNotCalled(t, "Stat", mock.Anything, mock.Anything)
+	svcB.AssertNotCalled(t, "ShareAccept", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+}
+
+// TestCrossProfileProbe_VerifyAfterSendIsNotAppplicable pins the leftover that
+// vault_verify must report digest_verified "not_applicable" (not "unverified")
+// for a freshly sent/accepted object whose digest has not been recorded yet.
+// Accept-state pinned is the success signal; verify must not read as a failure.
+func TestCrossProfileProbe_VerifyAfterSendIsNotAppplicable(t *testing.T) {
+	svcA := vault.NewMockVaultService(t)
+	svcB := vault.NewMockVaultService(t)
+	deps := crossProfileProbeDeps(svcA, svcB)
+
+	path := "vault:/docs/sent.txt"
+	// A pinned object with no recorded digest (accepted, not yet decrypted).
+	svcB.On("Verify", mock.Anything, path).
+		Return(&vault.VerifyResult{
+			Path:           path,
+			ObjectExists:   true,
+			DigestVerified: vault.DigestVerifiedNotApplicable,
+		}, nil)
+
+	res, err := invokeProbe(t, deps, "vault_verify", map[string]any{
+		"path":    path,
+		"profile": "beta",
+	})
+	require.NoError(t, err)
+	vr, ok := res.(*vault.VerifyResult)
+	require.True(t, ok, "want *vault.VerifyResult, got %T", res)
+	require.Equal(t, "not_applicable", vr.DigestVerified,
+		"verify on a freshly sent path must not be 'unverified'")
+}
+
+// TestCrossProfileProbe_SendSchemaRequiresAllFourArgs verifies the vault_send
+// MCP JSON schema's required list contains all four args (path, from_profile,
+// to_profile, dest_path) — matching the tool description. This pins the leftover
+// where the schema only required path + dest_path.
+func TestCrossProfileProbe_SendSchemaRequiresAllFourArgs(t *testing.T) {
+	svcA := vault.NewMockVaultService(t)
+	svcB := vault.NewMockVaultService(t)
+	deps := crossProfileProbeDeps(svcA, svcB)
+
+	cat := catalog.NewCatalog()
+	for _, op := range VaultOperations(deps) {
+		if err := cat.Add(op); err != nil {
+			t.Fatalf("Add(%q): %v", op.Name(), err)
+		}
+	}
+	td, ok := cat.Describe("vault_send", catalog.ActorModel)
+	require.True(t, ok, "vault_send not described")
+	var parsed struct {
+		Required []string `json:"required"`
+	}
+	require.NoError(t, json.Unmarshal(td.InputSchema, &parsed))
+	require.ElementsMatch(t, []string{"path", "from_profile", "to_profile", "dest_path"}, parsed.Required,
+		"vault_send schema must require all four args, matching its description")
 }
