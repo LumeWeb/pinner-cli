@@ -829,3 +829,65 @@ func TestCIMDCacheEvictionInReap(t *testing.T) {
 	o.mu.Unlock()
 	assert.False(t, registeredStill, "expired CIMD client registration should be reaped")
 }
+
+// TestAccessTokenSurvivesServerRestart verifies the Grok fix: a connector (Grok's
+// rmcp/connectors-manager) that does NOT refresh on a 401 must be able to resume
+// after the server process restarts, because its still-unexpired access token is
+// persisted and reloaded into the fresh process. If access tokens were only
+// in-memory, the restart would wipe them and Grok would be stuck at "auth
+// required" until a full re-authorize, whereas Claude/ChatGPT would recover by
+// refreshing.
+func TestAccessTokenSurvivesServerRestart(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "oauth.db")
+
+	newServer := func() *OAuthServer {
+		store, err := oauthstore.Open(path, 30*24*time.Hour)
+		require.NoError(t, err)
+		return NewOAuthServer(testSecret, "https://mcp.example.com", store)
+	}
+
+	o := newServer()
+	o.clients["cli"] = oauthClient{redirectURIs: []string{"http://localhost/cb"}}
+
+	// Complete an authorization-code exchange, capturing the access token.
+	verifier, challenge := testPKCE()
+	const res = "https://mcp.example.com/mcp"
+	rec := httptest.NewRecorder()
+	o.AuthorizePOST(rec, formPost(map[string]string{
+		"response_type": "code", "client_id": "cli", "redirect_uri": "http://localhost/cb",
+		"password": testSecret, "code_challenge": challenge, "code_challenge_method": "S256", "resource": res,
+	}))
+	require.Equal(t, http.StatusFound, rec.Code)
+	loc, _ := url.Parse(rec.Header().Get("Location"))
+	code := loc.Query().Get("code")
+
+	rec = httptest.NewRecorder()
+	o.TokenHandler(rec, formPost(map[string]string{
+		"grant_type": "authorization_code", "code": code, "client_id": "cli",
+		"redirect_uri": "http://localhost/cb", "code_verifier": verifier, "resource": res,
+	}))
+	require.Equal(t, http.StatusOK, rec.Code)
+	var tok map[string]any
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&tok))
+	access := tok["access_token"].(string)
+	require.NotEmpty(t, access)
+	require.True(t, o.validToken(access), "issued token must be valid in the issuing server")
+
+	// Simulate the server process dying (closes the durable store).
+	o.Stop()
+
+	// A fresh process on the same DB must still accept the still-valid token.
+	o2 := newServer()
+	defer o2.Stop()
+	require.True(t, o2.validToken(access), "persisted access token must survive a restart")
+
+	bound := o2.OfficialMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	rec = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req.Header.Set("Authorization", "Bearer "+access)
+	bound.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code, "reloaded access token must authorize the MCP endpoint")
+}

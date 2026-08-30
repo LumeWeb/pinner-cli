@@ -689,7 +689,7 @@ credential resolution, provider deep-links) lives in its own package,
 
 `--oauth` is explicit. Without it, `--auth-token` enables only direct `Authorization: Bearer <auth-token>` validation. With it, the server exposes RFC 9728 protected-resource metadata, RFC 8414 authorization-server metadata, RFC 7591 client registration, PKCE authorization-code exchange, and refresh tokens. The shared `--auth-token` is entered on the authorization page as the password.
 
-Use `--public-url https://your-public-host.example` when the advertised URL cannot be derived from the tunnel. The public URL must be reachable by the MCP client for discovery, `/oauth/register`, `/oauth/token`, and the authorization flow. The server stores registrations and tokens in memory; restarting it requires clients to authorize again.
+Use `--public-url https://your-public-host.example` when the advertised URL cannot be derived from the tunnel. The public URL must be reachable by the MCP client for discovery, `/oauth/register`, `/oauth/token`, and the authorization flow. Client registrations, refresh tokens, and access tokens are stored durably (embedded SQLite), so after a restart a client can resume with an unexpired token or by refreshing — a full re-authorize is only needed once a token has genuinely expired. (Access tokens are persisted specifically so connectors that don't refresh on a 401, notably Grok's, survive a server restart.)
 
 For ChatGPT's OpenAI Secure MCP Tunnel, use an OpenAI-managed tunnel ID and runtime API key:
 

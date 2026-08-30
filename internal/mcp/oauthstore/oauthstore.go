@@ -5,8 +5,10 @@
 // invalidated the instant they are presented (which was breaking Anthropic's
 // Claude connector with "invalid_grant").
 //
-// Auth codes stay in-memory in the server (10-minute TTL, single-use); only
-// clients and refresh tokens need durability here.
+// Auth codes stay in-memory in the server (10-minute TTL, single-use). Clients,
+// refresh tokens, and access tokens need durability here — access tokens in
+// particular so a connector that does not refresh on 401 (Grok's rmcp) can
+// resume with a still-valid token after a restart.
 package oauthstore
 
 import (
@@ -61,6 +63,22 @@ type RefreshToken struct {
 
 // TableName returns the refresh-token table name.
 func (RefreshToken) TableName() string { return "oauth_refresh_tokens" }
+
+// AccessToken is a persisted short-lived access token. Access tokens survive
+// process restarts so a connector that legitimately holds an unexpired token
+// (notably Grok's rmcp/connectors-manager, which does not refresh on 401) is
+// not forced through a fresh authorization-code login purely because the
+// server restarted and wiped its in-memory token map. They expire naturally
+// and are reaped alongside the refresh tokens.
+type AccessToken struct {
+	Token     string    `gorm:"primaryKey;column:token"`
+	ClientID  string    `gorm:"column:client_id"`
+	Resource  string    `gorm:"column:resource"`
+	ExpiresAt time.Time `gorm:"column:expires_at"`
+}
+
+// TableName returns the access-token table name.
+func (AccessToken) TableName() string { return "oauth_access_tokens" }
 
 // Store wraps the SQLite database and exposes the operations the OAuth server
 // needs. It is goroutine-safe through GORM's connection pool.
@@ -305,11 +323,46 @@ func (s *Store) revokeChain(root string) error {
 	return s.db.Model(&RefreshToken{}).Where("chain_root = ?", root).Update("revoked", true).Error
 }
 
-// Reap deletes expired refresh tokens and stale clients. Called periodically
-// by the server's reaper.
+// ---- access tokens ----
+
+// SaveAccessToken persists an issued access token and its expiry so a
+// connector holding it can resume after a restart (the expiration is what
+// bounds the token's lifetime; see package docs).
+func (s *Store) SaveAccessToken(token, clientID, resource string, expiresAt time.Time) error {
+	return s.db.Save(&AccessToken{Token: token, ClientID: clientID, Resource: resource, ExpiresAt: expiresAt}).Error
+}
+
+// AccessTokens returns every persisted access token keyed by its token value.
+// The caller filters by expiry so the server can apply its own clock-skew
+// grace on reload; the raw rows are returned so decision stays on the server.
+func (s *Store) AccessTokens() (map[string]time.Time, error) {
+	var rows []AccessToken
+	if err := s.db.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string]time.Time, len(rows))
+	for _, r := range rows {
+		out[r.Token] = r.ExpiresAt
+	}
+	return out, nil
+}
+
+// DeleteAccessToken removes a single access token from the store. It is
+// called when the running server evicts a token from its in-memory map so a
+// restart does not resurrect a token the server has already invalidated.
+func (s *Store) DeleteAccessToken(token string) error {
+	return s.db.Delete(&AccessToken{}, "token = ?", token).Error
+}
+
+// Reap deletes expired refresh and access tokens and stale clients. Called
+// periodically by the server's reaper.
 func (s *Store) Reap() error {
 	now := time.Now()
 	err := s.db.Where("expires_at < ?", now).Delete(&RefreshToken{}).Error
+	if err != nil {
+		return err
+	}
+	err = s.db.Where("expires_at < ?", now).Delete(&AccessToken{}).Error
 	if err != nil {
 		return err
 	}
