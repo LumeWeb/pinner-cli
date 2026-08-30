@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -290,6 +291,182 @@ func TestOAuthTokenRejectsBadGrant(t *testing.T) {
 	rec := httptest.NewRecorder()
 	o.TokenHandler(rec, formPost(map[string]string{"grant_type": "authorization_code", "code": "nope"}))
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// TestOAuthMiddlewareEnhanced401 verifies the bearer middleware emits a full
+// RFC 6750 invalid_token challenge (error attribute in the WWW-Authenticate
+// header plus a JSON body) rather than the SDK's bare resource_metadata
+// challenge + plain-text body. Connectors that do not transparently refresh
+// (Grok's rmcp) key off the error attribute to decide to refresh instead of
+// treating the 401 as fatal.
+func TestOAuthMiddlewareEnhanced401(t *testing.T) {
+	o := newTestOAuth(t)
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NotNil(t, auth.TokenInfoFromContext(r.Context()), "valid token must bind TokenInfo for the SDK session seam")
+		w.WriteHeader(http.StatusOK)
+	})
+	bound := o.OfficialMiddleware(inner)
+
+	for name, req := range map[string]*http.Request{
+		"missing": httptest.NewRequest(http.MethodPost, "/mcp", nil),
+		"invalid": func() *http.Request {
+			r := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+			r.Header.Set("Authorization", "Bearer notissued")
+			return r
+		}(),
+	} {
+		rec := httptest.NewRecorder()
+		bound.ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusUnauthorized, rec.Code, name)
+		challenge := rec.Header().Get("WWW-Authenticate")
+		assert.Contains(t, challenge, "resource_metadata=", name)
+		assert.Contains(t, challenge, "oauth-protected-resource", name)
+		assert.Contains(t, challenge, `error="invalid_token"`, name)
+
+		assert.Equal(t, "application/json", rec.Header().Get("Content-Type"), name)
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body), name)
+		assert.Equal(t, "invalid_token", body["error"], name)
+		// No trailing plain-text bytes may leak past the JSON body (a malformed
+		// "{...}text" body would fail the Unmarshal above regardless).
+	}
+}
+
+// TestOAuthChallengeWriterUnwrap verifies the enhanced-401 writer exposes the
+// underlying ResponseWriter, so http.NewResponseController can reach the real
+// http.Flusher. Without it the standalone SSE stream (GET) path stalls behind
+// OAuth with http.ErrNotSupported.
+func TestOAuthChallengeWriterUnwrap(t *testing.T) {
+	rec := httptest.NewRecorder()
+	w := &oauthChallengeWriter{ResponseWriter: rec}
+	if got := w.Unwrap(); got != http.ResponseWriter(rec) {
+		t.Fatalf("Unwrap() = %T, want %T", got, rec)
+	}
+}
+
+// TestOAuthMiddlewareFlushReachable drives a valid-token request through the
+// enhanced-401 middleware and confirms the handler can still Flush the SSE
+// stream via http.NewResponseController. This is the SSE path Kody flagged:
+// without Unwrap, Flush behind OAuth returns http.ErrNotSupported.
+func TestOAuthMiddlewareFlushReachable(t *testing.T) {
+	o := newTestOAuth(t)
+	o.clockSkew = 0
+	o.mu.Lock()
+	access := "valid-token-for-flush"
+	o.tokens[access] = time.Now().Add(time.Hour)
+	o.mu.Unlock()
+
+	var flushErr error
+	bound := o.OfficialMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rc := http.NewResponseController(w)
+		flushErr = rc.Flush()
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req.Header.Set("Authorization", "Bearer "+access)
+	rec := httptest.NewRecorder()
+	bound.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.NoError(t, flushErr, "Flush must succeed on the valid-token path (SSE must not stall)")
+}
+
+// TestOAuthMiddlewareDownstream401Untouched confirms a downstream handler's
+// own 401 (one that does not carry a bearer challenge) passes through the
+// enhanced-401 writer with its original status, body, and content type — it
+// must NOT be relabeled as an invalid_token OAuth challenge.
+func TestOAuthMiddlewareDownstream401Untouched(t *testing.T) {
+	o := newTestOAuth(t)
+	o.mu.Lock()
+	o.tokens["ok"] = time.Now().Add(time.Hour)
+	o.mu.Unlock()
+
+	// A valid bearer passes the auth gate; the downstream handler then returns
+	// its own non-OAuth 401 (e.g. an inner resource rejecting for its own
+	// reason). Because it never sets a Bearer WWW-Authenticate challenge, it
+	// must pass through untouched.
+	bound := o.OfficialMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		http.Error(w, "resource level failure", http.StatusUnauthorized)
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req.Header.Set("Authorization", "Bearer ok")
+	rec := httptest.NewRecorder()
+	bound.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.NotContains(t, rec.Header().Get("WWW-Authenticate"), "invalid_token")
+	assert.Contains(t, rec.Body.String(), "resource level failure")
+	assert.NotContains(t, rec.Body.String(), `"error"`)
+}
+
+// TestOAuthMiddleware401ContentLengthCleared verifies the stale Content-Length
+// sized for the wrapped plain-text body is cleared when the 401 is upgraded to
+// JSON, so the response is not truncated to the shorter JSON body.
+func TestOAuthMiddleware401ContentLengthCleared(t *testing.T) {
+	o := newTestOAuth(t)
+	bound := o.OfficialMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	rec := httptest.NewRecorder()
+	bound.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+
+	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "invalid_token", body["error"])
+	// The body must parse exactly; any stale Content-Length must equal the
+	// actual JSON byte length (the wrapped plain-text body was shorter).
+	if cl := rec.Header().Get("Content-Length"); cl != "" {
+		want := len(rec.Body.String())
+		got, err := strconv.Atoi(cl)
+		require.NoError(t, err)
+		assert.Equal(t, want, got, "Content-Length must match the emitted JSON body")
+	}
+}
+
+// TestOAuthMiddleware401DoesNotBreakValidTokens confirms a valid token still
+// reaches the handler with TokenInfo bound despite the enhanced-401 writer,
+// so the SDK session user-binding keeps working.
+func TestOAuthMiddleware401DoesNotBreakValidTokens(t *testing.T) {
+	o := newTestOAuth(t)
+	verifier, challenge := testPKCE()
+	const res = "https://mcp.example.com/mcp"
+
+	rec := httptest.NewRecorder()
+	o.AuthorizePOST(rec, formPost(map[string]string{
+		"response_type": "code", "client_id": "cli", "redirect_uri": "http://localhost/cb",
+		"password": testSecret, "code_challenge": challenge, "code_challenge_method": "S256", "resource": res,
+	}))
+	require.Equal(t, http.StatusFound, rec.Code)
+	loc, _ := url.Parse(rec.Header().Get("Location"))
+	code := loc.Query().Get("code")
+	require.NotEmpty(t, code)
+
+	rec = httptest.NewRecorder()
+	o.TokenHandler(rec, formPost(map[string]string{
+		"grant_type": "authorization_code", "code": code, "client_id": "cli",
+		"redirect_uri": "http://localhost/cb", "code_verifier": verifier, "resource": res,
+	}))
+	require.Equal(t, http.StatusOK, rec.Code)
+	var tok map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &tok))
+	access := tok["access_token"].(string)
+
+	bound := o.OfficialMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		info := auth.TokenInfoFromContext(r.Context())
+		require.NotNil(t, info)
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	req.Header.Set("Authorization", "Bearer "+access)
+	rec = httptest.NewRecorder()
+	bound.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
 func TestAllowedRedirect(t *testing.T) {

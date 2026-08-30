@@ -152,7 +152,13 @@ func NewOAuthServer(secret, BaseURL string, store *oauthstore.Store) *OAuthServe
 		clients:  make(map[string]oauthClient),
 		codes:    make(map[string]authorizationCode),
 		tokens:   make(map[string]time.Time),
-		tokenTTL:  time.Hour,
+		// Access tokens outlive the 1h default because some MCP connectors
+		// (Grok's rmcp/connectors-manager) do not transparently refresh an
+		// expired access token on a 401 — they treat it as fatal and force a
+		// full re-authorize. A 24h TTL (vs the 30d refresh token) keeps a
+		// token valid across a typical work session so a non-refreshing client
+		// does not hit the 401 path in normal use.
+		tokenTTL: 24 * time.Hour,
 		codeTTL:   10 * time.Minute,
 		clockSkew: 2 * time.Minute,
 		done:      make(chan struct{}),
@@ -903,10 +909,100 @@ func (o *OAuthServer) OfficialMiddleware(next http.Handler) http.Handler {
 		o.mu.Unlock()
 		return nil, fmt.Errorf("%w: the access token is unknown or has been revoked", auth.ErrInvalidToken)
 	}
-	return auth.RequireBearerToken(verifier, &auth.RequireBearerTokenOptions{
+	protected := auth.RequireBearerToken(verifier, &auth.RequireBearerTokenOptions{
 		ResourceMetadataURL: strings.TrimRight(o.BaseURL, "/") + "/.well-known/oauth-protected-resource",
 		ClockSkew:           o.clockSkew,
 	})(next)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		protected.ServeHTTP(&oauthChallengeWriter{
+			ResponseWriter:   w,
+			status:           0,
+			metadataURL:      strings.TrimRight(o.BaseURL, "/") + "/.well-known/oauth-protected-resource",
+			errorDescription: "the access token is invalid, expired, or has been revoked",
+		}, r)
+	})
+}
+
+// oauthChallengeWriter upgrades the go-sdk's bearer auth 401 into a full
+// RFC 6750 invalid_token challenge. The SDK's RequireBearerToken only emits a
+// bare `resource_metadata` attribute on the WWW-Authenticate header and a
+// plain-text body. Some MCP connectors (notably Grok's rmcp) key off the
+// `error="invalid_token"` parameter to decide whether to refresh an access
+// token instead of treating the 401 as fatal, so the challenge must carry it.
+// Valid-token requests pass through untouched (headers committed at the real
+// WriteHeader), so the SDK's TokenInfo context binding still works.
+type oauthChallengeWriter struct {
+	http.ResponseWriter
+	status           int
+	metadataURL      string
+	errorDescription string
+	body             []byte // pre-marshaled JSON error body for an upgraded 401
+	upgraded         bool   // true once this 401 is a genuine bearer-auth failure
+	wrote            bool   // true once the JSON body has been written
+}
+
+// isOAuthBearerFailure reports whether the response is a bearer-auth 401 rather
+// than a downstream 401. The go-sdk's RequireBearerToken sets a
+// `WWW-Authenticate: Bearer resource_metadata="..."` challenge only when it
+// rejects the request (missing or invalid bearer token); downstream handlers'
+// own 401s carry no such header. Only genuine auth failures should be upgraded
+// to an invalid_token challenge.
+func isOAuthBearerFailure(h http.Header) bool {
+	for _, v := range h.Values("WWW-Authenticate") {
+		lower := strings.ToLower(v)
+		if strings.Contains(lower, "bearer") && strings.Contains(lower, "resource_metadata=") {
+			return true
+		}
+	}
+	return false
+}
+
+// Unwrap exposes the wrapped ResponseWriter so http.NewResponseController can
+// reach the underlying http.Flusher. The standalone SSE stream (GET) path in
+// sdk.StreamableHTTPHandler flushes via NewResponseController; without Unwrap
+// a flush behind OAuth returns ErrNotSupported and the stream stalls.
+func (w *oauthChallengeWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
+func (w *oauthChallengeWriter) WriteHeader(code int) {
+	if w.status != 0 {
+		return // headers already committed; ignore duplicates
+	}
+	w.status = code
+	if code == http.StatusUnauthorized && isOAuthBearerFailure(w.Header()) {
+		w.upgraded = true
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(
+			`Bearer resource_metadata=%q, error="invalid_token", error_description=%q`,
+			w.metadataURL, w.errorDescription))
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		// The wrapped plain-text body it was sized for no longer matches the
+		// JSON we emit; clear any stale Content-Length so the transport
+		// recomputes it from our body instead of truncating the response.
+		w.Header().Del("Content-Length")
+		if j, err := json.Marshal(map[string]string{
+			"error":             "invalid_token",
+			"error_description": w.errorDescription,
+		}); err == nil {
+			w.body = j
+		}
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *oauthChallengeWriter) Write(b []byte) (int, error) {
+	if w.upgraded {
+		if !w.wrote && len(w.body) > 0 {
+			w.wrote = true
+			return w.ResponseWriter.Write(w.body)
+		}
+		// Stop any trailing writes from the original plain-text error from
+		// leaking past the JSON body, which would yield a malformed body.
+		return len(b), nil
+	}
+	// Non-auth 401s (0xx downstream) pass through with their original body.
+	return w.ResponseWriter.Write(b)
 }
 
 func StaticBearerMiddleware(secret string, next http.Handler) http.Handler {
