@@ -76,6 +76,7 @@ func TestCommandRegistration_VaultSubcommands(t *testing.T) {
 	expectedVaultSubs := []string{
 		"create", "restore", "ls", "stat", "cat", "verify", "rm",
 		"cp", "share", "sync", "profile", "status", "cache", "forget",
+		"flush",  // vault flush (upload staged files to durable storage)
 		"version", // vault version ls/get/restore (catalog-compiled, nested)
 		"tag",     // vault tag add/rm/set/ls (catalog-compiled, nested)
 		"search",  // vault search (catalog-compiled)

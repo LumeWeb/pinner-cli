@@ -153,6 +153,49 @@ func (_c *MockVaultService_CheckReady_Call) RunAndReturn(run func(ctx context.Co
 	return _c
 }
 
+// Flush provides a mock function for the type MockVaultService
+func (_mock *MockVaultService) Flush(ctx context.Context) (int, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for Flush")
+	}
+
+	var r0 int
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) (int, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) int); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		r0 = ret.Get(0).(int)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// FlushPath provides a mock function for the type MockVaultService
+func (_mock *MockVaultService) FlushPath(ctx context.Context, vaultPath string) error {
+	ret := _mock.Called(ctx, vaultPath)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FlushPath")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, vaultPath)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
 // Close provides a mock function for the type MockVaultService
 func (_mock *MockVaultService) Close() error {
 	ret := _mock.Called()

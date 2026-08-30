@@ -47,14 +47,21 @@ type File struct {
 	// well-known keys in Metadata, reconciled on Put and sync-down like tags).
 	// They let vault_search filter by which frontend (src=mcp|cli), host
 	// platform, and creator agent wrote the object without a JSON scan.
-	Source string `gorm:"index:idx_files_source"`
-	Host   string `gorm:"index:idx_files_host"`
-	Agent  string
-	Status        string         `gorm:"column:status;default:ok"` // "ok" | "pending" | "lost"
-	LostReason    string         `gorm:"column:lost_reason;default:''"` // detail when status == "lost"
-	DeletedAt     *time.Time     // tombstone (soft delete); NULL = live
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	Source     string `gorm:"index:idx_files_source"`
+	Host       string `gorm:"index:idx_files_host"`
+	Agent      string
+	Status     string `gorm:"column:status;default:ok"`      // "ok" | "pending" | "uploaded" | "lost"
+	LostReason string `gorm:"column:lost_reason;default:''"` // detail when status == "lost"
+	// StagedPath is the on-disk plaintext buffer path for a NOT-YET-DURABLE
+	// file (status "pending" or "uploaded"). It is set the moment a Put stages
+	// bytes locally and is cleared (and the file deleted) when the object is
+	// uploaded and pinned (status "ok"). Empty for any durable file. Local
+	// reads (Get/Cat) serve from this path while the object is still pending;
+	// remote reads via share force a flush first.
+	StagedPath string     `gorm:"column:staged_path;default:''"`
+	DeletedAt  *time.Time // tombstone (soft delete); NULL = live
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 
 	// Tags is a computed (non-persisted) field carrying the file's tag set when
 	// returned by a tag-mutation operation (AddTags/RemoveTags/SetTags). It is
@@ -106,16 +113,15 @@ type FileTag struct {
 // permissionless Sia blobs, so this table is write-only append and is never
 // consulted to permit or deny a download.
 type ShareLedger struct {
-	ID               uint `gorm:"primaryKey"`
-	SharedVaultPath  string
-	ObjectKey        string
-	Expiry           *time.Time
-	TargetPrincipal  string
-	CreatedAt        time.Time
+	ID              uint `gorm:"primaryKey"`
+	SharedVaultPath string
+	ObjectKey       string
+	Expiry          *time.Time
+	TargetPrincipal string
+	CreatedAt       time.Time
 }
 
 // TableName maps ShareLedger to the singular `share_ledger` table created by
 // migration 0005. GORM's default pluralization would produce `share_ledgers`,
 // which does not match the migration's DDL.
 func (ShareLedger) TableName() string { return "share_ledger" }
-

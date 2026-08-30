@@ -142,6 +142,14 @@ func ProfileDBPath(name string) string {
 	return filepath.Join(ProfileDir(name), "cache.db")
 }
 
+// ProfileUploadsDir returns the per-profile staging directory where Put buffers
+// plaintext bytes before they are uploaded+pinned to Sia. It is sibling to the
+// cache DB so a background flush loop and the per-call Put service agree on the
+// same buffer location for a given profile.
+func ProfileUploadsDir(name string) string {
+	return filepath.Join(ProfileDir(name), "uploads")
+}
+
 // ProfileStatePath returns the state.json path for a profile.
 func ProfileStatePath(name string) string {
 	return filepath.Join(ProfileDir(name), "state.json")

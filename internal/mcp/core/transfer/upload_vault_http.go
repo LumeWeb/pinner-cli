@@ -20,9 +20,11 @@ import (
 // VaultHTTPUpload lets a sandboxed MCP App write a picked file into the
 // encrypted vault WITHOUT pushing the bytes through the MCP/LLM tool channel.
 // It mirrors the Upload coordinator used for IPFS/curl uploads, but for
-// the vault the underlying write (VaultPutHandler) is synchronous, so a
-// PUT drains the request body through that handler and returns the vault
-// result directly in the response - no async task handle or poll round-trip.
+// the vault the underlying write (VaultPutHandler) stages bytes locally and
+// returns quickly (status: pending); a PUT drains the request body through
+// that handler and returns the pending vault result directly in the response —
+// no async task handle or poll round-trip. Durability on Sia is handled by the
+// background flush (or an explicit `vault flush` / sharing the file).
 //
 // Like Upload it works over BOTH transports:
 //   - stdio mode: there is no transport server, so mint() spins up a loopback
@@ -113,8 +115,6 @@ func (vu *VaultHTTPUpload) RegisterHandlers(mux *http.ServeMux) {
 // MaxBytes returns the per-endpoint byte cap the coordinator enforces.
 func (vu *VaultHTTPUpload) MaxBytes() int64 { return vu.maxByte }
 
-
-
 // mint validates the destination vault path, registers a fresh one-time
 // vault-upload endpoint bound to it, and returns its full URL. It refuses to
 // mint outside the allowed upload scope or for a directory/traversal path, so
@@ -178,7 +178,8 @@ func ValidateVaultFilePath(vaultPath string) error {
 }
 
 // putHandler receives a Uppy XHR PUT (raw file body, formData off) and drains
-// it synchronously through the authenticated vault write.
+// it through the authenticated vault write, which stages the bytes locally and
+// returns promptly (status: pending) without blocking on a full Sia upload.
 func (vu *VaultHTTPUpload) putHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		w.Header().Set("Allow", http.MethodPut)

@@ -459,7 +459,7 @@ func TestAgentGuideWizardGuidanceIndependentOfElicitation(t *testing.T) {
 // unqualified "all mint operations poll upload_status" rule from the guide
 // summary. The summary must scope the poll to upload_file (asynchronous:
 // <host PUT> then upload_status) and state that vault_put_file mint is
-// synchronous (the PUT response is the completed vault write, no upload_status
+// non-blocking (stages locally, durability in the background; no upload_status
 // poll). The per-flow step lists confirm the same split structurally.
 func TestAgentGuideMintSummaryScopedByTool(t *testing.T) {
 	for _, p := range []*hostenv.PlatformProfile{
@@ -471,7 +471,7 @@ func TestAgentGuideMintSummaryScopedByTool(t *testing.T) {
 		summary := guide.Summary
 		require.Contains(t, summary, "upload_file is asynchronous", "%s: summary must scope the poll to upload_file", p.Transport)
 		require.Contains(t, summary, "poll upload_status", "%s: summary must keep upload_file's poll", p.Transport)
-		require.Contains(t, summary, "vault_put_file is synchronous", "%s: summary must scope vault mint as synchronous", p.Transport)
+		require.Contains(t, summary, "vault_put_file is non-blocking", "%s: summary must scope vault mint as non-blocking", p.Transport)
 		require.Contains(t, summary, "no upload_status poll", "%s: summary must reject upload_status for vault mint", p.Transport)
 		// The old unqualified rule must be gone.
 		require.NotContains(t, summary, "For source.mode=mint, PUT the file to the returned url and poll upload_status",

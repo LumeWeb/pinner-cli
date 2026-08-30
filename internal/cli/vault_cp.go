@@ -114,6 +114,7 @@ profile. The destination must not exist without --force to overwrite.
 Directory-tree copy is not yet supported (single file only).`,
 		Flags: []cli.Flag{
 			ForceFlag(),
+			&cli.BoolFlag{Name: "flush", Aliases: []string{"w"}, Usage: "wait for durable write: upload+pin this object now instead of staging it for the background flush"},
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			output := setupOutput(c)
@@ -193,18 +194,53 @@ func vaultUpload(ctx context.Context, c *cli.Command, output Output, localEp, va
 		return err
 	}
 
+	// Durability: a staged (pending) upload returns immediately. Without
+	// --flush that is the whole point — the bytes are safe locally and the
+	// background flush (or `vault flush`) packs+uploads+pins them later. With
+	// --flush we make this one durable now.
+	status, err := flushUploadDurability(ctx, c, output, svc, vaultPath, record)
+	if err != nil {
+		return err
+	}
+	objectID := record.ObjectKey
+	if status == vault.FileStatusOK && objectID == "" {
+		if st, serr := svc.Stat(ctx, vaultPath); serr == nil {
+			objectID = st.ObjectID
+		}
+	}
+
 	if output.IsJSON() {
 		output.PrintJSON(vaultCpResponse{
 			Path:          vaultEp.raw,
-			ObjectID:      record.ObjectKey,
+			ObjectID:      objectID,
 			Size:          record.Size,
 			ContentDigest: record.ContentDigest,
+			Status:        status,
 		})
 	} else {
 		fmt.Println(vaultEp.raw)
 		output.Printfln("Uploaded %d bytes → %s", record.Size, vaultEp.raw)
 	}
 	return nil
+}
+
+// flushUploadDurability makes a just-staged upload durable when the caller
+// passed --flush, or warns the user that it was left pending for the background
+// flush. It returns the resulting durability status ("ok" or "pending").
+func flushUploadDurability(ctx context.Context, c *cli.Command, output Output, svc vault.VaultService, vaultPath string, record *vault.File) (string, error) {
+	if record.Status == vault.FileStatusOK {
+		return vault.FileStatusOK, nil
+	}
+	if c.Bool("flush") {
+		if err := svc.FlushPath(ctx, vaultPath); err != nil {
+			return "", err
+		}
+		return vault.FileStatusOK, nil
+	}
+	if !output.IsJSON() {
+		output.Printfln("warning: staged %s for background upload (status: pending) — run `pinner vault flush` or re-run with --flush to make it durable on Sia now", vaultPath)
+	}
+	return vault.FileStatusPending, nil
 }
 
 func vaultDownload(ctx context.Context, c *cli.Command, output Output, vaultEp, localEp *cpEndpoint) error {
@@ -349,12 +385,26 @@ func vaultVaultCopy(ctx context.Context, c *cli.Command, output Output, srcEp, d
 		return err
 	}
 
+	// Same durability semantics as the local→vault upload: --flush makes it
+	// durable now, otherwise it is staged pending for the background flush.
+	status, err := flushUploadDurability(ctx, c, output, dstSvc, dstPath, record)
+	if err != nil {
+		return err
+	}
+	objectID := record.ObjectKey
+	if status == vault.FileStatusOK && objectID == "" {
+		if st, serr := dstSvc.Stat(ctx, dstPath); serr == nil {
+			objectID = st.ObjectID
+		}
+	}
+
 	if output.IsJSON() {
 		output.PrintJSON(vaultCpResponse{
 			Path:          dstEp.raw,
-			ObjectID:      record.ObjectKey,
+			ObjectID:      objectID,
 			Size:          record.Size,
 			ContentDigest: record.ContentDigest,
+			Status:        status,
 		})
 	} else {
 		fmt.Println(dstEp.raw)

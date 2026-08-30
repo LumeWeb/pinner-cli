@@ -56,6 +56,53 @@ func (f *fakeSDK) PinObject(_ context.Context, obj siastorage.Object) error {
 	f.pinnedMeta = obj.Metadata()
 	return nil
 }
+func (f *fakeSDK) UploadPacked(_ ...siastorage.UploadOption) (packedUpload, error) {
+	return &fakePackedUpload{sdk: f}, nil
+}
+
+// fakePackedUpload is a minimal packedUpload fake: each Add consumes the body
+// and marks a pending slot; Finalize returns one empty Object per Add so the
+// flush engine can pin + finalize rows without any real Sia geometry.
+type fakePackedUpload struct {
+	sdk      *fakeSDK
+	nAdded   int
+	bodyOK   bool
+	finalErr error
+}
+
+func (u *fakePackedUpload) Add(_ context.Context, r io.Reader) (int64, error) {
+	n, err := io.Copy(io.Discard, r)
+	u.sdk.uploadCalled = true
+	if err != nil {
+		return n, err
+	}
+	u.nAdded++
+	u.bodyOK = true
+	return n, nil
+}
+
+func (u *fakePackedUpload) Finalize(_ context.Context) ([]siastorage.Object, error) {
+	out := make([]siastorage.Object, 0, u.nAdded)
+	for i := 0; i < u.nAdded; i++ {
+		out = append(out, siastorage.NewEmptyObject())
+	}
+	return out, u.finalErr
+}
+
+func (u *fakePackedUpload) Close() error { return nil }
+
+// emptyPackedUpload is a no-op packedUpload for SDK fakes that never drive a
+// flush (status/version tests): Add consumes the body, Finalize returns no
+// objects. It satisfies sdkClient for those fakes without enabling flush.
+type emptyPackedUpload struct{}
+
+func (emptyPackedUpload) Add(_ context.Context, r io.Reader) (int64, error) {
+	return io.Copy(io.Discard, r)
+}
+func (emptyPackedUpload) Finalize(_ context.Context) ([]siastorage.Object, error) {
+	return nil, nil
+}
+func (emptyPackedUpload) Close() error { return nil }
 func (f *fakeSDK) Object(_ context.Context, _ types.Hash256) (siastorage.Object, error) {
 	if f.objErr != nil {
 		return siastorage.Object{}, f.objErr

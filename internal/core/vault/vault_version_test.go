@@ -87,6 +87,9 @@ func (f *versionSDK) PinObject(_ context.Context, obj siastorage.Object) error {
 	f.lastPinnedMeta = obj.Metadata()
 	return nil
 }
+func (f *versionSDK) UploadPacked(_ ...siastorage.UploadOption) (packedUpload, error) {
+	return emptyPackedUpload{}, nil
+}
 func (f *versionSDK) Object(_ context.Context, hash types.Hash256) (siastorage.Object, error) {
 	f.mu.Lock()
 	f.lastObjectHash = hash

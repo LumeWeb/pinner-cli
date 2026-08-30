@@ -18,16 +18,26 @@ var ErrNotFound = errors.New("vault object not found")
 // SDK (which would resurrect a closed service and touch the network again).
 var ErrVaultClosed = errors.New("vault service is closed")
 
-// File status lifecycle values (per-file recoverability on the permissionless
-// network). Default is FileStatusOK. A file transitions to FileStatusLost when
-// Verify/VerifyDeep detect the object's slabs are unrecoverable (e.g.
-// GC'd/unpinned on the indexer) and back to FileStatusOK on a subsequent
-// successful verify or re-pin. Lost files stay listed (never tombstoned).
+// File status lifecycle values. A freshly staged write is FileStatusPending
+// (bytes accepted to local disk only, NOT yet durable on Sia). FileStatusUploaded
+// means the slabs are on Sia (uploaded via a packed upload) but the object has
+// not yet been pinned (metadata saved) to this account. FileStatusOK is the
+// default durable state: the object is pinned and present. A file transitions
+// to FileStatusLost when Verify/VerifyDeep detect the object's slabs are
+// unrecoverable (e.g. GC'd/unpinned on the indexer) and back to FileStatusOK on
+// a subsequent successful verify or re-pin. Lost files stay listed (never
+// tombstoned).
 const (
 	// FileStatusOK is the default: the object is pinned and present.
 	FileStatusOK = "ok"
-	// FileStatusPending is uploaded to the indexer but not yet confirmed pinned.
+	// FileStatusPending means bytes are staged locally but not yet uploaded to
+	// Sia. The object is readable locally (from its staged buffer) but not
+	// durable; a share link requires a flush first.
 	FileStatusPending = "pending"
+	// FileStatusUploaded means slabs are on Sia but the object metadata is not
+	// yet pinned to this account (transient between a packed upload's Finalize
+	// and PinObject, or left by a crash/restart).
+	FileStatusUploaded = "uploaded"
 	// FileStatusLost means the object/slabs are terminally unrecoverable.
 	FileStatusLost = "lost"
 )
@@ -145,6 +155,18 @@ type VaultService interface {
 	// Returns the newly-created File record.
 	ShareAccept(ctx context.Context, vaultPath, shareURL, targetPrincipal string, metadata map[string]any) (*File, error)
 
+	// Flush drains every staged ("pending") File to durable storage: selected
+	// staged buffers are packed into shared slabs (UploadPacked), pinned, and
+	// the rows transitioned to "ok". Returns the number of files flushed.
+	// Used by the MCP background engine, the `vault flush` command, and share
+	// forced-flushes.
+	Flush(ctx context.Context) (int, error)
+
+	// FlushPath forces a single vault path to durable storage if it is still
+	// pending (used by CLI `--flush` and share's forced flush). It is a no-op
+	// when the file is already durable.
+	FlushPath(ctx context.Context, vaultPath string) error
+
 	// Sync pulls changes from the indexer into the local cache. It processes
 	// up to one batch of events (100) per call and always advances the cursor
 	// to the last event fetched. It returns the number of events applied to
@@ -183,7 +205,7 @@ type StatResult struct {
 	MediaType     string         `json:"media_type,omitempty"`
 	ContentDigest string         `json:"content_digest,omitempty"`
 	ObjectID      string         `json:"object_id,omitempty"`
-	Status        string         `json:"status,omitempty"`     // "ok" | "pending" | "lost"
+	Status        string         `json:"status,omitempty"`      // "ok" | "pending" | "lost"
 	LostReason    string         `json:"lost_reason,omitempty"` // detail when Status == "lost"
 	CreatedAt     string         `json:"created_at"`
 	UpdatedAt     string         `json:"updated_at,omitempty"`
@@ -198,8 +220,6 @@ type StatResult struct {
 	Host   string `json:"host,omitempty"`
 	Agent  string `json:"agent,omitempty"`
 }
-
-
 
 // SearchItem is one file result from Search. It carries a full vault path and
 // the same metadata surfaced by Stat, so the result is directly actionable.
@@ -240,7 +260,7 @@ type SearchItem struct {
 type VerifyResult struct {
 	Path           string `json:"path"`
 	ContentDigest  string `json:"content_digest"`
-	DigestMatch    *bool  `json:"digest_match"` // nil = no digest to compare (unverified)
+	DigestMatch    *bool  `json:"digest_match"`    // nil = no digest to compare (unverified)
 	DigestVerified string `json:"digest_verified"` // "verified" | "unverified" | "mismatch"
 	ObjectExists   bool   `json:"object_exists"`
 	ObjectID       string `json:"object_id"`

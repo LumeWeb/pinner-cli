@@ -30,6 +30,9 @@ func (f *statusFakeSDK) AppKey() types.PrivateKey { return types.PrivateKey{} }
 func (f *statusFakeSDK) Upload(_ context.Context, _ *siastorage.Object, _ io.Reader, _ ...siastorage.UploadOption) error {
 	return nil
 }
+func (f *statusFakeSDK) UploadPacked(_ ...siastorage.UploadOption) (packedUpload, error) {
+	return emptyPackedUpload{}, nil
+}
 func (f *statusFakeSDK) PinObject(_ context.Context, _ siastorage.Object) error { return nil }
 func (f *statusFakeSDK) Object(_ context.Context, _ types.Hash256) (siastorage.Object, error) {
 	return siastorage.NewEmptyObject(), nil

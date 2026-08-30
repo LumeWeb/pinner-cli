@@ -993,6 +993,12 @@ func vaultShare(d VaultDeps) catalog.Operation {
 				return nil, err
 			}
 			defer svc.Close()
+			// A share link grants read access to a Sia-stored object, so a
+			// pending (staged-only) file must be flushed to durable first.
+			// FlushPath is a no-op when the object is already durable.
+			if err := svc.FlushPath(ctx, vaultPath); err != nil {
+				return nil, fmt.Errorf("vault_share: file must be uploaded before sharing: %w", err)
+			}
 			shareURL, err := svc.Share(ctx, vaultPath, validUntil)
 			if err != nil {
 				return nil, err
