@@ -202,7 +202,7 @@ func vaultStat(d VaultDeps) catalog.Operation {
 		Name:        "vault_stat",
 		Title:       "Show vault file metadata",
 		Summary:     "Show file or directory metadata",
-		Description: "Show metadata for a single vault path: type, size, media type, content digest, and object ID. Returns metadata only and does NOT stream file content.",
+		Description: "Show metadata for a single vault path: type, size, media type, content digest, and object ID. Returns metadata only and does NOT stream file content. While a file is staged (status is pending or lost) the result also carries flush_attempts and flush_error: a rising flush_attempts count with a non-empty flush_error means the durability flush is failing (surface the error), while zero attempts / no error means it is still queued or uploading. These fields are omitted once the file is durable (status is ok).",
 		Category:    "vault",
 		Safety:      catalog.SafetyRead,
 		Interaction: catalog.InteractionAgentSafe,
