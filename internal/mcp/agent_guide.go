@@ -196,7 +196,9 @@ var guideSummary = toolforge.Static(
 	WhenAll([]hostenv.Feature{hostenv.FeatSourceMint, hostenv.FeatSourceURL, hostenv.FeatSourceData},
 		"Byte route order is in the upload flow: a local file → mint + PUT, a public HTTPS URL → upload_url, raw bytes → upload_data.",
 	).
-	StaticSentence("For autonomous website publishing after an upload, run the publish_website flow directly. For explicitly requested guided website onboarding (human-in-the-loop, step-by-step DNS setup), use the website-onboarding prompt and the websites_wizard tools (websites_wizard_start → websites_wizard_step) instead. Once a wizard session is active, stay in it: always call the returned next_step_schema via the wizard step tool — do not abandon the wizard to rediscover low-level tools.")
+	StaticSentence("For autonomous website publishing after an upload, run the publish_website flow directly. For explicitly requested guided website onboarding (human-in-the-loop, step-by-step DNS setup), use the website-onboarding prompt and the websites_wizard tools (websites_wizard_start → websites_wizard_step) instead. Once a wizard session is active, stay in it: always call the returned next_step_schema via the wizard step tool — do not abandon the wizard to rediscover low-level tools.").
+	When(hostenv.FeatMCPApps,
+		"This host renders MCP Apps: interactive app views are available via open_app for human-facing interactions (vault_browser, sso_signin, pin_creator, upload_manager, pin_list, account, vault_create, vault_restore, account_password, account_email). Prefer headless primitives for autonomous workflows; call open_app only when a human-facing screen is needed.")
 
 // guideArchiveInvariant and guideCIDStructure are the two operational website
 // rules every agent must honor. Kept as named fragments so branch guidance can
@@ -330,6 +332,8 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 		Summary(guideSummary).
 		Rule(guideArchiveInvariant).
 		Rule(guideCIDStructure).
+		RuleWhen(hostenv.FeatMCPApps,
+			"MCP Apps rule: this host renders interactive app views. When a user explicitly requests a visual interface, call open_app with the app name (vault_browser, sso_signin, pin_creator, upload_manager, pin_list, account, vault_create, vault_restore, account_password, account_email). open_app returns a ui:// view the host renders as an iframe. Prefer headless primitives (vault_status, vault_put_file, pins_list, auth_sso, ...) for autonomous workflows — call open_app only when a human-facing screen is needed.").
 		// Claude Web (host "claude") has no network egress and no file
 		// references, so its transport-derived mint/sink capabilities are
 		// unusable: the only working upload is the base64 upload_data relay,
@@ -340,13 +344,19 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 			"Host capability notice (Claude Web): this agent has no network egress (no curl) and no file references, so the ONLY working upload is upload_data (RFC 2397 base64 data: URI passed in the tool args). upload_file's source.mode=mint and the sink=drop download link both require the agent to curl or fetch out of band, which this host cannot do, and sink=local writes to the MCP server's own unreachable disk — so warn the user before offering a download that the content cannot be delivered to them.").
 		Flow(toolforge.Flow("auth", "Authenticate").
 			Steps("auth_status", "auth_sso", "auth_resume", "auth_status").
-			Detail(toolforge.Static("Run auth_status; if unauthenticated, call auth_sso and poll auth_resume with the returned handle until the human completes the browser sign-in."))).
+			Detail(toolforge.Static("Run auth_status; if unauthenticated, call auth_sso and poll auth_resume with the returned handle until the human completes the browser sign-in.").
+				When(hostenv.FeatMCPApps,
+					"On this host you can also call open_app with app=\"sso_signin\" to render an interactive sign-in card for the human."))).
 		Flow(toolforge.Flow("vault_create", "Create a vault").
 			Steps("vault_create", "vault_create_resume", "vault_status").
-			Detail(toolforge.Static("Call vault_create with a profile name; poll vault_create_resume with the returned handle; confirm with vault_status until unlocked."))).
+			Detail(toolforge.Static("Call vault_create with a profile name; poll vault_create_resume with the returned handle; confirm with vault_status until unlocked.").
+				When(hostenv.FeatMCPApps,
+					"On this host you can also call open_app with app=\"vault_create\" to render the interactive vault creation wizard."))).
 		Flow(toolforge.Flow("vault_restore", "Restore a vault").
 			Steps("vault_restore", "vault_restore_resume", "vault_status").
-			Detail(toolforge.Static("Call vault_restore; poll vault_restore_resume with the returned handle; confirm with vault_status until unlocked."))).
+			Detail(toolforge.Static("Call vault_restore; poll vault_restore_resume with the returned handle; confirm with vault_status until unlocked.").
+				When(hostenv.FeatMCPApps,
+					"On this host you can also call open_app with app=\"vault_restore\" to render the interactive restore wizard."))).
 		Flow(toolforge.Flow("upload", "Upload new content (creates + pins)").
 			Steps("capabilities").
 			// The byte route is a decision, not a fixed upload_file: a model
@@ -404,7 +414,7 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 // agentGuideDescription is shared between the static Description (tools/list)
 // and the Fallback MCPTarget so the tool carries a target list for uniformity
 // (it is a direct-only tool and does not enter the catalog).
-const agentGuideDescription = "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, download, vault_download, vault_share, vault_sync, pins, publish_website) as ordered tool chains or decision trees, plus operational rules. Call this first to learn how to drive Pinner before probing individual tools."
+const agentGuideDescription = "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, download, vault_download, vault_share, vault_sync, pins, publish_website) as ordered tool chains or decision trees, plus operational rules. On hosts that render MCP Apps, the guide includes open_app as the single launcher for human-facing interactive views. Call this first to learn how to drive Pinner before probing individual tools."
 
 func NewAgentGuideDescriptor() model.ToolDescriptor {
 	return model.ToolDescriptor{

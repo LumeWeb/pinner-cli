@@ -50,13 +50,19 @@ func NewOpenLauncherDescriptor(spec OpenLauncherSpec) model.ToolDescriptor {
 	if spec.InputSchema == nil {
 		spec.InputSchema = json.RawMessage(`{"type":"object","properties":{}}`)
 	}
+	desc := spec.Description
+	if desc == "" {
+		desc = "Open the " + spec.Title + " app view."
+	}
+	desc += " Prefer open_app (the consolidated launcher) on hosts where it is visible; this per-app launcher is discoverable via search_tools."
+
 	return model.ToolDescriptor{
 		Name:        spec.Name,
 		Title:       spec.Title,
-		Description: spec.Description,
+		Description: desc,
 		Category:    spec.Category,
 		Meta:        appMeta,
-		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback(spec.Description)),
+		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback(desc)),
 		InputSchema: spec.InputSchema,
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			// Launching the app is the action. Return a result carrying the

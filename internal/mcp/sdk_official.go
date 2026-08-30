@@ -505,6 +505,14 @@ func registerOfficialInvokeTool(srv *sdk.Server, catalog *ToolCatalog, stdioMode
 			return model.ToolResult{IsError: true, Text: string(out)}, nil
 		}
 
+		// Admin tools are gated from invoke_tool, matching the search/describe
+		// gate: an agent that somehow knows an admin tool name by heart cannot
+		// invoke it. Admin tools are only discoverable via
+		// search_tools(category=admin) and are not invokable through this path.
+		if entry.Category == model.CategoryAdmin {
+			return model.ToolResult{IsError: true, Text: fmt.Sprintf("admin tool %s is not available through invoke_tool; use search_tools with category=admin to discover admin tools", in.Name)}, nil
+		}
+
 		// Steer agents away from commands they cannot run safely over the MCP
 		// channel, instead of letting them hang. A human-only (interactive)
 		// command always redirects. Everything else runs normally.

@@ -389,6 +389,9 @@ func (c *ToolCatalog) Describe(name string) (*ToolDetail, error) {
 	if !ok {
 		return nil, fmt.Errorf("unknown tool: %s", name)
 	}
+	if entry.Category == model.CategoryAdmin {
+		return nil, fmt.Errorf("admin tool %s is not available through describe_tool; use search_tools with category=admin to discover admin tools", name)
+	}
 
 	return &ToolDetail{
 		Name:        entry.Name,
@@ -412,6 +415,9 @@ func (c *ToolCatalog) DescribeFor(name string, profile *hostenv.PlatformProfile)
 	entry, ok := c.tools[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown tool: %s", name)
+	}
+	if entry.Category == model.CategoryAdmin {
+		return nil, fmt.Errorf("admin tool %s is not available through describe_tool; use search_tools with category=admin to discover admin tools", name)
 	}
 
 	return &ToolDetail{
@@ -510,6 +516,9 @@ func (c *ToolCatalog) Invoke(ctx context.Context, name string, args map[string]a
 
 	if !ok {
 		return model.ToolResult{}, fmt.Errorf("unknown tool: %s", name)
+	}
+	if entry.Category == model.CategoryAdmin {
+		return model.ToolResult{IsError: true, Text: fmt.Sprintf("admin tool %s is not available through invoke_tool; use search_tools with category=admin to discover admin tools", name)}, nil
 	}
 
 	log.Info("meta-tool invoke", zap.String("tool", name))

@@ -9,6 +9,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 
@@ -76,13 +77,32 @@ func resolveOpenApp(catalog *ToolCatalog, requested string) (string, string, boo
 // name and receives the ui:// view to render. The handler resolves the app
 // against the live catalog's app-view registry, so availability always tracks
 // what is actually wired.
+// openAppDescriptionFor returns the profile-aware description for the open_app
+// tool. On GUI-capable hosts (FeatMCPApps) the copy steers the agent toward
+// using open_app for human-facing interactions; on agent-only hosts it explains
+// the tool returns a ui:// URI as data (no auto-render) so the agent includes
+// it in a message for a human to open.
+func openAppDescriptionFor(p hostenv.PlatformProfile) string {
+	if p.Features.Has(hostenv.FeatMCPApps) {
+		return "Open one of Pinner's interactive app views by name (vault_browser, sso_signin, pin_creator, upload_manager, pin_list, account, vault_create, vault_restore, account_password, account_email). The host renders the returned ui:// view as an iframe. Use this for human-facing interactions; prefer headless primitives (vault_status, vault_put_file, pins_list, auth_sso, ...) for autonomous workflows."
+	}
+	return "Resolve an app name to its ui:// view URI. This host does not render MCP Apps, so the URI is returned as data — include it in a message for a human to open. Available apps: vault_browser, sso_signin, pin_creator, upload_manager, pin_list, account, vault_create, vault_restore, account_password, account_email."
+}
+
+func openAppTargets() []model.ToolTarget {
+	return toolforge.MCPTargets(model.ToolTarget{
+		Visible:  true,
+		DescFunc: openAppDescriptionFor,
+	})
+}
+
 func newOpenAppDescriptor(catalog *ToolCatalog) model.ToolDescriptor {
 	return model.ToolDescriptor{
 		Name:        "open_app",
 		Title:       "Open an app",
-		Description: "Open one of Pinner's interactive app views (vault browser, create/restore vault, sign in, pin creator, upload/download managers, account). Pass the app name and it returns the ui:// view to render. This is the single launcher entry point — prefer the headless primitives (vault_status, vault_put_file, pins_list, ...) for autonomous workflows, and open_app only when a human-facing screen is desired.",
+		Description: openAppDescriptionFor(hostenv.ProfileStdioGeneric),
 		Category:    model.CategoryCore,
-		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback("Open one of Pinner's interactive app views by name and receive the ui:// view to render.")),
+		MCPTargets:  openAppTargets(),
 		InputSchema: toolargs.ToolSchemaFor[openAppInput](),
 		Meta:        nil,
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
