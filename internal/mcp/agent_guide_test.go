@@ -298,7 +298,7 @@ func TestAgentGuideStepsAreFeatureGated(t *testing.T) {
 //     upload_status poll (a step chain that ends at upload_file looks complete
 //     when it is not).
 //   - vault_put_file mint: vault_put_file -> <host PUT>, and the PUT response
-//     completes the vault write non-blocking (stages locally, status pending).
+//     completes the vault write non-blocking (stages locally, status staged).
 //     The ordered vault_upload flow must name the host PUT but MUST NOT name
 //     upload_status (there is no poll).
 //

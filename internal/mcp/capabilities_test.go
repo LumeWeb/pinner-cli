@@ -178,7 +178,7 @@ func TestCapabilitiesDescriptionForOpenAIHTTPNoImpossibleModes(t *testing.T) {
 //   - upload_file(source.mode=mint) is asynchronous: <host PUT> then poll
 //     upload_status.
 //   - vault_put_file(source.mode=mint, vault_path=...) is non-blocking: the PUT
-//     stages bytes locally (status: pending), with NO upload_status poll.
+//     stages bytes locally (status: staged), with NO upload_status poll.
 //
 // A contract for a tool that is not wired must not be described, and no
 // sentence may read as applying the upload poll to vault writes. Non-mint

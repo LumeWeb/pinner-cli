@@ -59,6 +59,13 @@ type File struct {
 	// can read these to distinguish "still uploading" from "flush is failing".
 	FlushAttempts int    `gorm:"column:flush_attempts;default:0"`
 	FlushError    string `gorm:"column:flush_error;default:''"`
+	// FlushStartedAt records when the current flush attempt began (RFC3339
+	// string; "" when not flushing). It lets a poller compute how long a file
+	// has been stuck in "flushing" and fail a hung pin, distinguishing a
+	// long-but-progressing host upload from a hung first attempt (both of which
+	// otherwise show flush_attempts: 1). Set in markFlushing, cleared on
+	// durable finalize.
+	FlushStartedAt string `gorm:"column:flush_started_at;default:''"`
 	// StagedPath is the on-disk plaintext buffer path for a NOT-YET-DURABLE
 	// file (status "pending" or "uploaded"). It is set the moment a Put stages
 	// bytes locally and is cleared (and the file deleted) when the object is

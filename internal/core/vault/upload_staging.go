@@ -580,9 +580,13 @@ func (s *vaultService) markFlushing(rec *File) {
 	if rec == nil {
 		return
 	}
+	// Record when THIS attempt began so a polling swarm can measure how long a
+	// file has been stuck in "flushing" (elapsed = now - flush_started_at) and
+	// fail a hung pin, even though flush_attempts only moved once.
 	_ = s.db.Model(&File{}).Where("id = ?", rec.ID).Updates(map[string]any{
-		"status":         FileStatusFlushing,
-		"flush_attempts": gorm.Expr("flush_attempts + 1"),
+		"status":           FileStatusFlushing,
+		"flush_attempts":   gorm.Expr("flush_attempts + 1"),
+		"flush_started_at": time.Now().UTC().Format(time.RFC3339),
 	}).Error
 }
 
@@ -618,12 +622,13 @@ func (s *vaultService) finalizeDurable(rec *File, objectKey string) error {
 		digest = rec.ContentDigest
 	}
 	if err := s.db.Model(rec).Updates(map[string]any{
-		"object_key":     objectKey,
-		"status":         FileStatusOK,
-		"staged_path":    "",
-		"content_digest": digest,
-		"flush_attempts": 0,
-		"flush_error":    "",
+		"object_key":       objectKey,
+		"status":           FileStatusOK,
+		"staged_path":      "",
+		"content_digest":   digest,
+		"flush_attempts":   0,
+		"flush_error":      "",
+		"flush_started_at": "",
 	}).Error; err != nil {
 		return fmt.Errorf("failed to mark file durable: %w", err)
 	}

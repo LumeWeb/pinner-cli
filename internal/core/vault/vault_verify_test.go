@@ -72,7 +72,7 @@ func newVerifyTestService(t *testing.T) (*vaultService, *fakeSDK, []byte) {
 	return svc, fake, content
 }
 
-func TestVerifyShallow_NoDigest_Unverified(t *testing.T) {
+func TestVerifyShallow_NoDigest_NotApplicable(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _ := newVerifyTestService(t)
 
@@ -86,8 +86,11 @@ func TestVerifyShallow_NoDigest_Unverified(t *testing.T) {
 	if res.DigestMatch != nil {
 		t.Fatal("DigestMatch should be nil (no verdict) when no digest is recorded")
 	}
-	if res.DigestVerified != DigestVerifiedUnverified {
-		t.Fatalf("DigestVerified = %q, want %q", res.DigestVerified, DigestVerifiedUnverified)
+	// After accept/send there is no recorded digest until first get/decrypt/
+	// deep verify; the report must be neutral "not_applicable", NOT
+	// "unverified" which agents read as a pin failure.
+	if res.DigestVerified != DigestVerifiedNotApplicable {
+		t.Fatalf("DigestVerified = %q, want %q", res.DigestVerified, DigestVerifiedNotApplicable)
 	}
 }
 
@@ -341,12 +344,12 @@ func TestVerify_PendingFile_Unverified(t *testing.T) {
 		IsCurrent:   true,
 		// ObjectKey is intentionally empty: the bytes are staged locally and the
 		// background flush / vault_flush will upload+pin them later.
-		ObjectKey:   "",
-		Size:        4,
-		MediaType:   "text/plain",
+		ObjectKey:     "",
+		Size:          4,
+		MediaType:     "text/plain",
 		ContentDigest: sha256Hex([]byte("data")),
-		Status:      FileStatusPending,
-		StagedPath:  t.TempDir() + "/pending-buffer",
+		Status:        FileStatusPending,
+		StagedPath:    t.TempDir() + "/pending-buffer",
 	}
 	if err := svc.db.Create(&row).Error; err != nil {
 		t.Fatalf("create pending file row: %v", err)

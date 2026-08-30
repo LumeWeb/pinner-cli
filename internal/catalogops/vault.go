@@ -130,6 +130,12 @@ func (d VaultDeps) resolveIndexerURL() (string, error) {
 // (including fn's error path). It collapses the ResolveProfile + d.service +
 // defer svc.Close() preamble repeated by every vault handler.
 func withService(ctx context.Context, d VaultDeps, input map[string]any, fn func(ctx context.Context, svc vault.VaultService) (any, error)) (any, error) {
+	// A multi-profile server must never silently target the active vault for a
+	// profile-scoped op that lacks an explicit profile (the same not-found bug
+	// class as vault_status before the guard). withService backs the tag ops.
+	if pr := d.profileRequired(catalog.StrArg(input, "profile", "")); pr != nil {
+		return pr, nil
+	}
 	profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 	if err != nil {
 		return nil, err
@@ -192,6 +198,9 @@ func vaultStatus(d VaultDeps) catalog.Operation {
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			if pr := d.profileRequired(catalog.StrArg(input, "profile", "")); pr != nil {
+				return pr, nil
+			}
 			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
 				return nil, err
@@ -232,6 +241,9 @@ func vaultLs(d VaultDeps) catalog.Operation {
 			if vaultPath == "" {
 				vaultPath = vault.VaultRoot
 			}
+			if pr := d.profileRequired(catalog.StrArg(input, "profile", "")); pr != nil {
+				return pr, nil
+			}
 			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
 				return nil, err
@@ -258,7 +270,7 @@ func vaultStat(d VaultDeps) catalog.Operation {
 		Summary:     "Show file or directory metadata",
 		Description: "Show metadata for a single vault path: type, size, media type, content digest, and object ID. Returns metadata only and does NOT stream file content.",
 		MCPTargets: catalog.MCPTargets(
-			catalog.Fallback("Show metadata for a single vault path: type, size, media type, content digest, object ID, and current status (staged | flushing | durable | failed). Returns metadata only, never the content. While a file is not yet durable (staged/flushing/failed) the result carries flush_attempts and flush_error: a flushing file shows a rising flush_attempts with no error, a failed file shows flush_attempts plus a non-empty flush_error, and a staged file that has never started shows zero attempts/no error. Once durable, both fields are omitted."),
+			catalog.Fallback("Show metadata for a single vault path: type, size, media type, content digest, object ID, and current status (staged | flushing | durable | failed). Returns metadata only, never the content. While a file is not yet durable (staged/flushing/failed) the result carries flush_attempts, flush_error and flush_started_at: a flushing file shows a flush_started_at and a rising flush_attempts with no error, a failed file shows flush_attempts plus a non-empty flush_error, and a staged file that has never started shows zero attempts/no error and an empty flush_started_at. Compare now against flush_started_at to tell a long-but-progressing host upload from a hung pin. Once durable, these fields are omitted."),
 		),
 		Category:    "vault",
 		Safety:      catalog.SafetyRead,
@@ -303,7 +315,7 @@ func vaultVerify(d VaultDeps) catalog.Operation {
 		Summary:     "Verify content integrity of a vault file",
 		Description: "Check a vault file's integrity: verifies its recorded SHA-256 digest matches and that the object exists on the Sia indexer. Returns an OK/FAIL result with digest and object facts. Does NOT stream or return file content.",
 		MCPTargets: catalog.MCPTargets(
-			catalog.Fallback("Verify a vault file's integrity: checks that the object exists on the Sia indexer and compares the recorded SHA-256 digest. Returns digest_verified (verified/unverified/mismatch), digest_match, object_exists, and the recorded digest. An accepted share has no digest until first decrypt; in that state digest_verified is 'unverified' (not FAIL). Use deep=true to download the full content, recompute the hash, and backfill the digest if missing. Does NOT stream or return file content."),
+			catalog.Fallback("Verify a vault file's integrity: checks that the object exists on the Sia indexer and compares the recorded SHA-256 digest. Returns digest_verified (verified/unverified/mismatch/not_applicable), digest_match, object_exists, and the recorded digest. An accepted share or vault_send has no digest until first decrypt/get/deep verify; in that state digest_verified is 'not_applicable' (a neutral no-verdict-yet — NOT a failure), so treat the pin as successful and resolve the digest on first get or a deep=true verify. Use deep=true to download the full content, recompute the hash, and backfill the digest if missing. Does NOT stream or return file content."),
 		),
 		Category:    "vault",
 		Safety:      catalog.SafetyRead,
@@ -403,6 +415,9 @@ func vaultVersionLs(d VaultDeps) catalog.Operation {
 			if vaultPath == "" {
 				return nil, fmt.Errorf("vault_version_ls: missing required argument path")
 			}
+			if pr := d.profileRequired(catalog.StrArg(input, "profile", "")); pr != nil {
+				return pr, nil
+			}
 			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
 				return nil, err
@@ -471,6 +486,9 @@ func vaultVersionGet(d VaultDeps) catalog.Operation {
 			if vaultPath == "" || versionID == "" {
 				return nil, fmt.Errorf("vault_version_get: missing required argument (path, version_id)")
 			}
+			if pr := d.profileRequired(catalog.StrArg(input, "profile", "")); pr != nil {
+				return pr, nil
+			}
 			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
 				return nil, err
@@ -527,6 +545,9 @@ func vaultVersionRestore(d VaultDeps) catalog.Operation {
 			}
 			if !catalog.BoolArg(input, "confirm", false) {
 				return nil, fmt.Errorf("vault_version_restore: confirm=true is required (restore is destructive to current live content)")
+			}
+			if pr := d.profileRequired(catalog.StrArg(input, "profile", "")); pr != nil {
+				return pr, nil
 			}
 			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
@@ -933,6 +954,9 @@ func vaultRm(d VaultDeps) catalog.Operation {
 			if !catalog.BoolArg(input, "confirm", false) {
 				return nil, fmt.Errorf("vault_rm: confirmation is required to remove the file")
 			}
+			if pr := d.profileRequired(catalog.StrArg(input, "profile", "")); pr != nil {
+				return pr, nil
+			}
 			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
 				return nil, err
@@ -976,6 +1000,9 @@ func vaultSync(d VaultDeps) catalog.Operation {
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			if pr := d.profileRequired(catalog.StrArg(input, "profile", "")); pr != nil {
+				return pr, nil
+			}
 			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
 				return nil, err
@@ -1043,7 +1070,7 @@ func vaultFlush(d VaultDeps) catalog.Operation {
 		Summary:     "Upload and pin pending vault files",
 		Description: "Upload and pin staged vault files so they become durable on Sia. vault_put_file stages bytes locally and returns immediately; this packs the staged bytes into shared slabs, uploads and pins them, and marks the rows durable. Flush all staged files, or a single path via the path argument. The flush runs on a per-profile flush worker: this tool returns immediately with an accepted job { job_id, profile, path? } — poll vault_flush_status(job_id) or vault_stat until status is durable before sharing a freshly written file (a share link requires a durable object).",
 		MCPTargets: catalog.MCPTargets(
-			catalog.Fallback("Make staged vault files durable on Sia. vault_put_file returns before bytes are on Sia (status: staged); call this to kick off upload + pin. Flush all staged files by default, or pass path to flush a single file. This tool is non-blocking and runs on a per-profile flush worker (one worker goroutine per profile, never a shared global queue). It returns a job { job_id, profile, path? } with status accepted — poll vault_flush_status(job_id) or vault_stat until status is durable, then vault_share. A full host-set upload can take a while, so do not treat the immediate accepted response as completion. If a file stays non-durable across polls, read vault_stat's flush_attempts and flush_error: a flushing file shows a rising flush_attempts with no error, a failed file shows flush_attempts plus a non-empty flush_error, and a staged file that never started shows zero attempts/no error."),
+			catalog.Fallback("Make staged vault files durable on Sia. vault_put_file returns before bytes are on Sia (status: staged); call this to kick off upload + pin. Flush all staged files by default, or pass path to flush a single file. This tool is non-blocking and runs on a per-profile flush worker (one worker goroutine per profile, never a shared global queue). It returns a job { job_id, profile, path? } with status accepted — poll vault_flush_status(job_id) or vault_stat until status is durable, then vault_share. A full host-set upload can take a while, so do not treat the immediate accepted response as completion. If a file stays non-durable across polls, read vault_stat's flush_started_at, flush_attempts and flush_error: a flushing file shows a flush_started_at and a rising flush_attempts with no error, a failed file shows flush_attempts plus a non-empty flush_error, and a staged file that never started shows zero attempts/no error and an empty flush_started_at. Compare now against flush_started_at to distinguish a long-but-progressing host upload from a hung pin, and fail it when it exceeds your threshold."),
 		),
 		Category:    "vault",
 		Safety:      catalog.SafetyMutate,
@@ -1152,6 +1179,9 @@ type VaultFlushJobStatus struct {
 	Status  string `json:"status"` // queued|running|done|failed
 	Flushed int    `json:"flushed,omitempty"`
 	Error   string `json:"error,omitempty"`
+	// StartedAt is the RFC3339 time the worker began the job ("" when still
+	// queued), so a swarm can detect a hung pin by elapsed time.
+	StartedAt string `json:"started_at,omitempty"`
 }
 
 func vaultFlushStatus(d VaultDeps) catalog.Operation {
@@ -1159,9 +1189,9 @@ func vaultFlushStatus(d VaultDeps) catalog.Operation {
 		Name:        "vault_flush_status",
 		Title:       "Vault flush job status",
 		Summary:     "Check the status of a vault_flush job",
-		Description: "Return the current status of a flush job previously accepted by vault_flush, addressed by its job_id. Status is queued (accepted, not started), running (the per-profile worker is flushing — a rising flush_attempts is expected), done (all targeted staged files became durable; flushed reports the count), or failed (the flush errored; error explains why). Read-only.",
+		Description: "Return the current status of a flush job previously accepted by vault_flush, addressed by its job_id. Status is queued (accepted, not started), running (the per-profile worker is flushing), done (all targeted staged files became durable; flushed reports the count), or failed (the flush errored; error explains why). A running job carries started_at (RFC3339) so a swarm can detect a hung pin by elapsed time; read vault_stat's flush_started_at / flush_attempts / flush_error on the file for the underlying state. Read-only.",
 		MCPTargets: catalog.MCPTargets(
-			catalog.Fallback("Check the status of a flush job accepted by vault_flush, given its job_id. Returns { job_id, profile, path?, status (queued|running|done|failed), flushed?, error? }. A done job means the targeted staged file(s) are now durable; a failed job carries an error — inspect vault_stat's flush_error for the underlying cause and re-run vault_flush after fixing it. Requires a wired flush manager; without one this errors with code no_flush_manager."),
+			catalog.Fallback("Check the status of a flush job accepted by vault_flush, given its job_id. Returns { job_id, profile, path?, status (queued|running|done|failed), flushed?, error?, started_at? }. A done job means the targeted staged file(s) are now durable; a failed job carries an error — inspect vault_stat's flush_error for the underlying cause and re-run vault_flush after fixing it. started_at is the RFC3339 time the worker began the job, so a job stuck in 'running' longer than your hang threshold (compare against vault_stat's flush_started_at on the file) is a hung pin, not just a slow upload. Requires a wired flush manager; without one this errors with code no_flush_manager."),
 		),
 		Category:    "vault",
 		Safety:      catalog.SafetyRead,
@@ -1185,18 +1215,19 @@ func vaultFlushStatus(d VaultDeps) catalog.Operation {
 			job, ok := d.FlushMgr().Job(jobID)
 			if !ok {
 				return map[string]any{
-					"code":   "job_not_found",
-					"job_id": jobID,
+					"code":    "job_not_found",
+					"job_id":  jobID,
 					"message": "no flush job with id " + jobID + " is known",
 				}, nil
 			}
 			return &VaultFlushJobStatus{
-				JobID:   job.JobID,
-				Profile: job.Profile,
-				Path:    job.Path,
-				Status:  job.Status,
-				Flushed: job.Flushed,
-				Error:   job.Error,
+				JobID:     job.JobID,
+				Profile:   job.Profile,
+				Path:      job.Path,
+				Status:    job.Status,
+				Flushed:   job.Flushed,
+				Error:     job.Error,
+				StartedAt: job.StartedAt,
 			}, nil
 		}),
 	})
@@ -1354,9 +1385,9 @@ func vaultShare(d VaultDeps) catalog.Operation {
 				// agent at vault_flush rather than blocking the share under the
 				// request deadline.
 				return &VaultNotDurableResult{
-					Code:   "not_durable",
-					Path:   vaultPath,
-					Status: st.Status,
+					Code:    "not_durable",
+					Path:    vaultPath,
+					Status:  st.Status,
 					Message: "file is not yet durable on Sia (status: " + st.Status + "). Run vault_flush and poll vault_flush_status(job_id) until done, or use vault_send, then share again.",
 				}, nil
 			}
@@ -1375,11 +1406,11 @@ func vaultShare(d VaultDeps) catalog.Operation {
 // AcceptState is "pinned" and DigestVerified is "not_applicable" until the
 // acceptor first gets/decrypts or deep-verifies the content.
 type VaultShareAcceptResult struct {
-	Path            string `json:"path"`
-	ObjectKey       string `json:"object_key"`
-	Size            int64  `json:"size"`
-	AcceptState     string `json:"accept_state"`                // "pinned"
-	DigestVerified  string `json:"digest_verified,omitempty"`   // "not_applicable"
+	Path           string `json:"path"`
+	ObjectKey      string `json:"object_key"`
+	Size           int64  `json:"size"`
+	AcceptState    string `json:"accept_state"`              // "pinned"
+	DigestVerified string `json:"digest_verified,omitempty"` // "not_applicable"
 }
 
 func vaultShareAccept(d VaultDeps) catalog.Operation {
@@ -1480,8 +1511,8 @@ func vaultSend(d VaultDeps) catalog.Operation {
 		Args: []catalog.OperationArg{
 			{Name: "path", Type: catalog.ArgTypeString, Required: true, Help: "vault:/ source path to send", AgentHelp: "The vault:/ source path whose durable object to hand off."},
 			{Name: "dest_path", Type: catalog.ArgTypeString, Required: true, Help: "vault:/ destination path in to_profile", AgentHelp: "The vault:/ destination path where the source object should be pinned in to_profile."},
-			{Name: "from_profile", Type: catalog.ArgTypeString, Help: "Source profile name (required)", AgentHelp: "The unlocked profile that owns the source object."},
-			{Name: "to_profile", Type: catalog.ArgTypeString, Help: "Destination profile name (required)", AgentHelp: "The unlocked profile that will own the pinned destination copy."},
+			{Name: "from_profile", Type: catalog.ArgTypeString, Required: true, Help: "Source profile name", AgentHelp: "The unlocked profile that owns the source object (required)."},
+			{Name: "to_profile", Type: catalog.ArgTypeString, Required: true, Help: "Destination profile name", AgentHelp: "The unlocked profile that will own the pinned destination copy (required)."},
 			{Name: "tags", Type: catalog.ArgTypeStringSlice, Help: "Tags to apply at accept time (repeatable; durable)", AgentHelp: "Optional durable tags applied at accept time on the destination row."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
@@ -1671,6 +1702,9 @@ func vaultCacheRebuild(d VaultDeps) catalog.Operation {
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			if pr := d.profileRequired(catalog.StrArg(input, "profile", "")); pr != nil {
+				return pr, nil
+			}
 			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
 				return nil, err
@@ -1764,6 +1798,9 @@ func vaultCacheClear(d VaultDeps) catalog.Operation {
 			{Name: "profile", Type: catalog.ArgTypeString, Help: "Vault profile name (defaults to active profile)"},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			if pr := d.profileRequired(catalog.StrArg(input, "profile", "")); pr != nil {
+				return pr, nil
+			}
 			profileName, err := vault.ResolveProfile(catalog.StrArg(input, "profile", ""))
 			if err != nil {
 				return nil, err

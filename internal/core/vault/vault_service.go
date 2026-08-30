@@ -730,24 +730,25 @@ func (s *vaultService) Search(_ context.Context, req SearchRequest) ([]SearchIte
 		if len(rec.Metadata) > 0 {
 			_ = json.Unmarshal(rec.Metadata, &metaOut) // best-effort
 		}
-		flushAttempts, flushError := flushVisibility(rec.Status, rec.FlushAttempts, rec.FlushError)
+		flushAttempts, flushError, flushStartedAt := flushVisibility(rec.Status, rec.FlushAttempts, rec.FlushError, rec.FlushStartedAt)
 		items = append(items, SearchItem{
-			Path:          VaultScheme + path,
-			Name:          rec.Name,
-			Size:          rec.Size,
-			MediaType:     rec.MediaType,
-			ContentDigest: rec.ContentDigest,
-			ObjectID:      rec.ObjectKey,
-			Status:        NormalizeFileStatus(rec.Status),
-			FlushAttempts: flushAttempts,
-			FlushError:    flushError,
-			CreatedAt:     rec.CreatedAt.Format(time.RFC3339),
-			UpdatedAt:     rec.UpdatedAt.Format(time.RFC3339),
-			Tags:          tagsByID[rec.ID],
-			Metadata:      metaOut,
-			Source:        rec.Source,
-			Host:          rec.Host,
-			Agent:         rec.Agent,
+			Path:           VaultScheme + path,
+			Name:           rec.Name,
+			Size:           rec.Size,
+			MediaType:      rec.MediaType,
+			ContentDigest:  rec.ContentDigest,
+			ObjectID:       rec.ObjectKey,
+			Status:         NormalizeFileStatus(rec.Status),
+			FlushAttempts:  flushAttempts,
+			FlushError:     flushError,
+			FlushStartedAt: flushStartedAt,
+			CreatedAt:      rec.CreatedAt.Format(time.RFC3339),
+			UpdatedAt:      rec.UpdatedAt.Format(time.RFC3339),
+			Tags:           tagsByID[rec.ID],
+			Metadata:       metaOut,
+			Source:         rec.Source,
+			Host:           rec.Host,
+			Agent:          rec.Agent,
 		})
 	}
 	return items, nil
@@ -810,26 +811,27 @@ func (s *vaultService) Stat(ctx context.Context, vaultPath string) (*StatResult,
 	// authoritative Metadata['tags'] array in the object). Best-effort: a
 	// read failure yields an empty tag list rather than failing Stat.
 	tags, _ := s.currentTags(record.ID)
-	flushAttempts, flushError := flushVisibility(record.Status, record.FlushAttempts, record.FlushError)
+	flushAttempts, flushError, flushStartedAt := flushVisibility(record.Status, record.FlushAttempts, record.FlushError, record.FlushStartedAt)
 	return &StatResult{
-		Type:          "file",
-		Name:          record.Name,
-		Path:          vaultPath,
-		Size:          record.Size,
-		MediaType:     record.MediaType,
-		ContentDigest: record.ContentDigest,
-		ObjectID:      record.ObjectKey,
-		Status:        NormalizeFileStatus(record.Status),
-		LostReason:    record.LostReason,
-		FlushAttempts: flushAttempts,
-		FlushError:    flushError,
-		CreatedAt:     record.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:     record.UpdatedAt.Format(time.RFC3339),
-		Metadata:      metaOut,
-		Tags:          tags,
-		Source:        record.Source,
-		Host:          record.Host,
-		Agent:         record.Agent,
+		Type:           "file",
+		Name:           record.Name,
+		Path:           vaultPath,
+		Size:           record.Size,
+		MediaType:      record.MediaType,
+		ContentDigest:  record.ContentDigest,
+		ObjectID:       record.ObjectKey,
+		Status:         NormalizeFileStatus(record.Status),
+		LostReason:     record.LostReason,
+		FlushAttempts:  flushAttempts,
+		FlushError:     flushError,
+		FlushStartedAt: flushStartedAt,
+		CreatedAt:      record.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:      record.UpdatedAt.Format(time.RFC3339),
+		Metadata:       metaOut,
+		Tags:           tags,
+		Source:         record.Source,
+		Host:           record.Host,
+		Agent:          record.Agent,
 	}, nil
 }
 
@@ -862,8 +864,12 @@ func (s *vaultService) Verify(ctx context.Context, vaultPath string) (*VerifyRes
 
 	if res.ContentDigest == "" {
 		// No digest has ever been recorded. This is expected for accepted
-		// shares before first decrypt. It is NOT a corruption signal.
-		res.DigestVerified = DigestVerifiedUnverified
+		// shares before first decrypt. It is NOT a corruption signal and NOT a
+		// verification failure: until someone gets/decrypts or deep-verifies
+		// the content there is literally nothing to compare, so report it as
+		// "not_applicable" (a neutral "no verdict yet"), never "unverified"
+		// which agents read as a failure.
+		res.DigestVerified = DigestVerifiedNotApplicable
 		return res, nil
 	}
 
@@ -989,9 +995,10 @@ func (s *vaultService) clearLostStatus(ctx context.Context, vaultPath string) {
 
 // DigestVerified tri-state values for VerifyResult.
 const (
-	DigestVerifiedVerified   = "verified"
-	DigestVerifiedUnverified = "unverified"
-	DigestVerifiedMismatch   = "mismatch"
+	DigestVerifiedVerified      = "verified"
+	DigestVerifiedUnverified    = "unverified"
+	DigestVerifiedMismatch      = "mismatch"
+	DigestVerifiedNotApplicable = "not_applicable"
 )
 
 // boolPtr returns a pointer to b for nullable boolean fields (e.g.
