@@ -167,7 +167,75 @@ func mountVaultCatalogCommand(cmd *cli.Command) *cli.Command {
 	if op != nil {
 		cmd.Action = vaultActionAdapter(op)
 	}
+	// `vault flush` MUST block. The catalog vault_flush op is non-blocking: it
+	// launches the durability work on a detached background goroutine and
+	// returns "accepted" immediately. That is the right shape for the long-lived
+	// MCP server, but for a one-shot CLI command the background goroutine dies
+	// when the process exits — leaving every pending file forever pending.
+	// Override the mounted action so the CLI waits on the flush synchronously
+	// and reports the real flushed count.
+	if canonical == "vault_flush" {
+		cmd.Action = vaultFlushSyncAction()
+		// The sync action reads the positional path itself; keep the catalog
+		// flags (--profile) as mounted.
+	}
 	return cmd
+}
+
+// vaultFlushSyncAction returns a blocking Action for `pinner vault flush`: it
+// runs svc.Flush/FlushPath synchronously (the same primitive `cp --flush` uses)
+// and reports the number of files made durable before the process exits. It is
+// the CLI counterpart to the catalog's non-blocking MCP vault_flush.
+func vaultFlushSyncAction() cli.ActionFunc {
+	return func(ctx context.Context, c *cli.Command) error {
+		output := setupOutput(c)
+
+		profileName, err := vault.ResolveProfile(c.String(FlagProfile))
+		if err != nil {
+			return err
+		}
+		svc, err := vaultCatalogDepsVar.ServiceForProfile(profileName)
+		if err != nil {
+			return err
+		}
+		defer svc.Close()
+
+		// Flush is a heavyweight host-set upload; allow it up to the configured
+		// upload timeout (not the short per-call default) so a real backlog is
+		// not cut off mid-pin.
+		dctx := ctx
+		if cfgMgr, cerr := configManagerFactory(); cerr == nil && cfgMgr != nil {
+			if to := cfgMgr.Config().GetUploadTimeout(); to > 0 {
+				var cancel context.CancelFunc
+				dctx, cancel = context.WithTimeout(ctx, to)
+				defer cancel()
+			}
+		}
+
+		// Positional <path> restricts the flush to a single file; otherwise flush
+		// every staged (pending) file.
+		path := c.Args().First()
+		if path != "" {
+			// FlushPath is a no-op for an already-durable/lost file.
+			if err := svc.FlushPath(dctx, path); err != nil {
+				return err
+			}
+			if output.IsJSON() {
+				return output.PrintJSON(map[string]any{"status": "ok", "flushed": 1, "path": path})
+			}
+			output.Printfln("Flushed %s", path)
+			return nil
+		}
+		n, err := svc.Flush(dctx)
+		if err != nil {
+			return err
+		}
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"status": "ok", "flushed": n})
+		}
+		output.Printfln("Flushed %d pending file(s)", n)
+		return nil
+	}
 }
 
 // vaultActionAdapter returns the per-invocation ActionFunc for a vault catalog
@@ -332,7 +400,11 @@ func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 
 	case *catalogops.VaultFlushResult:
 		if output.IsJSON() {
-			return output.PrintJSON(map[string]any{"status": r.Status, "message": r.Message})
+			return output.PrintJSON(map[string]any{"status": r.Status, "message": r.Message, "flushed": r.Flushed})
+		}
+		if r.Flushed > 0 {
+			output.Printfln("%s: %s (%d file(s))", r.Status, r.Message, r.Flushed)
+			return nil
 		}
 		output.Printfln("%s: %s", r.Status, r.Message)
 		return nil

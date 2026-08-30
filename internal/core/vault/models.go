@@ -52,6 +52,13 @@ type File struct {
 	Agent      string
 	Status     string `gorm:"column:status;default:ok"`      // "ok" | "pending" | "uploaded" | "lost"
 	LostReason string `gorm:"column:lost_reason;default:''"` // detail when status == "lost"
+	// FlushAttempts and FlushError make a stuck "pending" file visible: they
+	// record how many durability flush passes have been attempted and the most
+	// recent failure while the file is still staged. They are cleared on a
+	// successful flush (status -> ok). An agent inspecting a long-pending file
+	// can read these to distinguish "still uploading" from "flush is failing".
+	FlushAttempts int    `gorm:"column:flush_attempts;default:0"`
+	FlushError    string `gorm:"column:flush_error;default:''"`
 	// StagedPath is the on-disk plaintext buffer path for a NOT-YET-DURABLE
 	// file (status "pending" or "uploaded"). It is set the moment a Put stages
 	// bytes locally and is cleared (and the file deleted) when the object is

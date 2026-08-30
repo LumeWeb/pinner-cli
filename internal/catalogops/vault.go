@@ -48,14 +48,30 @@ type VaultDeps struct {
 // service builds the VaultService for the given profile, resolving the
 // indexer URL from config.
 func (d VaultDeps) service(profileName string) (vault.VaultService, error) {
+	indexerURL, err := d.resolveIndexerURL()
+	if err != nil {
+		return nil, err
+	}
+	return d.Service(profileName, indexerURL)
+}
+
+// ServiceForProfile is the exported form of service: it builds a VaultService
+// for the given profile (resolving the indexer URL from config). Public so the
+// CLI wiring can drive a synchronous flush without depending on catalogops
+// internals.
+func (d VaultDeps) ServiceForProfile(profileName string) (vault.VaultService, error) {
+	return d.service(profileName)
+}
+
+// resolveIndexerURL resolves the configured Sia indexer URL for an invocation.
+func (d VaultDeps) resolveIndexerURL() (string, error) {
 	if d.Service == nil {
-		return nil, fmt.Errorf("vault: no service factory wired")
+		return "", fmt.Errorf("vault: no service factory wired")
 	}
 	if d.ResolveIndexerURL == nil {
-		return nil, fmt.Errorf("vault: no indexer URL resolver wired")
+		return "", fmt.Errorf("vault: no indexer URL resolver wired")
 	}
-	indexerURL := d.ResolveIndexerURL()
-	return d.Service(profileName, indexerURL)
+	return d.ResolveIndexerURL(), nil
 }
 
 // withService resolves the active profile from input, builds a VaultService
@@ -941,6 +957,11 @@ const vaultFlushTimeout = 10 * time.Minute
 type VaultFlushResult struct {
 	Status  string `json:"status"`
 	Message string `json:"message"`
+	// Flushed is the number of staged files made durable by a completed flush.
+	// It is unset (0) on the MCP "accepted" (non-blocking) path, where the
+	// durability work runs in the background; the CLI sets it on its blocking
+	// flush, which reports the real count before the process exits.
+	Flushed int `json:"flushed,omitempty"`
 }
 
 func vaultFlush(d VaultDeps) catalog.Operation {
@@ -950,7 +971,7 @@ func vaultFlush(d VaultDeps) catalog.Operation {
 		Summary:     "Upload and pin pending vault files",
 		Description: "Upload and pin staged (pending) vault files so they become durable on Sia. vault_put_file is non-blocking: it stages bytes locally and returns immediately with status pending. This packs the staged bytes into shared slabs, uploads and pins the objects, and marks them ok. Flush all staged files, or a single path via the path argument. The flush runs in the background: this tool returns immediately with status accepted, so poll vault_stat until status: ok before sharing a freshly written file (a share link requires a durable object).",
 		MCPTargets: catalog.MCPTargets(
-			catalog.Fallback("Make staged vault files durable on Sia. vault_put_file returns before bytes are on Sia (status: pending); call this to kick off upload + pin. Flush all pending files by default, or pass path to flush a single file. This tool is non-blocking: it returns immediately with status accepted and the durability work runs in the background (it is the same worker the idle background flush uses). Poll vault_stat until status: ok to confirm the file is durable, then vault_share. A full host-set upload can take a while, so do not treat the immediate accepted response as completion."),
+			catalog.Fallback("Make staged vault files durable on Sia. vault_put_file returns before bytes are on Sia (status: pending); call this to kick off upload + pin. Flush all pending files by default, or pass path to flush a single file. This tool is non-blocking: it returns immediately with status accepted and the durability work runs in the background (it is the same worker the idle background flush uses). Poll vault_stat until status: ok to confirm the file is durable, then vault_share. A full host-set upload can take a while, so do not treat the immediate accepted response as completion. If a file stays pending across polls, read vault_stat's flush_attempts and flush_error: a rising flush_attempts with a non-empty flush_error means the flush is failing (surface the error to the user), while flush_attempts stuck near zero with no error means it is still queued/uploading."),
 		),
 		Category:    "vault",
 		Safety:      catalog.SafetyMutate,

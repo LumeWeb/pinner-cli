@@ -263,3 +263,58 @@ func parseTestVault(t *testing.T, s string) *VaultPath {
 	}
 	return vp
 }
+
+// TestFlushVisibility_RecordsAndClearsError verifies the stuck-pending
+// visibility contract: a flush failure records flush_attempts + flush_error on
+// the staged row, and a successful flush clears them (status -> ok).
+func TestFlushVisibility_RecordsAndClearsError(t *testing.T) {
+	uploads := t.TempDir()
+	svc, _ := newStagingService(t, uploads)
+
+	got, err := svc.Put(context.Background(), bytes.NewReader([]byte("visibility probe")), int64(len("visibility probe")), "vault:/vis.txt", map[string]any{})
+	if err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if got.Status != FileStatusPending {
+		t.Fatalf("status = %q, want pending", got.Status)
+	}
+	if got.FlushAttempts != 0 || got.FlushError != "" {
+		t.Fatalf("fresh pending row should have no flush visibility, got attempts=%d error=%q", got.FlushAttempts, got.FlushError)
+	}
+
+	rec, err := svc.resolveFile(parseTestVault(t, "vault:/vis.txt"))
+	if err != nil {
+		t.Fatalf("resolveFile: %v", err)
+	}
+	// Simulate a flush failure.
+	svc.recordFlushFailure(&rec, errors.New("host pin timed out"))
+
+	var row File
+	if err := svc.db.First(&row, rec.ID).Error; err != nil {
+		t.Fatalf("reload row: %v", err)
+	}
+	if row.FlushAttempts != 1 {
+		t.Fatalf("flush_attempts = %d, want 1", row.FlushAttempts)
+	}
+	if row.FlushError != "host pin timed out" {
+		t.Fatalf("flush_error = %q, want recorded", row.FlushError)
+	}
+	if row.Status != FileStatusPending {
+		t.Fatalf("status changed on failure = %q, want pending", row.Status)
+	}
+
+	// A successful flush must clear the visibility and mark the row durable.
+	if err := svc.finalizeDurable(&row, "abc123"); err != nil {
+		t.Fatalf("finalizeDurable: %v", err)
+	}
+	var done File
+	if err := svc.db.First(&done, rec.ID).Error; err != nil {
+		t.Fatalf("reload after finalize: %v", err)
+	}
+	if done.Status != FileStatusOK {
+		t.Fatalf("status = %q, want ok", done.Status)
+	}
+	if done.FlushAttempts != 0 || done.FlushError != "" {
+		t.Fatalf("clear on success failed: attempts=%d error=%q", done.FlushAttempts, done.FlushError)
+	}
+}
