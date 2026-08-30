@@ -25,7 +25,7 @@ func TestAgentGuideDescriptor(t *testing.T) {
 	guid, ok := res.StructuredContent.(AgentGuide)
 	require.True(t, ok, "StructuredContent must be an AgentGuide")
 	require.NotEmpty(t, guid.Summary)
-	require.Len(t, guid.Flows, 12, "guide must cover all primary flows")
+	require.Len(t, guid.Flows, 13, "guide must cover all primary flows")
 
 	names := make([]string, 0, len(guid.Flows))
 	for _, f := range guid.Flows {
@@ -47,7 +47,7 @@ func TestAgentGuideDescriptor(t *testing.T) {
 			require.GreaterOrEqual(t, len(f.Steps), 2, "each flat flow must list an ordered tool chain: %s", f.Name)
 		}
 	}
-	for _, want := range []string{"auth", "vault_create", "vault_restore", "upload", "vault_upload", "download", "vault_download", "pins", "publish_website", "update_website"} {
+	for _, want := range []string{"auth", "vault_create", "vault_restore", "upload", "vault_upload", "download", "vault_download", "pins", "publish_website", "update_website", "ens_publish"} {
 		require.Contains(t, names, want)
 	}
 

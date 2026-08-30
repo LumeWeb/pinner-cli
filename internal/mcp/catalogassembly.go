@@ -22,8 +22,9 @@ func assembleCatalogOps(cat catalog.Catalog, ops []catalog.Operation) error {
 }
 
 // AssembleCatalogOps builds a single operation catalog covering the whole
-// catalogops surface: auth, vault-setup, vault, pins, websites, dns, ipns,
-// api-keys, and account operations. Each domain's operations are derived from
+// catalogops surface: auth, account, vault-setup, vault, pins, websites, dns,
+// ipns, ens, api-keys, operations, and admin operations. Each domain's
+// operations are derived from
 // the corresponding CatalogDepsBundle field via the catalogops provider
 // functions. A nil deps field is fine: catalogops degrades such a domain to
 // operations that fail with a clear "service unavailable" error at execution
@@ -55,6 +56,7 @@ func AssembleCatalogOps(deps *CatalogDepsBundle) (catalog.Catalog, error) {
 		{"websites", catalogops.WebsitesOperations(deps.Websites)},
 		{"dns", catalogops.DNSOperations(deps.DNS)},
 		{"ipns", catalogops.IPNSOperations(deps.IPNS)},
+		{"ens", catalogops.ENSOperations(deps.ENS)},
 		{"api-keys", catalogops.APIKeysOperations(deps.APIKeys)},
 		{"operations", catalogops.OperationsOperations(deps.Operations)},
 		{"admin", catalogops.AdminOperations(deps.Admin)},

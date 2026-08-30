@@ -1,0 +1,112 @@
+{{/* ens-publish prompt templates. Rendered by text/template from
+     pkg/internal/mcp/prompts.go. Template names carry an ens_publish_ prefix so
+     they stay distinct from the website_onboarding / website_update / setup
+     templates loaded into the same namespace by ParseFS. Data is the
+     sitePromptData struct (ENSName, CID). */}}
+
+{{define "ens_publish_overview"}}You are guiding a user through pointing an ENS/onchain name at IPFS content.
+
+Why this is different from a normal website:
+  - ENS names do NOT use the websites_create / DNS _dnslink system. A .eth (or
+    other onchain) name resolves via an IPNS-based contenthash record set onchain
+    in the ENS resolver.
+  - Pinner publishes the content under a per-domain IPNS key via ens_point and
+    returns the contenthash value; the user then sets that contenthash onchain
+    from their own wallet or ENS manager (an onchain transaction Pinner cannot do).
+
+Workflow overview (6 steps):
+  1. auth_check  : confirm the user is authenticated
+  2. content     : obtain a CID (upload if not already provided)
+  3. point       : call ens_point with the ENS name + CID to publish + get the contenthash
+  4. wallet      : guide the user to set the contenthash onchain (without assuming a wallet)
+  5. verify      : open the returned gateway URL after the onchain tx confirms
+  6. complete    : summarize
+
+Rules:
+  - Do not use websites_create for ENS pointing unless the user explicitly changes
+    their mind to a normal (non-ENS) website.
+  - ens_point and ens_unpoint are NOT on the default tools/list — discover them via
+    search_tools with query "ens".
+  - Never assume which wallet or ENS manager the user has. Surface the exact
+    contenthash value and present common options (ENS manager at app.ens.domains,
+    the ENS SDK via ethers.js, a wallet with ENS support) as suggestions, and ask
+    the user what they use.
+  - The contenthash set is an onchain transaction the user signs; Pinner cannot set
+    it and cannot see/sign the user's wallet. Do not invent a tool to "set the ENS
+    record" server-side.
+  - Verification uses the returned verify_url (eth.limo for .eth names). It can only
+    reflect the new content after the onchain contenthash transaction confirms and
+    the resolver propagates.{{if .ENSName}}
+
+ENS name: {{.ENSName}}{{end}}{{end}}
+
+{{define "ens_publish_auth_status"}}Read the pinner://account/status resource above. If "authenticated" is false, instruct the user to authenticate first. Do not proceed until authentication is confirmed.
+{{end}}
+
+{{define "ens_publish_content_upload"}}Step: content
+No CID was provided. Upload the content first to obtain a publishable directory CID:
+  - For a static website bundle (ZIP containing index.html, CSS, JS, images, nested pages):
+    call upload_file and treat it as a single directory DAG (archive_mode=convert). Verify
+    index.html is at the archive root, not wrapped in a parent directory.
+  - For a single HTML file intended as a website: use wrap=true and do NOT set an explicit
+    name (auto-named to index.html so it resolves at root).
+  - Use the byte route your host supports (upload_file with the host file / local path /
+    mint+PUT, or upload_url / upload_data per capabilities).
+The upload returns a CID that is already pinned. Keep it for the point step.
+{{end}}
+
+{{define "ens_publish_content_cid"}}Step: content
+A CID is provided: {{.CID}}. If it is not a pinned directory CID with index.html at the root
+for a website, note that and treat it as arbitrary content. Either way, keep the CID for the
+point step.
+{{end}}
+
+{{define "ens_publish_point"}}Step: point
+Discover the tool: call search_tools with query "ens" and resolve ens_point via
+describe_tool. Then call ens_point with:
+  name: "{{.ENSName}}"
+  cid:  "{{if .CID}}{{.CID}}{{else}}<the CID from the upload step>{{end}}"
+
+ens_point creates or reuses the IPNS key for the ENS name, publishes the CID to it, and
+returns:
+  - contenthash : the ipns://<ipns-name> value to set onchain
+  - verify_url  : a gateway URL to confirm resolution (eth.limo for .eth)
+  - next_steps  : ordered guidance (which you adapt for this user)
+It is idempotent: repointing the same or a new CID reuses the existing key.
+{{end}}
+
+{{define "ens_publish_wallet"}}Step: wallet
+The contenthash value to set in the ENS resolver is the contenthash that ens_point
+returned (it looks like ipns://<ipns-name>). Present this EXACT string to the user for
+copying.
+
+Explain in your own words, matching what the user is comfortable with:
+  - Setting the contenthash is an onchain (Ethereum) transaction the user signs from their
+    own wallet/ENS manager. Pinner cannot set it and never handles the user's private key.
+  - Do NOT assume a specific wallet. Ask which they use, then offer the relevant path:
+      * ENS Manager web app: app.ens.domains -> manage your name -> Records -> Content Hash
+      * Any wallet with ENS support that exposes the name's Records editor
+      * Programmatic: the ENS SDK / ethers.js setContentHash on the resolver contract
+  - A strong ENS contenthash uses the ipns:// scheme (as returned); do not suggest a CID
+    contenthash unless the user explicitly wants an immutable ipfs:// pointer.
+Only proceed to verification AFTER the user confirms they have set (or will set) the
+contenthash onchain.
+{{end}}
+
+{{define "ens_publish_verify"}}Step: verify
+After the onchain contenthash transaction confirms (and the resolver propagates — this can
+take a minute or two), verify at the verify_url that ens_point returned (for a .eth name this
+is the eth.limo gateway, e.g. https://<name>.eth.limo). Open it or share it with the user and
+confirm the content resolves. If it does not immediately, it is propagation lag, not failure —
+re-check shortly.
+{{end}}
+
+{{define "ens_publish_complete"}}Step: complete
+Summarize the ENS publish result:
+  - ENS name: {{.ENSName}}
+  - IPNS contenthash set onchain (user-signed): the ipns:// value returned by ens_point
+  - Verify URL: as returned by ens_point
+  - Note: to stop the name resolving later, the user removes the IPNS key with ens_unpoint
+    (destructive, needs human confirmation) AND should clear the contenthash in the ENS
+    resolver.
+{{end}}

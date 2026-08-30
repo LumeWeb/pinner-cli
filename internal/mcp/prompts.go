@@ -12,6 +12,7 @@ const (
 	PromptWebsiteOnboarding = "website-onboarding"
 	PromptWebsiteUpdate     = "website-update"
 	PromptSetup             = "setup"
+	PromptENSPublish        = "ens-publish"
 )
 
 // Prompt argument names.
@@ -25,6 +26,9 @@ const (
 	ArgWebsite     = "website"
 	ArgCID         = "cid"
 	ArgCurrentType = "current_type"
+
+	// ens-publish prompt arguments.
+	ArgENSName = "name"
 )
 
 // PromptDescriptors builds the SDK-neutral prompt descriptors for the
@@ -62,6 +66,16 @@ func PromptDescriptors() []model.PromptDescriptor {
 			Title:       "Setup Wizard",
 			Description: "Guides the agent through the initial pinner setup wizard workflow step by step using the setup_wizard_start and setup_wizard_step tools. Covers authentication, configuration, shell completion, and a quick tutorial. Embeds a reference to the pinner://account/status resource.",
 			Handler:     setupHandler,
+		},
+		{
+			Name:        PromptENSPublish,
+			Title:       "Point an ENS Name at Content",
+			Description: "Guides the agent through pointing an ENS/onchain name (e.g. vitalik.eth) at IPFS content: upload the content to get a CID, call ens_point to publish it under the name's IPNS key and obtain the contenthash, then guide the user to set the ENS resolver contenthash onchain from their own wallet/ENS manager (without assuming a specific wallet) and verify via the returned gateway URL. ENS names do not use the website/DNS system.",
+			Arguments: []model.PromptArgumentDescriptor{
+				{Name: ArgENSName, Description: `The ENS/onchain domain to point (e.g. vitalik.eth). Required. Do not invent one; use the name the user provided.`},
+				{Name: ArgCID, Description: `IPFS CID of the content to serve. If omitted, the flow first uploads the content to obtain a CID.`},
+			},
+			Handler: ensPublishHandler,
 		},
 	}
 }
@@ -212,6 +226,55 @@ func websiteUpdateHandler(ctx context.Context, req model.PromptRequest) (model.P
 
 	return model.PromptResult{
 		Description: "Website update workflow with target-type preservation and DNS-mode handling",
+		Messages:    messages,
+	}, nil
+}
+
+// ensPublishHandler is the prompts/get handler for the ens-publish prompt. It
+// renders a sequence of messages that drive the agent through the ENS publish
+// flow: upload (when no CID is given), ens_point to publish + obtain the
+// contenthash, onchain contenthash set (wallet guidance, without assuming a
+// wallet), and verification.
+func ensPublishHandler(ctx context.Context, req model.PromptRequest) (model.PromptResult, error) {
+	args := req.Arguments
+	name := args[ArgENSName]
+	cid := args[ArgCID]
+
+	if name == "" {
+		return model.PromptResult{}, fmt.Errorf("ens-publish: name is required")
+	}
+
+	data := sitePromptData{ENSName: name, CID: cid}
+	var messages []model.PromptMessage
+
+	// Step 0: Overview.
+	messages = append(messages, textMsg(renderPromptTemplate("ens_publish_overview", data)))
+
+	// Step 1: Auth check via the account status resource.
+	messages = append(messages, embeddedMsg(AccountStatusURI))
+	messages = append(messages, textMsg(renderPromptTemplate("ens_publish_auth_status", data)))
+
+	// Step 2: Content — upload first only if no CID was supplied.
+	if cid == "" {
+		messages = append(messages, textMsg(renderPromptTemplate("ens_publish_content_upload", data)))
+	} else {
+		messages = append(messages, textMsg(renderPromptTemplate("ens_publish_content_cid", data)))
+	}
+
+	// Step 3: Point the name (ens_point, discovered via search_tools).
+	messages = append(messages, textMsg(renderPromptTemplate("ens_publish_point", data)))
+
+	// Step 4: Wallet/onchain contenthash guidance.
+	messages = append(messages, textMsg(renderPromptTemplate("ens_publish_wallet", data)))
+
+	// Step 5: Verify via the returned gateway URL.
+	messages = append(messages, textMsg(renderPromptTemplate("ens_publish_verify", data)))
+
+	// Step 6: Completion summary.
+	messages = append(messages, textMsg(renderPromptTemplate("ens_publish_complete", data)))
+
+	return model.PromptResult{
+		Description: "ENS publish workflow: upload -> ens_point -> set onchain contenthash -> verify",
 		Messages:    messages,
 	}, nil
 }
