@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"strings"
 	"testing"
 
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
@@ -163,6 +164,36 @@ func TestAgentGuideFiltersVaultFlowsOnHosted(t *testing.T) {
 	for _, keepFlow := range []string{"auth", "upload", "download", "pins", "publish_website"} {
 		assert.True(t, names[keepFlow], "hosted guide must keep flow %q", keepFlow)
 	}
+}
+
+// TestAgentGuideGatesHostedRuleOnDeployment verifies the agent guide carries
+// the hosted-specific guidance (identity established by Portal OAuth; do not
+// call auth_login/auth_logout) only when the server is a hosted assembly, and
+// omits it for a local server — even one on the same hosted surface.
+func TestAgentGuideGatesHostedRuleOnDeployment(t *testing.T) {
+	const rule = "Hosted instance notice"
+	surfaceFor := func() { SetSurface(HostedSurface); defer SetSurface(FullSurface) }
+
+	SetHosted(true)
+	defer SetHosted(false)
+	surfaceFor()
+	profile := hostenv.ProfileHTTPGeneric
+	h := buildAgentGuide(&profile)
+	assert.True(t, containsRule(h, rule), "hosted assembly must advertise the hosted rule")
+
+	// Reset to local: same surface, but not hosted -> rule must be dropped.
+	SetHosted(false)
+	localH := buildAgentGuide(&profile)
+	assert.False(t, containsRule(localH, rule), "local server must not advertise the hosted rule")
+}
+
+func containsRule(guide AgentGuide, substr string) bool {
+	for _, r := range guide.Rules {
+		if strings.Contains(r, substr) {
+			return true
+		}
+	}
+	return false
 }
 
 // TestSurfaceZeroIsFull verifies the zero Surface behaves as the full surface,

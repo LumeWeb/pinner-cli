@@ -20,11 +20,12 @@ import (
 // OpenAI tunnel, or plain HTTP).
 func startupProfile() hostenv.PlatformProfile {
 	p := hostenv.ProfileForTransport(transfer.UploadFileTransport(transportFlagsVar.coLocated, transportFlagsVar.tunnelOpenAI))
-	// The server surface is a construction-time property recorded by
-	// buildCatalog; carry it on the startup profile so profile-aware tool
-	// description/schema resolution (which reads the profile's surface) agrees
-	// with what was actually registered.
+	// The server surface and deployment mode are construction-time properties
+	// recorded by buildCatalog; carry them on the startup profile so
+	// profile-aware tool description/schema resolution (which reads the
+	// profile's surface) agrees with what was actually registered.
 	p.Surface = activeSurface()
+	p.Hosted = activeHosted()
 	return p
 }
 

@@ -45,6 +45,25 @@ func activeSurface() Surface {
 	return surfaceVar
 }
 
+// hostedVar records whether the active server is a hosted (Portal-embedded)
+// assembly. It is the deployment-mode counterpart to surfaceVar: recorded once
+// at server construction (buildCatalog) and overlaid on the resolved platform
+// profile so the prompt/guide DSL can gate hosted-specific copy. Hosted is
+// orthogonal to the surface — see activeHosted.
+var hostedVar bool
+
+// SetHosted records whether the active server is a hosted (Portal-embedded)
+// assembly. It MUST be called during server construction alongside SetSurface
+// and is written once (mirroring SetSurface/SetTransportFlags).
+func SetHosted(hosted bool) {
+	hostedVar = hosted
+}
+
+// activeHosted returns whether the active server is a hosted assembly.
+func activeHosted() bool {
+	return hostedVar
+}
+
 // ErrNotAuthenticated is returned by a CredentialResolver when the current
 // request has no usable Portal API credential. Handlers surface it as a
 // structured needs_auth hand-off rather than a bare error.
