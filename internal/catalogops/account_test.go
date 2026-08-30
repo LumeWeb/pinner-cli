@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
@@ -93,5 +94,25 @@ func TestAccountOTPDisablePropagatesServiceError(t *testing.T) {
 	}
 	if err.Error() != "account_otp_disable: invalid password" {
 		t.Fatalf("err = %q, want account_otp_disable: invalid password", err.Error())
+	}
+}
+
+// TestAccountUpdateEnvCLIOnly verifies account_update_email and
+// account_update_password declare EnvCLIOnly: they are valid only on the urfave
+// CLI frontend and are omitted from every MCP surface (they pass the user's
+// password through the LLM channel and duplicate the OOB browser hand-off
+// tools).
+func TestAccountUpdateEnvCLIOnly(t *testing.T) {
+	envs := map[string]catalog.Environment{}
+	for _, op := range AccountOperations(AccountDeps{}) {
+		envs[op.Name()] = op.Environment()
+	}
+	for _, name := range []string{"account_update_email", "account_update_password"} {
+		if envs[name] != catalog.EnvCLIOnly {
+			t.Errorf("%s.Environment() = %v, want EnvCLIOnly", name, envs[name])
+		}
+	}
+	if envs["account_info"] != catalog.EnvBoth {
+		t.Errorf("account_info.Environment() = %v, want EnvBoth", envs["account_info"])
 	}
 }

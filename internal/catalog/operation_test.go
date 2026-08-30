@@ -141,3 +141,19 @@ func TestOperationZeroValues(t *testing.T) {
 		t.Errorf("zero-value Operation.Handler() should be nil, got %v", op.Handler())
 	}
 }
+
+// TestOperationEnvironmentDefaultsToEnvBoth verifies an operation that does
+// not opt into an Environment carve-out defaults to EnvBoth, so every existing
+// operation stays valid on CLI, local MCP, and hosted MCP without a field being
+// set on each one.
+func TestOperationEnvironmentDefaultsToEnvBoth(t *testing.T) {
+	op := NewOperation(OperationSpec{Name: "op"})
+	if op.Environment() != EnvBoth {
+		t.Errorf("Operation.Environment() = %v, want EnvBoth by default", op.Environment())
+	}
+
+	explicit := NewOperation(OperationSpec{Name: "op", Environment: EnvCLIOnly})
+	if explicit.Environment() != EnvCLIOnly {
+		t.Errorf("Operation.Environment() = %v, want EnvCLIOnly when set", explicit.Environment())
+	}
+}

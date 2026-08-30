@@ -15,6 +15,14 @@ import (
 // server, so a hosted product is a DIFFERENT ASSEMBLY of the same MCP
 // implementation rather than a second implementation or a fork.
 type ServerConfig struct {
+	// Hosted reports whether this is a hosted (Portal-embedded) assembly. It is
+	// the single, explicit source of truth for hosted mode: set to true by
+	// BuildHostedServer and never elsewhere, so a new boolean is threaded
+	// through to catalog assembly instead of being inferred from structural
+	// signals (surface equality or CredentialResolver presence) that are
+	// orthogonal to deployment context.
+	Hosted bool
+
 	// Surface declares which operation domains/tool families this server
 	// exposes. The zero value is the full surface.
 	Surface Surface
@@ -51,7 +59,7 @@ type ServerConfig struct {
 // custom registration. It does not wire a transport — the caller serves srv
 // over stdio or a streamable HTTP handler.
 func BuildServer(cfg ServerConfig) (*sdk.Server, *ToolCatalog, error) {
-	opts := []buildCatalogOpt{withSurface(cfg.Surface)}
+	opts := []buildCatalogOpt{withSurface(cfg.Surface), withHosted(cfg.Hosted)}
 	if cfg.CatalogDeps != nil {
 		opts = append(opts, withCatalogDeps(cfg.CatalogDeps))
 	}

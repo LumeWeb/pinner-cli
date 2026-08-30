@@ -46,6 +46,7 @@ func BuildHostedServer(cfg HostedServerConfig) (*sdk.Server, *ToolCatalog, error
 		surface = HostedSurface
 	}
 	return BuildServer(ServerConfig{
+		Hosted:      true, // hosted mode is declared here, at the one construction seam
 		Surface:     surface,
 		CatalogDeps: cfg.CatalogDeps,
 		StdioMode:   false,
