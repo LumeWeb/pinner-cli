@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 )
 
 const (
@@ -71,7 +72,20 @@ type profileFlushWorker struct {
 	profile string
 	wake    chan struct{}
 	svc     VaultService
+
+	// active is the job currently being processed (guarded by mgr.mu). It lets
+	// Close() fail an in-flight job when a worker is too stuck to finish, so a
+	// polling agent's vault_flush_status resolves instead of hanging forever.
+	active *FlushJob
 }
+
+// flushShutdownTimeout bounds how long Close() waits for worker goroutines to
+// observe the cancelled manager context before giving up on a stuck worker (one
+// blocked in a non-cancellable Flush/FlushPath, e.g. waiting on the per-profile
+// flush lock held by an upload that ignores ctx). Bounding the join guarantees
+// MCP shutdown cannot hang forever on a single non-cooperating worker. A var
+// (not const) so the bounded-join path is testable at a short duration.
+var flushShutdownTimeout = 5 * time.Second
 
 // Enqueue accepts a flush request for profile (path may be empty = flush all
 // staged files) and returns an accepted job immediately (non-blocking). The
@@ -201,7 +215,15 @@ func (m *FlushManager) setStatus(job *FlushJob, status string, flushed int, errM
 	}
 }
 
+func (m *FlushManager) setActive(w *profileFlushWorker, job *FlushJob) {
+	m.mu.Lock()
+	w.active = job
+	m.mu.Unlock()
+}
+
 func (m *FlushManager) process(ctx context.Context, w *profileFlushWorker, job *FlushJob) {
+	m.setActive(w, job)
+	defer m.setActive(w, nil)
 	m.setStatus(job, FlushJobRunning, 0, "")
 	svc, err := w.service(ctx)
 	if err != nil {
@@ -257,8 +279,9 @@ func (w *profileFlushWorker) service(ctx context.Context) (VaultService, error) 
 
 // Close stops every per-profile worker and releases held services. It marks
 // still-queued jobs failed (so agents polling vault_flush_status never hang),
-// cancels the manager context, joins each worker goroutine, and only then
-// closes the services it was using (no use-after-close). Prevents further
+// cancels the manager context, and joins each worker goroutine — bounded by
+// flushShutdownTimeout so a worker stuck in a non-cancellable Flush (ignoring
+// the cancelled context) cannot hang MCP shutdown forever. Prevents further
 // Enqueue. Safe to call more than once.
 func (m *FlushManager) Close() {
 	m.mu.Lock()
@@ -286,11 +309,35 @@ func (m *FlushManager) Close() {
 
 	cancel()
 	// Join in-flight workers BEFORE closing their services, so a worker can
-	// never be mid-process() touching a concurrently closed service.
-	m.wg.Wait()
+	// never be mid-process() touching a concurrently closed service. Bound the
+	// join: a worker blocked on a non-cooperating upload (e.g. the per-profile
+	// flush lock held by a Flush that ignores ctx) never observes the cancelled
+	// context, so we give up after flushShutdownTimeout rather than hang.
+	done := make(chan struct{})
+	go func() { m.wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(flushShutdownTimeout):
+		m.failStuckJobs(workers)
+	}
 	for _, w := range workers {
 		if w.svc != nil {
 			_ = w.svc.Close()
+		}
+	}
+}
+
+// failStuckJobs marks any in-flight job of workers that failed to observe the
+// cancelled context as failed (without closing its completion channel, since
+// the stuck worker may later return and call setStatus), so a polling agent's
+// vault_flush_status resolves instead of hanging on a permanently "running" job.
+func (m *FlushManager) failStuckJobs(workers map[string]*profileFlushWorker) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, w := range workers {
+		if w.active != nil && w.active.Status == FlushJobRunning {
+			w.active.Status = FlushJobFailed
+			w.active.Error = "flush manager shutdown timed out"
 		}
 	}
 }

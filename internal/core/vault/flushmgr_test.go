@@ -133,3 +133,49 @@ func TestFlushManagerCloseDrainsQueuedJobsAndJoinsWorkers(t *testing.T) {
 		t.Fatalf("running job after Close = %+v, want a terminal state", j1)
 	}
 }
+
+// TestFlushManagerCloseBoundsStuckWorker is a regression test for the Kody
+// finding that Close() blocked indefinitely on m.wg.Wait() when a worker was
+// stuck in a non-cancellable Flush (one that ignores the cancelled manager
+// context, e.g. waiting on a lock held by an upload that doesn't honor ctx),
+// leaving the job permanently "running" and hanging MCP shutdown. Close() must
+// bound the join and fail the stuck job so shutdown and polls resolve.
+func TestFlushManagerCloseBoundsStuckWorker(t *testing.T) {
+	oldTimeout := flushShutdownTimeout
+	flushShutdownTimeout = 50 * time.Millisecond
+	defer func() { flushShutdownTimeout = oldTimeout }()
+
+	never := make(chan struct{}) // never closed: Flush ignores the context forever
+	svc := NewMockVaultService(t)
+	svc.On("Flush", mock.Anything).
+		Run(func(mock.Arguments) { <-never }).
+		Return(0, nil).
+		Maybe()
+	svc.On("Close").Return(nil).Maybe()
+
+	mgr := NewFlushManager(SyncLoopConfig{
+		Profiles: func() []string { return []string{"alpha"} },
+		Service:  func(string) (VaultService, error) { return svc, nil },
+	})
+	job, err := mgr.Enqueue(context.Background(), "alpha", "")
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	// Close must return promptly (bounded by flushShutdownTimeout), not hang on
+	// the stuck worker.
+	start := time.Now()
+	mgr.Close()
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("Close() took %v: it hung on the stuck worker instead of bounding the join", elapsed)
+	}
+
+	// The in-flight stuck job must be failed so vault_flush_status resolves.
+	j, ok := mgr.Job(job.JobID)
+	if !ok {
+		t.Fatalf("job %s missing after Close", job.JobID)
+	}
+	if j.Status != FlushJobFailed {
+		t.Fatalf("stuck job after Close = %q, want %q (failed so a poll resolves)", j.Status, FlushJobFailed)
+	}
+}
