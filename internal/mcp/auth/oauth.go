@@ -243,12 +243,7 @@ func (o *OAuthServer) sweep() {
 func (o *OAuthServer) reapLocked() {
 	now := time.Now()
 	for tok, exp := range o.tokens {
-		if now.After(exp.Add(o.clockSkew)) {
-			delete(o.tokens, tok)
-			if o.store != nil {
-				_ = o.store.DeleteAccessToken(tok)
-			}
-		}
+		o.evictBeyondSkew(tok, exp)
 	}
 	for code, e := range o.codes {
 		if now.After(e.expiry) {
@@ -812,6 +807,22 @@ func (o *OAuthServer) storeAccessToken(token, clientID, resource string, ttl tim
 	}
 }
 
+// evictBeyondSkew removes an access token that is past the clock-skew grace
+// from both the in-memory map and the durable store, and reports whether it
+// was evicted. It is the single place access-token eviction happens, keeping
+// reap/sweep/middleware consistent so a restart never resurrects a token the
+// running server already invalidated. The caller must hold o.mu.
+func (o *OAuthServer) evictBeyondSkew(tok string, exp time.Time) bool {
+	if !time.Now().After(exp.Add(o.clockSkew)) {
+		return false
+	}
+	delete(o.tokens, tok)
+	if o.store != nil {
+		_ = o.store.DeleteAccessToken(tok)
+	}
+	return true
+}
+
 func issueTokens(w http.ResponseWriter, pair tokenPair, ttl time.Duration) {
 	// Storage is performed by the caller's OAuthServer before this response.
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -853,18 +864,13 @@ func (o *OAuthServer) tokenExpiry(tok string) (time.Time, bool) {
 		o.mu.Unlock()
 		return exp, false
 	}
-	now := time.Now()
-	if now.After(exp.Add(o.clockSkew)) {
-		// Beyond the clock-skew grace: drop from memory AND the durable store so
-		// a restart does not resurrect an already-invalidated token.
-		delete(o.tokens, tok)
+	if o.evictBeyondSkew(tok, exp) {
+		// Beyond the clock-skew grace: dropped from memory AND the durable store
+		// (by evictBeyondSkew) so a restart never resurrects this token.
 		o.mu.Unlock()
-		if o.store != nil {
-			_ = o.store.DeleteAccessToken(tok)
-		}
 		return exp, false
 	}
-	if now.After(exp) {
+	if time.Now().After(exp) {
 		// Strictly expired but within the skew grace: report as expired while
 		// keeping it in memory and in the store, so an in-flight request and a
 		// restart-reload still observe it exactly as OfficialMiddleware does.
@@ -884,15 +890,10 @@ func (o *OAuthServer) OfficialMiddleware(next http.Handler) http.Handler {
 			// ClockSkew grace window so concurrent in-flight requests
 			// that present the same expired token also receive the
 			// TokenInfo and let the SDK apply the same tolerance.
-			// Tokens expired beyond the skew are reaped by the periodic
-			// sweep (reapLocked); delete here only if beyond the skew
-			// to bound map growth without breaking sibling requests.
-			if time.Now().After(exp.Add(o.clockSkew)) {
-				delete(o.tokens, token)
+			// Tokens expired beyond the skew are evicted here (in-memory and
+			// durable) to bound map growth without breaking sibling requests.
+			if o.evictBeyondSkew(token, exp) {
 				o.mu.Unlock()
-				if o.store != nil {
-					_ = o.store.DeleteAccessToken(token)
-				}
 				return nil, fmt.Errorf("%w: the access token has expired", auth.ErrInvalidToken)
 			}
 			o.mu.Unlock()
