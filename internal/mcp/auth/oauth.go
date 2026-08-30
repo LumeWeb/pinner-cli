@@ -33,9 +33,11 @@ import (
 // Client registrations are durable in an embedded SQLite store, as are issued
 // refresh tokens (which tolerate reuse rather than being invalidated on first
 // use, avoiding invalid_grant against clients like Anthropic's that re-present
-// them). Authorization codes and short-lived access tokens remain in memory.
-// The authorization code flow enforces S256 PKCE and RFC 8707 resource binding;
-// the shared secret remains the only user credential.
+// them). Authorization codes remain in memory; access tokens are persisted too
+// (like refresh tokens) so a connector holding a still-valid token can resume
+// after a restart without re-authorizing. The authorization code flow enforces
+// S256 PKCE and RFC 8707 resource binding; the shared secret remains the only
+// user credential.
 type OAuthServer struct {
 	mu      sync.Mutex
 	secret  []byte
@@ -167,6 +169,23 @@ func NewOAuthServer(secret, BaseURL string, store *oauthstore.Store) *OAuthServe
 			}
 		}
 	}
+	// Reload still-valid access tokens from the durable store. Most connectors
+	// (Claude, ChatGPT) refresh on a 401, but Grok's rmcp/connectors-manager
+	// does not — it treats "initialize" 401 + invalid_token as fatal and never
+	// re-presents a refresh grant. Persisting access tokens is what lets a Grok
+	// client holding an unexpired token resume after a restart instead of being
+	// forced through a fresh authorize. Unexpired-within-skew tokens are loaded
+	// so the middleware's clock-skew tolerance keeps working across the restart.
+	if store != nil {
+		if persisted, err := store.AccessTokens(); err == nil {
+			now := time.Now()
+			for tok, exp := range persisted {
+				if now.Before(exp.Add(o.clockSkew)) {
+					o.tokens[tok] = exp
+				}
+			}
+		}
+	}
 	// Periodic reaper so long-running public tunnels do not grow the maps
 	// without bound as clients rotate and codes go unredeemed.
 	go o.sweep()
@@ -226,6 +245,9 @@ func (o *OAuthServer) reapLocked() {
 	for tok, exp := range o.tokens {
 		if now.After(exp.Add(o.clockSkew)) {
 			delete(o.tokens, tok)
+			if o.store != nil {
+				_ = o.store.DeleteAccessToken(tok)
+			}
 		}
 	}
 	for code, e := range o.codes {
@@ -725,7 +747,7 @@ func (o *OAuthServer) exchangeRefreshToken(w http.ResponseWriter, r *http.Reques
 		writeInvalidGrant(w)
 		return
 	}
-	client, successor, status, err := o.store.RotateRefreshToken(refresh, clientID, resource)
+	_, successor, status, err := o.store.RotateRefreshToken(refresh, clientID, resource)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server_error"})
 		return
@@ -733,11 +755,10 @@ func (o *OAuthServer) exchangeRefreshToken(w http.ResponseWriter, r *http.Reques
 	pair := tokenPair{access: newToken(32), refresh: successor}
 	switch status {
 	case oauthstore.RotateOK, oauthstore.RotateOKReused:
-		// Accepted (fresh rotation or benign reuse within the window).
-		o.mu.Lock()
-		o.tokens[pair.access] = time.Now().Add(o.tokenTTL)
-		o.mu.Unlock()
-		_ = client
+		// Accepted (fresh rotation or benign reuse within the window). The
+		// successor refresh token was already issued by RotateRefreshToken, so
+		// only the fresh access token needs in-memory + durable registration.
+		o.storeAccessToken(pair.access, clientID, resource, o.tokenTTL)
 		o.logf().Info("OAuth token issued (refresh_token)", zap.String("client_id", clientID), zap.String("resource", resource), zap.String("remote", r.RemoteAddr))
 		issueTokens(w, pair, o.tokenTTL)
 	default:
@@ -772,12 +793,22 @@ type tokenPair struct {
 }
 
 func (o *OAuthServer) storeTokens(pair tokenPair, clientID, resource string) {
-	now := time.Now()
-	o.mu.Lock()
-	o.tokens[pair.access] = now.Add(o.tokenTTL)
-	o.mu.Unlock()
+	o.storeAccessToken(pair.access, clientID, resource, o.tokenTTL)
 	if o.store != nil {
 		_ = o.store.IssueRefreshToken(pair.refresh, clientID, resource)
+	}
+}
+
+// storeAccessToken registers an access token in the in-memory map AND persists
+// it so it survives a process restart (see NewOAuthServer's reload). It takes
+// o.mu itself, so callers must not already hold it.
+func (o *OAuthServer) storeAccessToken(token, clientID, resource string, ttl time.Duration) {
+	expiry := time.Now().Add(ttl)
+	o.mu.Lock()
+	o.tokens[token] = expiry
+	o.mu.Unlock()
+	if o.store != nil {
+		_ = o.store.SaveAccessToken(token, clientID, resource, expiry)
 	}
 }
 
@@ -817,12 +848,16 @@ func (o *OAuthServer) validToken(tok string) bool {
 
 func (o *OAuthServer) tokenExpiry(tok string) (time.Time, bool) {
 	o.mu.Lock()
-	defer o.mu.Unlock()
 	exp, ok := o.tokens[tok]
 	if ok && time.Now().After(exp) {
 		delete(o.tokens, tok)
-		ok = false
+		o.mu.Unlock()
+		if o.store != nil {
+			_ = o.store.DeleteAccessToken(tok)
+		}
+		return exp, false
 	}
+	o.mu.Unlock()
 	return exp, ok
 }
 
@@ -841,6 +876,9 @@ func (o *OAuthServer) OfficialMiddleware(next http.Handler) http.Handler {
 			if time.Now().After(exp.Add(o.clockSkew)) {
 				delete(o.tokens, token)
 				o.mu.Unlock()
+				if o.store != nil {
+					_ = o.store.DeleteAccessToken(token)
+				}
 				return nil, fmt.Errorf("%w: the access token has expired", auth.ErrInvalidToken)
 			}
 			o.mu.Unlock()

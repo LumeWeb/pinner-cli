@@ -200,3 +200,42 @@ func TestConcurrentFirstUseRotatesOnce(t *testing.T) {
 	require.Equal(t, 1, ok, "exactly one goroutine may win the first-use rotation")
 	require.Equal(t, 1, reused, "the loser must be treated as a benign race")
 }
+
+// TestAccessTokenSurvivesReopen verifies the durability contract for access
+// tokens: an access token saved in one process is readable after reopening the
+// store, so a connector that does not refresh on 401 (Grok's rmcp) can resume
+// with a still-valid token after a server restart instead of re-authorizing.
+// It also checks DeleteAccessToken removes a single token and Reap drops
+// expired entries.
+func TestAccessTokenSurvivesReopen(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "oauth.db")
+
+	s1, err := Open(path, 30*24*time.Hour)
+	require.NoError(t, err)
+	require.NoError(t, s1.SaveAccessToken("at-1", "cli", "https://mcp.example.com/mcp", time.Now().Add(time.Hour)))
+	require.NoError(t, s1.SaveAccessToken("at-expired", "cli", "https://mcp.example.com/mcp", time.Now().Add(-time.Minute)))
+	require.NoError(t, s1.Close())
+
+	// Reopening the store surfaces the saved (including not-yet-expired) tokens.
+	s2, err := Open(path, 30*24*time.Hour)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s2.Close() })
+	all, err := s2.AccessTokens()
+	require.NoError(t, err)
+	require.Contains(t, all, "at-1")
+	require.Contains(t, all, "at-expired")
+
+	// Reap drops only the expired token; the live one survives.
+	require.NoError(t, s2.Reap())
+	all, err = s2.AccessTokens()
+	require.NoError(t, err)
+	require.Contains(t, all, "at-1")
+	require.NotContains(t, all, "at-expired")
+
+	// DeleteAccessToken removes a single token.
+	require.NoError(t, s2.DeleteAccessToken("at-1"))
+	all, err = s2.AccessTokens()
+	require.NoError(t, err)
+	require.NotContains(t, all, "at-1")
+}
