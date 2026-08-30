@@ -319,8 +319,10 @@ func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 		if output.IsJSON() {
 			return output.PrintJSON(map[string]any{"share_url": r.ShareURL, "expires": r.Expires, "status": r.Status, "message": r.Message})
 		}
-		if r.Status == "pending" {
-			output.Printfln("File is not yet durable on Sia: %s", r.Message)
+		if r.Status != "ok" {
+			// pending/uploaded/lost all carry a message and no share URL; never
+			// fall through to printing an empty link.
+			output.Printfln("File is not shareable (%s): %s", r.Status, r.Message)
 			return nil
 		}
 		output.Print(r.ShareURL)

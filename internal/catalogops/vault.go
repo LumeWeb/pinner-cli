@@ -980,8 +980,9 @@ func vaultFlush(d VaultDeps) catalog.Operation {
 			// Flush a single path. FlushPath silently no-ops when the file is
 			// already durable (returns nil without doing work), so look it up
 			// first and only report a flush when there is a staged buffer to
-			// actually upload.
-			if st, serr := svc.Stat(flushCtx, path); serr == nil && st.Status == vault.FileStatusOK {
+			// actually upload. A lost file also has no staged buffer, so it
+			// must not be reported as flushed either.
+			if st, serr := svc.Stat(flushCtx, path); serr == nil && (st.Status == vault.FileStatusOK || st.Status == vault.FileStatusLost) {
 				return &VaultFlushResult{Flushed: 0}, nil
 			}
 			if ferr := svc.FlushPath(flushCtx, path); ferr != nil {

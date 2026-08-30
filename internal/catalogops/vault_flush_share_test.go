@@ -134,6 +134,25 @@ func TestVaultFlushDurableNoop(t *testing.T) {
 	msvc.AssertNotCalled(t, "Flush", mock.Anything)
 }
 
+// TestVaultFlushLostNoop verifies vault_flush <path> does NOT report a phantom
+// flush for a lost file: it has no staged buffer, so FlushPath would be a
+// silent no-op and must be reported as 0 flushed.
+func TestVaultFlushLostNoop(t *testing.T) {
+	msvc := vault.NewMockVaultService(t)
+	msvc.On("Stat", mock.Anything, "vault:/docs/a.txt").
+		Return(&vault.StatResult{Path: "vault:/docs/a.txt", Status: vault.FileStatusLost, LostReason: "slabs unavailable"}, nil)
+
+	res, err := newVaultOps(t, msvc, "vault_flush", map[string]any{
+		"path":    "vault:/docs/a.txt",
+		"profile": "work",
+	})
+	require.NoError(t, err)
+	fr := res.(*VaultFlushResult)
+	require.Equal(t, 0, fr.Flushed, "lost file must not report a phantom flush")
+	msvc.AssertNotCalled(t, "FlushPath", mock.Anything, mock.Anything)
+	msvc.AssertNotCalled(t, "Flush", mock.Anything)
+}
+
 // TestVaultShareLost verifies vault_share surfaces the lost state rather than
 // suggesting a flush that could never make the file shareable.
 func TestVaultShareLost(t *testing.T) {
