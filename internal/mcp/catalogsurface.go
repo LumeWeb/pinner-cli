@@ -51,16 +51,26 @@ func startupProfile() hostenv.PlatformProfile {
 // config default, so a hosted server authenticates every request as the
 // calling user rather than sharing a single config credential. Nil (CLI/local
 // path) means no injection — services fall back to their config token.
+//
+// The credential is preferred from the request context first: the HTTP
+// middleware (credentialMiddleware) resolves it once per request, so the
+// handler does not re-resolve per tool. On the stdio path there is no
+// middleware, so the handler falls back to resolving now via resolveToken.
 func compiledHandler(cat catalog.Catalog, name string, resolveToken func(ctx context.Context) (string, error)) model.PinnerToolHandler {
 	return func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
-		args := req.Arguments
-		if resolveToken != nil {
-			if tok, err := resolveToken(ctx); err == nil && tok != "" {
-				if args == nil {
-					args = map[string]any{}
-				}
-				args[catalog.ReservedAuthTokenKey] = tok
+		tok := CredentialFromContext(ctx)
+		if tok == "" && resolveToken != nil {
+			if t, err := resolveToken(ctx); err == nil && t != "" {
+				tok = t
+				ctx = WithCredential(ctx, tok)
 			}
+		}
+		args := req.Arguments
+		if tok != "" {
+			if args == nil {
+				args = map[string]any{}
+			}
+			args[catalog.ReservedAuthTokenKey] = tok
 		}
 		return DispatchCatalogOp(ctx, cat, catalog.ActorModel, name, args, name)
 	}
