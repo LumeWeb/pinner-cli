@@ -1,10 +1,11 @@
 package mcp
 
 // compiledCuratedToolNames is the product surface of operations exposed
-// directly (tools/list) in addition to progressive discovery. It is the single
-// source of truth for which catalog tools are directly visible; applying it to
-// the catalog stamps each entry's DirectVisible flag (see markCurated). Keep
-// the names in a stable, human-reviewable order.
+// directly (tools/list) in addition to progressive discovery, for the FULL
+// surface (CLI / local MCP). It is the single source of truth for which
+// catalog tools are directly visible; applying it to the catalog stamps each
+// entry's DirectVisible flag (see markCurated). Keep the names in a stable,
+// human-reviewable order.
 //
 // This is a deliberately small front door. The full tool catalog (~170 ops)
 // remains behind the search_tools / describe_tool / invoke_tool progressive-
@@ -26,13 +27,26 @@ var compiledCuratedToolNames = []string{
 	"websites_get",
 }
 
-// markCurated stamps DirectVisible=true on the entries named by
-// compiledCuratedToolNames. The curated registration loop reads DirectVisible
-// rather than re-checking a name predicate, so visibility is a property of the
-// tool.
+// curatedToolNamesFor returns the curated tools/list names for the given
+// surface. The full surface is compiledCuratedToolNames (auth status + vault
+// lifecycle + website publishing). A surface without the Sia vault drops the
+// vault lifecycle/share entries, leaving auth status and website publishing —
+// the hosted (account/IPFS/websites) facing set.
+func curatedToolNamesFor(s Surface) []string {
+	if s.AccountOn() && !s.VaultOn() && s.WebsitesOn() {
+		return []string{"auth_status", "websites_create", "websites_get"}
+	}
+	return compiledCuratedToolNames
+}
+
+// markCurated stamps DirectVisible=true on the entries named by the curated
+// set for the catalog's surface. The curated registration loop reads
+// DirectVisible rather than re-checking a name predicate, so visibility is a
+// property of the tool.
 func markCurated(catalog *ToolCatalog) {
-	visible := make(map[string]struct{}, len(compiledCuratedToolNames))
-	for _, name := range compiledCuratedToolNames {
+	names := curatedToolNamesFor(catalog.Surface)
+	visible := make(map[string]struct{}, len(names))
+	for _, name := range names {
 		visible[name] = struct{}{}
 	}
 	for _, entry := range catalog.Entries() {

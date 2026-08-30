@@ -21,14 +21,20 @@ func assembleCatalogOps(cat catalog.Catalog, ops []catalog.Operation) error {
 	return nil
 }
 
-// AssembleCatalogOps builds a single operation catalog covering the whole
+// AssembleCatalogOps builds a single operation catalog covering the
 // catalogops surface: auth, account, vault-setup, vault, pins, websites, dns,
 // ipns, ens, api-keys, operations, and admin operations. Each domain's
-// operations are derived from
-// the corresponding CatalogDepsBundle field via the catalogops provider
-// functions. A nil deps field is fine: catalogops degrades such a domain to
-// operations that fail with a clear "service unavailable" error at execution
-// time, so registration never fails purely because a dependency is missing.
+// operations are derived from the corresponding CatalogDepsBundle field via
+// the catalogops provider functions. A nil deps field is fine: catalogops
+// degrades such a domain to operations that fail with a clear "service
+// unavailable" error at execution time, so registration never fails purely
+// because a dependency is missing.
+//
+// surface controls which domains are registered. A domain whose surface flag
+// is disabled is simply not added to the catalog, so a restricted surface
+// (e.g. hosted mode, which excludes the Sia vault and portal admin) never
+// advertises — or can invoke — those operations. The zero surface is the full
+// surface.
 //
 // A nil bundle is a wiring bug and is rejected here.
 //
@@ -37,32 +43,39 @@ func assembleCatalogOps(cat catalog.Catalog, ops []catalog.Operation) error {
 // is no exported *catalog.Catalog struct to return. The catalog is therefore
 // returned as the catalog.Catalog interface, which exposes Add for
 // registration and Search/Get/Describe/Invoke for consumption.
-func AssembleCatalogOps(deps *CatalogDepsBundle) (catalog.Catalog, error) {
+func AssembleCatalogOps(deps *CatalogDepsBundle, surface Surface) (catalog.Catalog, error) {
 	if deps == nil {
 		return nil, fmt.Errorf("catalog assembly: nil catalog deps bundle")
 	}
 
 	cat := catalog.NewCatalog()
 
+	// Map each catalogops domain to its surface flag. A disabled domain's
+	// operations are never produced, so they are absent from search/describe/
+	// invoke and their hand-off/setup handlers are never reachable.
 	domains := []struct {
-		name string
-		ops  []catalog.Operation
+		name    string
+		enabled bool
+		ops     []catalog.Operation
 	}{
-		{"auth", catalogops.AuthOperations(deps.Auth)},
-		{"account", catalogops.AccountOperations(deps.Account)},
-		{"vault-setup", catalogops.VaultSetupOperations(deps.VaultSetup)},
-		{"vault", catalogops.VaultOperations(deps.Vault)},
-		{"pins", catalogops.PinsOperations(deps.Pins)},
-		{"websites", catalogops.WebsitesOperations(deps.Websites)},
-		{"dns", catalogops.DNSOperations(deps.DNS)},
-		{"ipns", catalogops.IPNSOperations(deps.IPNS)},
-		{"ens", catalogops.ENSOperations(deps.ENS)},
-		{"api-keys", catalogops.APIKeysOperations(deps.APIKeys)},
-		{"operations", catalogops.OperationsOperations(deps.Operations)},
-		{"admin", catalogops.AdminOperations(deps.Admin)},
+		{"auth", surface.AccountOn(), catalogops.AuthOperations(deps.Auth)},
+		{"account", surface.AccountOn(), catalogops.AccountOperations(deps.Account)},
+		{"api-keys", surface.AccountOn(), catalogops.APIKeysOperations(deps.APIKeys)},
+		{"vault-setup", surface.VaultOn(), catalogops.VaultSetupOperations(deps.VaultSetup)},
+		{"vault", surface.VaultOn(), catalogops.VaultOperations(deps.Vault)},
+		{"pins", surface.PinsOn(), catalogops.PinsOperations(deps.Pins)},
+		{"websites", surface.WebsitesOn(), catalogops.WebsitesOperations(deps.Websites)},
+		{"dns", surface.DNSOn(), catalogops.DNSOperations(deps.DNS)},
+		{"ipns", surface.IPNSOn(), catalogops.IPNSOperations(deps.IPNS)},
+		{"ens", surface.ENSOn(), catalogops.ENSOperations(deps.ENS)},
+		{"operations", surface.OperationsOn(), catalogops.OperationsOperations(deps.Operations)},
+		{"admin", surface.AdminOn(), catalogops.AdminOperations(deps.Admin)},
 	}
 
 	for _, d := range domains {
+		if !d.enabled {
+			continue
+		}
 		if err := assembleCatalogOps(cat, d.ops); err != nil {
 			return nil, fmt.Errorf("catalog assembly: register %s domain: %w", d.name, err)
 		}

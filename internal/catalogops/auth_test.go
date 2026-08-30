@@ -1,11 +1,14 @@
 package catalogops
 
 import (
+	"context"
 	"testing"
 
+	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
 	"go.lumeweb.com/pinner-cli/internal/core/pinning"
+	portalsdk "go.lumeweb.com/portal-sdk"
 )
 
 // TestAuthTokenFromInput verifies the auth_token input-key override is read
@@ -27,6 +30,67 @@ func TestAuthTokenFromInput(t *testing.T) {
 	// Non-string value must be ignored (defensive).
 	if got := authTokenFromInput(map[string]any{AuthTokenInputKey: 42}); got != "" {
 		t.Fatalf("non-string value: got %q, want empty", got)
+	}
+}
+
+// statusCapturingAuthService records the token it was constructed with and
+// returns a minimal authenticated Status so auth_status reports success. It
+// embeds the interface so unimplemented methods panic rather than silently
+// succeed.
+type statusCapturingAuthService struct {
+	auth.AuthService
+	gotToken string
+}
+
+func (s *statusCapturingAuthService) Status(ctx context.Context) (*auth.StatusResult, error) {
+	return &auth.StatusResult{PortalURL: "https://portal"}, nil
+}
+
+func (s *statusCapturingAuthService) GetAccount(ctx context.Context) (*portalsdk.AccountInfo, error) {
+	return nil, nil
+}
+
+// TestAuthStatusThreadsPerRequestToken verifies auth_status passes the
+// per-invocation --auth-token override (threaded by a hosted server's
+// per-request CredentialResolver) into AuthService construction instead of
+// running Status against the config-stored credential. On a hosted server the
+// config token is empty, so this is what makes auth_status reflect the calling
+// user rather than always reporting "Not authenticated".
+func TestAuthStatusThreadsPerRequestToken(t *testing.T) {
+	svc := &statusCapturingAuthService{}
+	d := AuthDeps{
+		CfgMgr: func() config.Manager { return configmocks.NewMockManager(t) },
+		AuthService: func(_ config.Manager, token string) auth.AuthService {
+			svc.gotToken = token
+			return svc
+		},
+		ResolveAuthToken: func(_ config.Manager) string { return "config-token" },
+	}
+
+	// Flag override wins; the service must see it, not the config fallback.
+	op := authStatus(d)
+	res, err := op.Handler().Execute(context.Background(), map[string]any{AuthTokenInputKey: "flag-token"})
+	if err != nil {
+		t.Fatalf("auth_status handler: %v", err)
+	}
+	if svc.gotToken != "flag-token" {
+		t.Fatalf("auth_status used token %q, want the per-request override %q", svc.gotToken, "flag-token")
+	}
+	st, ok := res.(*AuthStatusResult)
+	if !ok {
+		t.Fatalf("auth_status result type = %T, want *AuthStatusResult", res)
+	}
+	if !st.Authenticated {
+		t.Fatal("auth_status reported unauthenticated despite a valid per-request token")
+	}
+
+	// No override -> the config fallback is used.
+	svc.gotToken = ""
+	if _, err := op.Handler().Execute(context.Background(), map[string]any{}); err != nil {
+		t.Fatalf("auth_status handler (config path): %v", err)
+	}
+	if svc.gotToken != "config-token" {
+		t.Fatalf("auth_status config fallback token = %q, want %q", svc.gotToken, "config-token")
 	}
 }
 

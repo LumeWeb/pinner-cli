@@ -57,8 +57,16 @@ func buildCatalogOpsDeps() *mcpadapter.CatalogDepsBundle {
 			},
 			// Build an auth service per invocation from the live config's
 			// account endpoint so a config edit is picked up at request time.
-			AuthService: func(cfgMgr config.Manager) auth.AuthService {
-				return defaultAuthServiceFactory(cfgMgr, cfgMgr.Config().GetAccountEndpointSecure())
+			// Honor the per-invocation --auth-token override (threaded via the
+			// input map by a hosted server's per-request CredentialResolver)
+			// so auth_status reflects the calling principal rather than the
+			// config-stored credential.
+			AuthService: func(cfgMgr config.Manager, token string) auth.AuthService {
+				endpoint := cfgMgr.Config().GetAccountEndpointSecure()
+				if token != "" {
+					return defaultAuthServiceFactoryWithToken(cfgMgr, endpoint, token)
+				}
+				return defaultAuthServiceFactory(cfgMgr, endpoint)
 			},
 			// Resolve the live auth token from config at request time.
 			ResolveAuthToken: func(cfgMgr config.Manager) string {

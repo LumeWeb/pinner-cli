@@ -324,6 +324,10 @@ func publishDomainDecision() *toolforge.GuideDecisionBuilder {
 // appears on mint transports).
 func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 	p := *profile
+	// The server surface is a construction-time property (recorded by
+	// buildCatalog); overlay it so the guide reflects the actual registered
+	// surface even though the request profile has no surface wire signal.
+	p.Surface = activeSurface()
 	substitute := func(s string) string {
 		return strings.ReplaceAll(s, "{{SOURCES}}", sourceModesText(&p))
 	}
@@ -422,7 +426,47 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 			Detail(toolforge.Static("Update a deployed website's content without recreating it. 1) websites_get <domain> first to capture the current target_type and dns_hosting_enabled — never guess them. 2) If the new CID is external, pins_add it first; updating an unpinned CID returns CidNotPinned. 3) websites_update <domain> with the new cid (target-type is inherited when omitted; change it only when intentionally switching IPFS<->IPNS). 4) websites_validate. If DNS hosting is managed, validation may report the old CID right after the update — that is reconciliation lag, not failure; re-call websites_validate without starting a new flow."))).
 		Resolve(p)
 
-	return spec
+	// The resolved guide is filtered to the server surface: flows whose
+	// underlying tools are not registered on this surface (e.g. the Sia vault
+	// flows on a hosted server) are dropped so the guide never advertises an
+	// unregisterable action.
+	return filterGuideFlows(spec, p.Surface)
+}
+
+// flowSurface maps each agent_guide flow name to the surface flag that gates
+// it. Flows not listed are gated by no flag (always kept).
+var flowSurface = map[string]func(Surface) bool{
+	"auth":           Surface.AccountOn,
+	"vault_create":   Surface.VaultOn,
+	"vault_restore":  Surface.VaultOn,
+	"vault_upload":   Surface.VaultOn,
+	"vault_download": Surface.VaultOn,
+	"vault_share":    Surface.VaultOn,
+	"vault_sync":     Surface.VaultOn,
+	"upload":         Surface.UploadOn,
+	"download":       Surface.UploadOn,
+	"pins":           Surface.PinsOn,
+	"publish_website": Surface.WebsitesOn,
+	"update_website":  Surface.WebsitesOn,
+	"ens_publish":     Surface.ENSOn,
+}
+
+// filterGuideFlows drops resolved flows whose surface flag is disabled.
+func filterGuideFlows(guide toolforge.AgentGuide, s Surface) toolforge.AgentGuide {
+	if s.IsZero() {
+		return guide
+	}
+	kept := guide.Flows[:0]
+	for _, f := range guide.Flows {
+		if gate, ok := flowSurface[f.Name]; ok {
+			if !gate(s) {
+				continue
+			}
+		}
+		kept = append(kept, f)
+	}
+	guide.Flows = kept
+	return guide
 }
 
 // NewAgentGuideDescriptor returns a static, no-input tool that orients an agent

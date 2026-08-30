@@ -37,7 +37,16 @@ const (
 // deterministically, using the wizard tools and pinner:// resources. The
 // message prose is rendered from embedded text/templates (prompttemplates/).
 func PromptDescriptors() []model.PromptDescriptor {
-	return []model.PromptDescriptor{
+	return PromptDescriptorsForSurface(FullSurface)
+}
+
+// PromptDescriptorsForSurface returns the prompt descriptors enabled for the
+// given surface. Each prompt maps to a domain flag: website onboarding/update
+// need the websites surface, setup needs the account surface, and ENS publish
+// needs the ENS surface. A restricted surface (e.g. hosted) omits the prompts
+// whose underlying tools are not registered.
+func PromptDescriptorsForSurface(surface Surface) []model.PromptDescriptor {
+	all := []model.PromptDescriptor{
 		{
 			Name:        PromptWebsiteOnboarding,
 			Title:       "Website Onboarding Wizard",
@@ -78,6 +87,25 @@ func PromptDescriptors() []model.PromptDescriptor {
 			Handler: ensPublishHandler,
 		},
 	}
+
+	var out []model.PromptDescriptor
+	for _, p := range all {
+		var on bool
+		switch p.Name {
+		case PromptWebsiteOnboarding, PromptWebsiteUpdate:
+			on = surface.WebsitesOn()
+		case PromptSetup:
+			on = surface.AccountOn()
+		case PromptENSPublish:
+			on = surface.ENSOn()
+		default:
+			on = true
+		}
+		if on {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // websiteOnboardingHandler is the prompts/get handler for the

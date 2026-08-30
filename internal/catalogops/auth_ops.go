@@ -30,7 +30,10 @@ type AuthDeps struct {
 	// AuthService builds an auth.AuthService for the current config's
 	// endpoint. It is a getter so a test/global override stays live. When
 	// nil, operations that need the service fail with a clear error.
-	AuthService func(cfgMgr config.Manager) auth.AuthService
+	// token is the per-invocation --auth-token override ("" to use the
+	// config-stored credential), threaded by the hosted server's
+	// per-request CredentialResolver so status reflects the calling user.
+	AuthService func(cfgMgr config.Manager, token string) auth.AuthService
 	// ResolveAuthToken returns the live auth token from config (the stored
 	// credential) for status checks that do not need a per-invocation
 	// override. When nil, reads the token from the config manager directly.
@@ -101,11 +104,17 @@ func authStatus(d AuthDeps) catalog.Operation {
 			if cfgMgr == nil {
 				return nil, fmt.Errorf("auth_status: no config manager available")
 			}
-			token := ""
-			if d.ResolveAuthToken != nil {
-				token = d.ResolveAuthToken(cfgMgr)
-			} else {
-				token = cfgMgr.Config().AuthToken
+			// A per-request auth-token override (threaded by the MCP dispatch
+			// from a hosted server's CredentialResolver, or the CLI --auth-token
+			// flag) takes precedence over the config default, so auth_status
+			// reflects the calling principal rather than a shared config token.
+			token := authTokenFromInput(input)
+			if token == "" {
+				if d.ResolveAuthToken != nil {
+					token = d.ResolveAuthToken(cfgMgr)
+				} else {
+					token = cfgMgr.Config().AuthToken
+				}
 			}
 			if token == "" {
 				return &AuthStatusResult{Authenticated: false, Message: "Not authenticated: no auth token configured"}, nil
@@ -113,7 +122,7 @@ func authStatus(d AuthDeps) catalog.Operation {
 			if d.AuthService == nil {
 				return nil, fmt.Errorf("auth_status: no auth service wired")
 			}
-			svc := d.AuthService(cfgMgr)
+			svc := d.AuthService(cfgMgr, token)
 			res, err := svc.Status(ctx)
 			if err != nil {
 				return nil, fmt.Errorf("auth_status: %w", err)

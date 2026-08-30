@@ -123,6 +123,14 @@ type ResourceProviders struct {
 //   - pinner://websites/{id}/validation-status
 //   - pinner://wizard/{session_id}/state
 func ResourceDescriptors(provs ResourceProviders) ([]model.ResourceDescriptor, []model.ResourceTemplateDescriptor) {
+	return ResourceDescriptorsForSurface(provs, true)
+}
+
+// ResourceDescriptorsForSurface builds the pinner:// resource descriptors for
+// the given surface. The single surface-sensitive entry is pinner://vault/
+// status, which is omitted when the Sia vault surface is disabled (hosted
+// mode) so a hosted server never advertises a vault resource.
+func ResourceDescriptorsForSurface(provs ResourceProviders, vaultOn bool) ([]model.ResourceDescriptor, []model.ResourceTemplateDescriptor) {
 	resources := []model.ResourceDescriptor{
 		{
 			URI:         AccountStatusURI,
@@ -132,19 +140,21 @@ func ResourceDescriptors(provs ResourceProviders) ([]model.ResourceDescriptor, [
 			Handler:     accountStatusHandler(provs.Account),
 		},
 		{
-			URI:         VaultStatusURI,
-			Name:        "vault-status",
-			Description: "Vault state: initialization, Sia connection, file count, and account balance",
-			MIMEType:    "application/json",
-			Handler:     vaultStatusHandler(provs.Vault),
-		},
-		{
 			URI:         PlatformDomainsURI,
 			Name:        "platform-domains",
 			Description: "Enabled platform (free-subdomain) roots and whether a candidate label is claimable under each",
 			MIMEType:    "application/json",
 			Handler:     platformDomainsHandler(provs.Websites),
 		},
+	}
+	if vaultOn {
+		resources = append(resources, model.ResourceDescriptor{
+			URI:         VaultStatusURI,
+			Name:        "vault-status",
+			Description: "Vault state: initialization, Sia connection, file count, and account balance",
+			MIMEType:    "application/json",
+			Handler:     vaultStatusHandler(provs.Vault),
+		})
 	}
 
 	templates := []model.ResourceTemplateDescriptor{
