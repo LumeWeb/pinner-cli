@@ -55,9 +55,10 @@ func newVaultOpsClose(t *testing.T, msvc vault.VaultService, name string, input 
 }
 
 // TestVaultSharePending_NoFlush guards the split between sharing and duplexing:
-// sharing a not-yet-durable (pending) file must NOT block on a synchronous full
-// host-set flush. It returns an actionable pending result instead of an error,
-// and neither FlushPath nor Share is called.
+// sharing a not-yet-durable (staged) file must NOT block on a synchronous full
+// host-set flush. It returns a structured VaultNotDurableResult (code
+// not_durable, status staged) instead of a Go error, and neither FlushPath nor
+// Share is called.
 func TestVaultSharePending_NoFlush(t *testing.T) {
 	msvc := vault.NewMockVaultService(t)
 	msvc.On("Stat", mock.Anything, "vault:/docs/a.txt").
@@ -68,14 +69,16 @@ func TestVaultSharePending_NoFlush(t *testing.T) {
 		"profile": "work",
 		"expiry":  "7d",
 	})
-	require.NoError(t, err, "share of a pending file must not error")
-	sr, ok := res.(*VaultShareResult)
-	require.True(t, ok, "want *VaultShareResult, got %T", res)
-	require.Equal(t, "pending", sr.Status)
-	require.Empty(t, sr.ShareURL, "no share URL for a non-durable file")
-	require.Contains(t, sr.Message, "vault_flush", "message must point at the vault_flush tool")
+	require.NoError(t, err, "share of a staged file must not error")
+	nd, ok := res.(*VaultNotDurableResult)
+	require.True(t, ok, "want *VaultNotDurableResult, got %T", res)
+	require.Equal(t, "not_durable", nd.Code)
+	require.Equal(t, vault.FileStatusStaged, nd.Status)
+	require.Equal(t, "vault:/docs/a.txt", nd.Path)
+	require.Contains(t, nd.Message, "vault_flush", "message must point at the vault_flush tool")
 	msvc.AssertNotCalled(t, "FlushPath", mock.Anything, mock.Anything)
 	msvc.AssertNotCalled(t, "Share", mock.Anything, mock.Anything, mock.Anything)
+	msvc.AssertNotCalled(t, "ShareAccept", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 // TestVaultShareDurable_IssuesLink verifies a durable file still shares normally.
@@ -93,7 +96,7 @@ func TestVaultShareDurable_IssuesLink(t *testing.T) {
 	})
 	require.NoError(t, err)
 	sr := res.(*VaultShareResult)
-	require.Equal(t, "ok", sr.Status)
+	require.Equal(t, "durable", sr.Status)
 	require.Equal(t, "https://indexer.example.com/shared/abc#encryption_key=K", sr.ShareURL)
 	msvc.AssertCalled(t, "Share", mock.Anything, "vault:/docs/a.txt", mock.Anything)
 }
@@ -197,8 +200,10 @@ func TestVaultFlushLostNoop(t *testing.T) {
 	msvc.AssertNotCalled(t, "Flush", mock.Anything)
 }
 
-// TestVaultShareLost verifies vault_share surfaces the lost state rather than
-// suggesting a flush that could never make the file shareable.
+// TestVaultShareLost verifies vault_share surfaces the lost (failed) state
+// rather than suggesting a flush that could never make the file shareable. It
+// returns a structured VaultNotDurableResult with status failed carrying the
+// lost reason, and never suggests vault_flush.
 func TestVaultShareLost(t *testing.T) {
 	msvc := vault.NewMockVaultService(t)
 	msvc.On("Stat", mock.Anything, "vault:/docs/a.txt").
@@ -210,10 +215,11 @@ func TestVaultShareLost(t *testing.T) {
 		"expiry":  "7d",
 	})
 	require.NoError(t, err)
-	sr, ok := res.(*VaultShareResult)
-	require.True(t, ok, "want *VaultShareResult, got %T", res)
-	require.Equal(t, "lost", sr.Status)
-	require.Contains(t, sr.Message, "slabs unavailable", "lost message must surface lost_reason")
-	require.NotContains(t, sr.Message, "vault_flush", "lost message must not suggest a flush")
+	nd, ok := res.(*VaultNotDurableResult)
+	require.True(t, ok, "want *VaultNotDurableResult, got %T", res)
+	require.Equal(t, "not_durable", nd.Code)
+	require.Equal(t, vault.FileStatusFailed, nd.Status)
+	require.Contains(t, nd.Message, "slabs unavailable", "failed message must surface lost_reason")
+	require.NotContains(t, nd.Message, "vault_flush", "failed message must not suggest a flush")
 	msvc.AssertNotCalled(t, "Share", mock.Anything, mock.Anything, mock.Anything)
 }

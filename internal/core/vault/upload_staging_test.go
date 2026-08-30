@@ -294,14 +294,14 @@ func TestFlushVisibility_RecordsAndClearsError(t *testing.T) {
 	if err := svc.db.First(&row, rec.ID).Error; err != nil {
 		t.Fatalf("reload row: %v", err)
 	}
-	if row.FlushAttempts != 1 {
-		t.Fatalf("flush_attempts = %d, want 1", row.FlushAttempts)
+	if row.FlushAttempts != 0 {
+		t.Fatalf("flush_attempts = %d, want 0 (recordFlushFailure no longer increments; markFlushing counts the worker start)", row.FlushAttempts)
 	}
 	if row.FlushError != "host pin timed out" {
 		t.Fatalf("flush_error = %q, want recorded", row.FlushError)
 	}
-	if row.Status != FileStatusPending {
-		t.Fatalf("status changed on failure = %q, want pending", row.Status)
+	if row.Status != FileStatusFailed {
+		t.Fatalf("status after failure = %q, want failed", row.Status)
 	}
 
 	// A successful flush must clear the visibility and mark the row durable.

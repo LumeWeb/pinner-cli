@@ -239,7 +239,7 @@ const mintUploadCompletion = "upload_file(source.mode=mint) is asynchronous: it 
 // completion contract. It is emitted only when vault_put_file is registered.
 // The PUT response is the completed vault write and there is NO upload_status
 // poll: upload_status tracks upload_file's IPFS uploads, not vault writes.
-const mintVaultCompletion = "vault_put_file(source.mode=mint, vault_path=...) is non-blocking: it returns a one-time presigned PUT url bound to vault_path — PUT the agent-local file to it and the PUT returns quickly after staging the bytes locally (status: pending). The file is immediately readable from this instance; durability on Sia (upload + pin) happens in the background, or via the vault_flush tool (itself non-blocking — returns accepted immediately), so poll vault_stat until status: ok when durability is needed before sharing. If a file stays pending across polls, read vault_stat's flush_attempts and flush_error to tell a failing flush (rising attempts + error) from one still uploading (no error). There is no upload_status to poll (upload_status tracks upload_file's IPFS uploads, not vault writes)."
+const mintVaultCompletion = "vault_put_file(source.mode=mint, vault_path=...) is non-blocking: it returns a one-time presigned PUT url bound to vault_path — PUT the agent-local file to it and the PUT returns quickly after staging the bytes locally (status: staged). The file is immediately readable from this instance; durability on Sia (upload + pin) happens in the background, or via the vault_flush tool (itself non-blocking — returns an accepted job { job_id, profile, path? }), so poll vault_flush_status(job_id) or vault_stat until status: durable when durability is needed before sharing. If a file stays non-durable across polls, read vault_stat's flush_attempts and flush_error to tell a failing flush (a flushing file: rising attempts, no error; a failed file: attempts + a non-empty error; a staged file that never started: zero attempts, no error). There is no upload_status to poll (upload_status tracks upload_file's IPFS uploads, not vault writes)."
 
 // uploadToolsFor lists the upload tools actually registered on THIS server, in
 // chooser order: upload_file first, then the relay tools. It gates each tool
@@ -277,7 +277,7 @@ func uploadToolsFor(feats hostenv.FeatureSet, uploadFile, relayURLWired, dataURI
 //     upload_status — the byte-route chooser and this clause render only when
 //     upload_file is actually wired.
 //   - vault_put_file(source.mode=mint, vault_path=...) is non-blocking: the PUT
-//     stages bytes locally (status: pending) and returns; durability happens in
+//     stages bytes locally (status: staged) and returns; durability happens in
 //     the background or via vault_flush, and there is no upload_status poll —
 //     that clause renders only when vault_put_file is actually wired.
 //

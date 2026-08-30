@@ -609,6 +609,10 @@ func startVaultSync(ctx context.Context, cmd *cli.Command, mcpOpts *mcpServerOpt
 		sched.Shutdown()
 		loop.Close()
 		uploadLoop.Close()
+		// Release the process-wide per-profile flush manager's held services so
+		// a long-running server does not leak SDK/DB handles. Registered by the
+		// CLI wiring (core/vault is a neutral package, so this import is safe).
+		corevault.CloseFlushManager()
 	}()
 	log.Debug("continuous vault sync started", zap.Duration("interval", interval))
 	return nil
@@ -1368,7 +1372,7 @@ func WithCatalogOps(factory func() *CatalogDepsBundle) MCPServerOption {
 // active vault's pending indexer events into the local cache every interval so
 // an agent does not need to call vault_sync explicitly to see another device's
 // writes. Writes are non-blocking (vault_put_file stages locally, status
-// pending; durability on Sia follows in the background or via vault_flush), so
+// staged; durability on Sia follows in the background or via vault_flush), so
 // there is no sync-up or dirty-flag component.
 func WithVaultSync(cfg corevault.SyncLoopConfig) MCPServerOption {
 	return func(o *mcpServerOptions) {

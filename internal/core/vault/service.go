@@ -18,29 +18,64 @@ var ErrNotFound = errors.New("vault object not found")
 // SDK (which would resurrect a closed service and touch the network again).
 var ErrVaultClosed = errors.New("vault service is closed")
 
-// File status lifecycle values. A freshly staged write is FileStatusPending
-// (bytes accepted to local disk only, NOT yet durable on Sia). FileStatusUploaded
-// means the slabs are on Sia (uploaded via a packed upload) but the object has
-// not yet been pinned (metadata saved) to this account. FileStatusOK is the
-// default durable state: the object is pinned and present. A file transitions
-// to FileStatusLost when Verify/VerifyDeep detect the object's slabs are
-// unrecoverable (e.g. GC'd/unpinned on the indexer) and back to FileStatusOK on
-// a subsequent successful verify or re-pin. Lost files stay listed (never
-// tombstoned).
+// File status lifecycle values. The canonical, agent-facing lifecycle is:
+//
+//	staged   — bytes accepted to local disk only, NOT yet durable on Sia, and
+//	           a flush worker has not started on them yet.
+//	flushing — a flush worker has started uploading them (see flush_attempts).
+//	durable  — the object is uploaded and pinned; present on Sia (this is the
+//	           rest state).
+//	failed   — the durability flush failed (flush_error is non-empty) or the
+//	           object/slabs are terminally unrecoverable (e.g. unpinned/GC'd on
+//	           the indexer). Failed files stay listed for retry or inspection.
+//
+// The legacy spellings ("ok", "pending", "uploaded", "lost") were stored in
+// older databases and still appear in call sites; they are kept as aliases
+// (the DB may still hold them from before this lifecycle landed). The
+// presentational boundary (Stat/Search/List) reports the canonical values via
+// NormalizeFileStatus, never the raw stored string.
 const (
-	// FileStatusOK is the default: the object is pinned and present.
-	FileStatusOK = "ok"
-	// FileStatusPending means bytes are staged locally but not yet uploaded to
-	// Sia. The object is readable locally (from its staged buffer) but not
-	// durable; a share link requires a flush first.
-	FileStatusPending = "pending"
-	// FileStatusUploaded means slabs are on Sia but the object metadata is not
-	// yet pinned to this account (transient between a packed upload's Finalize
-	// and PinObject, or left by a crash/restart).
-	FileStatusUploaded = "uploaded"
-	// FileStatusLost means the object/slabs are terminally unrecoverable.
-	FileStatusLost = "lost"
+	// FileStatusStaged means bytes are staged locally but not yet durable.
+	// The object is readable locally (from its staged buffer) but a share link
+	// requires a flush first.
+	FileStatusStaged = "staged"
+	// FileStatusFlushing means a flush worker has started uploading the staged
+	// bytes (slabs either uploading or on Sia but not yet pinned).
+	FileStatusFlushing = "flushing"
+	// FileStatusDurable is the rest state: the object is pinned and present.
+	FileStatusDurable = "durable"
+	// FileStatusFailed means the durability flush failed (flush_error is
+	// non-empty) or the object/slabs are terminally unrecoverable.
+	FileStatusFailed = "failed"
+
+	// Deprecated spellings. "pending" is an alias for staged/flushing;
+	// "uploaded" is slabs-on-Sia-before-pin (flushing); "ok" is durable; "lost"
+	// is a terminal failure.
+	FileStatusOK       = FileStatusDurable
+	FileStatusPending  = FileStatusStaged
+	FileStatusUploaded = FileStatusFlushing
+	FileStatusLost     = FileStatusFailed
 )
+
+// NormalizeFileStatus maps any stored (possibly legacy) file status string to
+// the canonical lifecycle vocabulary. It lets presentation (Stat/Search/List)
+// report only staged|flushing|durable|failed regardless of how the value was
+// persisted.
+func NormalizeFileStatus(s string) string {
+	switch s {
+	case "ok", FileStatusDurable:
+		return FileStatusDurable
+	case "pending", FileStatusStaged:
+		return FileStatusStaged
+	case "uploaded", FileStatusFlushing:
+		return FileStatusFlushing
+	case "lost", FileStatusFailed:
+		return FileStatusFailed
+	default:
+		// Unknown stored value: never treat it as durable.
+		return FileStatusStaged
+	}
+}
 
 // VaultService is the interface for vault operations.
 type VaultService interface {
@@ -229,12 +264,12 @@ type StatResult struct {
 
 // flushVisibility derives the FlushAttempts/FlushError pointers to surface on
 // a StatResult/SearchItem for a file record. While the file is not yet durable
-// (Status != "ok") it returns non-nil pointers — even for a zero attempt count
-// or empty error — so a polling agent always sees the file's flush state. Once
-// the file is durable (Status == "ok") it returns nil pointers, letting
-// omitempty drop the fields from the payload.
+// (Status != "durable") it returns non-nil pointers — even for a zero attempt
+// count or empty error — so a polling agent always sees the file's flush state.
+// Once the file is durable it returns nil pointers, letting omitempty drop the
+// fields from the payload. A failed file therefore always surfaces its error.
 func flushVisibility(status string, attempts int, flushErr string) (*int, *string) {
-	if status == FileStatusOK || status == "" {
+	if status == FileStatusDurable || status == "" {
 		return nil, nil
 	}
 	a, e := attempts, flushErr

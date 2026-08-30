@@ -366,7 +366,13 @@ For more help on any command: pinner <command> --help`,
 				// tool surface; resolve that when set, otherwise the active
 				// profile (so an agent can target one vault without flipping
 				// the default).
-				profile, err := vault.ResolveProfile(vault.WriteContextProfile(meta))
+				profileName := vault.WriteContextProfile(meta)
+				if profileName == "" {
+					if err := requireUnambiguousVaultProfile(); err != nil {
+						return nil, err
+					}
+				}
+				profile, err := vault.ResolveProfile(profileName)
 				if err != nil {
 					return nil, err
 				}
@@ -393,6 +399,11 @@ For more help on any command: pinner <command> --help`,
 			vaultGet = func(ctx context.Context, vaultPath, profile string, w io.Writer) error {
 				// The tool surface passes the caller-requested profile (empty
 				// when omitted); resolve that or the active profile.
+				if profile == "" {
+					if err := requireUnambiguousVaultProfile(); err != nil {
+						return err
+					}
+				}
 				resolved, err := vault.ResolveProfile(profile)
 				if err != nil {
 					return err
@@ -448,7 +459,13 @@ For more help on any command: pinner <command> --help`,
 				// A tool-requested profile is stamped into the metadata by the
 				// tool surface; resolve that when set, otherwise the active
 				// profile.
-				profile, err := vault.ResolveProfile(vault.WriteContextProfile(meta))
+				profileName := vault.WriteContextProfile(meta)
+				if profileName == "" {
+					if err := requireUnambiguousVaultProfile(); err != nil {
+						return nil, err
+					}
+				}
+				profile, err := vault.ResolveProfile(profileName)
 				if err != nil {
 					return nil, err
 				}

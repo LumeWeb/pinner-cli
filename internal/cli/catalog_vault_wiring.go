@@ -45,12 +45,78 @@ func vaultCatalogDeps() catalogops.VaultDeps {
 			}
 			return cfgMgr.Config().GetSiaIndexerURL()
 		},
+		// FlushMgr wires the process-wide per-profile flush manager so
+		// vault_flush returns an accepted job (polled via vault_flush_status)
+		// and vault_send dispatches through per-profile workers. All invocations
+		// share ONE manager (one worker goroutine per profile process-wide),
+		// registered in core/vault so the MCP server (which cannot import this
+		// package) can close it on shutdown.
+		FlushMgr: func() *vault.FlushManager {
+			return vault.RegisterFlushManager(vaultFlushCfg)
+		},
+		// Profiles enumerates the unlocked profiles for vault_profiles and the
+		// multi-profile profile-required rule.
+		Profiles: provisionedProfileNames,
 	}
 }
 
 // vaultCatalogDepsVar is an indirection so the wiring and the renderer can both
 // reach the canonical operation list without rebuilding it repeatedly.
 var vaultCatalogDepsVar = catalogops.VaultDeps(vaultCatalogDeps())
+
+// provisionedProfileNames returns every provisioned (app-key readable) vault
+// profile name the server can access. It mirrors the SyncLoopConfig.Profiles
+// function built for the MCP background sync in root.go (same registry source),
+// so vault_profiles, the profile-required rule, and the per-profile flush
+// manager all agree on the unlocked set.
+func provisionedProfileNames() []string {
+	reg, err := vault.LoadRegistry()
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(reg.Profiles))
+	for name := range reg.Profiles {
+		// Guard against a hand-edited registry carrying a path traversal name
+		// (same check ResolveProfile applies).
+		if err := vault.ValidateProfileName(name); err != nil {
+			continue
+		}
+		// Access = a provisioned profile with a readable app key.
+		if _, ok := vault.ProfileVaultID(name); ok {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// vaultFlushCfg is the SyncLoopConfig for the process-wide per-profile flush
+// manager. It reuses the same Profiles source and Service factory as the
+// vaultCatalogDeps service getter, so vault_flush / vault_send build the same
+// VaultServices the other catalog ops use.
+var vaultFlushCfg = vault.SyncLoopConfig{
+	Profiles: provisionedProfileNames,
+	Service:  func(profileName string) (vault.VaultService, error) { return newVaultService(profileName) },
+}
+
+// CloseVaultFlushManager releases the process-wide flush manager's per-profile
+// services (delegating to core/vault). Safe to call on shutdown; a later
+// vault_flush / vault_send rebuilds it lazily. Kept as a thin wrapper so any
+// future CLI-side caller has a clean seam.
+func CloseVaultFlushManager() {
+	vault.CloseFlushManager()
+}
+
+// requireUnambiguousVaultProfile returns an error when more than one vault
+// profile is unlocked, so a profile-less tool (e.g. the custom vault_put_file /
+// vault_get_file MCP tools, which expose no profile argument) does not
+// silently target the active/default vault on a multi-profile server — matching
+// the profile_required rule on the catalog vault ops.
+func requireUnambiguousVaultProfile() error {
+	if len(provisionedProfileNames()) > 1 {
+		return fmt.Errorf("profile_required: more than one vault profile is unlocked; list them with vault_profiles and pass profile=<name>")
+	}
+	return nil
+}
 
 // vaultParentUsage returns the CLI Usage line for a two-level vault parent
 // command (e.g. "profile", "cache"), kept non-empty to satisfy registration
@@ -220,27 +286,27 @@ func vaultFlushSyncAction() cli.ActionFunc {
 			// buffer; an already-durable (ok) or lost file has none. Resolve the
 			// state first and report accurately rather than claiming a flush
 			// that did not happen.
-			if st, serr := svc.Stat(dctx, path); serr == nil && (st.Status == vault.FileStatusOK || st.Status == vault.FileStatusLost) {
+			if st, serr := svc.Stat(dctx, path); serr == nil && (st.Status == vault.FileStatusDurable || st.Status == vault.FileStatusFailed) {
 				if output.IsJSON() {
 					return output.PrintJSON(map[string]any{"status": st.Status, "flushed": 0, "path": path})
 				}
-				output.Printfln("%s is already %s on Sia; nothing to flush", path, st.Status)
+				output.Printfln("%s is already %s; nothing to flush", path, st.Status)
 				return nil
 			}
 			if err := svc.FlushPath(dctx, path); err != nil {
 				return err
 			}
 			// FlushPath is also a silent no-op when there is no staged buffer but
-			// Status is neither ok nor lost (e.g. a crashed "uploaded" row whose
-			// staged file is gone). Only claim a flush once the file has actually
-			// reached durable state.
+			// Status is neither durable nor failed (e.g. a crashed "flushing" row
+			// whose staged file is gone). Only claim a flush once the file has
+			// actually reached durable state.
 			st, serr := svc.Stat(dctx, path)
 			if serr != nil {
 				// The flush may have succeeded but we could not confirm it; a
 				// verification failure must not be reported as a clean no-op.
 				return serr
 			}
-			if st.Status == vault.FileStatusOK {
+			if st.Status == vault.FileStatusDurable {
 				if output.IsJSON() {
 					return output.PrintJSON(map[string]any{"status": "ok", "flushed": 1, "path": path})
 				}
@@ -414,8 +480,8 @@ func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 		if output.IsJSON() {
 			return output.PrintJSON(map[string]any{"share_url": r.ShareURL, "expires": r.Expires, "status": r.Status, "message": r.Message})
 		}
-		if r.Status != "ok" {
-			// pending/uploaded/lost all carry a message and no share URL; never
+		if r.Status != "durable" {
+			// A non-durable result carries a message and no share URL; never
 			// fall through to printing an empty link.
 			output.Printfln("File is not shareable (%s): %s", r.Status, r.Message)
 			return nil
@@ -425,9 +491,23 @@ func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 		output.Printfln("Share link expires: %s", r.Expires)
 		return nil
 
+	case *catalogops.VaultNotDurableResult:
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		output.Printfln("not_durable (%s): %s", r.Status, r.Message)
+		return nil
+
+	case *catalogops.VaultProfileRequiredResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"code": r.Code, "profiles": r.Profiles, "message": r.Message})
+		}
+		output.Printfln("profile_required: %s (available: %s)", r.Message, strings.Join(r.Profiles, ", "))
+		return nil
+
 	case *catalogops.VaultFlushResult:
 		if output.IsJSON() {
-			return output.PrintJSON(map[string]any{"status": r.Status, "message": r.Message, "flushed": r.Flushed})
+			return output.PrintJSON(map[string]any{"status": r.Status, "job_id": r.JobID, "profile": r.Profile, "path": r.Path, "message": r.Message, "flushed": r.Flushed})
 		}
 		if r.Flushed > 0 {
 			output.Printfln("%s: %s (%d file(s))", r.Status, r.Message, r.Flushed)
@@ -436,11 +516,38 @@ func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 		output.Printfln("%s: %s", r.Status, r.Message)
 		return nil
 
+	case *catalogops.VaultFlushJobStatus:
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		output.PrintFields(FieldGroup{
+			Title: "Vault Flush Job",
+			Fields: []Field{
+				{"Job ID", r.JobID}, {"Profile", r.Profile}, {"Status", r.Status},
+				{"Path", r.Path}, {"Flushed", fmt.Sprintf("%d", r.Flushed)}, {"Error", r.Error},
+			},
+		})
+		return nil
+
+	case *catalogops.VaultProfilesResult:
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		output.Printfln("Vault profile(s): %s", strings.Join(r.Profiles, ", "))
+		return nil
+
 	case *catalogops.VaultShareAcceptResult:
 		if output.IsJSON() {
-			return output.PrintJSON(map[string]any{"path": r.Path, "object_key": r.ObjectKey, "size": r.Size})
+			return output.PrintJSON(map[string]any{"path": r.Path, "object_key": r.ObjectKey, "size": r.Size, "accept_state": r.AcceptState, "digest_verified": r.DigestVerified})
 		}
-		output.Printfln("Accepted copy pinned at %s (%d bytes, object %s)", r.Path, r.Size, r.ObjectKey)
+		output.Printfln("Accepted copy pinned at %s (%d bytes, object %s) — accept_state %s", r.Path, r.Size, r.ObjectKey, r.AcceptState)
+		return nil
+
+	case *catalogops.VaultSendResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"from_profile": r.FromProfile, "to_profile": r.ToProfile, "dest_path": r.DestPath, "object_key": r.ObjectKey, "size": r.Size, "accept_state": r.AcceptState})
+		}
+		output.Printfln("Sent %s -> %s: pinned %s (%d bytes, object %s) — accept_state %s", r.FromProfile, r.ToProfile, r.DestPath, r.Size, r.ObjectKey, r.AcceptState)
 		return nil
 
 	case *catalogops.VaultForgetResult:

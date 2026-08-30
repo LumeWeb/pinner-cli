@@ -393,6 +393,13 @@ func (s *vaultService) Flush(ctx context.Context) (int, error) {
 	if len(rows) == 0 {
 		return 0, nil
 	}
+	// The worker has (actually) started on this batch: mark each still-staged
+	// row flushing and count a flush attempt, so a polling agent can tell a
+	// flush in progress (flushing, rising flush_attempts, no error) from one
+	// that never started (staged, zero attempts). Marked before packing.
+	for i := range rows {
+		s.markFlushing(rows[i].rec)
+	}
 	groups := prepareUploads(rows, DefaultMaxGroupSize, DefaultUploadWastePct)
 	return s.flushGroups(ctx, groups)
 }
@@ -418,6 +425,7 @@ func (s *vaultService) FlushPath(ctx context.Context, vaultPath string) error {
 	if rec.StagedPath == "" {
 		return nil // already durable
 	}
+	s.markFlushing(&rec)
 	g := uploadGroup{slabSize: optimalSlabSize, maxGroupSize: DefaultMaxGroupSize, uploadWastePct: 0}
 	g.objects = []stagedObject{{rec: &rec}}
 	g.totalSize = rec.Size
@@ -561,10 +569,29 @@ func metadataMapOf(rec *File) map[string]any {
 }
 
 // finalizeDurable promotes a row from staged to durable "ok": it sets ObjectKey +
-// recordFlushFailure surface-marks a still-staged file as flush-failing so a
-// stuck "pending" row is visible: it increments flush_attempts and persists the
-// most recent error. Best-effort: a DB error here (e.g. SQLite contention) must
-// not mask the original flush failure, so it is swallowed.
+// markFlushing transitions a staged row into the "flushing" lifecycle state and
+// counts one flush attempt at the moment the worker actually starts on it (see
+// requirement: flush_attempts increments when the worker starts). flush_attempts
+// is therefore a monotonically rising count of worker starts — not of failures —
+// so the typical signal is: staged + 0 attempts = never started; flushing +
+// rising attempts + error = failing. Best-effort (a DB error must not block the
+// flush).
+func (s *vaultService) markFlushing(rec *File) {
+	if rec == nil {
+		return
+	}
+	_ = s.db.Model(&File{}).Where("id = ?", rec.ID).Updates(map[string]any{
+		"status":         FileStatusFlushing,
+		"flush_attempts": gorm.Expr("flush_attempts + 1"),
+	}).Error
+}
+
+// recordFlushFailure surface-marks a file whose durability flush failed so a
+// stuck row is visible: it sets the lifecycle state to "failed" and persists the
+// most recent error (flush_attempts is NOT re-incremented — markFlushing already
+// counted the worker start). A failed row keeps its staged buffer so a later
+// vault_flush/work er retries it. Best-effort: a DB error here (e.g. SQLite
+// contention) must not mask the original flush failure, so it is swallowed.
 func (s *vaultService) recordFlushFailure(rec *File, err error) {
 	if rec == nil || err == nil {
 		return
@@ -575,8 +602,8 @@ func (s *vaultService) recordFlushFailure(rec *File, err error) {
 	}
 	id := rec.ID
 	_ = s.db.Model(&File{}).Where("id = ?", id).Updates(map[string]any{
-		"flush_attempts": gorm.Expr("flush_attempts + 1"),
-		"flush_error":    msg,
+		"status":      FileStatusFailed,
+		"flush_error": msg,
 	}).Error
 }
 
