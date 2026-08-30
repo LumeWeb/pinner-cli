@@ -216,9 +216,10 @@ func vaultFlushSyncAction() cli.ActionFunc {
 		// every staged (pending) file.
 		path := c.Args().First()
 		if path != "" {
-			// FlushPath is a silent no-op for an already-durable or lost file, so
-			// resolve its state first and report accurately rather than claiming
-			// a flush that did not happen.
+			// A flush only does durable work for a file that still has a staged
+			// buffer; an already-durable (ok) or lost file has none. Resolve the
+			// state first and report accurately rather than claiming a flush
+			// that did not happen.
 			if st, serr := svc.Stat(dctx, path); serr == nil && (st.Status == vault.FileStatusOK || st.Status == vault.FileStatusLost) {
 				if output.IsJSON() {
 					return output.PrintJSON(map[string]any{"status": st.Status, "flushed": 0, "path": path})
@@ -229,10 +230,21 @@ func vaultFlushSyncAction() cli.ActionFunc {
 			if err := svc.FlushPath(dctx, path); err != nil {
 				return err
 			}
-			if output.IsJSON() {
-				return output.PrintJSON(map[string]any{"status": "ok", "flushed": 1, "path": path})
+			// FlushPath is also a silent no-op when there is no staged buffer but
+			// Status is neither ok nor lost (e.g. a crashed "uploaded" row whose
+			// staged file is gone). Only claim a flush once the file has actually
+			// reached durable state.
+			if st, serr := svc.Stat(dctx, path); serr == nil && st.Status == vault.FileStatusOK {
+				if output.IsJSON() {
+					return output.PrintJSON(map[string]any{"status": "ok", "flushed": 1, "path": path})
+				}
+				output.Printfln("Flushed %s", path)
+				return nil
 			}
-			output.Printfln("Flushed %s", path)
+			if output.IsJSON() {
+				return output.PrintJSON(map[string]any{"status": "noop", "flushed": 0, "path": path})
+			}
+			output.Printfln("%s: nothing to flush", path)
 			return nil
 		}
 		n, err := svc.Flush(dctx)
