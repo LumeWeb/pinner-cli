@@ -273,6 +273,12 @@ func (o *OAuthServer) AsMetadataHandler(w http.ResponseWriter, r *http.Request) 
 		"issuer":                                o.Issuer,
 		"authorization_endpoint":                o.BaseURL + "/oauth/authorize",
 		"token_endpoint":                        o.BaseURL + "/oauth/token",
+		// DCR fallback: Claude Desktop/Web does not fall through to CIMD
+		// (anthropics/claude-ai-mcp#433) and needs registration_endpoint or a
+		// manual client ID. Claude Code / ChatGPT still prefer CIMD when both
+		// client_id_metadata_document_supported and token_endpoint_auth_methods
+		// ["none"] are advertised, so the two coexist.
+		"registration_endpoint":                 o.BaseURL + "/oauth/register",
 		"response_types_supported":              []string{"code"},
 		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
 		"token_endpoint_auth_methods_supported": []string{"none"},
