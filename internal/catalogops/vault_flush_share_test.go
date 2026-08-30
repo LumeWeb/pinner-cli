@@ -97,9 +97,12 @@ func TestVaultFlushAll(t *testing.T) {
 	msvc.AssertNotCalled(t, "FlushPath", mock.Anything, mock.Anything)
 }
 
-// TestVaultFlushSinglePath verifies vault_flush with a path flushes only that file.
+// TestVaultFlushSinglePath verifies vault_flush with a staged path flushes that
+// file (reported as 1) and never touches the all-files Flush.
 func TestVaultFlushSinglePath(t *testing.T) {
 	msvc := vault.NewMockVaultService(t)
+	msvc.On("Stat", mock.Anything, "vault:/docs/a.txt").
+		Return(&vault.StatResult{Path: "vault:/docs/a.txt", Status: vault.FileStatusPending}, nil)
 	msvc.On("FlushPath", mock.Anything, "vault:/docs/a.txt").Return(nil)
 
 	res, err := newVaultOps(t, msvc, "vault_flush", map[string]any{
@@ -111,4 +114,43 @@ func TestVaultFlushSinglePath(t *testing.T) {
 	require.Equal(t, 1, fr.Flushed)
 	msvc.AssertCalled(t, "FlushPath", mock.Anything, "vault:/docs/a.txt")
 	msvc.AssertNotCalled(t, "Flush", mock.Anything)
+}
+
+// TestVaultFlushDurableNoop verifies vault_flush <path> reports 0 (and skips
+// FlushPath, which would be a silent no-op) when the file is already durable.
+func TestVaultFlushDurableNoop(t *testing.T) {
+	msvc := vault.NewMockVaultService(t)
+	msvc.On("Stat", mock.Anything, "vault:/docs/a.txt").
+		Return(&vault.StatResult{Path: "vault:/docs/a.txt", Status: vault.FileStatusOK}, nil)
+
+	res, err := newVaultOps(t, msvc, "vault_flush", map[string]any{
+		"path":    "vault:/docs/a.txt",
+		"profile": "work",
+	})
+	require.NoError(t, err)
+	fr := res.(*VaultFlushResult)
+	require.Equal(t, 0, fr.Flushed, "already-durable file must not report a flush")
+	msvc.AssertNotCalled(t, "FlushPath", mock.Anything, mock.Anything)
+	msvc.AssertNotCalled(t, "Flush", mock.Anything)
+}
+
+// TestVaultShareLost verifies vault_share surfaces the lost state rather than
+// suggesting a flush that could never make the file shareable.
+func TestVaultShareLost(t *testing.T) {
+	msvc := vault.NewMockVaultService(t)
+	msvc.On("Stat", mock.Anything, "vault:/docs/a.txt").
+		Return(&vault.StatResult{Path: "vault:/docs/a.txt", Status: vault.FileStatusLost, LostReason: "slabs unavailable"}, nil)
+
+	res, err := newVaultOps(t, msvc, "vault_share", map[string]any{
+		"path":    "vault:/docs/a.txt",
+		"profile": "work",
+		"expiry":  "7d",
+	})
+	require.NoError(t, err)
+	sr, ok := res.(*VaultShareResult)
+	require.True(t, ok, "want *VaultShareResult, got %T", res)
+	require.Equal(t, "lost", sr.Status)
+	require.Contains(t, sr.Message, "slabs unavailable", "lost message must surface lost_reason")
+	require.NotContains(t, sr.Message, "vault_flush", "lost message must not suggest a flush")
+	msvc.AssertNotCalled(t, "Share", mock.Anything, mock.Anything, mock.Anything)
 }

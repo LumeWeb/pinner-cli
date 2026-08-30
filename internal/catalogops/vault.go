@@ -977,7 +977,13 @@ func vaultFlush(d VaultDeps) catalog.Operation {
 				}
 				return &VaultFlushResult{Flushed: n}, nil
 			}
-			// Flush a single path: FlushPath is a no-op when already durable.
+			// Flush a single path. FlushPath silently no-ops when the file is
+			// already durable (returns nil without doing work), so look it up
+			// first and only report a flush when there is a staged buffer to
+			// actually upload.
+			if st, serr := svc.Stat(flushCtx, path); serr == nil && st.Status == vault.FileStatusOK {
+				return &VaultFlushResult{Flushed: 0}, nil
+			}
 			if ferr := svc.FlushPath(flushCtx, path); ferr != nil {
 				return nil, fmt.Errorf("vault_flush %s: %w", path, ferr)
 			}
@@ -1080,9 +1086,21 @@ func vaultShare(d VaultDeps) catalog.Operation {
 				return nil, serr
 			}
 			if st.Status != vault.FileStatusOK {
+				// A lost file has no durable object to share and is not going to
+				// become shareable via a flush — surface the real reason instead
+				// of suggesting vault_flush.
+				if st.Status == vault.FileStatusLost {
+					return &VaultShareResult{
+						Status:  "lost",
+						Message: "file is lost on Sia (" + st.LostReason + "); it cannot be shared.",
+					}, nil
+				}
+				// pending/uploaded: staged locally, not yet fully pinned. Point the
+				// agent at vault_flush rather than blocking the share on a full
+				// host-set pin under the request deadline.
 				return &VaultShareResult{
-					Status:  "pending",
-					Message: "file is staged locally but not yet durable on Sia (status: " + st.Status + "). Run vault_flush (or wait for the background flush) to pin it, then share again.",
+					Status:  st.Status,
+					Message: "file is not yet durable on Sia (status: " + st.Status + "). Run vault_flush (or wait for the background flush) to pin it, then share again.",
 				}, nil
 			}
 			shareURL, err := svc.Share(ctx, vaultPath, validUntil)
