@@ -244,7 +244,7 @@ func TestPinAppClientBundled(t *testing.T) {
 // surface, populates a ToolCatalog as buildCatalog does, and confirms
 // RegisterPinApp (the exact step the server runs on startup) succeeds.
 func TestRegisterPinAppOnCompilerSurface(t *testing.T) {
-	cat, err := AssembleCatalogOps(&CatalogDepsBundle{Pins: catalogops.PinsDeps{}})
+	cat, err := AssembleCatalogOps(&CatalogDepsBundle{Pins: catalogops.PinsDeps{}}, FullSurface)
 	if err != nil {
 		t.Fatalf("AssembleCatalogOps: %v", err)
 	}

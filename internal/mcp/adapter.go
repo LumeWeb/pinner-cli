@@ -1417,15 +1417,20 @@ type WizardDepsFactory func() (wizard.WebsitesWizardDeps, wizard.SetupWizardDeps
 func buildCatalog(root *cli.Command, seedDrop *oobpkg.SeedDrop, oobRestore *oobpkg.OOBRestore, oobCreate *oobpkg.OOBCreate, handoffReg *handoff.HandoffRegistry, authHandles *session.AsyncHandleStore, opts ...buildCatalogOpt) (*ToolCatalog, error) {
 	catalog := NewToolCatalog()
 
-	// Apply the functional options. Currently the only option is withCatalogDeps,
-	// which stores the operation-catalog dependency factory on catalog.CatalogDeps
-	// for a later unit to consume; no population behavior changes here.
+	// Apply the functional options (withCatalogDeps, withSurface). The surface
+	// declares which operation domains/tool families this server exposes; it is
+	// recorded on the catalog and as the package active surface so per-request
+	// profile-aware resolution (agent_guide, startup profile) agrees with what
+	// was actually registered.
 	cfg := &buildCatalogConfig{}
 	for _, opt := range opts {
 		if err := opt(cfg); err != nil {
 			return nil, err
 		}
 	}
+	surface := cfg.resolveSurface()
+	catalog.Surface = surface
+	SetSurface(surface)
 	if cfg.catalogDeps != nil {
 		catalog.CatalogDeps = cfg.catalogDeps
 	}
@@ -1438,7 +1443,7 @@ func buildCatalog(root *cli.Command, seedDrop *oobpkg.SeedDrop, oobRestore *oobp
 	var opsCat opcat.Catalog
 	if cfg.catalogDeps != nil {
 		if deps := cfg.catalogDeps(); deps != nil {
-			oc, err := AssembleCatalogOps(deps)
+			oc, err := AssembleCatalogOps(deps, surface)
 			if err != nil {
 				return nil, err
 			}

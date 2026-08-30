@@ -22,6 +22,12 @@ type CatalogDepsBundle struct {
 	// CfgMgr returns a live config manager for the current invocation.
 	CfgMgr func() config.Manager
 
+	// CredentialResolver resolves the Portal API token for the authenticated
+	// request. When nil, the CLI/local default (read the bearer token from
+	// config) is used. A hosted server sets this to map a Portal-authenticated
+	// user onto a Portal API JWT.
+	CredentialResolver CredentialResolver
+
 	Auth      catalogops.AuthDeps
 	Account   catalogops.AccountDeps
 	Vault     catalogops.VaultDeps
@@ -49,14 +55,35 @@ type buildCatalogConfig struct {
 	// resolved per invocation (the catalogops lazy-deps pattern) so a
 	// test/global override stays live.
 	catalogDeps func() *CatalogDepsBundle
+	// surface declares which operation domains/tool families the server
+	// exposes. The zero value is the full surface (applied via
+	// buildCatalogConfig.resolveSurface).
+	surface Surface
 }
 
 // withCatalogDeps sets the operation-catalog dependency factory that buildCatalog
-// stores on the returned ToolCatalog. It is the only buildCatalog option for
-// now; nothing consumes the factory yet (that is a later unit).
+// stores on the returned ToolCatalog.
 func withCatalogDeps(f func() *CatalogDepsBundle) buildCatalogOpt {
 	return func(cfg *buildCatalogConfig) error {
 		cfg.catalogDeps = f
 		return nil
 	}
+}
+
+// withSurface sets the server construction surface. Callers that do not opt
+// into a restricted surface leave it unset, which resolves to the full surface.
+func withSurface(s Surface) buildCatalogOpt {
+	return func(cfg *buildCatalogConfig) error {
+		cfg.surface = s
+		return nil
+	}
+}
+
+// resolveSurface normalizes the configured surface: the zero value is the full
+// surface.
+func (c *buildCatalogConfig) resolveSurface() Surface {
+	if c.surface.IsZero() {
+		return FullSurface
+	}
+	return c.surface
 }

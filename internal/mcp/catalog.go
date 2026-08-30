@@ -61,6 +61,11 @@ type ToolCatalog struct {
 	// from the operation catalog instead of (or alongside) the CLI command
 	// tree.
 	CatalogDeps func() *CatalogDepsBundle
+	// Surface records the server construction surface (which operation domains
+	// and tool families are exposed). It is set by buildCatalog and read by
+	// registerCustomTools and markCurated so the whole surface agrees on what
+	// was registered. The zero value is the full surface.
+	Surface Surface
 	// CompilerMode records whether buildCatalog actually entered compiler mode
 	// (opsCat resolved non-nil: the factory was supplied AND returned a
 	// bundle). It is the single source of truth both buildCatalog and

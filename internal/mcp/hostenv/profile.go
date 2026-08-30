@@ -93,6 +93,14 @@ type PlatformProfile struct {
 	Remote     bool
 	Features   FeatureSet
 
+	// Surface declares which Pinner operation domains/tool families this
+	// server exposes. It is a server-construction-time property (full for the
+	// CLI/local MCP server, restricted to the hosted surface on a
+	// Portal-embedded server) rather than a wire signal. A zero Surface means
+	// the full surface. The whole profile-aware surface — tool registration,
+	// Apps, resources, prompts, and the agent_guide flow DSL — gates on it.
+	Surface Surface
+
 	// Raw wire signals, populated by the detector for runtime
 	// introspection by tools that need them at call time.
 	ClientInfo  *ClientInfo

@@ -31,7 +31,7 @@ func TestProductionCatalogOpsBundleAssemblesLiveSurface(t *testing.T) {
 	bundle := buildCatalogOpsDeps()
 	require.NotNil(t, bundle, "production deps bundle must construct")
 
-	oc, err := mcpadapter.AssembleCatalogOps(bundle)
+	oc, err := mcpadapter.AssembleCatalogOps(bundle, mcpadapter.FullSurface)
 	require.NoError(t, err, "production deps must assemble a catalog")
 	require.NotNil(t, oc)
 
@@ -67,7 +67,7 @@ func TestProductionCatalogOpsBundleExposesAdminDomain(t *testing.T) {
 	defer func() { configManagerFactory = prev }()
 
 	bundle := buildCatalogOpsDeps()
-	oc, err := mcpadapter.AssembleCatalogOps(bundle)
+	oc, err := mcpadapter.AssembleCatalogOps(bundle, mcpadapter.FullSurface)
 	require.NoError(t, err, "production deps must assemble a catalog")
 
 	descs, err := catalog.NewMCPCompiler().Compile(oc)

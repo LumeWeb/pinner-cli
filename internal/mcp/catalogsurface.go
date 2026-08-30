@@ -19,7 +19,13 @@ import (
 // derived from the same flags that SetTransportFlags records (co-located stdio,
 // OpenAI tunnel, or plain HTTP).
 func startupProfile() hostenv.PlatformProfile {
-	return hostenv.ProfileForTransport(transfer.UploadFileTransport(transportFlagsVar.coLocated, transportFlagsVar.tunnelOpenAI))
+	p := hostenv.ProfileForTransport(transfer.UploadFileTransport(transportFlagsVar.coLocated, transportFlagsVar.tunnelOpenAI))
+	// The server surface is a construction-time property recorded by
+	// buildCatalog; carry it on the startup profile so profile-aware tool
+	// description/schema resolution (which reads the profile's surface) agrees
+	// with what was actually registered.
+	p.Surface = activeSurface()
+	return p
 }
 
 // This file is the bridge between the operation catalog (the compiler-backed

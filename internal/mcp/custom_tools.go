@@ -159,6 +159,15 @@ func registerCustomTools(deps customToolDeps) error {
 		opts = &mcpServerOptions{}
 	}
 
+	// The surface controls which tool families are registered. It is recorded
+	// on the ToolCatalog by buildCatalog; a zero surface is the full surface.
+	// Restricting a family here (rather than at call time) means an omitted
+	// tool cannot be called and never appears in search/discovery/guide copy.
+	surface := deps.catalog.Surface
+	vaultOn := surface.VaultOn()
+	accountOn := surface.AccountOn()
+	uploadOn := surface.UploadOn()
+
 	// GUI-capable hosts (FeatMCPApps) get the consolidated open_app launcher on
 	// tools/list; agent-only hosts do not (per-app open_* launchers are already
 	// search-only). The effective features resolve from the detected host
@@ -251,42 +260,46 @@ func registerCustomTools(deps customToolDeps) error {
 	// direct-surface tools like the SSO resume tool. When the coordinators or
 	// resume machinery are absent, the templates return a structured
 	// not-configured hand-off instead of hanging.
-	vaultCreateResume := oob.NewVaultCreateResumeDescriptor(deps.handoffReg, deps.authHandles)
-	vaultRestoreResume := oob.NewVaultRestoreResumeDescriptor(deps.handoffReg, deps.authHandles)
-	reg.add(customToolSpec{desc: vaultCreateResume, index: true})
-	reg.add(customToolSpec{desc: vaultRestoreResume, index: true})
-
 	// vault_create / vault_restore stay headless (they return a needs_human
 	// URL+handle handoff); open_vault_create / open_vault_restore are the ONLY
-	// tools that open their app views.
-	reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
-		Name:        vault.OpenVaultCreateToolName,
-		Title:       "Create Vault (App)",
-		Description: "Open the interactive Create Vault app. This is a UI launcher: it renders an iframe for a human to create a vault (Sia approval + recovery seed). It is not a headless primitive. Prefer vault_create (headless) which returns the create URL + resume handle without rendering a card.",
-		Category:    model.CategoryVault,
-		ResourceURI: vault.VaultCreateAppURI,
-	}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
-		return vault.RegisterVaultCreateApp(srv, catalog, deps.handoffReg, deps.authHandles)
-	}))
-	reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
-		Name:        vault.OpenVaultRestoreToolName,
-		Title:       "Restore Vault (App)",
-		Description: "Open the interactive Restore Vault app. This is a UI launcher: it renders an iframe for a human to restore a vault from its recovery seed. It is not a headless primitive. Prefer vault_restore (headless) which returns the restore URL + resume handle without rendering a card.",
-		Category:    model.CategoryVault,
-		ResourceURI: vault.VaultRestoreAppURI,
-	}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
-		return vault.RegisterVaultRestoreApp(srv, catalog, deps.handoffReg, deps.authHandles)
-	}))
+	// tools that open their app views. All vault lifecycle/app registration is
+	// gated on the Sia vault surface: a hosted server without vault must not
+	// advertise vault create/restore/browse at all.
+	if vaultOn {
+		vaultCreateResume := oob.NewVaultCreateResumeDescriptor(deps.handoffReg, deps.authHandles)
+		vaultRestoreResume := oob.NewVaultRestoreResumeDescriptor(deps.handoffReg, deps.authHandles)
+		reg.add(customToolSpec{desc: vaultCreateResume, index: true})
+		reg.add(customToolSpec{desc: vaultRestoreResume, index: true})
 
-	// vault_status stays headless (returns raw JSON); open_vault_browser is the
-	// ONLY tool that opens the Vault browser app view.
-	reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
-		Name:        vault.OpenVaultBrowserToolName,
-		Title:       "Vault Browser (App)",
-		Description: "Open the interactive Vault browser app. This is a UI launcher: it renders an iframe for a human to browse the vault. It is not a headless primitive. Prefer vault_status / vault_ls (headless) for autonomous access.",
-		Category:    model.CategoryVault,
-		ResourceURI: vault.VaultBrowserAppURI,
-	}), vault.RegisterVaultBrowserApp))
+		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+			Name:        vault.OpenVaultCreateToolName,
+			Title:       "Create Vault (App)",
+			Description: "Open the interactive Create Vault app. This is a UI launcher: it renders an iframe for a human to create a vault (Sia approval + recovery seed). It is not a headless primitive. Prefer vault_create (headless) which returns the create URL + resume handle without rendering a card.",
+			Category:    model.CategoryVault,
+			ResourceURI: vault.VaultCreateAppURI,
+		}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
+			return vault.RegisterVaultCreateApp(srv, catalog, deps.handoffReg, deps.authHandles)
+		}))
+		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+			Name:        vault.OpenVaultRestoreToolName,
+			Title:       "Restore Vault (App)",
+			Description: "Open the interactive Restore Vault app. This is a UI launcher: it renders an iframe for a human to restore a vault from its recovery seed. It is not a headless primitive. Prefer vault_restore (headless) which returns the restore URL + resume handle without rendering a card.",
+			Category:    model.CategoryVault,
+			ResourceURI: vault.VaultRestoreAppURI,
+		}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
+			return vault.RegisterVaultRestoreApp(srv, catalog, deps.handoffReg, deps.authHandles)
+		}))
+
+		// vault_status stays headless (returns raw JSON); open_vault_browser
+		// is the ONLY tool that opens the Vault browser app view.
+		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+			Name:        vault.OpenVaultBrowserToolName,
+			Title:       "Vault Browser (App)",
+			Description: "Open the interactive Vault browser app. This is a UI launcher: it renders an iframe for a human to browse the vault. It is not a headless primitive. Prefer vault_status / vault_ls (headless) for autonomous access.",
+			Category:    model.CategoryVault,
+			ResourceURI: vault.VaultBrowserAppURI,
+		}), vault.RegisterVaultBrowserApp))
+	}
 
 	// pins_list stays headless (returns raw JSON); open_pin_list is the ONLY
 	// tool that opens the Pin list app view.
@@ -299,22 +312,26 @@ func registerCustomTools(deps customToolDeps) error {
 	}), download.RegisterPinListApp))
 
 	// auth_status stays headless (returns raw JSON); open_account is the ONLY
-	// tool that opens the Account app view.
-	reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
-		Name:        auth.OpenAccountToolName,
-		Title:       "Account (App)",
-		Description: "Open the interactive Account app. This is a UI launcher: it renders an iframe for a human to view authentication status. It is not a headless primitive. Prefer auth_status (headless) for autonomous access.",
-		Category:    model.CategoryAccount,
-		ResourceURI: auth.AuthStatusAppURI,
-	}), auth.RegisterAuthStatusApp))
+	// tool that opens the Account app view. Gated on the account surface.
+	if accountOn {
+		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+			Name:        auth.OpenAccountToolName,
+			Title:       "Account (App)",
+			Description: "Open the interactive Account app. This is a UI launcher: it renders an iframe for a human to view authentication status. It is not a headless primitive. Prefer auth_status (headless) for autonomous access.",
+			Category:    model.CategoryAccount,
+			ResourceURI: auth.AuthStatusAppURI,
+		}), auth.RegisterAuthStatusApp))
+	}
 
 	// pinner:// resources and templates are built from the provider factory and
-	// projected after the direct tool surface.
+	// projected after the direct tool surface. The vault resource is omitted
+	// when the Sia vault surface is disabled so a hosted server never
+	// advertises pinner://vault/status.
 	if deps.resourceFactory != nil {
 		reg.afterSurface(func() error {
 			provs := deps.resourceFactory(deps.store)
 			provs.Sessions = deps.store
-			resources, templates := ResourceDescriptors(provs)
+			resources, templates := ResourceDescriptorsForSurface(provs, surface.VaultOn())
 			return sdk.RegisterResources(deps.srv, resources, templates)
 		})
 	}
@@ -338,7 +355,10 @@ func registerCustomTools(deps customToolDeps) error {
 	})
 
 	// --- Vault put file (unified, transport-aware) ---
-	if vaultPutFileAvailable(deps.coLocated, opts.localPathVaultPut != nil, deps.vaultUpload != nil, opts.vaultPutHandler != nil, deps.tunnelOpenAI) {
+	// Every vault file/copy tool is gated on the Sia vault surface: a hosted
+	// server without vault must never advertise vault_put_file or the vault
+	// upload app.
+	if vaultOn && vaultPutFileAvailable(deps.coLocated, opts.localPathVaultPut != nil, deps.vaultUpload != nil, opts.vaultPutHandler != nil, deps.tunnelOpenAI) {
 		var pathFn vault.LocalPathVaultPutHandler
 		if deps.coLocated {
 			pathFn = opts.localPathVaultPut
@@ -377,13 +397,14 @@ func registerCustomTools(deps customToolDeps) error {
 	}
 
 	// --- upload_url: relay a caller-supplied HTTPS URL (remote HTTP fallback) ---
+	// (gated on uploadOn so an upload-disabled surface omits the URL relay)
 	// Gated on the effective profile's FeatSourceURL: the URL relay tool is
 	// registered only for a host that its feature set declares support for
 	// (e.g. Grok, the OpenAI tunnel). A host without FeatSourceURL (generic
 	// HTTP) does not get the tool at all — an omitted tool cannot be called,
 	// whereas a visible tool with only a "do not call" sentence still gets
 	// tried. Registration, not copy, is the gate.
-	if opts.relayURLUpload != nil && effectiveFeaturesFor(deps).Has(hostenv.FeatSourceURL) {
+	if uploadOn && opts.relayURLUpload != nil && effectiveFeaturesFor(deps).Has(hostenv.FeatSourceURL) {
 		relayDesc := upload.RelayURLUploadDescriptor(opts.relayURLUpload, opts.relayAllowedHosts, opts.maxRelayBytes)
 		// Re-resolve the baked tools/list description against the effective
 		// profile (the URL relay bakes against generic HTTP, whose no-relay
@@ -407,7 +428,7 @@ func registerCustomTools(deps customToolDeps) error {
 	// coordinator (downloadDrop) is wired alongside when any download executor
 	// exists, but the drop sink is only honored on transports with a reachable
 	// HTTP mux (tunnelOpenAI=false) — see downloadFileDescription.
-	if opts.ipfsDownload != nil {
+	if uploadOn && opts.ipfsDownload != nil {
 		downloadRoot := transfer.ResolveDownloadRoot(opts.downloadRoot)
 		dlDesc := transfer.NewDownloadFileDescriptor(opts.ipfsDownload, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
 		// download_file is headless; the app's view attaches to the explicit
@@ -423,7 +444,8 @@ func registerCustomTools(deps customToolDeps) error {
 	}
 
 	// --- Consolidated vault_get_file: a single sink-aware vault download tool. ---
-	if opts.vaultGet != nil {
+	// Gated on the Sia vault surface like every other vault tool.
+	if vaultOn && opts.vaultGet != nil {
 		downloadRoot := transfer.ResolveDownloadRoot(opts.downloadRoot)
 		dlDesc := vault.NewVaultGetFileDescriptor(opts.vaultGet, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
 		// vault_get_file is headless; the app's view attaches to the explicit
@@ -444,7 +466,7 @@ func registerCustomTools(deps customToolDeps) error {
 	// declares data: support (e.g. Grok, the OpenAI tunnel). A host without
 	// FeatSourceData does not get the tool at all — registration, not a "do not
 	// call" sentence, is the gate.
-	if opts.dataURIUpload != nil && effectiveFeaturesFor(deps).Has(hostenv.FeatSourceData) {
+	if uploadOn && opts.dataURIUpload != nil && effectiveFeaturesFor(deps).Has(hostenv.FeatSourceData) {
 		dataDesc := transfer.DataURIUploadDescriptor(opts.dataURIUpload, opts.maxRelayBytes)
 		// Re-resolve the baked tools/list description against the effective
 		// profile (mirroring upload_file/vault_put_file/upload_url), so a host
@@ -464,7 +486,7 @@ func registerCustomTools(deps customToolDeps) error {
 	//     coordinator (deps.curlUpload).
 	//   - openai tunnel: source mode url/data via the file-relay executor
 	//     (opts.uploadHandler), since no reachable HTTP mux exists.
-	if uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, opts.uploadHandler != nil, deps.tunnelOpenAI) {
+	if uploadOn && uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, opts.uploadHandler != nil, deps.tunnelOpenAI) {
 		var pathFn transfer.UploadFileHandler
 		if deps.coLocated {
 			pathFn = opts.localPathUpload
@@ -505,7 +527,7 @@ func registerCustomTools(deps customToolDeps) error {
 	// --- Async upload management tools (upload_status / upload_cancel / upload_list) ---
 	// These are search-only: the agent_guide upload flow names upload_status
 	// as a step, so an agent following the guide discovers it via search_tools.
-	if opts.uploadTasks != nil {
+	if uploadOn && opts.uploadTasks != nil {
 		for _, desc := range upload.NewAsyncUploadTools(opts.uploadTasks) {
 			reg.add(customToolSpec{desc: desc, index: true})
 		}
@@ -550,10 +572,11 @@ func registerCustomTools(deps customToolDeps) error {
 	// search_tools(help) can resolve and read it via describe_tool / invoke_tool.
 	reg.add(customToolSpec{desc: NewAgentGuideDescriptor(), index: true, direct: true})
 
-	// Optionally expose the prompt templates.
+	// Optionally expose the prompt templates, filtered to the surface so a
+	// hosted server never exposes a prompt whose underlying tools are absent.
 	if opts.prompts {
 		reg.afterSurface(func() error {
-			return sdk.RegisterPrompts(deps.srv, PromptDescriptors())
+			return sdk.RegisterPrompts(deps.srv, PromptDescriptorsForSurface(surface))
 		})
 	}
 
