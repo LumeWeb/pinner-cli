@@ -70,23 +70,10 @@ var vaultCatalogDepsVar = catalogops.VaultDeps(vaultCatalogDeps())
 // so vault_profiles, the profile-required rule, and the per-profile flush
 // manager all agree on the unlocked set.
 func provisionedProfileNames() []string {
-	reg, err := vault.LoadRegistry()
-	if err != nil {
-		return nil
-	}
-	out := make([]string, 0, len(reg.Profiles))
-	for name := range reg.Profiles {
-		// Guard against a hand-edited registry carrying a path traversal name
-		// (same check ResolveProfile applies).
-		if err := vault.ValidateProfileName(name); err != nil {
-			continue
-		}
-		// Access = a provisioned profile with a readable app key.
-		if _, ok := vault.ProfileVaultID(name); ok {
-			out = append(out, name)
-		}
-	}
-	return out
+	// Single shared source in the core vault package so vault_profiles, the
+	// profile-required rule, the per-profile flush manager, and the
+	// vault_put_file mint guard all agree on the unlocked set.
+	return vault.ProvisionedProfileNames()
 }
 
 // vaultFlushCfg is the SyncLoopConfig for the process-wide per-profile flush

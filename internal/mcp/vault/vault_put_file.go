@@ -58,10 +58,12 @@ type VaultPutFileInput struct {
 	// single-folder restriction — see ValidateVaultFilePath.
 	VaultPath string `json:"vault_path" jsonschema:"description=Vault destination file path (e.g. vault:/docs/f.pdf or vault:/uploads/report.pdf). Required. Must be a file path, not a directory; traversal (.. or .) segments are rejected. Any vault file path is allowed."`
 	// Profile is the vault profile the file is written into. Defaults to the
-	// active profile when omitted; specify it to write into another vault
-	// without switching the default (avoids a swarm flipping the active
+	// active profile on a single-profile server; on a multi-profile server it
+	// is REQUIRED — omitting it fails with profile_required instead of
+	// silently targeting the active vault. Specify it to write into another
+	// vault without switching the default (avoids a swarm flipping the active
 	// profile via vault_profile_use).
-	Profile string `json:"profile,omitempty" jsonschema:"description=Vault profile name to write into (defaults to the active profile). Specify a different profile to store in another vault without changing the default."`
+	Profile string `json:"profile,omitempty" jsonschema:"description=Vault profile name to write into. Required when more than one profile is unlocked (omitting it returns profile_required and mints nothing); on a single-profile server it defaults to the active profile. Specify a different profile to store in another vault without changing the default."`
 	// ArchiveMode controls how an archive path is handled: 'convert' (default)
 	// extracts and stores the contents; 'preserve' keeps the archive intact.
 	// Only used for source mode path.
@@ -99,15 +101,28 @@ type VaultPutFileInput struct {
 // destination can never be written regardless of transport. Any vault file
 // path is an allowed destination; there is no single-folder restriction.
 func NewVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenAI bool, pathFn LocalPathVaultPutHandler, vu *transfer.VaultHTTPUpload, relayFn VaultPutHandler, relayHosts []string, maxRelayBytes int64) model.ToolDescriptor {
-	return newVaultPutFileDescriptor(features, coLocated, tunnelOpenAI, pathFn, vu, relayFn, relayHosts, maxRelayBytes, nil)
+	return newVaultPutFileDescriptor(features, coLocated, tunnelOpenAI, pathFn, vu, relayFn, relayHosts, maxRelayBytes, corevault.ProfileRequired, nil)
 }
 
-// newVaultPutFileDescriptor is the implementation behind
-// NewVaultPutFileDescriptor. httpClient, when non-nil, overrides the client
-// used to fetch an OpenAI `file` download_url. It is a deliberate trust
-// decision by embedding Go code (tests); production passes nil and uses Pinner's
-// SSRF-guarded client.
-func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenAI bool, pathFn LocalPathVaultPutHandler, vu *transfer.VaultHTTPUpload, relayFn VaultPutHandler, relayHosts []string, maxRelayBytes int64, httpClient *http.Client) model.ToolDescriptor {
+// NewVaultPutFileDescriptorWithProfileCheck builds a vault_put_file descriptor
+// with an injectable multi-profile guard (profileCheck reports a
+// *corevault.ProfileRequiredError when an operation must target an explicit
+// profile; production uses the registry-backed corevault.ProfileRequired). It
+// exists so tests can simulate a multi-profile server without touching the real
+// vault registry. httpClient, when non-nil, overrides the client used to fetch
+// an OpenAI `file` download_url (a deliberate trust decision by embedding Go
+// code; production passes nil and uses Pinner's SSRF-guarded client).
+func NewVaultPutFileDescriptorWithProfileCheck(features hostenv.FeatureSet, coLocated, tunnelOpenAI bool, pathFn LocalPathVaultPutHandler, vu *transfer.VaultHTTPUpload, relayFn VaultPutHandler, relayHosts []string, maxRelayBytes int64, profileCheck func(string) *corevault.ProfileRequiredError, httpClient *http.Client) model.ToolDescriptor {
+	return newVaultPutFileDescriptor(features, coLocated, tunnelOpenAI, pathFn, vu, relayFn, relayHosts, maxRelayBytes, profileCheck, httpClient)
+}
+
+// newVaultPutFileDescriptor is the implementation behind the two exported
+// constructors. profileCheck applies the multi-profile profile-required rule
+// before any byte is written or URL minted. httpClient, when non-nil, overrides
+// the client used to fetch an OpenAI `file` download_url. It is a deliberate
+// trust decision by embedding Go code (tests); production passes nil and uses
+// Pinner's SSRF-guarded client.
+func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenAI bool, pathFn LocalPathVaultPutHandler, vu *transfer.VaultHTTPUpload, relayFn VaultPutHandler, relayHosts []string, maxRelayBytes int64, profileCheck func(string) *corevault.ProfileRequiredError, httpClient *http.Client) model.ToolDescriptor {
 	transport := transfer.UploadFileTransport(coLocated, tunnelOpenAI)
 	hostFile := features.Has(hostenv.FeatFileHostInput)
 	var meta map[string]any
@@ -160,6 +175,18 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 				return model.ToolResult{}, errors.New("an upload source is required")
 			case hasSource && hasFile:
 				return model.ToolResult{}, errors.New("provide exactly one upload source")
+			}
+
+			// Multi-profile guard: on a server with more than one unlocked
+			// profile, a write/mint without an explicit profile must fail here
+			// (profile_required) rather than silently target the active vault
+			// and later fail on the write with an unusable one-shot upload URL.
+			// Mirrors the guard on every catalog vault op so both surfaces
+			// agree that a missing profile is an error, never a default.
+			if pr := profileCheck(in.Profile); pr != nil {
+				return model.ErrorResult(pr.Code, pr.Message, map[string]any{
+					"profiles": pr.Profiles,
+				}), nil
 			}
 
 			// Build the metadata the vault write seals into the object. The
@@ -289,7 +316,7 @@ func vaultPutFileSchema(features hostenv.FeatureSet) json.RawMessage {
 		Property("source", toolargs.SchemaFor[transfer.UploadSource](), toolforge.Transform(transfer.VaultSourceSchemaTransform)).
 		Property("file", toolargs.SchemaFor[transfer.ChatGPTFileInput](), toolforge.When(hostenv.FeatFileHostInput)).
 		StringProperty("vault_path", "Vault destination file path (e.g. vault:/docs/f.pdf or vault:/uploads/report.pdf). Required. Must be a file path, not a directory; traversal (.. or .) segments are rejected. Any vault file path is allowed.").
-		StringProperty("profile", "Vault profile name to write into (defaults to the active profile). Specify a different profile to store in another vault without changing the default.").
+		StringProperty("profile", "Vault profile name to write into. Required when more than one profile is unlocked (omitting it returns profile_required and mints nothing); on a single-profile server it defaults to the active profile. Specify a different profile to store in another vault without changing the default.").
 		// archive_mode is only meaningful for source.mode=path (co-located
 		// stdio): the mint and url/data branches stream raw bytes with no
 		// in-band archive contract. Declaring it solely for FeatSourcePath
