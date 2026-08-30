@@ -6,40 +6,24 @@ package mcp
 // the catalog stamps each entry's DirectVisible flag (see markCurated). Keep
 // the names in a stable, human-reviewable order.
 //
-// These are the compiled underscore names produced by the operation catalog,
-// plus the website/domain wizard start/step tools. The legacy CLI-tree walk is
-// not run in the MCP surface. Custom transport tools that set DirectVisible at
-// registration (auth sso/resume, vault create/restore resume, upload backends)
-// are not listed here; the wizard tools are listed because wizard.RegisterWizardTools
-// does not set DirectVisible itself.
+// This is a deliberately small front door. The full tool catalog (~170 ops)
+// remains behind the search_tools / describe_tool / invoke_tool progressive-
+// disclosure meta-tools. Everything listed here is either essential for first-
+// call orientation (auth_status), vault lifecycle entry points (vault_create,
+// vault_restore, vault_status), the vault's distinctive share primitive
+// (vault_share_accept), or website publishing (websites_create, websites_get).
+// All other operations — pins CRUD, vault file ops, DNS, IPNS, admin, wizards —
+// are discoverable via search_tools. The agent_guide tool names the daily-use
+// verbs in its flows, so an agent reading the guide learns which tools to
+// search for.
 var compiledCuratedToolNames = []string{
 	"auth_status",
-	"auth_logout",
-	"pins_add",
-	"pins_list",
-	"pins_status",
-	"pins_rm",
 	"vault_create",
 	"vault_restore",
-	"vault_ls",
 	"vault_status",
-	"vault_stat",
-	"vault_version_ls",
-	"vault_version_get",
-	"vault_search",
 	"vault_share_accept",
-	"vault_tag_add",
-	"vault_tag_ls",
-	"websites_list",
-	"websites_get",
 	"websites_create",
-	"websites_validate",
-	"websites_platform_domains_list",
-	"websites_platform_domain_availability",
-	"domains_wizard_start",
-	"domains_wizard_step",
-	"websites_wizard_start",
-	"websites_wizard_step",
+	"websites_get",
 }
 
 // markCurated stamps DirectVisible=true on the entries named by

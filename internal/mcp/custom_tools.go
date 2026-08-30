@@ -158,6 +158,13 @@ func registerCustomTools(deps customToolDeps) error {
 		opts = &mcpServerOptions{}
 	}
 
+	// GUI-capable hosts (FeatMCPApps) get the consolidated open_app launcher on
+	// tools/list; agent-only hosts do not (per-app open_* launchers are already
+	// search-only). The effective features resolve from the detected host
+	// profile (dedicated per-host server) or the startup transport's generic
+	// profile.
+	guiCapable := effectiveFeaturesFor(deps).Has(hostenv.FeatMCPApps)
+
 	reg := newCustomToolRegistry(deps.srv, deps.catalog)
 
 	// "Create a Pin" MCP App: open_pin_creator is the ONLY tool that opens the
@@ -188,9 +195,7 @@ func registerCustomTools(deps customToolDeps) error {
 	authSSO := auth.NewAuthSSODescriptor(deps.oob, deps.authHandles, deps.handoffReg)
 	authSSO.DirectVisible = true
 	authResume := auth.NewAuthResumeDescriptor(deps.handoffReg, deps.authHandles)
-	authResume.DirectVisible = true
 	authSSORevoke := auth.NewAuthSSORevokeDescriptor(deps.oob, deps.authHandles, deps.handoffReg)
-	authSSORevoke.DirectVisible = true
 	reg.add(customToolSpec{desc: authSSO, index: true})
 	reg.add(customToolSpec{desc: authResume, index: true})
 	reg.add(customToolSpec{desc: authSSORevoke, index: true})
@@ -213,11 +218,8 @@ func registerCustomTools(deps customToolDeps) error {
 	// tools like the SSO pair; when the coordinator/service are absent they
 	// return a structured not-configured hand-off instead of hanging.
 	accountUpdate := auth.NewAccountPasswordUpdateDescriptor(deps.accountOOB, deps.wizardS.AuthService, deps.authHandles, deps.handoffReg)
-	accountUpdate.DirectVisible = true
 	accountReset := auth.NewAccountPasswordResetDescriptor(deps.wizardS.AuthService, deps.accountWebAppURL)
-	accountReset.DirectVisible = true
 	accountEmail := auth.NewAccountEmailChangeDescriptor(deps.accountOOB, deps.wizardS.AuthService)
-	accountEmail.DirectVisible = true
 	reg.add(customToolSpec{desc: accountUpdate, index: true})
 	reg.add(customToolSpec{desc: accountReset, index: true})
 	reg.add(customToolSpec{desc: accountEmail, index: true})
@@ -249,9 +251,7 @@ func registerCustomTools(deps customToolDeps) error {
 	// resume machinery are absent, the templates return a structured
 	// not-configured hand-off instead of hanging.
 	vaultCreateResume := oob.NewVaultCreateResumeDescriptor(deps.handoffReg, deps.authHandles)
-	vaultCreateResume.DirectVisible = true
 	vaultRestoreResume := oob.NewVaultRestoreResumeDescriptor(deps.handoffReg, deps.authHandles)
-	vaultRestoreResume.DirectVisible = true
 	reg.add(customToolSpec{desc: vaultCreateResume, index: true})
 	reg.add(customToolSpec{desc: vaultRestoreResume, index: true})
 
@@ -317,6 +317,24 @@ func registerCustomTools(deps customToolDeps) error {
 			return sdk.RegisterResources(deps.srv, resources, templates)
 		})
 	}
+
+	// The consolidated open_app launcher: the single directly-surfaced UI
+	// launcher for a GUI-capable host (all per-app open_* launchers are
+	// search-only, see launcherSpec). It is registered after the direct tool
+	// surface so the catalog holds every installed app view, which the handler
+	// resolves to build an accurate app list. On an agent-only host it is still
+	// catalog-indexed (discoverable) so the agent can tell a human to open an
+	// app, but it is NOT projected onto tools/list.
+	reg.afterSurface(func() error {
+		openApp := newOpenAppDescriptor(deps.catalog)
+		openAppEntry := model.ToolEntryFromDescriptor(openApp)
+		openAppEntry.DirectVisible = guiCapable
+		deps.catalog.Add(openAppEntry)
+		if guiCapable {
+			return RegisterOfficialDescriptor(deps.srv, openApp)
+		}
+		return nil
+	})
 
 	// --- Vault put file (unified, transport-aware) ---
 	if vaultPutFileAvailable(deps.coLocated, opts.localPathVaultPut != nil, deps.vaultUpload != nil, opts.vaultPutHandler != nil, deps.tunnelOpenAI) {
@@ -484,9 +502,11 @@ func registerCustomTools(deps customToolDeps) error {
 	}
 
 	// --- Async upload management tools (upload_status / upload_cancel / upload_list) ---
+	// These are search-only: the agent_guide upload flow names upload_status
+	// as a step, so an agent following the guide discovers it via search_tools.
 	if opts.uploadTasks != nil {
 		for _, desc := range upload.NewAsyncUploadTools(opts.uploadTasks) {
-			reg.add(customToolSpec{desc: desc, index: true, direct: true})
+			reg.add(customToolSpec{desc: desc, index: true})
 		}
 	}
 

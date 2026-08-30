@@ -156,6 +156,15 @@ func populateCatalogSurface(tc *ToolCatalog, cat catalog.Catalog) (map[string]bo
 		if d.Name == "" {
 			continue
 		}
+		// Drop the plain SDK-call account credential ops from the MCP surface.
+		// They pass credentials through the LLM channel and duplicate the OOB
+		// tools (account_password_update / account_email_change) that hand off
+		// to a hosted browser form instead. They remain available to the CLI
+		// frontend through the operation catalog; only the MCP adapter omits
+		// them.
+		if d.Name == "account_update_email" || d.Name == "account_update_password" {
+			continue
+		}
 		tc.Add(catalogDescriptorToEntry(d, cat))
 		compiled[d.Name] = true
 	}

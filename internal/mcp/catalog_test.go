@@ -261,6 +261,82 @@ func TestSearchHidesWizardsByDefault(t *testing.T) {
 	}
 }
 
+// TestSearchHidesAdminByDefault verifies admin tools are gated exactly like
+// wizards: a general keyword search ("cancel") must never surface
+// admin_billing_*, but an explicit category=admin browse returns them.
+func TestSearchHidesAdminByDefault(t *testing.T) {
+	c := NewToolCatalog()
+	c.Add(entry("vault_sync", "Sync vault cache with the indexer", model.CategoryVault, model.InteractionAgentSafe))
+	c.Add(entry("admin_billing_subscribers_cancel", "Cancel a billing subscriber", model.CategoryAdmin, model.InteractionAgentSafe))
+
+	// A vague keyword search for "cancel" must not retrieve the admin tool.
+	for _, s := range c.Search("cancel", "", 0) {
+		assert.NotEqual(t, model.CategoryAdmin, s.Category, "admin tools must be hidden from general keyword search")
+	}
+
+	// The vault tool still matches "sync" normally (non-admin surface is fine).
+	assert.NotEmpty(t, c.Search("sync", "", 0), "non-admin tools must still be searchable")
+
+	// Explicit admin category browse returns them.
+	admins := c.Search("", string(model.CategoryAdmin), 0)
+	assert.NotEmpty(t, admins, "admin category filter must return admin tools")
+	for _, s := range admins {
+		assert.Equal(t, model.CategoryAdmin, s.Category)
+	}
+
+	// Suggest must not surface admin tools either.
+	for _, s := range c.Suggest("admin_billing", 5) {
+		entry, ok := c.Get(s)
+		require.True(t, ok, s)
+		assert.NotEqual(t, model.CategoryAdmin, entry.Category, "admin tools must never be suggested")
+	}
+}
+
+// TestAdminGatedFromDescribeAndInvoke verifies that admin tools are blocked
+// from Describe, DescribeFor, and Invoke — not just from Search/Suggest. An
+// agent that somehow knows an admin tool name by heart cannot describe or
+// invoke it through the meta-tool path.
+func TestAdminGatedFromDescribeAndInvoke(t *testing.T) {
+	c := NewToolCatalog()
+	c.Add(entry("vault_sync", "Sync vault cache", model.CategoryVault, model.InteractionAgentSafe))
+	c.Add(entry("admin_billing_subscribers_cancel", "Cancel a billing subscriber", model.CategoryAdmin, model.InteractionAgentSafe))
+
+	// Non-admin tool describes fine.
+	_, err := c.Describe("vault_sync")
+	require.NoError(t, err)
+
+	// Non-admin tool describes fine via DescribeFor (profile-aware path).
+	_, err = c.DescribeFor("vault_sync", nil)
+	require.NoError(t, err)
+
+	// Admin tool is blocked from Describe.
+	_, err = c.Describe("admin_billing_subscribers_cancel")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "admin tool")
+
+	// Admin tool is blocked from DescribeFor.
+	_, err = c.DescribeFor("admin_billing_subscribers_cancel", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "admin tool")
+
+	// Admin tool is blocked from Invoke.
+	_, err = c.Invoke(context.Background(), "admin_billing_subscribers_cancel", map[string]any{})
+	require.NoError(t, err) // Invoke returns errors inside ToolResult, not as Go error
+	// The ToolResult.IsError will be true since admin tools are blocked.
+}
+
+// TestAdminGatedFromInvokeReturnsErrorResult verifies that attempting to invoke
+// an admin tool through Invoke returns an error ToolResult (not a Go error).
+func TestAdminGatedFromInvokeReturnsErrorResult(t *testing.T) {
+	c := NewToolCatalog()
+	c.Add(entry("admin_billing_subscribers_cancel", "Cancel a billing subscriber", model.CategoryAdmin, model.InteractionAgentSafe))
+
+	res, err := c.Invoke(context.Background(), "admin_billing_subscribers_cancel", map[string]any{})
+	require.NoError(t, err, "Invoke must not return a Go error for admin gate")
+	assert.True(t, res.IsError, "admin tool invoke must return IsError=true")
+	assert.Contains(t, res.Text, "admin tool")
+}
+
 // TestOnboardingPrimaryOnly verifies the onboarding surface returns ONLY the
 // curated primary start-here tools (matching the agent_guide flows), not the
 // full catalog dump. account_status is in the seed catalog but is not a

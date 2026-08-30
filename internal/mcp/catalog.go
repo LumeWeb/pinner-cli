@@ -206,8 +206,10 @@ func (c *ToolCatalog) Onboarding() OnboardingResult {
 //
 // Wizard tools (CategoryWizard) are excluded by default so an agent cannot
 // stumble onto an interactive flow; they are only returned when category is
-// explicitly "wizard". limit caps the number of results returned (<=0 means
-// no cap).
+// explicitly "wizard". Admin tools (CategoryAdmin) are likewise excluded from
+// general keyword search — a vague query must not retrieve an admin_* op —
+// and only returned when category is explicitly "admin". limit caps the number
+// of results returned (<=0 means no cap).
 //
 // If category is non-empty, only tools in that category are considered.
 func (c *ToolCatalog) Search(query, category string, limit int) []ToolSummary {
@@ -231,6 +233,12 @@ func (c *ToolCatalog) Search(query, category string, limit int) []ToolSummary {
 		// Wizards are interactive by nature; keep them out of general keyword
 		// search unless the category filter names them explicitly.
 		if t.Category == model.CategoryWizard && category != string(model.CategoryWizard) {
+			continue
+		}
+		// Admin tools are gated: never surfaced by a general keyword search (a
+		// vague query like "cancel" must not retrieve admin_billing_*). They
+		// are only returned when the caller explicitly browses category=admin.
+		if t.Category == model.CategoryAdmin && category != string(model.CategoryAdmin) {
 			continue
 		}
 		if category != "" && string(t.Category) != category {
@@ -306,7 +314,7 @@ func (c *ToolCatalog) Suggest(name string, max int) []string {
 	}
 	all := make([]scored, 0, len(c.tools))
 	for _, t := range c.tools {
-		if t.Category == model.CategoryWizard || t.Interaction == model.InteractionInteractive {
+		if t.Category == model.CategoryWizard || t.Category == model.CategoryAdmin || t.Interaction == model.InteractionInteractive {
 			continue
 		}
 		d := levenshtein(strings.ToLower(t.Name), target)
@@ -381,6 +389,9 @@ func (c *ToolCatalog) Describe(name string) (*ToolDetail, error) {
 	if !ok {
 		return nil, fmt.Errorf("unknown tool: %s", name)
 	}
+	if entry.Category == model.CategoryAdmin {
+		return nil, fmt.Errorf("admin tool %s is not available through describe_tool; use search_tools with category=admin to discover admin tools", name)
+	}
 
 	return &ToolDetail{
 		Name:        entry.Name,
@@ -404,6 +415,9 @@ func (c *ToolCatalog) DescribeFor(name string, profile *hostenv.PlatformProfile)
 	entry, ok := c.tools[name]
 	if !ok {
 		return nil, fmt.Errorf("unknown tool: %s", name)
+	}
+	if entry.Category == model.CategoryAdmin {
+		return nil, fmt.Errorf("admin tool %s is not available through describe_tool; use search_tools with category=admin to discover admin tools", name)
 	}
 
 	return &ToolDetail{
@@ -450,6 +464,9 @@ func (c *ToolCatalog) SearchFor(query, category string, limit int, profile *host
 			continue
 		}
 		if t.Category == model.CategoryWizard && category != string(model.CategoryWizard) {
+			continue
+		}
+		if t.Category == model.CategoryAdmin && category != string(model.CategoryAdmin) {
 			continue
 		}
 		if category != "" && string(t.Category) != category {
@@ -499,6 +516,9 @@ func (c *ToolCatalog) Invoke(ctx context.Context, name string, args map[string]a
 
 	if !ok {
 		return model.ToolResult{}, fmt.Errorf("unknown tool: %s", name)
+	}
+	if entry.Category == model.CategoryAdmin {
+		return model.ToolResult{IsError: true, Text: fmt.Sprintf("admin tool %s is not available through invoke_tool; use search_tools with category=admin to discover admin tools", name)}, nil
 	}
 
 	log.Info("meta-tool invoke", zap.String("tool", name))

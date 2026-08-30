@@ -25,7 +25,7 @@ func TestAgentGuideDescriptor(t *testing.T) {
 	guid, ok := res.StructuredContent.(AgentGuide)
 	require.True(t, ok, "StructuredContent must be an AgentGuide")
 	require.NotEmpty(t, guid.Summary)
-	require.Len(t, guid.Flows, 10, "guide must cover all primary flows")
+	require.Len(t, guid.Flows, 12, "guide must cover all primary flows")
 
 	names := make([]string, 0, len(guid.Flows))
 	for _, f := range guid.Flows {
@@ -391,6 +391,48 @@ func TestAgentGuideSandboxFilesRouteToFileNotMint(t *testing.T) {
 		require.NotNil(t, mintBranch, "%s must expose a requalified mint-only branch", flowName)
 		require.Contains(t, strings.ToLower(mintBranch.When), "cannot provide through `file`", "mint branch must require the file handoff to be unavailable")
 		require.Contains(t, mintBranch.When, "not a host/user/assistant-generated file", "mint branch must explicitly exclude generated files")
+	}
+}
+
+// TestAgentGuideMCPAppsRuleScoped verifies the open_app rule and summary
+// segment appear only on GUI-capable hosts (FeatMCPApps) and are absent on
+// agent-only hosts.
+func TestAgentGuideMCPAppsRuleScoped(t *testing.T) {
+	guiProfiles := []*hostenv.PlatformProfile{
+		strPtr(hostenv.ProfileStdioMCPApps),
+		strPtr(hostenv.ProfileClaudeHTTP),
+		strPtr(hostenv.ProfileOpenAIHTTP),
+		strPtr(hostenv.ProfileOpenAITunnel),
+	}
+	for _, p := range guiProfiles {
+		guide := buildAgentGuide(p)
+		rules := strings.Join(guide.Rules, "\n")
+		require.Contains(t, rules, "open_app", "%s: rules must mention open_app", p.HostType)
+		require.Contains(t, rules, "MCP Apps rule", "%s: rules must include the MCP Apps rule", p.HostType)
+		require.Contains(t, guide.Summary, "open_app", "%s: summary must mention open_app", p.HostType)
+
+		authFlow := guideFlowByName(t, guide, "auth")
+		require.Contains(t, authFlow.Detail, "open_app", "%s: auth flow detail must mention open_app", p.HostType)
+		createFlow := guideFlowByName(t, guide, "vault_create")
+		require.Contains(t, createFlow.Detail, "open_app", "%s: vault_create flow detail must mention open_app", p.HostType)
+		restoreFlow := guideFlowByName(t, guide, "vault_restore")
+		require.Contains(t, restoreFlow.Detail, "open_app", "%s: vault_restore flow detail must mention open_app", p.HostType)
+	}
+
+	agentProfiles := []*hostenv.PlatformProfile{
+		strPtr(hostenv.ProfileStdioGeneric),
+		strPtr(hostenv.ProfileHTTPGeneric),
+		strPtr(hostenv.ProfileGrokHTTP),
+		strPtr(hostenv.ProfileGrokStdio),
+	}
+	for _, p := range agentProfiles {
+		guide := buildAgentGuide(p)
+		rules := strings.Join(guide.Rules, "\n")
+		require.NotContains(t, rules, "MCP Apps rule", "%s: rules must NOT include the MCP Apps rule", p.HostType)
+		require.NotContains(t, guide.Summary, "open_app", "%s: summary must NOT mention open_app", p.HostType)
+
+		authFlow := guideFlowByName(t, guide, "auth")
+		require.NotContains(t, authFlow.Detail, "open_app", "%s: auth flow detail must NOT mention open_app", p.HostType)
 	}
 }
 
