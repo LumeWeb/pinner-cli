@@ -208,10 +208,11 @@ type StatResult struct {
 	Status        string `json:"status,omitempty"`      // "ok" | "pending" | "lost"
 	LostReason    string `json:"lost_reason,omitempty"` // detail when Status == "lost"
 	// FlushAttempts/FlushError surface a stuck "pending" file: how many flush
-	// passes have tried to durable-upload it and the most recent failure. Empty
-	// (0/"") for durable files and for pending files that have not failed yet.
-	FlushAttempts int            `json:"flush_attempts,omitempty"`
-	FlushError    string         `json:"flush_error,omitempty"`
+	// passes have tried to durable-upload it and the most recent failure. They
+	// are pointer fields so a not-yet-durable file always reports them (even at
+	// zero) while durable files omit them (see flushVisibility).
+	FlushAttempts *int           `json:"flush_attempts,omitempty"`
+	FlushError    *string        `json:"flush_error,omitempty"`
 	CreatedAt     string         `json:"created_at"`
 	UpdatedAt     string         `json:"updated_at,omitempty"`
 	Metadata      map[string]any `json:"metadata,omitempty"`
@@ -226,6 +227,20 @@ type StatResult struct {
 	Agent  string `json:"agent,omitempty"`
 }
 
+// flushVisibility derives the FlushAttempts/FlushError pointers to surface on
+// a StatResult/SearchItem for a file record. While the file is not yet durable
+// (Status != "ok") it returns non-nil pointers — even for a zero attempt count
+// or empty error — so a polling agent always sees the file's flush state. Once
+// the file is durable (Status == "ok") it returns nil pointers, letting
+// omitempty drop the fields from the payload.
+func flushVisibility(status string, attempts int, flushErr string) (*int, *string) {
+	if status == FileStatusOK || status == "" {
+		return nil, nil
+	}
+	a, e := attempts, flushErr
+	return &a, &e
+}
+
 // SearchItem is one file result from Search. It carries a full vault path and
 // the same metadata surfaced by Stat, so the result is directly actionable.
 type SearchItem struct {
@@ -237,8 +252,8 @@ type SearchItem struct {
 	ObjectID      string `json:"object_id,omitempty"`
 	Status        string `json:"status,omitempty"`
 	// FlushAttempts/FlushError surface a stuck "pending" file (see StatResult).
-	FlushAttempts int            `json:"flush_attempts,omitempty"`
-	FlushError    string         `json:"flush_error,omitempty"`
+	FlushAttempts *int           `json:"flush_attempts,omitempty"`
+	FlushError    *string        `json:"flush_error,omitempty"`
 	CreatedAt     string         `json:"created_at"`
 	UpdatedAt     string         `json:"updated_at,omitempty"`
 	Tags          []string       `json:"tags,omitempty"`

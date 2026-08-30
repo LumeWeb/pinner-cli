@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -316,5 +317,52 @@ func TestFlushVisibility_RecordsAndClearsError(t *testing.T) {
 	}
 	if done.FlushAttempts != 0 || done.FlushError != "" {
 		t.Fatalf("clear on success failed: attempts=%d error=%q", done.FlushAttempts, done.FlushError)
+	}
+}
+
+// TestStatJSONSurfacesFlushVisibilityOnPending ensures the StatResult JSON
+// payload an agent sees when polling vault_stat always carries
+// flush_attempts/flush_error while the file is pending (even at zero), and
+// omits them once the file is durable (status ok) — the poll loop documented on
+// vault_flush must be actually observable through the tool.
+func TestStatJSONSurfacesFlushVisibilityOnPending(t *testing.T) {
+	marshal := func(r StatResult) map[string]any {
+		t.Helper()
+		raw, err := json.Marshal(r)
+		if err != nil {
+			t.Fatalf("marshal StatResult: %v", err)
+		}
+		var out map[string]any
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatalf("unmarshal StatResult: %v", err)
+		}
+		return out
+	}
+
+	// Pending with a recorded failure: fields present with values.
+	failAttempts, failErr := flushVisibility(FileStatusPending, 3, "host pin timed out")
+	failed := marshal(StatResult{Type: "file", Status: FileStatusPending, FlushAttempts: failAttempts, FlushError: failErr})
+	if failed["flush_attempts"].(float64) != 3 || failed["flush_error"] != "host pin timed out" {
+		t.Errorf("pending-failed payload must carry values, got %v", failed)
+	}
+
+	// Pending, nothing failed yet: fields must STILL be present (at zero).
+	zeroAttempts, zeroErr := flushVisibility(FileStatusPending, 0, "")
+	pending := marshal(StatResult{Type: "file", Status: FileStatusPending, FlushAttempts: zeroAttempts, FlushError: zeroErr})
+	if _, ok := pending["flush_attempts"]; !ok {
+		t.Errorf("pending payload must carry flush_attempts, got %v", pending)
+	}
+	if _, ok := pending["flush_error"]; !ok {
+		t.Errorf("pending payload must carry flush_error, got %v", pending)
+	}
+
+	// Durable: fields omitted.
+	okAttempts, okErr := flushVisibility(FileStatusOK, 0, "")
+	ok := marshal(StatResult{Type: "file", Status: FileStatusOK, FlushAttempts: okAttempts, FlushError: okErr})
+	if _, present := ok["flush_attempts"]; present {
+		t.Errorf("ok payload must omit flush_attempts, got %v", ok)
+	}
+	if _, present := ok["flush_error"]; present {
+		t.Errorf("ok payload must omit flush_error, got %v", ok)
 	}
 }

@@ -730,6 +730,7 @@ func (s *vaultService) Search(_ context.Context, req SearchRequest) ([]SearchIte
 		if len(rec.Metadata) > 0 {
 			_ = json.Unmarshal(rec.Metadata, &metaOut) // best-effort
 		}
+		flushAttempts, flushError := flushVisibility(rec.Status, rec.FlushAttempts, rec.FlushError)
 		items = append(items, SearchItem{
 			Path:          VaultScheme + path,
 			Name:          rec.Name,
@@ -738,8 +739,8 @@ func (s *vaultService) Search(_ context.Context, req SearchRequest) ([]SearchIte
 			ContentDigest: rec.ContentDigest,
 			ObjectID:      rec.ObjectKey,
 			Status:        rec.Status,
-			FlushAttempts: rec.FlushAttempts,
-			FlushError:    rec.FlushError,
+			FlushAttempts: flushAttempts,
+			FlushError:    flushError,
 			CreatedAt:     rec.CreatedAt.Format(time.RFC3339),
 			UpdatedAt:     rec.UpdatedAt.Format(time.RFC3339),
 			Tags:          tagsByID[rec.ID],
@@ -809,6 +810,7 @@ func (s *vaultService) Stat(ctx context.Context, vaultPath string) (*StatResult,
 	// authoritative Metadata['tags'] array in the object). Best-effort: a
 	// read failure yields an empty tag list rather than failing Stat.
 	tags, _ := s.currentTags(record.ID)
+	flushAttempts, flushError := flushVisibility(record.Status, record.FlushAttempts, record.FlushError)
 	return &StatResult{
 		Type:          "file",
 		Name:          record.Name,
@@ -819,8 +821,8 @@ func (s *vaultService) Stat(ctx context.Context, vaultPath string) (*StatResult,
 		ObjectID:      record.ObjectKey,
 		Status:        record.Status,
 		LostReason:    record.LostReason,
-		FlushAttempts: record.FlushAttempts,
-		FlushError:    record.FlushError,
+		FlushAttempts: flushAttempts,
+		FlushError:    flushError,
 		CreatedAt:     record.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:     record.UpdatedAt.Format(time.RFC3339),
 		Metadata:      metaOut,
