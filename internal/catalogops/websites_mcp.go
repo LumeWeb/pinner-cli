@@ -32,6 +32,8 @@ var websitesCreateDesc = toolforge.Static(
 	// Domain/label guidance — the decision tree is in agent_guide.
 	Static("If the user has no domain, call websites_create with only {\"cid\":\"<cid>\"} and a platform subdomain is auto-minted — do NOT invent a domain or label for a generic request.").
 	Static("For a custom domain, pass {\"cid\":\"<cid>\",\"website\":\"<domain>\"} (target-type and dns-hosting are optional).").
+	Static("Custom domains default to namespace icann (traditional DNS). For a Handshake (alt-root) name like acme/, pass {\"namespace\":\"hns\"}.").
+	Static("After creating a Handshake site, read pinner://websites/<domain>/dns-requirements — it renders the records to publish on-chain in the HNS wallet (parent NS/DS/GLUE) plus the authoritative side; managed DNS handles the authoritative side for you.").
 	Static("For a platform subdomain with an explicit label, pass {\"cid\":\"<cid>\",\"platform\":true,\"label\":\"<label>\"} or {\"cid\":\"<cid>\",\"platform\":true,\"generate\":true}.").
 	Static("See agent_guide's publish_website flow for the full custom-domain vs platform-label decision tree.").
 	Static("Do not infer a desire for custom naming from a generic request to create or publish a website; default to no domain unless the user explicitly supplies or requests a specific label or domain.").

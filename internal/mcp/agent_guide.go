@@ -311,7 +311,8 @@ func publishDomainDecision() *toolforge.GuideDecisionBuilder {
 		toolforge.Branch("Yes — user owns a custom domain (e.g. example.com)").
 			Steps("websites_create", "websites_validate").
 			Detail(publishCidLead.Then(htmlRootClause).
-				Static("Call websites_create with {\"cid\": \"<cid>\", \"website\": \"<domain>\"}. The domain is used directly as a custom domain (not a platform subdomain). Read pinner://websites/<domain>/dns-requirements for DNS records to publish. If dns_hosting=true (managed), DNS is reconciled asynchronously — validation may report the old CID right after the update; that is reconciliation lag, not failure, so re-call websites_validate without starting a new flow. If self-managed, publish the _dnslink TXT and validation TXT before calling websites_validate.")),
+				Static("Call websites_create with {\"cid\": \"<cid>\", \"website\": \"<domain>\"}. The domain is used directly as a custom domain (not a platform subdomain). Read pinner://websites/<domain>/dns-requirements for DNS records to publish. If dns_hosting=true (managed), DNS is reconciled asynchronously — validation may report the old CID right after the update; that is reconciliation lag, not failure, so re-call websites_validate without starting a new flow. If self-managed, publish the _dnslink TXT and validation TXT before calling websites_validate.").
+				Static("For a Handshake (alt-root) name such as acme/ (i.e. the user has a Handshake domain, not an ICANN TLD domain), pass {\"namespace\": \"hns\"} alongside the website so the site binds under the HNS namespace. Read pinner://websites/<domain>/dns-requirements for the HNS delegation bundle and publish the parent NS/DS/GLUE records on-chain in the HNS wallet; with managed DNS the authoritative side is handled for you.")),
 	)
 }
 

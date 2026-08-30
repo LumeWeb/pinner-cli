@@ -210,6 +210,23 @@ func (ui *PTermWebsitesUI) ExecuteDomainStep(_ context.Context, w *WebsitesWizar
 
 	w.SetDomain(domain)
 	pterm.Success.Printf("Domain set: %s\n", domain)
+
+	// Namespace selection (ICANN default, HNS for a Handshake alt-root name).
+	nsChoices := []string{
+		"ICANN (traditional domain, e.g. example.com)",
+		"HNS (Handshake naming system domain)",
+	}
+	nsIdx, _, err := ui.Select("Which namespace does this domain belong to?", nsChoices)
+	if err != nil {
+		return fmt.Errorf("prompt failed: %w", err)
+	}
+	if nsIdx == 1 {
+		w.SetNamespace("hns")
+		pterm.Success.Println("Namespace set to HNS")
+	} else {
+		w.SetNamespace("icann")
+		pterm.Success.Println("Namespace set to ICANN")
+	}
 	return nil
 }
 

@@ -385,7 +385,7 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 		Name:        "websites_create",
 		Title:       "Create a website",
 		Summary:     "Create a new website",
-		Description: "Create a website that serves an IPFS CID. With only --cid, a platform (free) subdomain is minted automatically. Provide a custom domain as the positional for a user-owned domain; a subdomain of a platform root (e.g. myapp.pinned.site) is auto-detected and claimed as a platform subdomain. Returns the created website with validation token and DNS records.",
+		Description: "Create a website that serves an IPFS CID. With only --cid, a platform (free) subdomain is minted automatically. Provide a custom domain as the positional for a user-owned domain; a subdomain of a platform root (e.g. myapp.pinned.site) is auto-detected and claimed as a platform subdomain. Custom domains are ICANN by default; pass namespace=\"hns\" for a Handshake (alt-root) name. Returns the created website with validation token and DNS records.",
 		MCPTargets:  websitesCreateTargets,
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
@@ -397,6 +397,7 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 			{Name: "cid", Type: catalog.ArgTypeString, Required: true, Help: "IPFS CID to serve", AgentHelp: "The IPFS CID to serve. If from a Pinner upload tool, use its returned CID directly (already pinned, no pins_add). Only call pins_add first when the CID is external to Pinner."},
 			{Name: "target-type", Type: catalog.ArgTypeString, Default: "ipfs", Help: "Target type (ipfs|ipns)"},
 			{Name: "dns-hosting", Type: catalog.ArgTypeNullableBool, Help: "Let Pinner manage DNS for this website (true = managed, false = self-managed, omit = managed default; ignored for platform subdomains, which are always managed)", AgentHelp: "true lets Pinner manage DNS; false leaves DNS self-managed. Omit to use the default. Ignored for platform subdomains (always managed)."},
+			{Name: "namespace", Type: catalog.ArgTypeString, Default: "icann", Help: "Domain namespace for a custom domain: icann (default) or hns (Handshake alt-root)", AgentHelp: "The namespace of the custom domain: \"icann\" (traditional, default) or \"hns\" for a Handshake (alt-root) name like acme/. Only applies to the custom-domain path; platform subdomains derive their namespace from the platform root."},
 			{Name: "platform", Type: catalog.ArgTypeBool, Required: false, AgentOnly: true, Help: "Claim a platform (free) subdomain", AgentHelp: "Set true to force a platform (free) subdomain claim. Pair with label or generate; omit the domain positional. The type is otherwise derived automatically."},
 			{Name: "platform-domain", Type: catalog.ArgTypeString, Required: false, AgentOnly: true, Help: "Platform root to claim under (default: platform default)", AgentHelp: "The platform root to claim a free subdomain under (e.g. pinned.site). Optional; when set, restricts the claim to this root. Use with platform plus label or generate."},
 			{Name: "platform-namespace", Type: catalog.ArgTypeString, Required: false, AgentOnly: true, Help: "Namespace within the platform domain to claim under (default icann)"},
@@ -423,6 +424,11 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 			pns := catalog.StrArg(input, "platform-namespace", "")
 			generate := catalog.BoolArg(input, "generate", false)
 			label := catalog.StrArg(input, "label", "")
+
+			namespace := catalog.StrArg(input, "namespace", "icann")
+			if namespace != "icann" && namespace != "hns" {
+				return nil, fmt.Errorf("websites_create: invalid namespace %q: must be 'icann' or 'hns'", namespace)
+			}
 
 			// Resolve the destination type. A supplied domain may parse as a
 			// platform subdomain (label.root); detect it against the enabled
@@ -484,6 +490,10 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 				}
 			} else {
 				req.Domain = &domain
+				// Namespace only applies to the custom-domain path (default icann;
+				// hns for Handshake/alt-root names). Platform subdomains derive
+				// their namespace from the platform root, so it is not set here.
+				req.Namespace = &namespace
 				// nil (omitted) lets the backend apply its default (managed DNS);
 				// true/false map onto Pinner-managed / self-managed explicitly.
 				req.DnsHostingEnabled = catalog.BoolArgPtr(input, "dns-hosting")
@@ -557,9 +567,9 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 		Name:        "websites_update",
 		Title:       "Update a website",
 		Summary:     "Update a website",
-		Description: "Update an existing website: change its cid, target-type (ipfs|ipns), rename its domain (rename-to), or set dns-hosting (true = Pinner-managed, false = self-managed, omit = unchanged). Select the site by website; set at least one optional field. With only cid set (no target-type), the site's current target type is preserved automatically.",
+		Description: "Update an existing website: change its cid, target-type (ipfs|ipns), rename its domain (rename-to), set the domain namespace (namespace: icann or hns for Handshake/alt-root names), or set dns-hosting (true = Pinner-managed, false = self-managed, omit = unchanged). Select the site by website; set at least one optional field. With only cid set (no target-type), the site's current target type is preserved automatically.",
 		MCPTargets: catalog.MCPTargets(
-			catalog.Fallback("Update an existing website: change its cid, target-type (ipfs|ipns), rename its domain (rename-to), or set dns-hosting (true = Pinner-managed, false = self-managed, omit = unchanged). Select the site by website; set at least one optional field. A CID produced by an upload tool is already pinned and usable directly. Only when the CID is an EXTERNAL IPFS CID must you call pins_add first; a bare update with an unpinned CID fails with CID_NOT_PINNED. With only cid set (no target-type), the site's current target type is preserved automatically. For the full guided flow, fetch the website-update prompt (prompts/get website-update)."),
+			catalog.Fallback("Update an existing website: change its cid, target-type (ipfs|ipns), rename its domain (rename-to), set the domain namespace (namespace: icann or hns for a Handshake/alt-root name), or set dns-hosting (true = Pinner-managed, false = self-managed, omit = unchanged). Select the site by website; set at least one optional field. A CID produced by an upload tool is already pinned and usable directly. Only when the CID is an EXTERNAL IPFS CID must you call pins_add first; a bare update with an unpinned CID fails with CID_NOT_PINNED. With only cid set (no target-type), the site's current target type is preserved automatically. For the full guided flow, fetch the website-update prompt (prompts/get website-update)."),
 		),
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
@@ -572,6 +582,7 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 			{Name: "cid", Type: catalog.ArgTypeString, Help: "New target CID", AgentHelp: "The IPFS CID to serve. If produced by a Pinner upload tool, it is already pinned — use it directly. Only call pins_add(cids=[\"<cid>\"], wait=true) first when the CID is an external IPFS CID; an unpinned CID fails with CID_NOT_PINNED. With a bare cid (no target-type), the site's current targeting is preserved automatically."},
 			{Name: "target-type", Type: catalog.ArgTypeString, Help: "New target type (ipfs|ipns); when omitted with cid, the site's current target type is preserved"},
 			{Name: "dns-hosting", Type: catalog.ArgTypeNullableBool, Help: "Set Pinner-managed DNS (true = managed, false = self-managed, omit = leave unchanged)", AgentHelp: "true enables Pinner-managed DNS; false disables it (self-managed). Omit to leave the current DNS hosting state unchanged."},
+			{Name: "namespace", Type: catalog.ArgTypeString, Help: "DNS namespace of the domain (icann or hns); omit = leave unchanged. Use with rename-to when switching to a Handshake (alt-root) name.", AgentHelp: "The DNS namespace of the custom domain: \"icann\" (traditional) or \"hns\" for a Handshake (alt-root) name. Omit to leave the current namespace unchanged. When renaming to an HNS name with rename-to, set namespace to \"hns\"."},
 		},
 		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
 			svc, svcErr := d.service(input)
@@ -614,6 +625,15 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 			// nil (omitted) means "leave DNS hosting unchanged"; true/false
 			// toggle it on/off explicitly.
 			req.DnsHostingEnabled = catalog.BoolArgPtr(input, "dns-hosting")
+			// namespace is omitted by default so an update never silently
+			// rewrites the domain's namespace; only set it when explicitly given
+			// (use it with rename-to to switch a domain to the hns namespace).
+			if ns := catalog.StrArg(input, "namespace", ""); ns != "" {
+				if ns != "icann" && ns != "hns" {
+					return nil, fmt.Errorf("websites_update: invalid namespace %q: must be 'icann' or 'hns'", ns)
+				}
+				req.Namespace = &ns
+			}
 			if req.TargetHash != nil && req.TargetType != nil {
 				if err := validateWebsiteStructure(ctx, d, input, *req.TargetHash, *req.TargetType); err != nil {
 					return nil, err

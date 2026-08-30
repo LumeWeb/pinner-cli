@@ -14,12 +14,13 @@ type MockWebsitesUI struct {
 
 	mu sync.Mutex
 
-	ContentChoice ContentSourceChoice
-	DNSChoice     DNSModeChoice
-	TargetChoice  TargetTypeChoice
-	CIDInput      string
-	DomainInput   string
-	PromptError   error
+	ContentChoice    ContentSourceChoice
+	DNSChoice        DNSModeChoice
+	TargetChoice     TargetTypeChoice
+	NamespaceChoice  string // "icann" or "hns"
+	CIDInput         string
+	DomainInput      string
+	PromptError      error
 
 	ContinueError error
 
@@ -81,6 +82,13 @@ func (m *MockWebsitesUI) SetDomainInput(domain string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.DomainInput = domain
+}
+
+// SetNamespaceChoice sets the mock's namespace choice ("icann" or "hns").
+func (m *MockWebsitesUI) SetNamespaceChoice(ns string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.NamespaceChoice = ns
 }
 
 // SetReturnError sets an error to return from the next UI call.
@@ -175,6 +183,11 @@ func (m *MockWebsitesUI) ExecuteDomainStep(_ context.Context, w *WebsitesWizard)
 
 	if w != nil {
 		w.SetDomain(m.DomainInput)
+		ns := m.NamespaceChoice
+		if ns == "" {
+			ns = "icann"
+		}
+		w.SetNamespace(ns)
 	}
 	return nil
 }

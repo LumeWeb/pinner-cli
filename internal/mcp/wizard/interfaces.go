@@ -22,6 +22,7 @@ type WebsitesService interface {
 type WebsitesWizardState interface {
 	CID() string
 	Domain() string
+	Namespace() string
 	DNSHosting() bool
 	TargetType() string
 	Website() *ipfs.WebsiteItem
@@ -29,6 +30,7 @@ type WebsitesWizardState interface {
 
 	SetCID(string)
 	SetDomain(string)
+	SetNamespace(string)
 	SetDNSHosting(bool)
 	SetTargetType(string)
 	SetWebsite(*ipfs.WebsiteItem)
