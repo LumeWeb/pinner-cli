@@ -253,17 +253,35 @@ func (o *OAuthServer) AsMetadataHandler(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, doc)
 }
 
+// RegisterMCPResource registers the /mcp endpoint as a protected resource
+// (RFC 8707 / RFC 9728) with the underlying authorization server, so authorize
+// requests resource-bound to it validate and ProtectedResourceHandler can serve
+// its metadata from the registry. It must be (re)called whenever o.BaseURL
+// changes (e.g. once the tunnel URL is known) so the registered resource
+// tracks the advertised origin.
+func (o *OAuthServer) RegisterMCPResource() {
+	o.as.RegisterResource(oauth.Resource{
+		ResourceURL: o.BaseURL + "/mcp",
+		Scopes:      []string{"offline_access"},
+		DisplayName: "Pinner MCP",
+	})
+}
+
 // protectedResourceHandler serves the OAuth 2.0 Protected Resource Metadata
-// (RFC 9728), pointing clients at this server's authorization server.
+// (RFC 9728), pointing clients at this server's authorization server. The
+// document is derived from the registered MCP resource (see RegisterMCPResource)
+// so resource_name and scopes_supported flow from the registry rather than a
+// hardcoded document.
 func (o *OAuthServer) ProtectedResourceHandler(mcpPath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		doc := map[string]any{
-			"resource":                 o.BaseURL + mcpPath,
-			"authorization_servers":    []string{o.Issuer},
-			"bearer_methods_supported": []string{"header"},
-			"scopes_supported":         []string{"offline_access"},
+		resourceURL := o.BaseURL + mcpPath
+		if reg, ok := o.as.GetResource(resourceURL); ok {
+			writeJSON(w, http.StatusOK, oauth.BuildProtectedResourceMetadataFromResource(reg, o.Issuer))
+			return
 		}
-		writeJSON(w, http.StatusOK, doc)
+		// Fallback for a resource that has not been registered yet (e.g. a
+		// request arriving before tunnel startup): emit a minimal document.
+		writeJSON(w, http.StatusOK, oauth.BuildProtectedResourceMetadata(resourceURL, o.Issuer))
 	}
 }
 
