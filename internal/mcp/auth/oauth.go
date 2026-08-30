@@ -865,18 +865,14 @@ func (o *OAuthServer) tokenExpiry(tok string) (time.Time, bool) {
 		return exp, false
 	}
 	if o.evictBeyondSkew(tok, exp) {
-		// Beyond the clock-skew grace: dropped from memory AND the durable store
-		// (by evictBeyondSkew) so a restart never resurrects this token.
+		// Past the skew boundary: evicted from memory AND the durable store (by
+		// evictBeyondSkew) so a restart never resurrects an invalidated token.
 		o.mu.Unlock()
 		return exp, false
 	}
-	if time.Now().After(exp) {
-		// Strictly expired but within the skew grace: report as expired while
-		// keeping it in memory and in the store, so an in-flight request and a
-		// restart-reload still observe it exactly as OfficialMiddleware does.
-		o.mu.Unlock()
-		return exp, false
-	}
+	// Within the clock-skew grace (or still valid): mirror OfficialMiddleware
+	// exactly, keeping this granted until exp+clockSkew, so protectMCP/validToken
+	// admit precisely what the resource middleware admits.
 	o.mu.Unlock()
 	return exp, true
 }
