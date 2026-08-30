@@ -11,6 +11,7 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -42,6 +43,33 @@ const optimalSlabSize = 40 << 20
 // configured disk limit and no space freed within diskUsageTimeout. Callers
 // should surface it as "storage is full, retry later".
 var ErrSlowDown = errors.New("vault staged storage full: retry later")
+
+// flushLockMu guards the flushLocks map. Two different sync.Mutex values must
+// not be handed out for the same profile concurrently.
+var flushLockMu sync.Mutex
+
+// flushLocks is a process-wide set of per-profile flush locks. A single
+// process can hold several VaultService instances for the same profile (the MCP
+// server's background upload loop owns one continuously; a vault_flush invoke
+// or the CLI opens a fresh one per operation). Each instance used to carry its
+// own flushMu, so two instances could snapshot the same staged rows and run two
+// UploadPacked uploads that race (one finalizes and deletes a staged buffer
+// while the other mid-reads it), leaving files stuck pending. Keying the lock
+// by profile makes all flush work for a profile mutually exclusive regardless
+// of which service instance drives it.
+var flushLocks = map[string]*sync.Mutex{}
+
+// profileFlushLock returns the process-wide flush lock for the named profile.
+func profileFlushLock(profile string) *sync.Mutex {
+	flushLockMu.Lock()
+	defer flushLockMu.Unlock()
+	l, ok := flushLocks[profile]
+	if !ok {
+		l = &sync.Mutex{}
+		flushLocks[profile] = l
+	}
+	return l
+}
 
 // stagedObject is a single not-yet-durable File row (its staged buffer).
 type stagedObject struct {
@@ -355,8 +383,9 @@ func (s *vaultService) stagedAdopt(vp *VaultPath, rec *File) func() (bool, error
 // of files flushed. Used by the MCP background engine, the `vault flush` CLI
 // command, and as the forced-flush primitive for share links on pending objects.
 func (s *vaultService) Flush(ctx context.Context) (int, error) {
-	s.flushMu.Lock()
-	defer s.flushMu.Unlock()
+	lock := profileFlushLock(s.profile)
+	lock.Lock()
+	defer lock.Unlock()
 	rows, err := s.stagedRows(ctx)
 	if err != nil {
 		return 0, err
@@ -371,8 +400,9 @@ func (s *vaultService) Flush(ctx context.Context) (int, error) {
 // FlushPath flushes a single vault path to durable storage (used by CLI
 // `--flush` and share's forced flush). It is a no-op if the file is already ok.
 func (s *vaultService) FlushPath(ctx context.Context, vaultPath string) error {
-	s.flushMu.Lock()
-	defer s.flushMu.Unlock()
+	lock := profileFlushLock(s.profile)
+	lock.Lock()
+	defer lock.Unlock()
 	vp, err := ParseVaultPath(vaultPath)
 	if err != nil {
 		return err
@@ -444,10 +474,12 @@ func (s *vaultService) uploadPackedGroup(ctx context.Context, sdk sdkClient, g *
 	for _, o := range g.objects {
 		f, err := os.Open(o.rec.StagedPath)
 		if err != nil {
+			s.recordFlushFailure(o.rec, err)
 			return 0, fmt.Errorf("failed to open staged file %s: %w", o.rec.StagedPath, err)
 		}
 		if _, err := packed.Add(ctx, f); err != nil {
 			_ = f.Close()
+			s.recordFlushFailure(o.rec, err)
 			return 0, fmt.Errorf("failed to add staged file to packed upload: %w", err)
 		}
 		_ = f.Close()
@@ -456,10 +488,19 @@ func (s *vaultService) uploadPackedGroup(ctx context.Context, sdk sdkClient, g *
 
 	results, err := packed.Finalize(ctx)
 	if err != nil {
+		// The whole packed upload failed; every member is still staged, so flag
+		// them all so the pending state is not silently stuck.
+		for i := range members {
+			s.recordFlushFailure(members[i].rec, err)
+		}
 		return 0, fmt.Errorf("packed upload failed: %w", err)
 	}
 	if len(results) != len(members) {
-		return 0, fmt.Errorf("packed upload returned %d objects, expected %d", len(results), len(members))
+		fnErr := fmt.Errorf("packed upload returned %d objects, expected %d", len(results), len(members))
+		for i := range members {
+			s.recordFlushFailure(members[i].rec, fnErr)
+		}
+		return 0, fnErr
 	}
 
 	done := 0
@@ -485,9 +526,11 @@ func (s *vaultService) uploadPackedGroup(ctx context.Context, sdk sdkClient, g *
 		m.obj = results[i]
 		m.obj.UpdateMetadata(metaJSON)
 		if err := sdk.PinObject(ctx, m.obj); err != nil {
+			s.recordFlushFailure(m.rec, err)
 			return done, fmt.Errorf("failed to pin object for %s: %w", m.rec.Name, err)
 		}
 		if err := s.finalizeDurable(m.rec, m.obj.ID().String()); err != nil {
+			s.recordFlushFailure(m.rec, err)
 			return done, err
 		}
 		done++
@@ -518,6 +561,25 @@ func metadataMapOf(rec *File) map[string]any {
 }
 
 // finalizeDurable promotes a row from staged to durable "ok": it sets ObjectKey +
+// recordFlushFailure surface-marks a still-staged file as flush-failing so a
+// stuck "pending" row is visible: it increments flush_attempts and persists the
+// most recent error. Best-effort: a DB error here (e.g. SQLite contention) must
+// not mask the original flush failure, so it is swallowed.
+func (s *vaultService) recordFlushFailure(rec *File, err error) {
+	if rec == nil || err == nil {
+		return
+	}
+	msg := err.Error()
+	if len(msg) > 512 {
+		msg = msg[:512]
+	}
+	id := rec.ID
+	_ = s.db.Model(&File{}).Where("id = ?", id).Updates(map[string]any{
+		"flush_attempts": gorm.Expr("flush_attempts + 1"),
+		"flush_error":    msg,
+	}).Error
+}
+
 // status ok + clears StagedPath, and (best-effort) deletes the staged buffer +
 // releases its disk reservation.
 func (s *vaultService) finalizeDurable(rec *File, objectKey string) error {
@@ -533,6 +595,8 @@ func (s *vaultService) finalizeDurable(rec *File, objectKey string) error {
 		"status":         FileStatusOK,
 		"staged_path":    "",
 		"content_digest": digest,
+		"flush_attempts": 0,
+		"flush_error":    "",
 	}).Error; err != nil {
 		return fmt.Errorf("failed to mark file durable: %w", err)
 	}

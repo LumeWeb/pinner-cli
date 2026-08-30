@@ -77,6 +77,13 @@ type vaultService struct {
 	db     *gorm.DB
 	appKey types.PrivateKey
 
+	// profile is the name this service was built for. It keys the process-wide
+	// flush lock (profileFlushLock) so concurrent flush work from different
+	// service instances (an MCP invoke-tool flush and the background upload
+	// loop) is serialized per profile instead of racing on the same staged
+	// rows.
+	profile string
+
 	// indexerURL and metadata are retained so the Sia SDK can be built lazily
 	// on first use. Constructing the SDK hits the network (CheckAppAuth +
 	// refreshHosts against the indexer), so building it eagerly for every
@@ -117,13 +124,6 @@ type vaultService struct {
 	diskUsageMu sync.Mutex
 	diskUsage   int64
 	diskWake    chan struct{}
-
-	// flushMu serializes all flush work on this service so a Flush and a
-	// FlushPath (or two Flushes) can never race on the same pending row's
-	// staged buffer — both might otherwise snapshot the same StagedPath,
-	// UploadPacked it twice, and each finalizeDurable deletes it. Mirrors
-	// s3d's uploadMu around uploadObjects.
-	flushMu sync.Mutex
 }
 
 // ensureSDK returns the Sia SDK, building it (and hitting the network) only on
@@ -210,6 +210,7 @@ func NewVaultServiceForProfile(profileName string, indexerURL string) (VaultServ
 
 	return &vaultService{
 		db:               db,
+		profile:          profileName,
 		appKey:           appKey,
 		indexerURL:       indexerURL,
 		metadata:         metadata,
@@ -737,6 +738,8 @@ func (s *vaultService) Search(_ context.Context, req SearchRequest) ([]SearchIte
 			ContentDigest: rec.ContentDigest,
 			ObjectID:      rec.ObjectKey,
 			Status:        rec.Status,
+			FlushAttempts: rec.FlushAttempts,
+			FlushError:    rec.FlushError,
 			CreatedAt:     rec.CreatedAt.Format(time.RFC3339),
 			UpdatedAt:     rec.UpdatedAt.Format(time.RFC3339),
 			Tags:          tagsByID[rec.ID],
@@ -816,6 +819,8 @@ func (s *vaultService) Stat(ctx context.Context, vaultPath string) (*StatResult,
 		ObjectID:      record.ObjectKey,
 		Status:        record.Status,
 		LostReason:    record.LostReason,
+		FlushAttempts: record.FlushAttempts,
+		FlushError:    record.FlushError,
 		CreatedAt:     record.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:     record.UpdatedAt.Format(time.RFC3339),
 		Metadata:      metaOut,

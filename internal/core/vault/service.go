@@ -198,15 +198,20 @@ type ListItem struct {
 
 // StatResult is the output of Stat.
 type StatResult struct {
-	Type          string         `json:"type"` // "file" or "dir"
-	Name          string         `json:"name"`
-	Path          string         `json:"path"`
-	Size          int64          `json:"size,omitempty"`
-	MediaType     string         `json:"media_type,omitempty"`
-	ContentDigest string         `json:"content_digest,omitempty"`
-	ObjectID      string         `json:"object_id,omitempty"`
-	Status        string         `json:"status,omitempty"`      // "ok" | "pending" | "lost"
-	LostReason    string         `json:"lost_reason,omitempty"` // detail when Status == "lost"
+	Type          string `json:"type"` // "file" or "dir"
+	Name          string `json:"name"`
+	Path          string `json:"path"`
+	Size          int64  `json:"size,omitempty"`
+	MediaType     string `json:"media_type,omitempty"`
+	ContentDigest string `json:"content_digest,omitempty"`
+	ObjectID      string `json:"object_id,omitempty"`
+	Status        string `json:"status,omitempty"`      // "ok" | "pending" | "lost"
+	LostReason    string `json:"lost_reason,omitempty"` // detail when Status == "lost"
+	// FlushAttempts/FlushError surface a stuck "pending" file: how many flush
+	// passes have tried to durable-upload it and the most recent failure. Empty
+	// (0/"") for durable files and for pending files that have not failed yet.
+	FlushAttempts int            `json:"flush_attempts,omitempty"`
+	FlushError    string         `json:"flush_error,omitempty"`
 	CreatedAt     string         `json:"created_at"`
 	UpdatedAt     string         `json:"updated_at,omitempty"`
 	Metadata      map[string]any `json:"metadata,omitempty"`
@@ -224,13 +229,16 @@ type StatResult struct {
 // SearchItem is one file result from Search. It carries a full vault path and
 // the same metadata surfaced by Stat, so the result is directly actionable.
 type SearchItem struct {
-	Path          string         `json:"path"`
-	Name          string         `json:"name"`
-	Size          int64          `json:"size,omitempty"`
-	MediaType     string         `json:"media_type,omitempty"`
-	ContentDigest string         `json:"content_digest,omitempty"`
-	ObjectID      string         `json:"object_id,omitempty"`
-	Status        string         `json:"status,omitempty"`
+	Path          string `json:"path"`
+	Name          string `json:"name"`
+	Size          int64  `json:"size,omitempty"`
+	MediaType     string `json:"media_type,omitempty"`
+	ContentDigest string `json:"content_digest,omitempty"`
+	ObjectID      string `json:"object_id,omitempty"`
+	Status        string `json:"status,omitempty"`
+	// FlushAttempts/FlushError surface a stuck "pending" file (see StatResult).
+	FlushAttempts int            `json:"flush_attempts,omitempty"`
+	FlushError    string         `json:"flush_error,omitempty"`
 	CreatedAt     string         `json:"created_at"`
 	UpdatedAt     string         `json:"updated_at,omitempty"`
 	Tags          []string       `json:"tags,omitempty"`

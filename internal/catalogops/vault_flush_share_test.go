@@ -24,12 +24,26 @@ func vaultDepsFor(msvc vault.VaultService) VaultDeps {
 	}
 }
 
-// newVaultOps invokes a single vault catalog operation against msvc.
+// newVaultOps invokes a single vault catalog operation against msvc. It
+// registers the Close expectation every handler satisfies.
 func newVaultOps(t *testing.T, msvc vault.VaultService, name string, input map[string]any) (any, error) {
+	return newVaultOpsClose(t, msvc, name, input, nil)
+}
+
+// newVaultOpsClose is newVaultOps with an optional closeSignal: when non-nil,
+// the mock's Close expectation closes it on write. The non-blocking vault_flush
+// handler runs its durability (and the deferred svc.Close) on a background
+// goroutine, so flush tests must wait for that Close before returning — otherwise
+// the goroutine races the mock's AssertExpectations cleanup.
+func newVaultOpsClose(t *testing.T, msvc vault.VaultService, name string, input map[string]any, closeSignal chan struct{}) (any, error) {
 	t.Helper()
 	// Every vault handler defers svc.Close(); satisfy it on the mock.
 	if mm, ok := msvc.(*vault.MockVaultService); ok {
-		mm.On("Close").Return(nil)
+		if closeSignal != nil {
+			mm.On("Close").Return(nil).Run(func(mock.Arguments) { close(closeSignal) })
+		} else {
+			mm.On("Close").Return(nil)
+		}
 	}
 	cat := catalog.NewCatalog()
 	for _, op := range VaultOperations(vaultDepsFor(msvc)) {
@@ -91,8 +105,9 @@ func TestVaultFlushAll(t *testing.T) {
 	msvc := vault.NewMockVaultService(t)
 	done := make(chan struct{})
 	msvc.On("Flush", mock.Anything).Return(2, nil).Run(func(mock.Arguments) { close(done) })
+	closeCh := make(chan struct{})
 
-	res, err := newVaultOps(t, msvc, "vault_flush", map[string]any{"profile": "work"})
+	res, err := newVaultOpsClose(t, msvc, "vault_flush", map[string]any{"profile": "work"}, closeCh)
 	require.NoError(t, err)
 	fr, ok := res.(*VaultFlushResult)
 	require.True(t, ok, "want *VaultFlushResult, got %T", res)
@@ -104,6 +119,13 @@ func TestVaultFlushAll(t *testing.T) {
 	}
 	msvc.AssertCalled(t, "Flush", mock.Anything)
 	msvc.AssertNotCalled(t, "FlushPath", mock.Anything, mock.Anything)
+	// The background goroutine also defers svc.Close(); wait for it so the mock's
+	// AssertExpectations cleanup does not race the still-running goroutine.
+	select {
+	case <-closeCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("background flush did not close the service")
+	}
 }
 
 // TestVaultFlushSinglePath verifies vault_flush with a staged path is
@@ -115,11 +137,12 @@ func TestVaultFlushSinglePath(t *testing.T) {
 		Return(&vault.StatResult{Path: "vault:/docs/a.txt", Status: vault.FileStatusPending}, nil)
 	done := make(chan struct{})
 	msvc.On("FlushPath", mock.Anything, "vault:/docs/a.txt").Return(nil).Run(func(mock.Arguments) { close(done) })
+	closeCh := make(chan struct{})
 
-	res, err := newVaultOps(t, msvc, "vault_flush", map[string]any{
+	res, err := newVaultOpsClose(t, msvc, "vault_flush", map[string]any{
 		"path":    "vault:/docs/a.txt",
 		"profile": "work",
-	})
+	}, closeCh)
 	require.NoError(t, err)
 	fr := res.(*VaultFlushResult)
 	require.Equal(t, "accepted", fr.Status, "flush must return accepted, not block")
@@ -130,6 +153,11 @@ func TestVaultFlushSinglePath(t *testing.T) {
 	}
 	msvc.AssertCalled(t, "FlushPath", mock.Anything, "vault:/docs/a.txt")
 	msvc.AssertNotCalled(t, "Flush", mock.Anything)
+	select {
+	case <-closeCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("background flush did not close the service")
+	}
 }
 
 // TestVaultFlushDurableNoop verifies vault_flush <path> reports idle (and skips

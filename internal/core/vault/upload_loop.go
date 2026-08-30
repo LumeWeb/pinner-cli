@@ -57,6 +57,7 @@ func (l *VaultUploadLoop) Tick(ctx context.Context) *time.Duration {
 			continue
 		}
 		if n > 0 {
+			log.Printf("vault flush: profile %q made %d file(s) durable", p, n)
 			rerun = true
 		}
 	}
