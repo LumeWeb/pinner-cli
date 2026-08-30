@@ -41,19 +41,22 @@ async function appVersion(app: FrameLocator): Promise<unknown> {
  * The `mcp` fixture (see protocol-surface.test.ts) talks raw protocol and never
  * opens a tab; these tests prove the runtime actually renders our apps.
  *
- * We use the auth-flow app (open_sso_signin) which renders a deterministic
- * shell without requiring a valid authenticated Pinner session, so the
- * assertions are stable and account-free.
+ * We render the app-only helper tools that carry the ui:// resource for each
+ * app view. These helpers appear on tools/list (they are registered app tools)
+ * and advertise the renderable app via `_meta.ui.resourceUri`, so the inspector
+ * can discover and render them. We deliberately do NOT render the open_*
+ * launchers (open_upload_manager, open_vault_manager, open_sso_signin): the
+ * app-UI split consolidated those into the single open_app tool, keeping them
+ * catalog-indexed and OFF tools/list — so they are not discoverable by the
+ * inspector's simulation discovery and would fall back to the default app.
  *
- * Note: we render the open_* LAUNCHER tools, not the headless operational
- * primitives. Since the app-UI split, the operational tools (auth_sso,
- * upload_file, vault_put_file, ...) are headless (no ui resourceUri); the
- * ui:// view is attached to the explicit open_* launcher that a UI-capable
- * host renders.
+ * The auth-flow helper (auth_sso_status -> ui://auth/sso.html) renders a
+ * deterministic shell without requiring a valid authenticated Pinner session,
+ * so the assertions are stable and account-free.
  */
 
 test('auth_sso app renders its sign-in view inside the host iframe', async ({ inspector }) => {
-  const result = await inspector.renderTool('open_sso_signin', {});
+  const result = await inspector.renderTool('auth_sso_status', {});
   // result.app() locates through the double iframe to the app body.
   const app = result.app();
   const body = await app.locator('body').innerText();
@@ -82,11 +85,11 @@ async function assertUploadAppBoots(tool: string, heading: string, inspector: { 
 }
 
 test('upload_file app boots (ipfs-upload bundle has no unmet imports)', async ({ inspector }) => {
-  await assertUploadAppBoots('open_upload_manager', 'Upload to IPFS', inspector);
+  await assertUploadAppBoots('ipfs_upload_status', 'Upload to IPFS', inspector);
 });
 
 test('vault_put_file app boots (vault-upload bundle has no unmet imports)', async ({ inspector }) => {
-  await assertUploadAppBoots('open_vault_manager', 'Upload to Vault', inspector);
+  await assertUploadAppBoots('vault_upload_submit', 'Upload to Vault', inspector);
 });
 
 /**
@@ -122,11 +125,11 @@ async function assertStyledFilePicker(
 }
 
 test('upload_file app renders the styled file picker and reflects the picked name', async ({ inspector }) => {
-  await assertStyledFilePicker('open_upload_manager', 'file', 'file-name', inspector);
+  await assertStyledFilePicker('ipfs_upload_status', 'file', 'file-name', inspector);
 });
 
 test('vault_put_file app renders the styled file picker and reflects the picked name', async ({ inspector }) => {
-  await assertStyledFilePicker('open_vault_manager', 'vfile', 'vfile-name', inspector);
+  await assertStyledFilePicker('vault_upload_submit', 'vfile', 'vfile-name', inspector);
 });
 
 /**
@@ -139,7 +142,7 @@ test('vault_put_file app renders the styled file picker and reflects the picked 
  * drive.
  */
 test('upload_file app renders the upload progress bar nodes (hidden until in-flight)', async ({ inspector }) => {
-  const result = await inspector.renderTool('open_upload_manager', {});
+  const result = await inspector.renderTool('ipfs_upload_status', {});
   const app = result.app();
 
   const container = app.locator('#ipfs-upload-progress');
