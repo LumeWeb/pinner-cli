@@ -302,3 +302,24 @@ func TestDownloadFileDescStdioAdvertisesDrop(t *testing.T) {
 	require.Contains(t, desc, "sink=drop",
 		"download_file description on stdio should advertise the drop sink")
 }
+
+// TestDescBuilderSurfaceGating verifies the surface-domain gating helpers fire
+// on domain availability (Surface.VaultOn etc.), independent of deployment.
+func TestDescBuilderSurfaceGating(t *testing.T) {
+	d := Static("P").WhenSurface(hostenv.Surface.VaultOn, "vault on.")
+	require.Equal(t, "P vault on.", d.Resolve(hostenv.PlatformProfile{Surface: hostenv.FullSurface}))
+	require.Equal(t, "P", d.Resolve(hostenv.PlatformProfile{Surface: hostenv.HostedSurface}))
+
+	u := Static("P").UnlessSurface(hostenv.Surface.VaultOn, "no vault.")
+	require.Equal(t, "P no vault.", u.Resolve(hostenv.PlatformProfile{Surface: hostenv.HostedSurface}))
+	require.Equal(t, "P", u.Resolve(hostenv.PlatformProfile{Surface: hostenv.FullSurface}))
+}
+
+// TestDescBuilderHostedGating verifies the deployment gating helpers fire on
+// PlatformProfile.Hosted, independent of the domain surface.
+func TestDescBuilderHostedGating(t *testing.T) {
+	d := Static("P").WhenHosted(true, "hosted.").UnlessHosted(true, "local.")
+	require.Equal(t, "P hosted.", d.Resolve(hostenv.PlatformProfile{Hosted: true}))
+	require.Equal(t, "P local.", d.Resolve(hostenv.PlatformProfile{Hosted: false}))
+	require.Equal(t, "P hosted.", d.Resolve(hostenv.PlatformProfile{Surface: hostenv.HostedSurface, Hosted: true}))
+}

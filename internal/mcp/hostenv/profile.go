@@ -101,6 +101,14 @@ type PlatformProfile struct {
 	// Apps, resources, prompts, and the agent_guide flow DSL — gates on it.
 	Surface Surface
 
+	// Hosted reports whether this server is a hosted (Portal-embedded)
+	// assembly. Like Surface it is a server-construction-time deployment
+	// property (set by the hosted construction path) rather than a wire signal,
+	// and is orthogonal to the domain-availability Surface: a local stdio
+	// server may use a restricted surface without being hosted. The prompt DSL
+	// gates hosted-specific copy on it via HostedIs.
+	Hosted bool
+
 	// Raw wire signals, populated by the detector for runtime
 	// introspection by tools that need them at call time.
 	ClientInfo  *ClientInfo

@@ -118,6 +118,19 @@ func (s Surface) UploadOn() bool { return s.flagOn(s.Upload) }
 // given flag enabled. It lets the platform DSL gate a description, schema,
 // branch, or rule on a surface flag using the same predicate machinery as host
 // and transport gates. get is one of the surface accessors (e.g. VaultOn).
+//
+// Note: Surface describes domain availability only. Whether a server is
+// HOSTED (Portal-embedded) is an orthogonal deployment property carried on
+// PlatformProfile.Hosted — see HostedIs. Do not infer hosted from a surface.
 func SurfaceIs(get func(Surface) bool) Predicate {
 	return func(p PlatformProfile) bool { return get(p.Surface) }
+}
+
+// HostedIs returns a predicate that matches profiles whose deployment is (or is
+// not) hosted. Hosted is a server-construction-time property (PlatformProfile.
+// Hosted), set for a Portal-embedded assembly and never inferred from the
+// surface. It lets the platform DSL gate hosted-specific copy — distinct from
+// surface domain-availability gating.
+func HostedIs(hosted bool) Predicate {
+	return func(p PlatformProfile) bool { return p.Hosted == hosted }
 }

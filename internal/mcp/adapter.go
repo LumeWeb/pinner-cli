@@ -1438,6 +1438,10 @@ func buildCatalog(root *cli.Command, seedDrop *oobpkg.SeedDrop, oobRestore *oobp
 	surface := cfg.resolveSurface()
 	catalog.Surface = surface
 	SetSurface(surface)
+	// Record the deployment mode (hosted vs local) for the prompt DSL, so the
+	// guide/prompts can gate hosted-specific copy without conflating it with
+	// the domain surface.
+	SetHosted(cfg.hosted)
 	if cfg.catalogDeps != nil {
 		catalog.CatalogDeps = cfg.catalogDeps
 	}

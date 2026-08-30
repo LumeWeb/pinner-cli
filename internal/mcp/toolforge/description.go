@@ -282,6 +282,62 @@ func (d DescBuilder) UnlessTransport(t hostenv.TransportKind, text string) DescB
 	return d.predSep(SepSpace, hostenv.TransportIs(t), text, true)
 }
 
+// WhenSurface appends text included only when the profile's surface passes get
+// (one of the Surface accessors, e.g. Surface.VaultOn). It gates on domain
+// availability — deliberately distinct from deployment: see WhenHosted.
+func (d DescBuilder) WhenSurface(get func(hostenv.Surface) bool, text string) DescBuilder {
+	return d.predSep(SepSpace, hostenv.SurfaceIs(get), text)
+}
+
+// WhenSurfaceSep is WhenSurface with a custom separator prepended when the
+// buffer is non-empty.
+func (d DescBuilder) WhenSurfaceSep(sep string, get func(hostenv.Surface) bool, text string) DescBuilder {
+	return d.predSep(sep, hostenv.SurfaceIs(get), text)
+}
+
+// UnlessSurface appends text included only when the profile's surface fails get.
+func (d DescBuilder) UnlessSurface(get func(hostenv.Surface) bool, text string) DescBuilder {
+	return d.predSep(SepSpace, hostenv.SurfaceIs(get), text, true)
+}
+
+// UnlessSurfaceSep is UnlessSurface with a custom separator prepended when the
+// buffer is non-empty.
+func (d DescBuilder) UnlessSurfaceSep(sep string, get func(hostenv.Surface) bool, text string) DescBuilder {
+	return d.predSep(sep, hostenv.SurfaceIs(get), text, true)
+}
+
+// WhenHosted appends text included only when the profile's deployment matches
+// hosted (a Portal-embedded assembly). This gates hosted-specific copy — e.g.
+// "a Portal OAuth identity is already established" — independent of the domain
+// surface.
+func (d DescBuilder) WhenHosted(hosted bool, text string) DescBuilder {
+	return d.predSep(SepSpace, hostenv.HostedIs(hosted), text)
+}
+
+// WhenHostedSep is WhenHosted with a custom separator prepended when the buffer
+// is non-empty.
+func (d DescBuilder) WhenHostedSep(sep string, hosted bool, text string) DescBuilder {
+	return d.predSep(sep, hostenv.HostedIs(hosted), text)
+}
+
+// WhenHostedSentence is WhenHosted with a sentence separator: it appends text
+// that starts a new sentence when the profile's deployment matches hosted.
+func (d DescBuilder) WhenHostedSentence(hosted bool, text string) DescBuilder {
+	return d.WhenHostedSep(SepSentence, hosted, text)
+}
+
+// UnlessHosted appends text included only when the profile's deployment does
+// NOT match hosted.
+func (d DescBuilder) UnlessHosted(hosted bool, text string) DescBuilder {
+	return d.predSep(SepSpace, hostenv.HostedIs(hosted), text, true)
+}
+
+// UnlessHostedSep is UnlessHosted with a custom separator prepended when the
+// buffer is non-empty.
+func (d DescBuilder) UnlessHostedSep(sep string, hosted bool, text string) DescBuilder {
+	return d.predSep(sep, hostenv.HostedIs(hosted), text, true)
+}
+
 // predSep appends a predicate-gated segment.
 func (d DescBuilder) predSep(sep string, pred hostenv.Predicate, text string, negate ...bool) DescBuilder {
 	return DescBuilder{segments: append(d.segments, segment{pred: pred, text: text, negate: len(negate) > 0 && negate[0], sep: sep})}

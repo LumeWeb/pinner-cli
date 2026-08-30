@@ -324,10 +324,12 @@ func publishDomainDecision() *toolforge.GuideDecisionBuilder {
 // appears on mint transports).
 func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 	p := *profile
-	// The server surface is a construction-time property (recorded by
-	// buildCatalog); overlay it so the guide reflects the actual registered
-	// surface even though the request profile has no surface wire signal.
+	// The server surface and deployment mode are construction-time properties
+	// (recorded by buildCatalog); overlay them so the guide reflects the actual
+	// registered surface and whether this is a hosted assembly, neither of which
+	// the request profile carries as a wire signal.
 	p.Surface = activeSurface()
+	p.Hosted = activeHosted()
 	substitute := func(s string) string {
 		return strings.ReplaceAll(s, "{{SOURCES}}", sourceModesText(&p))
 	}
@@ -347,6 +349,12 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 		// with full local file access and must NOT get this notice.
 		RuleWhenHost(hostenv.HostClaude,
 			"Host capability notice (Claude Web): this agent has no network egress (no curl) and no file references, so the ONLY working upload is upload_data (RFC 2397 base64 data: URI passed in the tool args). upload_file's source.mode=mint and the sink=drop download link both require the agent to curl or fetch out of band, which this host cannot do, and sink=local writes to the MCP server's own unreachable disk — so warn the user before offering a download that the content cannot be delivered to them.").
+		// Hosted (Portal-embedded) deployments establish the caller's identity
+		// via Portal OAuth before the request reaches the MCP server. State that
+		// explicitly so the agent does not attempt a config-mutating
+		// auth_login/auth_logout, which are CLI/local-only surfaces absent here.
+		RuleWhenHosted(true,
+			"Hosted instance notice: a Portal OAuth identity is already established for the current request and authenticated operations run as that user. Do NOT call auth_login or auth_logout (they are unavailable on this hosted surface); identity cannot be switched mid-session.").
 		Flow(toolforge.Flow("auth", "Authenticate").
 			Steps("auth_status", "auth_sso", "auth_resume", "auth_status").
 			Detail(toolforge.Static("Run auth_status; if unauthenticated, call auth_sso and poll auth_resume with the returned handle until the human completes the browser sign-in.").

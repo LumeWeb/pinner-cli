@@ -115,3 +115,48 @@ func TestSubstituteAppliesToAllContent(t *testing.T) {
 }
 
 func identity(s string) string { return s }
+
+// TestSurfaceAndHostedGating verifies the surface-domain and deployment gating
+// helpers: Surface.* gates on domain availability, Hosted gates on deployment,
+// and the two are independent.
+func TestSurfaceAndHostedGating(t *testing.T) {
+	hostedFull := hostenv.PlatformProfile{Surface: hostenv.FullSurface, Hosted: true}
+	hostedNoVault := hostenv.PlatformProfile{Surface: hostenv.HostedSurface, Hosted: true}
+	local := hostenv.PlatformProfile{Surface: hostenv.FullSurface}
+
+	// DescBuilder: surface + hosted segments compose independently.
+	desc := Static("P").
+		WhenSurface(hostenv.Surface.VaultOn, "vault on.").
+		WhenHosted(true, "hosted.")
+	require.Equal(t, "P vault on. hosted.", desc.Resolve(hostedFull))
+	require.Equal(t, "P hosted.", desc.Resolve(hostedNoVault))
+	require.Equal(t, "P vault on.", desc.Resolve(local))
+
+	// Guide steps: surface-gated step names.
+	flow := Flow("f", "F").StepWhenSurface(hostenv.Surface.VaultOn, "vault_step").Steps("shared")
+	require.Contains(t, flow.resolve(hostedFull, identity).Steps, "vault_step")
+	require.NotContains(t, flow.resolve(hostedNoVault, identity).Steps, "vault_step")
+	require.Contains(t, flow.resolve(hostedNoVault, identity).Steps, "shared")
+
+	// Guide rules + branches: hosted/surface rules and hosted-gated branches.
+	spec := Guide().
+		RuleWhenHosted(true, "hosted rule").
+		RuleUnlessHosted(true, "local rule").
+		RuleWhenSurface(hostenv.Surface.VaultOn, "vault rule").
+		RuleUnlessSurface(hostenv.Surface.VaultOn, "no vault rule").
+		Flow(Flow("d", "D").
+			Decision(Decision("pick?",
+				Branch("hosted").WhenHosted(true).Steps("hosted_tool"),
+				Branch("local").UnlessHosted(true).Steps("local_tool"))))
+
+	gotten := spec.Resolve(hostedFull)
+	require.Equal(t, []string{"hosted rule", "vault rule"}, gotten.Rules)
+	require.Equal(t, []string{"hosted_tool"}, gotten.Flows[0].Decision.Branches[0].Steps)
+
+	gottenNV := spec.Resolve(hostedNoVault)
+	require.Equal(t, []string{"hosted rule", "no vault rule"}, gottenNV.Rules)
+
+	gottenLocal := spec.Resolve(local)
+	require.Equal(t, []string{"local rule", "vault rule"}, gottenLocal.Rules)
+	require.Equal(t, []string{"local_tool"}, gottenLocal.Flows[0].Decision.Branches[0].Steps)
+}

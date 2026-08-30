@@ -154,6 +154,32 @@ func (b *GuideFlowBuilder) StepUnlessHost(h hostenv.HostType, names ...string) *
 	return b
 }
 
+// StepWhenSurface appends tool names included only when the profile's surface
+// passes get (a Surface accessor).
+func (b *GuideFlowBuilder) StepWhenSurface(get func(hostenv.Surface) bool, names ...string) *GuideFlowBuilder {
+	addStep(&b.gates, gatedStep{pred: hostenv.SurfaceIs(get), names: names})
+	return b
+}
+
+// StepUnlessSurface appends tool names included only when the profile's surface
+// fails get.
+func (b *GuideFlowBuilder) StepUnlessSurface(get func(hostenv.Surface) bool, names ...string) *GuideFlowBuilder {
+	addStep(&b.gates, gatedStep{pred: hostenv.Not(hostenv.SurfaceIs(get)), names: names})
+	return b
+}
+
+// StepWhenHosted appends tool names included only when the deployment is hosted.
+func (b *GuideFlowBuilder) StepWhenHosted(hosted bool, names ...string) *GuideFlowBuilder {
+	addStep(&b.gates, gatedStep{pred: hostenv.HostedIs(hosted), names: names})
+	return b
+}
+
+// StepUnlessHosted appends tool names included only when the deployment is not hosted.
+func (b *GuideFlowBuilder) StepUnlessHosted(hosted bool, names ...string) *GuideFlowBuilder {
+	addStep(&b.gates, gatedStep{pred: hostenv.Not(hostenv.HostedIs(hosted)), names: names})
+	return b
+}
+
 // Detail sets the flow's guidance, composed as a feature-gated DescBuilder.
 func (b *GuideFlowBuilder) Detail(d DescBuilder) *GuideFlowBuilder {
 	b.detail = d
@@ -244,6 +270,32 @@ func (b *GuideBranchBuilder) StepUnlessHost(h hostenv.HostType, names ...string)
 	return b
 }
 
+// StepWhenSurface appends tool names included only when the profile's surface
+// passes get (a Surface accessor).
+func (b *GuideBranchBuilder) StepWhenSurface(get func(hostenv.Surface) bool, names ...string) *GuideBranchBuilder {
+	addStep(&b.gates, gatedStep{pred: hostenv.SurfaceIs(get), names: names})
+	return b
+}
+
+// StepUnlessSurface appends tool names included only when the profile's surface
+// fails get.
+func (b *GuideBranchBuilder) StepUnlessSurface(get func(hostenv.Surface) bool, names ...string) *GuideBranchBuilder {
+	addStep(&b.gates, gatedStep{pred: hostenv.Not(hostenv.SurfaceIs(get)), names: names})
+	return b
+}
+
+// StepWhenHosted appends tool names included only when the deployment is hosted.
+func (b *GuideBranchBuilder) StepWhenHosted(hosted bool, names ...string) *GuideBranchBuilder {
+	addStep(&b.gates, gatedStep{pred: hostenv.HostedIs(hosted), names: names})
+	return b
+}
+
+// StepUnlessHosted appends tool names included only when the deployment is not hosted.
+func (b *GuideBranchBuilder) StepUnlessHosted(hosted bool, names ...string) *GuideBranchBuilder {
+	addStep(&b.gates, gatedStep{pred: hostenv.Not(hostenv.HostedIs(hosted)), names: names})
+	return b
+}
+
 // Detail sets the branch's guidance, composed as a feature-gated DescBuilder.
 func (b *GuideBranchBuilder) Detail(d DescBuilder) *GuideBranchBuilder {
 	b.detail = d
@@ -272,6 +324,31 @@ func (b *GuideBranchBuilder) WhenHost(h hostenv.HostType) *GuideBranchBuilder {
 // UnlessHost includes the branch only when the profile's host does NOT match h.
 func (b *GuideBranchBuilder) UnlessHost(h hostenv.HostType) *GuideBranchBuilder {
 	b.branchPred = hostenv.Not(hostenv.HostIs(h))
+	return b
+}
+
+// WhenSurface includes the branch only when the profile's surface passes get
+// (a Surface accessor).
+func (b *GuideBranchBuilder) WhenSurface(get func(hostenv.Surface) bool) *GuideBranchBuilder {
+	b.branchPred = hostenv.SurfaceIs(get)
+	return b
+}
+
+// UnlessSurface includes the branch only when the profile's surface fails get.
+func (b *GuideBranchBuilder) UnlessSurface(get func(hostenv.Surface) bool) *GuideBranchBuilder {
+	b.branchPred = hostenv.Not(hostenv.SurfaceIs(get))
+	return b
+}
+
+// WhenHosted includes the branch only when the deployment is hosted.
+func (b *GuideBranchBuilder) WhenHosted(hosted bool) *GuideBranchBuilder {
+	b.branchPred = hostenv.HostedIs(hosted)
+	return b
+}
+
+// UnlessHosted includes the branch only when the deployment is not hosted.
+func (b *GuideBranchBuilder) UnlessHosted(hosted bool) *GuideBranchBuilder {
+	b.branchPred = hostenv.Not(hostenv.HostedIs(hosted))
 	return b
 }
 
@@ -376,6 +453,31 @@ func (g *GuideSpec) RuleWhenHost(h hostenv.HostType, text string) *GuideSpec {
 // RuleUnlessHost adds a rule included only when the profile's host does NOT match h.
 func (g *GuideSpec) RuleUnlessHost(h hostenv.HostType, text string) *GuideSpec {
 	g.rules = append(g.rules, gatedRule{text: text, pred: hostenv.Not(hostenv.HostIs(h))})
+	return g
+}
+
+// RuleWhenSurface adds a rule included only when the profile's surface passes
+// get (a Surface accessor, e.g. Surface.VaultOn). Gated on domain availability.
+func (g *GuideSpec) RuleWhenSurface(get func(hostenv.Surface) bool, text string) *GuideSpec {
+	g.rules = append(g.rules, gatedRule{text: text, pred: hostenv.SurfaceIs(get)})
+	return g
+}
+
+// RuleUnlessSurface adds a rule included only when the profile's surface fails get.
+func (g *GuideSpec) RuleUnlessSurface(get func(hostenv.Surface) bool, text string) *GuideSpec {
+	g.rules = append(g.rules, gatedRule{text: text, pred: hostenv.Not(hostenv.SurfaceIs(get))})
+	return g
+}
+
+// RuleWhenHosted adds a rule included only when the deployment is hosted.
+func (g *GuideSpec) RuleWhenHosted(hosted bool, text string) *GuideSpec {
+	g.rules = append(g.rules, gatedRule{text: text, pred: hostenv.HostedIs(hosted)})
+	return g
+}
+
+// RuleUnlessHosted adds a rule included only when the deployment is not hosted.
+func (g *GuideSpec) RuleUnlessHosted(hosted bool, text string) *GuideSpec {
+	g.rules = append(g.rules, gatedRule{text: text, pred: hostenv.Not(hostenv.HostedIs(hosted))})
 	return g
 }
 
