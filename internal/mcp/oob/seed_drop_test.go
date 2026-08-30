@@ -330,15 +330,19 @@ func TestSeedDropConfirmFailureKeepsTokenLive(t *testing.T) {
 	d.RegisterHandlers(mux)
 	url := d.Register("keepfail", "seed that must survive a failed removal")
 
-	// Force MarkSeedRetrieved's os.Remove to fail by making the seed's own
-	// parent directory read-only. The file exists, so Remove fails with a real
-	// error (not NotExist), which MarkSeedRetrieved must surface rather than
-	// swallow. Because MarkSeedRetrieved removes the file before clearing
-	// KeepSeed, a failed removal leaves both the on-disk copy AND the KeepSeed
-	// marker intact.
-	seedDir := filepath.Dir(seedPath)
-	require.NoError(t, os.Chmod(seedDir, 0o500))
-	defer os.Chmod(seedDir, 0o700) // restore so isoVaultPaths cleanup can remove
+	// Force MarkSeedRetrieved's os.Remove to fail in a privilege-independent
+	// way: replace the seed file with a non-empty directory. os.Remove on a
+	// non-empty directory returns ENOTEMPTY regardless of privileges, so the
+	// trigger works even when the suite runs as root (root bypasses POSIX
+	// directory write bits, so chmodding the parent read-only — as this test's
+	// earlier form did — is ineffective for us). MarkSeedRetrieved must surface
+	// the real error rather than swallow it. Because MarkSeedRetrieved removes
+	// the file before clearing KeepSeed, the failed removal leaves both the
+	// on-disk copy AND the KeepSeed marker intact.
+	bury := filepath.Join(seedPath, "plaintext")
+	require.NoError(t, os.Remove(seedPath), "swap the seed file for a dir so removal fails")
+	require.NoError(t, os.Mkdir(seedPath, 0o700), "replace the seed file with a dir so removal fails")
+	require.NoError(t, os.WriteFile(bury, before, 0o600), "preserve the seed bytes inside the failure dir")
 
 	// Same-origin confirmation POST must surface a 500 and NOT consume.
 	rec := httptest.NewRecorder()
@@ -350,7 +354,7 @@ func TestSeedDropConfirmFailureKeepsTokenLive(t *testing.T) {
 	require.NotContains(t, rec.Body.String(), "has been removed", "the page must not falsely claim removal")
 
 	// The at-rest copy must survive the failed removal.
-	after, err := os.ReadFile(seedPath)
+	after, err := os.ReadFile(bury)
 	require.NoError(t, err, "the at-rest copy must survive a failed removal")
 	require.Equal(t, before, after, "the seed bytes must be unchanged after failed removal")
 
