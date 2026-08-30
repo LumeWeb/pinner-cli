@@ -1638,7 +1638,12 @@ func (s *vaultService) VersionRestore(ctx context.Context, vaultPath string, ver
 	// and sync reconstructs rows from the sealed metadata).
 	newVersionID := newVersionID()
 	var curSeq uint
-	s.db.Model(&File{}).Where("uuid = ?", uuid).Select("COALESCE(MAX(seq), 0)").Scan(&curSeq)
+	if err := s.db.Model(&File{}).
+		Where("uuid = ?", uuid).
+		Select("COALESCE(MAX(seq), 0)").
+		Scan(&curSeq).Error; err != nil {
+		return nil, fmt.Errorf("failed to compute next version seq: %w", err)
+	}
 	versionSeq := curSeq + 1
 
 	rec := File{
