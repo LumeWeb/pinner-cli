@@ -41,6 +41,24 @@ func testPKCE() (verifier, challenge string) {
 	return verifier, base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
+// allowTestServerHost adds the given test server's host to cimdAllowedHosts
+// so resolveCIMDClient will fetch from it. Restored on cleanup.
+func allowTestServerHost(t *testing.T, srvURL string) {
+	t.Helper()
+	u, err := url.Parse(srvURL)
+	require.NoError(t, err)
+	host := u.Hostname()
+	orig := cimdAllowedHosts[host]
+	cimdAllowedHosts[host] = true
+	t.Cleanup(func() {
+		if orig {
+			cimdAllowedHosts[host] = orig
+		} else {
+			delete(cimdAllowedHosts, host)
+		}
+	})
+}
+
 func TestOAuthRegistration(t *testing.T) {
 	o := newTestOAuth(t)
 	rec := httptest.NewRecorder()
@@ -480,6 +498,7 @@ func TestCIMDFetchAndAuthorize(t *testing.T) {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
+	allowTestServerHost(t, srv.URL)
 
 	cimdClientID = srv.URL + "/.well-known/oauth-client-metadata"
 
@@ -539,6 +558,7 @@ func TestCIMDCacheTTL(t *testing.T) {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
+	allowTestServerHost(t, srv.URL)
 
 	cimdClientID = srv.URL + "/.well-known/oauth-client-metadata"
 
@@ -575,6 +595,7 @@ func TestCIMDRejectsClientIDMismatch(t *testing.T) {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
+	allowTestServerHost(t, srv.URL)
 
 	cimdURL := srv.URL + "/metadata"
 
@@ -599,6 +620,7 @@ func TestCIMDRejectsUnsupportedAuthMethod(t *testing.T) {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
+	allowTestServerHost(t, srv.URL)
 
 	cimdClientID = srv.URL + "/metadata"
 
@@ -625,6 +647,7 @@ func TestCIMDFullFlowThroughTokenExchange(t *testing.T) {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
+	allowTestServerHost(t, srv.URL)
 
 	cimdClientID = srv.URL + "/metadata"
 
@@ -716,8 +739,8 @@ func TestAllowedCIMDHost(t *testing.T) {
 	}{
 		{"claude.ai allowlisted", "https://claude.ai/oauth/mcp-oauth-client-metadata", true},
 		{"vscode.dev allowlisted", "https://vscode.dev/oauth/client-metadata.json", true},
-		{"localhost allowed", "http://localhost:8080/metadata", true},
-		{"127.0.0.1 allowed", "http://127.0.0.1:9090/metadata", true},
+		{"localhost not auto-allowed", "http://localhost:8080/metadata", false},
+		{"127.0.0.1 not auto-allowed", "http://127.0.0.1:9090/metadata", false},
 		{"unknown public host rejected", "https://evil.example.com/metadata", false},
 		{"private IP rejected", "https://192.168.1.1/metadata", false},
 		{"link-local rejected", "https://169.254.169.254/metadata", false},
@@ -763,6 +786,7 @@ func TestCIMDCacheEvictionInReap(t *testing.T) {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
+	allowTestServerHost(t, srv.URL)
 
 	cimdClientID = srv.URL + "/metadata"
 

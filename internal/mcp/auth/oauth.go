@@ -101,9 +101,11 @@ var cimdAllowedHosts = map[string]bool{
 	"vscode.dev": true,
 }
 
-// allowedCIMDHost reports whether host is an allowlisted CIMD metadata host
-// or a loopback address (for dev/test). It also rejects hosts that resolve to
-// private/link-local IP ranges to prevent DNS-based SSRF bypasses.
+// allowedCIMDHost reports whether host is an allowlisted CIMD metadata host.
+// Only known hosts in cimdAllowedHosts are fetched. This prevents SSRF — an
+// attacker cannot use a client_id URL pointing at internal/cloud-metadata
+// endpoints. Loopback hosts must be explicitly added to cimdAllowedHosts
+// (e.g., by tests adding the test server's address).
 func allowedCIMDHost(rawURL string) bool {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -116,11 +118,8 @@ func allowedCIMDHost(rawURL string) bool {
 	if cimdAllowedHosts[host] {
 		return true
 	}
-	switch host {
-	case "localhost", "127.0.0.1", "::1":
-		return true
-	}
-	// Reject any host that resolves to a private/link-local/multicast IP.
+	// Reject any host that resolves to a private/link-local/multicast IP as
+	// a defense-in-depth measure, even if it somehow passed the allowlist.
 	ips, err := net.LookupIP(host)
 	if err != nil {
 		return false
@@ -130,8 +129,6 @@ func allowedCIMDHost(rawURL string) bool {
 			return false
 		}
 	}
-	// Public IP but not in the allowlist — reject. Only known hosts and
-	// loopback are fetched.
 	return false
 }
 
@@ -211,7 +208,9 @@ func (o *OAuthServer) sweep() {
 	for {
 		select {
 		case <-ticker.C:
+			o.mu.Lock()
 			o.reapLocked()
+			o.mu.Unlock()
 		case <-o.done:
 			return
 		}
@@ -234,16 +233,13 @@ func (o *OAuthServer) reapLocked() {
 			delete(o.codes, code)
 		}
 	}
-	// Evict expired CIMD cache entries and their transient client registrations
-	// to bound memory growth from unique CIMD client_ids.
+	// Evict expired CIMD cache entries (under cimdCacheMu) and their transient
+	// client registrations. o.clients is guarded by o.mu, which the caller
+	// already holds (both newCode and sweep acquire it before calling here).
 	o.cimdCacheMu.Lock()
 	for k, e := range o.cimdCache {
 		if now.Sub(e.fetchedAt) >= cimdCacheTTL {
 			delete(o.cimdCache, k)
-			// CIMD-resolved clients are keyed by their URL client_id, which
-			// is also in cimdCache. If the cache entry is expired, remove
-			// the transient registration too — it will be re-fetched on
-			// the next authorize request if needed.
 			delete(o.clients, k)
 		}
 	}
