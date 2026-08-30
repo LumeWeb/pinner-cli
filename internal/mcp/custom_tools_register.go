@@ -28,6 +28,13 @@ type customToolSpec struct {
 	// project them.
 	direct bool
 
+	// launcher marks an open_* UI launcher spec. Launchers are projected onto
+	// tools/list only when the connected host can render MCP Apps
+	// (FeatMCPApps). On agent-only hosts they stay catalog-indexed (still
+	// discoverable via search_tools) but are skipped on tools/list, so the
+	// agent does not pay schema cost for iframe launchers it cannot use.
+	launcher bool
+
 	// app, when non-nil, installs the tool's MCP App view after every catalog
 	// entry is indexed. It attaches _meta.ui to the launcher entry in the
 	// catalog and registers the ui:// resource + app-only helpers. The catalog
@@ -98,7 +105,11 @@ func (r *customToolRegistry) run() error {
 	}
 
 	for _, s := range r.specs {
-		if s.direct {
+		// Per-app launchers (launcher:true) are never projected directly here —
+		// the consolidated open_app tool is the single direct launcher (added
+		// in custom_tools.go). Non-launcher direct specs (upload_file,
+		// capabilities, agent_guide, ...) are projected here.
+		if s.direct && !s.launcher {
 			if err := RegisterOfficialDescriptor(r.srv, s.desc); err != nil {
 				return err
 			}
@@ -113,11 +124,16 @@ func (r *customToolRegistry) run() error {
 	return nil
 }
 
-// launcherSpec builds the spec for an open_* UI launcher: it is catalog
-// indexed (so the app view's AttachTo can resolve it), directly registered on
-// tools/list, and carries the app install that attaches _meta.ui and registers
-// the ui:// resource + helpers. The descriptor must carry _meta.ui (see
-// registerOpenLauncher's guard).
+// launcherSpec builds the spec for an open_* UI launcher. Per-app launchers
+// are catalog-indexed (so the app view's AttachTo can resolve them and they
+// stay discoverable via search_tools) and their app views are installed, but
+// they are NOT individually projected onto tools/list. Instead the single,
+// consolidated open_app tool is the one direct-suffaced launcher for a
+// GUI-capable host (see registerOpenApp in custom_tools.go); it resolves an
+// app name to its ui:// resource. This means an agent never pays one
+// tools/list schema slot per iframe screen. The descriptor must carry
+// _meta.ui (see registerOpenLauncher's guard). The launcher flag marks the
+// spec as an app-linked launcher.
 func launcherSpec(desc model.ToolDescriptor, app func(srv *sdk.Server, catalog apps.AppCatalog) error) customToolSpec {
-	return customToolSpec{desc: desc, index: true, direct: true, app: app}
+	return customToolSpec{desc: desc, index: true, direct: false, launcher: true, app: app}
 }

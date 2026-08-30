@@ -25,7 +25,7 @@ func TestAgentGuideDescriptor(t *testing.T) {
 	guid, ok := res.StructuredContent.(AgentGuide)
 	require.True(t, ok, "StructuredContent must be an AgentGuide")
 	require.NotEmpty(t, guid.Summary)
-	require.Len(t, guid.Flows, 10, "guide must cover all primary flows")
+	require.Len(t, guid.Flows, 12, "guide must cover all primary flows")
 
 	names := make([]string, 0, len(guid.Flows))
 	for _, f := range guid.Flows {

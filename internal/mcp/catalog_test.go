@@ -261,6 +261,37 @@ func TestSearchHidesWizardsByDefault(t *testing.T) {
 	}
 }
 
+// TestSearchHidesAdminByDefault verifies admin tools are gated exactly like
+// wizards: a general keyword search ("cancel") must never surface
+// admin_billing_*, but an explicit category=admin browse returns them.
+func TestSearchHidesAdminByDefault(t *testing.T) {
+	c := NewToolCatalog()
+	c.Add(entry("vault_sync", "Sync vault cache with the indexer", model.CategoryVault, model.InteractionAgentSafe))
+	c.Add(entry("admin_billing_subscribers_cancel", "Cancel a billing subscriber", model.CategoryAdmin, model.InteractionAgentSafe))
+
+	// A vague keyword search for "cancel" must not retrieve the admin tool.
+	for _, s := range c.Search("cancel", "", 0) {
+		assert.NotEqual(t, model.CategoryAdmin, s.Category, "admin tools must be hidden from general keyword search")
+	}
+
+	// The vault tool still matches "sync" normally (non-admin surface is fine).
+	assert.NotEmpty(t, c.Search("sync", "", 0), "non-admin tools must still be searchable")
+
+	// Explicit admin category browse returns them.
+	admins := c.Search("", string(model.CategoryAdmin), 0)
+	assert.NotEmpty(t, admins, "admin category filter must return admin tools")
+	for _, s := range admins {
+		assert.Equal(t, model.CategoryAdmin, s.Category)
+	}
+
+	// Suggest must not surface admin tools either.
+	for _, s := range c.Suggest("admin_billing", 5) {
+		entry, ok := c.Get(s)
+		require.True(t, ok, s)
+		assert.NotEqual(t, model.CategoryAdmin, entry.Category, "admin tools must never be suggested")
+	}
+}
+
 // TestOnboardingPrimaryOnly verifies the onboarding surface returns ONLY the
 // curated primary start-here tools (matching the agent_guide flows), not the
 // full catalog dump. account_status is in the seed catalog but is not a

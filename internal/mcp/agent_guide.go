@@ -370,6 +370,12 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 		Flow(toolforge.Flow("vault_download", "Download a file from a vault").
 			Steps("capabilities", "vault_get_file").
 			Detail(vaultDownloadDetailDesc)).
+		Flow(toolforge.Flow("vault_share", "Share from a vault").
+			Steps("vault_status", "vault_share").
+			Detail(toolforge.Static("Ensure the vault is unlocked (vault_status), then call vault_share with the vault_path and the recipient identifier; it returns a shareable link. The recipient accepts the share with vault_share_accept, which is directly visible on tools/list. Verify with vault_status after the exchange."))).
+		Flow(toolforge.Flow("vault_sync", "Sync and verify vault state").
+			Steps("vault_status", "vault_sync", "vault_verify").
+			Detail(toolforge.Static("vault_sync reconciles the local vault cache from the indexer; vault_verify checks file integrity. Run both after creating or restoring on a new device, or when share state may have changed. Related utilities are discoverable via search_tools(category=vault): vault_ls, vault_stat, vault_tag_add, vault_tag_rm, vault_version_restore."))).
 		Flow(toolforge.Flow("pins", "Manage pins").
 			Steps("pins_add", "pins_list", "pins_status", "pins_rm").
 			Detail(toolforge.Static("pins_add imports content already on IPFS by external CID; it is NOT for use after an upload tool (which already pins). pins_status takes one cid; pins_rm requires confirm and exactly one of cids or all."))).
@@ -398,7 +404,7 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 // agentGuideDescription is shared between the static Description (tools/list)
 // and the Fallback MCPTarget so the tool carries a target list for uniformity
 // (it is a direct-only tool and does not enter the catalog).
-const agentGuideDescription = "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, download, vault_download, pins, publish_website) as ordered tool chains or decision trees, plus operational rules. Call this first to learn how to drive Pinner before probing individual tools."
+const agentGuideDescription = "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, download, vault_download, vault_share, vault_sync, pins, publish_website) as ordered tool chains or decision trees, plus operational rules. Call this first to learn how to drive Pinner before probing individual tools."
 
 func NewAgentGuideDescriptor() model.ToolDescriptor {
 	return model.ToolDescriptor{
