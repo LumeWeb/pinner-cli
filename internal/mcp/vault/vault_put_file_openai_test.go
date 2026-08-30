@@ -23,7 +23,7 @@ func openaiVaultDesc(t *testing.T, coLocated bool, httpClient *http.Client) mode
 	return newVaultPutFileDescriptor(hostenv.ProfileOpenAITunnel.Features, coLocated, false, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string, _ map[string]any) (any, error) {
 		t.Fatal("vault relay must not be invoked for a rejected input")
 		return nil, nil
-	}, []string{"127.0.0.1"}, 0, httpClient)
+	}, []string{"127.0.0.1"}, 0, noProfileRequired, httpClient)
 }
 
 // TestVaultPutFileOpenAISchema verifies the OpenAI `file` object in
@@ -130,7 +130,7 @@ func TestVaultPutFileOpenAIFetch(t *testing.T) {
 		gotBytes = b
 		gotVaultPath = vaultPath
 		return map[string]any{"vault_path": vaultPath}, nil
-	}, []string{"127.0.0.1"}, 0, srv.Client())
+	}, []string{"127.0.0.1"}, 0, noProfileRequired, srv.Client())
 
 	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"file": map[string]any{
@@ -162,7 +162,7 @@ func TestVaultPutFileOpenAIFetchWorksOnEveryTransport(t *testing.T) {
 		b, _ := io.ReadAll(r)
 		gotBytes = b
 		return map[string]any{"vault_path": vaultPath}, nil
-	}, []string{"127.0.0.1"}, 0, srv.Client())
+	}, []string{"127.0.0.1"}, 0, noProfileRequired, srv.Client())
 
 	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"file":       map[string]any{"download_url": srv.URL, "file_id": "file_s"},

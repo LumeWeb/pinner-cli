@@ -15,10 +15,17 @@ import (
 
 // vaultPutDescriptor builds a unified vault_put_file descriptor for a given
 // transport wiring, mirroring the production registration shape so the test
-// exercises the exact same routing logic.
+// exercises the exact same routing logic. It injects a no-op profile check so
+// these tests are deterministic regardless of the host's real vault registry
+// (the profile-required rule is exercised explicitly in the two-profile tests).
 func vaultPutDescriptor(coLocated, remote bool, pathFn LocalPathVaultPutHandler, vu *transfer.VaultHTTPUpload, relayFn VaultPutHandler) model.ToolDescriptor {
-	return NewVaultPutFileDescriptor(transportFeatures(coLocated, remote), coLocated, remote, pathFn, vu, relayFn, nil, 0)
+	return NewVaultPutFileDescriptorWithProfileCheck(transportFeatures(coLocated, remote), coLocated, remote, pathFn, vu, relayFn, nil, 0, noProfileRequired, nil)
 }
+
+// noProfileRequired is the injectable profile guard for the deterministic
+// single-profile tests: it always permits the write (never a multi-profile
+// server).
+func noProfileRequired(string) *corevault.ProfileRequiredError { return nil }
 
 func TestVaultPutFileDescriptorRequiresVaultPath(t *testing.T) {
 	desc := vaultPutDescriptor(true, false, func(ctx context.Context, path, vaultPath, archiveMode string, _ map[string]any) (any, error) {
@@ -103,6 +110,85 @@ func TestVaultPutFileDescriptorHTTPRejectsPath(t *testing.T) {
 	require.Error(t, err, "path source invalid on HTTP transport")
 }
 
+// twoProfileRequired is the injectable profile guard for the multi-profile
+// tests: it requires an explicit profile and reports the unlocked set when one
+// is missing, mirroring corevault.ProfileRequired.
+func twoProfileRequired() func(string) *corevault.ProfileRequiredError {
+	return func(profile string) *corevault.ProfileRequiredError {
+		if profile != "" {
+			return nil
+		}
+		return &corevault.ProfileRequiredError{
+			Code:     "profile_required",
+			Profiles: []string{"alpha", "beta"},
+			Message:  "more than one vault profile is unlocked (alpha, beta); pass profile=<name>",
+		}
+	}
+}
+
+// TestVaultPutFileMultiProfileMintRequiresProfile locks in the mint-time hole
+// fix: on a multi-profile server, vault_put_file with source mode mint and no
+// profile must fail with profile_required BEFORE a one-shot upload URL is
+// minted (the URL would otherwise be unusable — the follow-up PUT 500s). The
+// mint endpoint must never be reached.
+func TestVaultPutFileMultiProfileMintRequiresProfile(t *testing.T) {
+	vu := transfer.NewVaultHTTPUpload(nil, 0)
+	defer vu.Stop(context.Background())
+	desc := NewVaultPutFileDescriptorWithProfileCheck(transportFeatures(false, false), false, false, nil, vu, nil, nil, 0, twoProfileRequired(), nil)
+
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
+		"source":     map[string]any{"mode": "mint"},
+		"vault_path": "vault:/uploads/report.pdf",
+	}})
+	require.NoError(t, err, "profile_required surfaces as an IsError result, not a transport error")
+	require.True(t, res.IsError, "profile_required must be an error result")
+	sc, ok := res.StructuredContent.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "error", sc["status"])
+	require.Equal(t, "profile_required", sc["error"])
+	require.ElementsMatch(t, []string{"alpha", "beta"}, sc["profiles"])
+}
+
+// TestVaultPutFileMultiProfileMintWithProfileMints locks in that supplying the
+// explicit profile on a multi-profile server still mints normally (the guard
+// only fires on a missing profile).
+func TestVaultPutFileMultiProfileMintWithProfileMints(t *testing.T) {
+	vu := transfer.NewVaultHTTPUpload(nil, 0)
+	defer vu.Stop(context.Background())
+	desc := NewVaultPutFileDescriptorWithProfileCheck(transportFeatures(false, false), false, false, nil, vu, nil, nil, 0, twoProfileRequired(), nil)
+
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
+		"source":     map[string]any{"mode": "mint"},
+		"vault_path": "vault:/uploads/report.pdf",
+		"profile":    "alpha",
+	}})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	sc, ok := res.StructuredContent.(map[string]any)
+	require.True(t, ok)
+	require.NotEmpty(t, sc["url"])
+}
+
+// TestVaultPutFileMultiProfileStdioRequiresProfile verifies the same
+// profile_required rule applies on every write branch (not just mint), so a
+// multi-profile stdio/path write without a profile fails before touching the
+// local path handler.
+func TestVaultPutFileMultiProfileStdioRequiresProfile(t *testing.T) {
+	desc := NewVaultPutFileDescriptorWithProfileCheck(transportFeatures(true, false), true, false, func(ctx context.Context, path, vaultPath, archiveMode string, _ map[string]any) (any, error) {
+		t.Fatal("path handler must not run without an explicit profile on a multi-profile server")
+		return nil, nil
+	}, nil, nil, nil, 0, twoProfileRequired(), nil)
+
+	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
+		"source":     map[string]any{"mode": "path", "path": "/tmp/x.bin"},
+		"vault_path": "vault:/uploads/x.bin",
+	}})
+	require.NoError(t, err)
+	require.True(t, res.IsError)
+	sc := res.StructuredContent.(map[string]any)
+	require.Equal(t, "profile_required", sc["error"])
+}
+
 func TestVaultPutFileDescriptorOpenAIData(t *testing.T) {
 	var gotVaultPath string
 	var size int64
@@ -125,10 +211,10 @@ func TestVaultPutFileDescriptorOpenAIData(t *testing.T) {
 func TestVaultPutFileDescriptorOpenAIRelayHonorsMaxBytes(t *testing.T) {
 	// The relayed url/data source must honor the operator-configured relay cap,
 	// not silently fall back to the 512 MiB package default.
-	desc := NewVaultPutFileDescriptor(transportFeatures(false, true), false, true, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string, _ map[string]any) (any, error) {
+	desc := NewVaultPutFileDescriptorWithProfileCheck(transportFeatures(false, true), false, true, nil, nil, func(ctx context.Context, r io.Reader, sz int64, vaultPath string, _ map[string]any) (any, error) {
 		t.Fatal("relay must not receive an oversized upload")
 		return nil, nil
-	}, nil, 4) // cap at 4 bytes
+	}, nil, 4, noProfileRequired, nil) // cap at 4 bytes
 	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
 		"source":     map[string]any{"mode": "data", "data": "data:;name=big.bin;size=100;base64,YWFhYWFhYWFh"},
 		"vault_path": "vault:/uploads/big.bin",
