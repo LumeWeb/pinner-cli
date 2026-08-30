@@ -1,8 +1,6 @@
 package mcp
 
 import (
-	"net/http"
-
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
@@ -82,11 +80,4 @@ func BuildServer(cfg ServerConfig) (*sdk.Server, *ToolCatalog, error) {
 		}
 	}
 	return srv, catalog, nil
-}
-
-// HTTPHandler wraps an assembled server as a streamable-HTTP handler (RFC
-// Streamable HTTP transport). disableLocalhostProtection is required when the
-// handler is served behind a proxy/tunnel that presents a non-loopback Origin.
-func HTTPHandler(srv *sdk.Server, disableLocalhostProtection bool) http.Handler {
-	return sdk.NewStreamableHandler(srv, disableLocalhostProtection)
 }

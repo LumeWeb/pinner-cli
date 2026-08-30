@@ -82,7 +82,10 @@ func New(opts Options) (http.Handler, error) {
 		return nil, err
 	}
 
-	handler := mcp.HTTPHandler(srv, opts.DisableLocalhostProtection)
+	// Install the credential middleware when a resolver is present so the
+	// per-request Portal API JWT is resolved once at the HTTP boundary and
+	// carried on the context to every handler (catalog + custom tools).
+	handler := mcp.HTTPHandler(srv, opts.CredentialResolver, opts.DisableLocalhostProtection)
 	if opts.OAuthHandler != nil {
 		handler = opts.OAuthHandler.WrapHTTP(handler)
 	}
