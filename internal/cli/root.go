@@ -39,19 +39,6 @@ func notInitErr(label string) error {
 	return fmt.Errorf("%s dependencies are not initialized", label)
 }
 
-// vaultRequestedProfile returns the vault profile a tool explicitly targeted,
-// as stamped into the write metadata by the tool surface. It is empty when the
-// caller did not specify one, in which case the active profile is used.
-func vaultRequestedProfile(meta map[string]any) string {
-	if meta == nil {
-		return ""
-	}
-	if p, ok := meta[vault.MetaKeyProfile].(string); ok {
-		return p
-	}
-	return ""
-}
-
 // NewRootCommand creates and returns the root CLI command.
 func NewRootCommand() *cli.Command {
 	root := &cli.Command{
@@ -379,7 +366,7 @@ For more help on any command: pinner <command> --help`,
 				// tool surface; resolve that when set, otherwise the active
 				// profile (so an agent can target one vault without flipping
 				// the default).
-				profile, err := vault.ResolveProfile(vaultRequestedProfile(meta))
+				profile, err := vault.ResolveProfile(vault.WriteContextProfile(meta))
 				if err != nil {
 					return nil, err
 				}
@@ -461,7 +448,7 @@ For more help on any command: pinner <command> --help`,
 				// A tool-requested profile is stamped into the metadata by the
 				// tool surface; resolve that when set, otherwise the active
 				// profile.
-				profile, err := vault.ResolveProfile(vaultRequestedProfile(meta))
+				profile, err := vault.ResolveProfile(vault.WriteContextProfile(meta))
 				if err != nil {
 					return nil, err
 				}
