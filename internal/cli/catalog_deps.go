@@ -71,6 +71,7 @@ func buildCatalogOpsDeps() *mcpadapter.CatalogDepsBundle {
 		Websites:   catalogops.WebsitesDeps(catalogWebsitesDeps()),
 		DNS:        catalogops.DNSDeps(catalogDNSDeps()),
 		IPNS:       catalogops.IPNSDeps(catalogIPNSDeps()),
+		ENS:        catalogops.ENSDeps(catalogENSDeps()),
 		APIKeys:    catalogops.APIKeysDeps(catalogAPIKeysDeps()),
 		Operations: catalogops.OperationsDeps(catalogOperationsDeps()),
 		Account: catalogops.AccountDeps{
@@ -135,4 +136,10 @@ func buildCatalogOpsDeps() *mcpadapter.CatalogDepsBundle {
 			},
 		},
 	}
+}
+
+// catalogENSDeps builds the catalogops.ENSDeps for the ENS operations. ENS
+// reuses the IPNS dependency graph (an ENS pointing is an IPNS key + publish).
+func catalogENSDeps() catalogops.ENSDeps {
+	return catalogops.ENSDeps{IPNS: catalogIPNSDeps()}
 }

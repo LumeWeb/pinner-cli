@@ -310,6 +310,41 @@ Common failure modes:
   reconciliation is still running; wait and re-check, do not treat as an
   update failure.
 
+### ENS / Onchain Domain Flow
+
+ENS (.eth and other onchain) names do **not** use the website system
+(`websites_create` / `_dnslink` DNS). They resolve via an IPNS-based
+`contenthash` record set onchain in the ENS resolver, which Pinner cannot
+sign (it never holds the user's wallet key). The flow:
+
+1. **Upload** — `upload_file`/`upload_url`/`upload_data` produces a CID (already
+   pinned).
+2. **Point** — `ens_point` (catalog op) / `point <name> --cid <cid>` (CLI). This
+   creates-or-reuses the IPNS key keyed by the domain name, publishes the CID,
+   and returns the `contenthash` (`ipns://<ipns-name>`) plus a verify URL
+   (eth.limo for `.eth`).
+3. **Onchain contenthash** — the user sets the returned `contenthash` in the ENS
+   resolver from their own wallet / ENS manager (app.ens.domains, ENS SDK,
+   wallet with ENS support). The operation returns this as ordered `next_steps`
+   wallet guidance; the agent surfaces the exact value and options without
+   assuming a wallet.
+4. **Verify** — open the returned `verify_url` after the onchain tx confirms.
+
+The shared business logic lives in
+`internal/catalogops/ens.go` (`PointENS` / `UnpointENS`); the CLI
+(`internal/cli/point.go`) and the MCP `ens_point` / `ens_unpoint` catalog
+operations both drive it, so the two surfaces agree. `ens_unpoint` is
+`SafetyDestructive` with an `AgentRequired` confirm — a model actor is always
+refused (human confirms via hand-off), and the handler additionally rejects
+`confirm:false`.
+
+**MCP surface:** `ens_point` / `ens_unpoint` are single-level catalog ops
+(category `ens`) and are **not** in `compiledCuratedToolNames`, so they stay
+behind progressive disclosure (`search_tools {query:"ens"}` →
+`describe_tool` → `invoke_tool`) and never bloat `tools/list`. The
+`agent_guide` `ens_publish` flow and the `ens-publish` prompt
+(`internal/mcp/prompttemplates/ens_publish.tmpl`) steer an agent to them.
+
 ## Command Structure
 
 - `pins` is the canonical command group with subcommands `add`, `rm`, `ls`,

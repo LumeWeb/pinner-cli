@@ -13,9 +13,9 @@ import (
 // catalogops) so a test/global override stays live and services always use fresh
 // config, never a package-init snapshot.
 //
-// The bundle deliberately spans the whole catalogops surface: auth, vault,
-// vault-setup, pins, websites, dns, ipns, api-keys, and account operations. A
-// domain whose deps are nil degrades to ops that fail with a clear
+// The bundle deliberately spans the whole catalogops surface: auth, account,
+// vault, vault-setup, pins, websites, dns, ipns, ens, api-keys, operations, and
+// admin. A domain whose deps are nil degrades to ops that fail with a clear
 // "service unavailable" error rather than panicking, so the bundle can be added
 // incrementally.
 type CatalogDepsBundle struct {
@@ -30,6 +30,7 @@ type CatalogDepsBundle struct {
 	Websites  catalogops.WebsitesDeps
 	DNS       catalogops.DNSDeps
 	IPNS      catalogops.IPNSDeps
+	ENS       catalogops.ENSDeps
 	APIKeys   catalogops.APIKeysDeps
 	Operations catalogops.OperationsDeps
 	Admin     catalogops.AdminDeps

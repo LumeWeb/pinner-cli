@@ -27,6 +27,9 @@ type sitePromptData struct {
 	WebsiteArg  string
 	CID         string
 	CurrentType string
+
+	// ens-publish fields.
+	ENSName string
 }
 
 // renderPromptTemplate renders the named prompt template (a

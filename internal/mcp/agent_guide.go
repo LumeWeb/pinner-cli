@@ -396,6 +396,27 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 			// Every step here is a real tool, so the guide's "steps resolve to
 			// real tools" invariant holds on every host.
 			Decision(byteRouteDecision(publishDomainDecision()))).
+		Flow(toolforge.Flow("ens_publish", "Point an ENS/onchain domain at IPFS content").
+			// ENS domains do not use the website system — they resolve via an
+			// IPNS-based contenthash set onchain in the ENS resolver. The byte
+			// route reuses the existing upload chooser to produce a CID, then
+			// ens_point publishes it under the domain's IPNS key and returns
+			// the contenthash + wallet guidance. ens_point/ens_unpoint are
+			// behind progressive disclosure (never curated), so name them here
+			// and steer the agent to search for them rather than expecting
+			// them on tools/list. The final contenthash is set by the USER's
+			// wallet/ENS manager — the agent surfaces the value and options,
+			// never assumes a specific wallet.
+			Decision(byteRouteDecision(
+				toolforge.Decision("Point the ENS name at the CID?",
+					toolforge.Branch("Yes — point the ENS/onchain domain at the content").
+						Steps("ens_point").
+						Detail(toolforge.Static("Search for ens_point (search_tools query \"ens\"), then call it with the onchain domain (e.g. vitalik.eth) and the cid from the upload. It creates or reuses the domain's IPNS key, publishes the CID, and returns the contenthash (ipns://<ipns-name>) plus a verify URL (eth.limo for .eth). The returned next_steps are onchain: the user sets the ENS resolver's contenthash field to the returned value from their own wallet or the ENS manager (app.ens.domains), the ENS SDK (ethers.js), or a wallet with ENS support. Do NOT assume a specific wallet. After the onchain transaction confirms, verify at the returned verify URL.")),
+					toolforge.Branch("No — only publish the content to IPFS/IPNS, no onchain pointing").
+						Steps("websites_create").
+						Detail(toolforge.Static("Treat it as a normal website publish: websites_create with the cid. ENS pointing is only applied when the user explicitly wants their ENS name to resolve to the content.")),
+				),
+			))).
 		Flow(toolforge.Flow("update_website", "Update an existing website").
 			Steps("websites_get", "websites_update", "websites_validate").
 			Detail(toolforge.Static("Update a deployed website's content without recreating it. 1) websites_get <domain> first to capture the current target_type and dns_hosting_enabled — never guess them. 2) If the new CID is external, pins_add it first; updating an unpinned CID returns CidNotPinned. 3) websites_update <domain> with the new cid (target-type is inherited when omitted; change it only when intentionally switching IPFS<->IPNS). 4) websites_validate. If DNS hosting is managed, validation may report the old CID right after the update — that is reconciliation lag, not failure; re-call websites_validate without starting a new flow."))).
@@ -415,7 +436,7 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 // agentGuideDescription is shared between the static Description (tools/list)
 // and the Fallback MCPTarget so the tool carries a target list for uniformity
 // (it is a direct-only tool and does not enter the catalog).
-const agentGuideDescription = "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, download, vault_download, vault_share, vault_sync, pins, publish_website) as ordered tool chains or decision trees, plus operational rules. On hosts that render MCP Apps, the guide includes open_app as the single launcher for human-facing interactive views. Call this first to learn how to drive Pinner before probing individual tools."
+const agentGuideDescription = "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, download, vault_download, vault_share, vault_sync, pins, publish_website, ens_publish) as ordered tool chains or decision trees, plus operational rules. On hosts that render MCP Apps, the guide includes open_app as the single launcher for human-facing interactive views. Call this first to learn how to drive Pinner before probing individual tools."
 
 func NewAgentGuideDescriptor() model.ToolDescriptor {
 	return model.ToolDescriptor{
