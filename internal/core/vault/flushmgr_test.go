@@ -74,3 +74,62 @@ func TestFlushWorkerSurvivesRequestContext(t *testing.T) {
 	}
 	svc.AssertNumberOfCalls(t, "Flush", 2)
 }
+
+// TestFlushManagerCloseDrainsQueuedJobsAndJoinsWorkers is a regression test for
+// the Kody finding that Close() cancelled the manager context and immediately
+// closed every worker's service without joining the workers, leaving queued
+// jobs permanently undrained (agents polling vault_flush_status hang) and a
+// use-after-close/data-race window.
+//
+// The first job occupies the worker (its Flush blocks on the manager context),
+// so the second job stays queued. Close() must mark the queued job failed (so a
+// poll resolves), join the in-flight worker (the blocking Flush returns when the
+// manager context cancels), and close the service only afterwards — verified
+// here by Close() returning promptly and the queued job reaching "failed".
+func TestFlushManagerCloseDrainsQueuedJobsAndJoinsWorkers(t *testing.T) {
+	svc := NewMockVaultService(t)
+	// Flush call count is scheduling-dependent (the worker may not have reached
+	// it before Close() cancels), so it must not be asserted strictly.
+	svc.On("Flush", mock.Anything).
+		Run(func(args mock.Arguments) { <-args.Get(0).(context.Context).Done() }).
+		Return(0, context.Canceled).
+		Maybe()
+	svc.On("Close").Return(nil).Maybe()
+
+	mgr := NewFlushManager(SyncLoopConfig{
+		Profiles: func() []string { return []string{"alpha"} },
+		Service:  func(string) (VaultService, error) { return svc, nil },
+	})
+
+	job1, err := mgr.Enqueue(context.Background(), "alpha", "")
+	if err != nil {
+		t.Fatalf("Enqueue(job1): %v", err)
+	}
+	job2, err := mgr.Enqueue(context.Background(), "alpha", "")
+	if err != nil {
+		t.Fatalf("Enqueue(job2): %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() { mgr.Close(); close(done) }()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Close() did not return: it did not join the in-flight worker")
+	}
+
+	// The queued job must be failed, never left as "queued" for a polling agent.
+	j2, ok := mgr.Job(job2.JobID)
+	if !ok {
+		t.Fatalf("queued job %s missing from registry after Close", job2.JobID)
+	}
+	if j2.Status != FlushJobFailed {
+		t.Fatalf("queued job after Close = %q, want %q (drained so polls resolve)", j2.Status, FlushJobFailed)
+	}
+	// The in-flight job reached a terminal state too.
+	j1, ok := mgr.Job(job1.JobID)
+	if !ok || (j1.Status != FlushJobDone && j1.Status != FlushJobFailed) {
+		t.Fatalf("running job after Close = %+v, want a terminal state", j1)
+	}
+}

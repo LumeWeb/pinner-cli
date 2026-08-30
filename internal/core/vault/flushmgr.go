@@ -39,8 +39,9 @@ type FlushManager struct {
 	workers map[string]*profileFlushWorker
 	pending map[string][]*FlushJob // profile -> queued jobs
 	jobs    map[string]*FlushJob
-	seq     int64
-	closed  bool
+	seq      int64
+	closed   bool
+	wg       sync.WaitGroup // joins per-profile worker goroutines in Close()
 
 	// ctx/cancel is the manager's own lifetime, decoupled from any single
 	// Enqueue request context. Workers run on it so a request returning (and
@@ -98,6 +99,12 @@ func (m *FlushManager) Enqueue(_ context.Context, profile, path string) (*FlushJ
 	m.mu.Unlock()
 	if !ok {
 		worker = m.ensureWorker(profile)
+		if worker == nil {
+			// The manager shut down between the closed-check and the worker
+			// lookup (Close() cleared workers). The job was already marked
+			// failed by Close(); surface the shutdown instead of enqueueing.
+			return nil, ErrVaultClosed
+		}
 	}
 	select {
 	case worker.wake <- struct{}{}:
@@ -124,12 +131,23 @@ func (m *FlushManager) Job(jobID string) (*FlushJob, bool) {
 
 func (m *FlushManager) ensureWorker(profile string) *profileFlushWorker {
 	m.mu.Lock()
+	if m.closed {
+		// Shutdown sentinel: the manager is closing/closed, so return nil and
+		// let Enqueue surface ErrVaultClosed (no new Add-to-WaitGroup after
+		// Close's Wait begins).
+		m.mu.Unlock()
+		return nil
+	}
 	if w, ok := m.workers[profile]; ok {
 		m.mu.Unlock()
 		return w
 	}
 	w := &profileFlushWorker{mgr: m, profile: profile, wake: make(chan struct{}, 1)}
 	m.workers[profile] = w
+	// Add to the WaitGroup before starting the goroutine and under the same
+	// lock that guards the closed check, so Add is never called once Close's
+	// Wait has begun.
+	m.wg.Add(1)
 	m.mu.Unlock()
 	// The worker runs on the manager's context, not any request context, so it
 	// survives the request that created it and keeps draining its profile's
@@ -139,6 +157,7 @@ func (m *FlushManager) ensureWorker(profile string) *profileFlushWorker {
 }
 
 func (m *FlushManager) runWorker(w *profileFlushWorker) {
+	defer m.wg.Done()
 	ctx := m.ctx
 	for {
 		job := m.popPending(w.profile)
@@ -206,20 +225,41 @@ func (m *FlushManager) process(ctx context.Context, w *profileFlushWorker, job *
 }
 
 func (w *profileFlushWorker) service(ctx context.Context) (VaultService, error) {
+	// w.svc is read and written under the manager lock so Close() (which reads
+	// it under the same lock) never observes a torn value or a service assigned
+	// after shutdown.
+	w.mgr.mu.Lock()
 	if w.svc != nil {
+		w.mgr.mu.Unlock()
 		return w.svc, nil
+	}
+	closed := w.mgr.closed
+	w.mgr.mu.Unlock()
+	if closed {
+		return nil, ErrVaultClosed
 	}
 	svc, err := w.mgr.cfg.Service(w.profile)
 	if err != nil {
 		return nil, err
 	}
+	w.mgr.mu.Lock()
+	if w.mgr.closed {
+		// Shut down while the service was being built: never publish it, close
+		// it immediately, and report shutdown so the caller stops cleanly.
+		w.mgr.mu.Unlock()
+		_ = svc.Close()
+		return nil, ErrVaultClosed
+	}
 	w.svc = svc
+	w.mgr.mu.Unlock()
 	return svc, nil
 }
 
-// Close releases every per-profile worker's VaultService, cancels the manager
-// context (stopping each worker goroutine), and prevents further Enqueue. Safe
-// to call more than once.
+// Close stops every per-profile worker and releases held services. It marks
+// still-queued jobs failed (so agents polling vault_flush_status never hang),
+// cancels the manager context, joins each worker goroutine, and only then
+// closes the services it was using (no use-after-close). Prevents further
+// Enqueue. Safe to call more than once.
 func (m *FlushManager) Close() {
 	m.mu.Lock()
 	if m.closed {
@@ -229,11 +269,25 @@ func (m *FlushManager) Close() {
 	m.closed = true
 	workers := m.workers
 	m.workers = map[string]*profileFlushWorker{}
+	// Mark queued (never-started) jobs failed so a polling agent's
+	// vault_flush_status resolves instead of hanging on "queued" forever.
+	for _, q := range m.pending {
+		for _, j := range q {
+			j.Status = FlushJobFailed
+			j.Error = "flush manager closed"
+			if j.done != nil {
+				close(j.done)
+			}
+		}
+	}
+	m.pending = map[string][]*FlushJob{}
 	cancel := m.cancel
 	m.mu.Unlock()
-	// Cancel after dropping the lock so in-flight workers draining their queue
-	// can still observe jobs; the selected ctx is the manager's own.
+
 	cancel()
+	// Join in-flight workers BEFORE closing their services, so a worker can
+	// never be mid-process() touching a concurrently closed service.
+	m.wg.Wait()
 	for _, w := range workers {
 		if w.svc != nil {
 			_ = w.svc.Close()
