@@ -362,6 +362,309 @@ func formPost(values map[string]string) *http.Request {
 	return req
 }
 
+func TestASMetadataAdvertisesCIMD(t *testing.T) {
+	o := newTestOAuth(t)
+	req := httptest.NewRequest(http.MethodGet, "/.well-known/oauth-authorization-server", nil)
+	rec := httptest.NewRecorder()
+	o.AsMetadataHandler(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var doc map[string]any
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&doc))
+	assert.Equal(t, true, doc["client_id_metadata_document_supported"])
+	assert.Contains(t, doc["token_endpoint_auth_methods_supported"].([]any), "none")
+}
+
+func TestIsCIMDClientID(t *testing.T) {
+	tests := []struct {
+		clientID string
+		want     bool
+	}{
+		{"https://claude.ai/oauth/mcp-oauth-client-metadata", true},
+		{"https://claude.ai/oauth/claude-code-client-metadata", true},
+		{"https://vscode.dev/oauth/client-metadata.json", true},
+		{"http://localhost:8080/.well-known/oauth-client-metadata", true},
+		{"http://127.0.0.1:9090/metadata", true},
+		{"client_abc123", false},
+		{"http://localhost/oauth/metadata", true},
+		{"http://attacker.com/metadata", false},
+		{"https://example.com", false},
+		{"https://example.com/", false},
+		{"", false},
+		{"not a url", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.clientID, func(t *testing.T) {
+			assert.Equal(t, tt.want, isCIMDClientID(tt.clientID))
+		})
+	}
+}
+
+func TestMatchRedirectURI_LoopbackPortAgnostic(t *testing.T) {
+	tests := []struct {
+		name       string
+		registered []string
+		requested  string
+		want       bool
+	}{
+		{
+			name:       "loopback different port accepted",
+			registered: []string{"http://localhost/callback"},
+			requested:  "http://localhost:61264/callback",
+			want:       true,
+		},
+		{
+			name:       "loopback 127.0.0.1 different port",
+			registered: []string{"http://127.0.0.1/callback"},
+			requested:  "http://127.0.0.1:8080/callback",
+			want:       true,
+		},
+		{
+			name:       "loopback exact match",
+			registered: []string{"http://localhost/callback"},
+			requested:  "http://localhost/callback",
+			want:       true,
+		},
+		{
+			name:       "loopback different path rejected",
+			registered: []string{"http://localhost/callback"},
+			requested:  "http://localhost:8080/different",
+			want:       false,
+		},
+		{
+			name:       "non-loopback exact match required",
+			registered: []string{"https://claude.ai/api/mcp/auth_callback"},
+			requested:  "https://claude.ai/api/mcp/auth_callback",
+			want:       true,
+		},
+		{
+			name:       "non-loopback different host rejected",
+			registered: []string{"https://claude.ai/api/mcp/auth_callback"},
+			requested:  "https://evil.com/api/mcp/auth_callback",
+			want:       false,
+		},
+		{
+			name:       "loopback different scheme rejected",
+			registered: []string{"http://localhost/callback"},
+			requested:  "https://localhost:8080/callback",
+			want:       false,
+		},
+		{
+			name:       "empty registered",
+			registered: []string{},
+			requested:  "http://localhost/callback",
+			want:       false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, matchRedirectURI(tt.registered, tt.requested))
+		})
+	}
+}
+
+func TestCIMDFetchAndAuthorize(t *testing.T) {
+	cimdClientID := ""
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-client-metadata", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"client_id": "` + cimdClientID + `",
+			"client_name": "Test Client",
+			"redirect_uris": ["http://localhost/callback"],
+			"grant_types": ["authorization_code", "refresh_token"],
+			"response_types": ["code"],
+			"token_endpoint_auth_method": "none"
+		}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cimdClientID = srv.URL + "/.well-known/oauth-client-metadata"
+
+	o := newTestOAuth(t)
+
+	_, challenge := testPKCE()
+	authURL := "/oauth/authorize?response_type=code" +
+		"&client_id=" + url.QueryEscape(cimdClientID) +
+		"&redirect_uri=" + url.QueryEscape("http://localhost:9999/callback") +
+		"&code_challenge=" + challenge +
+		"&code_challenge_method=S256" +
+		"&state=st" +
+		"&resource=" + url.QueryEscape("https://mcp.example.com/mcp")
+
+	rec := httptest.NewRecorder()
+	o.AuthorizeGET(rec, httptest.NewRequest(http.MethodGet, authURL, nil))
+	assert.Equal(t, http.StatusOK, rec.Code, "authorize GET should succeed for CIMD client")
+	assert.Contains(t, rec.Body.String(), "auth secret")
+
+	rec = httptest.NewRecorder()
+	o.AuthorizePOST(rec, formPost(map[string]string{
+		"response_type":        "code",
+		"client_id":            cimdClientID,
+		"redirect_uri":         "http://localhost:9999/callback",
+		"state":                "st",
+		"password":             testSecret,
+		"code_challenge":        challenge,
+		"code_challenge_method": "S256",
+		"resource":             "https://mcp.example.com/mcp",
+	}))
+	require.Equal(t, http.StatusFound, rec.Code, "authorize POST should redirect with code for CIMD client")
+	loc, err := url.Parse(rec.Header().Get("Location"))
+	require.NoError(t, err)
+	code := loc.Query().Get("code")
+	require.NotEmpty(t, code)
+	assert.Equal(t, "st", loc.Query().Get("state"))
+	assert.Equal(t, "http://localhost:9999/callback", loc.Scheme+"://"+loc.Host+loc.Path)
+
+	o.mu.Lock()
+	_, registered := o.clients[cimdClientID]
+	o.mu.Unlock()
+	assert.True(t, registered, "CIMD client should be registered in memory after authorize")
+}
+
+func TestCIMDCacheTTL(t *testing.T) {
+	cimdClientID := ""
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/oauth-client-metadata", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"client_id": "` + cimdClientID + `",
+			"client_name": "Test Client",
+			"redirect_uris": ["http://localhost/callback"],
+			"token_endpoint_auth_method": "none"
+		}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cimdClientID = srv.URL + "/.well-known/oauth-client-metadata"
+
+	o := newTestOAuth(t)
+
+	_, err := o.resolveCIMDClient(cimdClientID)
+	require.NoError(t, err)
+
+	o.cimdCacheMu.Lock()
+	entry, ok := o.cimdCache[cimdClientID]
+	o.cimdCacheMu.Unlock()
+	require.True(t, ok)
+	assert.NotEmpty(t, entry.client.redirectURIs)
+
+	entry.fetchedAt = time.Now().Add(-cimdCacheTTL - time.Second)
+	o.cimdCacheMu.Lock()
+	o.cimdCache[cimdClientID] = entry
+	o.cimdCacheMu.Unlock()
+
+	_, err = o.resolveCIMDClient(cimdClientID)
+	require.NoError(t, err)
+}
+
+func TestCIMDRejectsClientIDMismatch(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/metadata", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"client_id": "https://different-url.example.com/metadata",
+			"client_name": "Spoofed",
+			"redirect_uris": ["http://localhost/callback"],
+			"token_endpoint_auth_method": "none"
+		}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cimdURL := srv.URL + "/metadata"
+
+	o := newTestOAuth(t)
+	_, err := o.resolveCIMDClient(cimdURL)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "does not match")
+}
+
+func TestCIMDRejectsUnsupportedAuthMethod(t *testing.T) {
+	cimdClientID := ""
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/metadata", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"client_id": "` + cimdClientID + `",
+			"client_name": "Confidential",
+			"redirect_uris": ["http://localhost/callback"],
+			"token_endpoint_auth_method": "client_secret_basic"
+		}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cimdClientID = srv.URL + "/metadata"
+
+	o := newTestOAuth(t)
+	_, err := o.resolveCIMDClient(cimdClientID)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported token_endpoint_auth_method")
+}
+
+func TestCIMDFullFlowThroughTokenExchange(t *testing.T) {
+	cimdClientID := ""
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/metadata", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"client_id": "` + cimdClientID + `",
+			"client_name": "Claude Code",
+			"redirect_uris": ["http://localhost/callback", "http://127.0.0.1/callback"],
+			"grant_types": ["authorization_code", "refresh_token"],
+			"response_types": ["code"],
+			"token_endpoint_auth_method": "none"
+		}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	cimdClientID = srv.URL + "/metadata"
+
+	o := newTestOAuth(t)
+	verifier, challenge := testPKCE()
+	const res = "https://mcp.example.com/mcp"
+
+	rec := httptest.NewRecorder()
+	o.AuthorizePOST(rec, formPost(map[string]string{
+		"response_type":        "code",
+		"client_id":            cimdClientID,
+		"redirect_uri":         "http://localhost:12345/callback",
+		"state":                "st",
+		"password":             testSecret,
+		"code_challenge":        challenge,
+		"code_challenge_method": "S256",
+		"resource":             res,
+	}))
+	require.Equal(t, http.StatusFound, rec.Code, "CIMD authorize should succeed with loopback port mismatch")
+	loc, _ := url.Parse(rec.Header().Get("Location"))
+	code := loc.Query().Get("code")
+	require.NotEmpty(t, code)
+
+	rec = httptest.NewRecorder()
+	o.TokenHandler(rec, formPost(map[string]string{
+		"grant_type":    "authorization_code",
+		"code":          code,
+		"client_id":     cimdClientID,
+		"redirect_uri":  "http://localhost:12345/callback",
+		"code_verifier": verifier,
+		"resource":      res,
+	}))
+	require.Equal(t, http.StatusOK, rec.Code, "CIMD token exchange should succeed")
+	var tok map[string]any
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&tok))
+	require.NotEmpty(t, tok["access_token"])
+	assert.Equal(t, "Bearer", tok["token_type"])
+	require.NotEmpty(t, tok["refresh_token"])
+}
+
 // TestOAuthRefreshReuseTolerated guards the Anthropic Claude failure mode: the
 // connector can re-present the same refresh token while it persists the
 // rotated successor. With the durable store's reuse-detection window, that

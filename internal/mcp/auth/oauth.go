@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -64,11 +65,31 @@ type OAuthServer struct {
 	// logger logs authorization events. It defaults to the shared package
 	// logger and can be replaced via WithLogger.
 	logger *zap.Logger
+
+	// cimdCache stores fetched CIMD client metadata documents keyed by URL.
+	// TTL-bounded so a restarted client that rotates its metadata document
+	// is picked up without a process restart.
+	cimdCache   map[string]cimdEntry
+	cimdCacheMu sync.Mutex
 }
 
 type oauthClient struct {
 	redirectURIs []string
 }
+
+// cimdEntry is a cached CIMD metadata document with an expiry.
+type cimdEntry struct {
+	client   oauthClient
+	fetchedAt time.Time
+}
+
+// cimdCacheTTL is how long a fetched CIMD document stays fresh before the
+// server re-fetches on next use.
+const cimdCacheTTL = 5 * time.Minute
+
+// cimdFetchTimeout bounds the outbound HTTP GET so a slow or hostile host
+// cannot stall the authorize flow.
+const cimdFetchTimeout = 10 * time.Second
 
 type authorizationCode struct {
 	clientID            string
@@ -92,7 +113,8 @@ func NewOAuthServer(secret, BaseURL string, store *oauthstore.Store) *OAuthServe
 		codeTTL:   10 * time.Minute,
 		clockSkew: 2 * time.Minute,
 		done:      make(chan struct{}),
-		logger:   log,
+		logger:    log,
+		cimdCache: make(map[string]cimdEntry),
 	}
 	// Repopulate the in-memory client registry from the durable store so a
 	// previously-registered client can complete a fresh authorization-code login
@@ -183,7 +205,7 @@ func (o *OAuthServer) AsMetadataHandler(w http.ResponseWriter, r *http.Request) 
 		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
 		"token_endpoint_auth_methods_supported": []string{"none"},
 		"code_challenge_methods_supported":      []string{"S256"},
-		"client_id_metadata_document_supported": false,
+		"client_id_metadata_document_supported": true,
 		"scopes_supported":                      []string{"offline_access"},
 	}
 	writeJSON(w, http.StatusOK, doc)
@@ -252,7 +274,18 @@ func (o *OAuthServer) validateAuthorizeRequest(q url.Values) error {
 			o.mu.Unlock()
 		}
 	}
-	if !ok || !contains(client.redirectURIs, redirectURI) {
+	if !ok && isCIMDClientID(clientID) {
+		cimdClient, err := o.resolveCIMDClient(clientID)
+		if err != nil {
+			return fmt.Errorf("could not resolve client metadata: %w", err)
+		}
+		o.mu.Lock()
+		o.clients[clientID] = cimdClient
+		o.mu.Unlock()
+		client = cimdClient
+		ok = true
+	}
+	if !ok || !matchRedirectURI(client.redirectURIs, redirectURI) {
 		return fmt.Errorf("unregistered client or redirect_uri")
 	}
 	if q.Get("code_challenge_method") != "S256" || q.Get("code_challenge") == "" {
@@ -429,6 +462,141 @@ func allowedClientRedirect(redirectURI string) bool {
 		return true
 	}
 	return allowedRedirect(redirectURI)
+}
+
+// isCIMDClientID reports whether clientID is a URL-form client identifier
+// that the server should resolve as a CIMD document. Per the spec the URL
+// must use https and contain a path component. http is accepted for loopback
+// hosts so development and test environments can exercise the CIMD path
+// without provisioning TLS certificates.
+func isCIMDClientID(clientID string) bool {
+	u, err := url.Parse(clientID)
+	if err != nil {
+		return false
+	}
+	if u.Host == "" || u.Path == "" || u.Path == "/" {
+		return false
+	}
+	switch u.Scheme {
+	case "https":
+		return true
+	case "http":
+		switch u.Hostname() {
+		case "localhost", "127.0.0.1", "::1":
+			return true
+		}
+	}
+	return false
+}
+
+// resolveCIMDClient fetches the client metadata document at the given HTTPS
+// URL, validates it, and returns the redirect URIs. Results are cached for
+// cimdCacheTTL so repeated authorize requests from the same client within
+// the window do not re-fetch.
+func (o *OAuthServer) resolveCIMDClient(clientID string) (oauthClient, error) {
+	o.cimdCacheMu.Lock()
+	if entry, ok := o.cimdCache[clientID]; ok {
+		if time.Since(entry.fetchedAt) < cimdCacheTTL {
+			o.cimdCacheMu.Unlock()
+			return entry.client, nil
+		}
+	}
+	o.cimdCacheMu.Unlock()
+
+	client := &http.Client{
+		Timeout: cimdFetchTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	resp, err := client.Get(clientID)
+	if err != nil {
+		o.logf().Warn("CIMD fetch failed", zap.String("client_id", clientID), zap.Error(err))
+		return oauthClient{}, fmt.Errorf("could not fetch client metadata document")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		o.logf().Warn("CIMD fetch returned non-200", zap.String("client_id", clientID), zap.Int("status", resp.StatusCode))
+		return oauthClient{}, fmt.Errorf("client metadata document returned HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err != nil {
+		return oauthClient{}, fmt.Errorf("could not read client metadata document")
+	}
+
+	var doc struct {
+		ClientID                string   `json:"client_id"`
+		ClientName             string   `json:"client_name"`
+		RedirectURIs            []string `json:"redirect_uris"`
+		TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return oauthClient{}, fmt.Errorf("invalid client metadata document JSON")
+	}
+	if doc.ClientID != clientID {
+		o.logf().Warn("CIMD client_id mismatch", zap.String("expected", clientID), zap.String("got", doc.ClientID))
+		return oauthClient{}, fmt.Errorf("client_id in metadata document does not match the request URL")
+	}
+	if len(doc.RedirectURIs) == 0 {
+		return oauthClient{}, fmt.Errorf("client metadata document has no redirect_uris")
+	}
+
+	if doc.TokenEndpointAuthMethod != "" && doc.TokenEndpointAuthMethod != "none" {
+		return oauthClient{}, fmt.Errorf("client metadata requires unsupported token_endpoint_auth_method: %s", doc.TokenEndpointAuthMethod)
+	}
+
+	oc := oauthClient{redirectURIs: doc.RedirectURIs}
+	o.cimdCacheMu.Lock()
+	o.cimdCache[clientID] = cimdEntry{client: oc, fetchedAt: time.Now()}
+	o.cimdCacheMu.Unlock()
+	return oc, nil
+}
+
+// matchRedirectURI reports whether the requested redirect_uri is allowed for
+// the given registered URIs. For loopback redirect URIs (localhost, 127.0.0.1,
+// ::1), any port is accepted per RFC 8252 §7.3, because native clients like
+// Claude Code use an OS-assigned port at runtime. For non-loopback URIs, an
+// exact match is required.
+func matchRedirectURI(registered []string, requested string) bool {
+	parsedReq, err := url.Parse(requested)
+	if err != nil {
+		return false
+	}
+
+	for _, reg := range registered {
+		if reg == requested {
+			return true
+		}
+		parsedReg, err := url.Parse(reg)
+		if err != nil {
+			continue
+		}
+
+		if isLoopbackRedirectURI(parsedReg) && isLoopbackRedirectURI(parsedReq) {
+			parsedRegCopy := *parsedReg
+			parsedReqCopy := *parsedReq
+			parsedRegCopy.Host = parsedReg.Hostname()
+			parsedReqCopy.Host = parsedReq.Hostname()
+			if parsedRegCopy.String() == parsedReqCopy.String() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isLoopbackRedirectURI reports whether the parsed URL uses a loopback host.
+func isLoopbackRedirectURI(u *url.URL) bool {
+	if u == nil {
+		return false
+	}
+	switch u.Hostname() {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	return false
 }
 
 // tokenHandler exchanges an authorization code or refresh token for tokens.
