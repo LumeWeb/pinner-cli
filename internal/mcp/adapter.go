@@ -814,6 +814,10 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 		}
 		as = newAS
 		oauth = auth.NewOAuthServer(authToken, baseURL, as, store).WithLogger(log)
+		// Register the /mcp protected resource with the AS so authorize requests
+		// resource-bound to the loopback origin validate and protected-resource
+		// metadata is served from the registry.
+		oauth.RegisterMCPResource()
 	}
 
 	// Serve the streamable-HTTP handler over our own http.Server bound to
@@ -1084,6 +1088,9 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 				shutdown(context.Background())
 				return fmt.Errorf("repoint oauth issuer to tunnel URL: %w", err)
 			}
+			// Re-register the protected resource at the public origin so its
+			// metadata (and resource validation) tracks the tunnel URL.
+			oauth.RegisterMCPResource()
 		}
 		if provider == "openai" {
 			fmt.Printf("OpenAI Secure MCP Tunnel ID: %s\n", tunnelID)

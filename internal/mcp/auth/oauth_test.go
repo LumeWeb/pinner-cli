@@ -104,6 +104,7 @@ func TestOAuthASMetadata(t *testing.T) {
 
 func TestOAuthProtectedResourceMetadata(t *testing.T) {
 	o := newTestOAuth(t)
+	o.RegisterMCPResource()
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/oauth-protected-resource", nil)
 	rec := httptest.NewRecorder()
 	o.ProtectedResourceHandler("/mcp")(rec, req)
@@ -113,6 +114,8 @@ func TestOAuthProtectedResourceMetadata(t *testing.T) {
 	require.NoError(t, json.NewDecoder(rec.Body).Decode(&doc))
 	assert.Equal(t, "https://mcp.example.com/mcp", doc["resource"])
 	assert.Equal(t, []any{"https://mcp.example.com"}, doc["authorization_servers"])
+	assert.Equal(t, []any{"offline_access"}, doc["scopes_supported"])
+	assert.Equal(t, "Pinner MCP", doc["resource_name"])
 }
 
 func TestOAuthAuthorizeGET(t *testing.T) {
