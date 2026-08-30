@@ -25,6 +25,8 @@ Domain source (step 4):
     pass {"source": "platform_subdomain", "label": "<label>"}. The wizard checks availability
     and builds the exact FQDN (label.root). Only use this when the user named a label.
   - User owns a custom domain: pass {"domain": "<user's domain>"}.
+    Custom domains default to namespace icann (traditional DNS). For a Handshake
+    (alt-root) name such as acme/, pass {"domain": "<name>", "namespace": "hns"}.
     Only use when the user explicitly provided a domain they own.
   - Do not infer a desire for custom naming from a generic request to create or publish
     a website.
@@ -92,6 +94,10 @@ Determine how the user wants to address the website:
     Only use this path when the user explicitly named a label.
   - Own domain: ask for their domain name (e.g. example.com) and pass
     {"domain": "<domain>"} (custom is inferred when a domain is given).
+    If it is a Handshake (alt-root) name (e.g. acme/), also pass
+    {"namespace": "hns"}; otherwise omit namespace (defaults to icann).
+    After create, read pinner://websites/<domain>/dns-requirements — for HNS it
+    renders the records to publish on-chain in the HNS wallet (parent NS/DS/GLUE).
 {{end}}
 
 {{define "website_step_dns_mode_filled"}}Step: dns_mode

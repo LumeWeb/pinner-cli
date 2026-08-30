@@ -21,6 +21,7 @@ type WebsitesWizard struct {
 
 	cid              string
 	domain           string
+	namespace        string
 	domainSource     string
 	targetType       string
 	dnsHosting       bool
@@ -156,6 +157,11 @@ func (w *WebsitesWizard) executeCreateWebsite(ctx context.Context) error {
 	} else {
 		domain := w.Domain()
 		req.Domain = &domain
+		// Namespace on the custom-domain path (default icann; hns for a
+		// Handshake/alt-root name).
+		if ns := w.Namespace(); ns != "" {
+			req.Namespace = &ns
+		}
 		req.DnsHostingEnabled = &dnsHosting
 	}
 
@@ -213,6 +219,9 @@ func (w *WebsitesWizard) CID() string { return w.cid }
 // Domain returns the domain name.
 func (w *WebsitesWizard) Domain() string { return w.domain }
 
+// Namespace returns the custom domain's DNS namespace (icann or hns).
+func (w *WebsitesWizard) Namespace() string { return w.namespace }
+
 // DomainSource returns how the domain is obtained: "platform_subdomain" or
 // "custom_domain".
 func (w *WebsitesWizard) DomainSource() string { return w.domainSource }
@@ -260,6 +269,9 @@ func (w *WebsitesWizard) SetCID(cid string) { w.cid = cid }
 
 // SetDomain sets the domain name.
 func (w *WebsitesWizard) SetDomain(domain string) { w.domain = domain }
+
+// SetNamespace sets the custom domain's DNS namespace (icann or hns).
+func (w *WebsitesWizard) SetNamespace(ns string) { w.namespace = ns }
 
 // SetDomainSource sets how the domain is obtained.
 func (w *WebsitesWizard) SetDomainSource(source string) { w.domainSource = source }

@@ -56,6 +56,7 @@ func (c *testCatalog) Get(name string) (*model.ToolEntry, bool) {
 type testWebsitesWizard struct {
 	cid              string
 	domain           string
+	namespace        string
 	domainSource     string
 	targetType       string
 	dnsHosting       bool
@@ -74,6 +75,7 @@ type testWebsitesWizard struct {
 
 func (w *testWebsitesWizard) CID() string                { return w.cid }
 func (w *testWebsitesWizard) Domain() string             { return w.domain }
+func (w *testWebsitesWizard) Namespace() string          { return w.namespace }
 func (w *testWebsitesWizard) DNSHosting() bool           { return w.dnsHosting }
 func (w *testWebsitesWizard) TargetType() string         { return w.targetType }
 func (w *testWebsitesWizard) Website() *ipfs.WebsiteItem { return w.website }
@@ -82,6 +84,7 @@ func (w *testWebsitesWizard) ValidationResult() *ipfs.WebsiteValidateResponse {
 }
 func (w *testWebsitesWizard) SetCID(v string)                { w.cid = v }
 func (w *testWebsitesWizard) SetDomain(v string)             { w.domain = v }
+func (w *testWebsitesWizard) SetNamespace(v string)          { w.namespace = v }
 func (w *testWebsitesWizard) SetDNSHosting(v bool)           { w.dnsHosting = v }
 func (w *testWebsitesWizard) SetTargetType(v string)         { w.targetType = v }
 func (w *testWebsitesWizard) SetWebsite(v *ipfs.WebsiteItem) { w.website = v }
@@ -595,6 +598,55 @@ func TestWebsitesWizard_FullSession(t *testing.T) {
 	// Session should report complete.
 	resp = wizard.BuildStepResponseForTest(sess)
 	assert.True(t, resp.Complete)
+}
+
+// TestWebsitesWizard_HNSCustomDomain guards first-class Handshake (alt-root)
+// support in the guided website wizard: choosing namespace=hns on a custom
+// domain threads the hns namespace through to the websites_create request.
+func TestWebsitesWizard_HNSCustomDomain(t *testing.T) {
+	t.Parallel()
+
+	cfgMgr := newConfigMgr(t, true)
+	websitesSvc := &mockWebsitesSvc{}
+	store := session.NewSessionStore()
+
+	deps := wizard.WebsitesWizardDeps{
+		WebsitesFactory:  testWebsitesFactory,
+		CfgMgr:           cfgMgr,
+		WebsitesService:  websitesSvc,
+		WebsitesResource: &mockWebsitesResource{},
+	}
+	sess, err := wizard.NewWebsitesSession(store, deps)
+	require.NoError(t, err)
+	require.NotEmpty(t, sess.ID)
+
+	assert.Equal(t, "auth_check", sess.FSM.Current())
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{}`))
+	require.NoError(t, err)
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"choice":"cid","cid":"QmTestHash123"}`))
+	require.NoError(t, err)
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"type":"ipfs"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "domain", sess.FSM.Current())
+
+	// Custom domain under the hns (Handshake) namespace.
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"domain":"acme","namespace":"hns"}`))
+	require.NoError(t, err)
+	assert.Equal(t, "dns_mode", sess.FSM.Current())
+
+	w := sess.State().(wizard.WebsitesWizardState)
+	assert.Equal(t, "acme", w.Domain())
+	assert.Equal(t, "hns", w.Namespace())
+
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"mode":"managed"}`))
+	require.NoError(t, err)
+	_, err = session.AdvanceSession(context.Background(), sess, json.RawMessage(`{"confirm":true}`))
+	require.NoError(t, err)
+
+	require.NotNil(t, websitesSvc.createCallReq)
+	assert.Equal(t, "acme", sOrEmpty(websitesSvc.createCallReq.Domain))
+	require.NotNil(t, websitesSvc.createCallReq.Namespace)
+	assert.Equal(t, "hns", *websitesSvc.createCallReq.Namespace)
 }
 
 func TestWebsitesWizard_PlatformSubdomainFlow(t *testing.T) {

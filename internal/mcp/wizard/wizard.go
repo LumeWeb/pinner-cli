@@ -209,6 +209,7 @@ func (v WebsitesDomainSourceValue) Valid() bool {
 type WebsitesDomainInput struct {
 	Source            WebsitesDomainSourceValue `json:"source,omitempty" jsonschema:"enum=platform_subdomain,enum=custom_domain,description=How the website domain is obtained. Defaults to platform_subdomain when no domain is given; defaults to custom_domain when a domain is supplied. If the user has no domain, use platform_subdomain."`
 	Domain            string                    `json:"domain,omitempty" jsonschema:"description=The custom domain (e.g. example.com) when source=custom_domain. Not needed for platform_subdomain: the wizard derives the platform root automatically (or use platform_domain to pin a specific root)."`
+	Namespace         NamespaceValue            `json:"namespace,omitempty" jsonschema:"enum=icann,enum=hns,description=The namespace of the custom domain when source=custom_domain: icann (traditional, default) or hns for a Handshake (alt-root) name like acme/."`
 	Label             string                    `json:"label,omitempty" jsonschema:"description=Explicit subdomain label under a platform root when source=platform_subdomain (e.g. myapp for myapp.<root>). Only use when the user has explicitly supplied or requested a specific label; otherwise prefer generate=true."`
 	Generate          bool                      `json:"generate,omitempty" jsonschema:"description=Ask the platform to auto-generate a subdomain label. This is the default when no label preference exists. The wizard derives the platform root automatically; no label or FQDN is needed."`
 	PlatformDomain    string                    `json:"platform_domain,omitempty" jsonschema:"description=Platform (free-subdomain) root domain to claim under (e.g. pinned.site). Defaults to domain when claiming."`
@@ -586,6 +587,18 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 					if in.Domain == "" {
 						return "", fmt.Errorf("domain cannot be empty when source=custom_domain")
 					}
+					// Namespace defaults to icann; hns selects a Handshake
+					// (alt-root) name. Only the custom-domain path carries a
+					// namespace — platform subdomains derive theirs from the
+					// platform root.
+					ns := in.Namespace
+					if ns == "" {
+						ns = NamespaceICANN
+					}
+					if !ns.Valid() {
+						return "", fmt.Errorf("invalid namespace: %s (expected \"icann\" or \"hns\")", ns)
+					}
+					w.SetNamespace(string(ns))
 					if err := machine.MarkClaimed(in.Domain); err != nil {
 						return "", err
 					}
@@ -735,6 +748,11 @@ func buildWebsitesSteps(deps WebsitesWizardDeps) []session.StepDef {
 					}
 					domain := w.Domain()
 					req.Domain = &domain
+					// Namespace is set on the custom-domain path (default icann,
+					// hns for a Handshake/alt-root name).
+					if ns := w.Namespace(); ns != "" {
+						req.Namespace = &ns
+					}
 					req.DnsHostingEnabled = &dnsHosting
 				}
 				machine := NewWebsiteStateMachine(w)
