@@ -799,6 +799,10 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 		// The shared authorization server treats the MCP endpoint itself as
 		// the RFC 8707 resource, so its issuer is the base URL plus /mcp.
 		oauthCfg := oauthlib.DefaultConfig()
+		// DefaultConfig keeps TokenTTL at 24h (and RefreshTTL at 30d), which
+		// preserves the resume-after-restart guarantee for non-refreshing
+		// connectors like Grok's rmcp/connectors-manager that treat a 401 as
+		// fatal: a still-valid 24h access token survives a restart.
 		oauthCfg.Issuer = strings.TrimRight(baseURL, "/") + "/mcp"
 		as, store, err := auth.OpenOAuthStore(oauthStorePath(), oauthCfg)
 		if err != nil {

@@ -320,14 +320,15 @@ func (o *OAuthServer) validateAuthorizeQuery(q url.Values) (oauth.AuthorizeReque
 	return req, o.as.ValidateAuthorizeRequest(req)
 }
 
-// ensureClient makes sure a CIMD-derived client_id is registered in the store
-// (or already present) so the library's client lookup succeeds. Non-CIMD
-// client IDs are left untouched for the library to reject.
+// ensureClient makes a CIMD-derived client_id resolvable by the shared
+// authorization server. CIMD clients are always run through the TTL-bounded
+// metadata resolve (resolveCIMDClient) and re-registered as active, so a
+// client deactivated by reap (see deactivateClient) is re-activated and any
+// rotated metadata document is picked up on the next authorize. Non-CIMD
+// client IDs are left untouched for the library to reject or accept on their
+// persisted registration.
 func (o *OAuthServer) ensureClient(clientID string) error {
 	if o.store == nil || clientID == "" {
-		return nil
-	}
-	if _, err := o.store.GetClient(clientID); err == nil {
 		return nil
 	}
 	if !isCIMDClientID(clientID) {

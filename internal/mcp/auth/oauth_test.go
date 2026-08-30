@@ -1006,6 +1006,66 @@ func TestCIMDCacheEvictionInReap(t *testing.T) {
 	assert.False(t, registeredAfter.IsActive, "expired CIMD client should be deactivated in the store")
 }
 
+// TestCIMDReactivatesAfterReap guards the CIMD TTL eviction path. When a CIMD
+// client's metadata cache entry expires, reap deactivates the client in the
+// store AND evicts the cache entry. The next authorize must re-resolve the
+// metadata document and re-activate the client, so a rotated document is picked
+// up and the flow still succeeds — not a permanent "client is inactive" reject.
+func TestCIMDReactivatesAfterReap(t *testing.T) {
+	cimdClientID := ""
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/metadata", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"client_id": "` + cimdClientID + `",
+			"client_name": "Claude Code",
+			"redirect_uris": ["http://localhost/callback"],
+			"token_endpoint_auth_method": "none"
+		}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	allowTestServerHost(t, srv.URL)
+	cimdClientID = srv.URL + "/metadata"
+
+	o := newTestOAuth(t)
+	_, challenge := testPKCE()
+	const res = "https://mcp.example.com/mcp"
+
+	// A successful authorize registers the CIMD client active and caches it.
+	require.NoError(t, o.ensureClient(cimdClientID))
+
+	// Expire the cache entry and reap: the client is deactivated in the store.
+	o.cimdCacheMu.Lock()
+	e := o.cimdCache[cimdClientID]
+	e.fetchedAt = time.Now().Add(-cimdCacheTTL - time.Second)
+	o.cimdCache[cimdClientID] = e
+	o.cimdCacheMu.Unlock()
+	o.reapLocked()
+
+	registered, err := o.store.GetClient(cimdClientID)
+	require.NoError(t, err)
+	assert.False(t, registered.IsActive, "precondition: CIMD client is deactivated by reap")
+
+	// The next authorize must re-resolve and re-activate instead of rejecting.
+	rec := httptest.NewRecorder()
+	o.AuthorizePOST(rec, formPost(map[string]string{
+		"response_type":        "code",
+		"client_id":            cimdClientID,
+		"redirect_uri":         "http://localhost:9999/callback",
+		"state":                "st",
+		"password":             testSecret,
+		"code_challenge":        challenge,
+		"code_challenge_method": "S256",
+		"resource":             res,
+	}))
+	require.Equal(t, http.StatusFound, rec.Code, "authorize must succeed after CIMD cache eviction re-activates the client")
+	loc, err := url.Parse(rec.Header().Get("Location"))
+	require.NoError(t, err)
+	require.NotEmpty(t, loc.Query().Get("code"))
+}
+
 // TestAccessTokenSurvivesServerRestart verifies the Grok fix: a connector (Grok's
 // rmcp/connectors-manager) that does NOT refresh on a 401 must be able to resume
 // after the server process restarts, because its still-unexpired access token is
