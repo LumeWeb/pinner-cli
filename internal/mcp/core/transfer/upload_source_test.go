@@ -77,18 +77,18 @@ func TestSourceResolverMintURL(t *testing.T) {
 	defer cu.Stop(context.Background())
 	res := &transfer.SourceResolver{Transport: transfer.TransportHTTP, HTTPUpload: cu}
 
-	url, err := res.MintURL(transfer.UploadSource{Mode: transfer.SourceMint}, "m.txt", time.Minute)
+	url, err := res.MintURL(context.Background(), transfer.UploadSource{Mode: transfer.SourceMint}, "m.txt", time.Minute)
 	require.NoError(t, err)
 	require.NotEmpty(t, url, "minted URL non-empty")
 
 	// Mint not valid off the HTTP transport.
 	res2 := &transfer.SourceResolver{Transport: transfer.TransportStdio, HTTPUpload: cu}
-	_, err = res2.MintURL(transfer.UploadSource{Mode: transfer.SourceMint}, "m.txt", time.Minute)
+	_, err = res2.MintURL(context.Background(), transfer.UploadSource{Mode: transfer.SourceMint}, "m.txt", time.Minute)
 	require.Error(t, err, "mint invalid in stdio")
 
 	// Missing coordinator.
 	res3 := &transfer.SourceResolver{Transport: transfer.TransportHTTP}
-	_, err = res3.MintURL(transfer.UploadSource{Mode: transfer.SourceMint}, "m.txt", time.Minute)
+	_, err = res3.MintURL(context.Background(), transfer.UploadSource{Mode: transfer.SourceMint}, "m.txt", time.Minute)
 	require.Error(t, err, "missing coordinator")
 }
 

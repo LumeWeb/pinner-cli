@@ -13,6 +13,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/core/vault"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/credctx"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transport"
 )
@@ -55,6 +56,11 @@ type vaultHTTPToken struct {
 	// call) and drained into the vault write when the out-of-band PUT arrives.
 	metadata  map[string]any
 	expiresAt time.Time
+	// jwt is the Portal API JWT captured at mint time and stamped (via credctx)
+	// onto the context handed to the vault write, so a hosted (Portal-embedded)
+	// vault upload authenticates as the calling user. Empty on the CLI/local
+	// path.
+	jwt string
 }
 
 // NewVaultHTTPUpload builds a vault presigned-upload coordinator. put is the
@@ -122,7 +128,7 @@ func (vu *VaultHTTPUpload) MaxBytes() int64 { return vu.maxByte }
 // a PUT to the minted endpoint can never write anywhere else in the vault. It
 // ensures the loopback listener is running in stdio mode so the URL is always
 // reachable.
-func (vu *VaultHTTPUpload) Mint(vaultPath string, ttl time.Duration, metadata map[string]any) (string, error) {
+func (vu *VaultHTTPUpload) Mint(ctx context.Context, vaultPath string, ttl time.Duration, metadata map[string]any) (string, error) {
 	if err := ValidateVaultFilePath(vaultPath); err != nil {
 		return "", err
 	}
@@ -141,7 +147,7 @@ func (vu *VaultHTTPUpload) Mint(vaultPath string, ttl time.Duration, metadata ma
 			delete(vu.tokens, t)
 		}
 	}
-	vu.tokens[token] = vaultHTTPToken{vaultPath: vaultPath, metadata: metadata, expiresAt: now.Add(ttl)}
+	vu.tokens[token] = vaultHTTPToken{vaultPath: vaultPath, metadata: metadata, expiresAt: now.Add(ttl), jwt: credctx.From(ctx)}
 	vu.mu.Unlock()
 	return vu.loopback.URLFor("vault-upload", token), nil
 }
@@ -192,7 +198,7 @@ func (vu *VaultHTTPUpload) putHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	vaultPath, metadata, ok := vu.claim(token)
+	vaultPath, metadata, jwt, ok := vu.claim(token)
 	if !ok {
 		http.Error(w, "invalid, expired, or already-used vault-upload endpoint", http.StatusNotFound)
 		return
@@ -208,8 +214,11 @@ func (vu *VaultHTTPUpload) putHandler(w http.ResponseWriter, r *http.Request) {
 	// Detach the vault write from the HTTP request context so a client
 	// disconnect (token refresh, host dispatcher death) does not cancel an
 	// in-flight vault write. The request body has already been received by
-	// the time vu.put reads it; the write must finish regardless.
-	transferCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), SyncUploadBudget(r.ContentLength))
+	// the time vu.put reads it; the write must finish regardless. Stamp the
+	// mint-time Portal API JWT (via credctx) so the vault write authenticates
+	// as the calling user on the hosted (Portal-embedded) path; jwt is ""
+	// (and the credctx read yields "") on the CLI/local path.
+	transferCtx, cancel := context.WithTimeout(credctx.With(context.WithoutCancel(r.Context()), jwt), SyncUploadBudget(r.ContentLength))
 	defer cancel()
 	result, err := vu.put(transferCtx, r.Body, r.ContentLength, vaultPath, metadata)
 	if err != nil {
@@ -233,13 +242,13 @@ func (vu *VaultHTTPUpload) putHandler(w http.ResponseWriter, r *http.Request) {
 // claim atomically validates and consumes a one-time vault-upload token. It
 // reports the bound vault path and its mint-time metadata, and false if the
 // token is unknown, expired, or already used.
-func (vu *VaultHTTPUpload) claim(token string) (string, map[string]any, bool) {
+func (vu *VaultHTTPUpload) claim(token string) (string, map[string]any, string, bool) {
 	vu.mu.Lock()
 	defer vu.mu.Unlock()
 	tkn, ok := vu.tokens[token]
 	if !ok || vu.now().After(tkn.expiresAt) {
-		return "", nil, false
+		return "", nil, "", false
 	}
 	delete(vu.tokens, token)
-	return tkn.vaultPath, tkn.metadata, true
+	return tkn.vaultPath, tkn.metadata, tkn.jwt, true
 }

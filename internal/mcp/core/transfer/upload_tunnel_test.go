@@ -37,7 +37,7 @@ func TestCORSOriginOpaqueNullTunnelMode(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	// Mint builds the URL from the tunnel base; the token lives in the path.
-	minted := cu.Mint("tunnel.bin", 0)
+	minted := cu.Mint(context.Background(), "tunnel.bin", 0)
 	if minted == "" {
 		t.Fatal("mint returned empty URL")
 	}

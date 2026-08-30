@@ -267,7 +267,7 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 						ttl = d
 					}
 				}
-				url, merr := vu.Mint(in.VaultPath, ttl, metadata)
+				url, merr := vu.Mint(ctx, in.VaultPath, ttl, metadata)
 				if merr != nil {
 					return model.ToolResult{}, merr
 				}

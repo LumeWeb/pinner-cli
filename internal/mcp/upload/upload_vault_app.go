@@ -81,7 +81,7 @@ func vaultUploadSubmitDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescrip
 			if req.Caps != nil && req.Caps.Profile != nil {
 				hostType = string(req.Caps.Profile.HostType)
 			}
-			url, err := vu.Mint(in.VaultPath, ttl, corevault.StampedMetadata("mcp", hostType, "", nil))
+			url, err := vu.Mint(ctx, in.VaultPath, ttl, corevault.StampedMetadata("mcp", hostType, "", nil))
 			if err != nil {
 				return model.ToolResult{}, err
 			}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/rs/cors"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/credctx"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transport"
 )
@@ -32,6 +33,11 @@ type httpToken struct {
 	expiresAt time.Time
 	used      bool
 	handle    string
+	// jwt is the Portal API JWT captured at mint time and carried on the
+	// context handed to the async upload executor (via credctx), so a hosted
+	// (Portal-embedded) upload authenticates as the calling user. Empty on the
+	// CLI/local path.
+	jwt string
 }
 
 // Upload is the one-time HTTP upload coordinator. The agent calls the
@@ -185,7 +191,7 @@ func (cu *Upload) RegisterHandlers(mux *http.ServeMux) {
 // mint registers a fresh one-time upload endpoint and returns its full URL. It
 // ensures the loopback listener is running in stdio mode so the URL is always
 // reachable.
-func (cu *Upload) Mint(name string, ttl time.Duration) string {
+func (cu *Upload) Mint(ctx context.Context, name string, ttl time.Duration) string {
 	if err := cu.loopback.EnsureLoopback(cu.RegisterHandlers); err != nil {
 		return ""
 	}
@@ -198,7 +204,7 @@ func (cu *Upload) Mint(name string, ttl time.Duration) string {
 	token := newHTTPToken()
 	cu.mu.Lock()
 	cu.pruneLocked()
-	cu.tokens[token] = httpToken{name: name, expiresAt: cu.now().Add(ttl)}
+	cu.tokens[token] = httpToken{name: name, expiresAt: cu.now().Add(ttl), jwt: credctx.From(ctx)}
 	cu.mu.Unlock()
 	return cu.loopback.URLFor("upload", token)
 }
@@ -215,7 +221,7 @@ func (cu *Upload) Mint(name string, ttl time.Duration) string {
 // the mint source records at mint time how the later PUT bytes are treated;
 // since the PUT itself carries raw bytes, the transformation is applied at
 // fulfillment from the value captured here.
-func (cu *Upload) Prepare(name string, ttl time.Duration, opts ...PrepareOption) (url, handle string) {
+func (cu *Upload) Prepare(ctx context.Context, name string, ttl time.Duration, opts ...PrepareOption) (url, handle string) {
 	if err := cu.loopback.EnsureLoopback(cu.RegisterHandlers); err != nil {
 		return "", ""
 	}
@@ -236,7 +242,7 @@ func (cu *Upload) Prepare(name string, ttl time.Duration, opts ...PrepareOption)
 	token := newHTTPToken()
 	cu.mu.Lock()
 	cu.pruneLocked()
-	cu.tokens[token] = httpToken{name: name, expiresAt: cu.now().Add(ttl), handle: h}
+	cu.tokens[token] = httpToken{name: name, expiresAt: cu.now().Add(ttl), handle: h, jwt: credctx.From(ctx)}
 	cu.byHandle[h] = token
 	cu.mu.Unlock()
 	return cu.loopback.URLFor("upload", token), h
@@ -316,7 +322,7 @@ func (cu *Upload) putHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	name, handle, ok := cu.claim(token)
+	name, handle, jwt, ok := cu.claim(token)
 	if !ok {
 		// Distinguish a spent/expired endpoint from one that never existed:
 		// both are unreachable, but the former already delivered its body and
@@ -332,8 +338,11 @@ func (cu *Upload) putHandler(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, cu.maxBytes)
 
 	// Detach the upload context so the async work outlives the HTTP request
-	// that started it; the manager's own execTimeout still bounds it.
-	ctx := context.WithoutCancel(r.Context())
+	// that started it; the manager's own execTimeout still bounds it. Stamp the
+	// mint-time Portal API JWT onto it so the executor authenticates as the
+	// calling user on the hosted (Portal-embedded) path; jwt is "" (and the
+	// credctx read yields "") on the CLI/local path.
+	ctx := credctx.With(context.WithoutCancel(r.Context()), jwt)
 
 	// Hand the upload a pipe reader (an io.ReadCloser) rather than r.Body, so
 	// the net/http server's post-return body cleanup never races the upload
@@ -401,12 +410,12 @@ func (cu *Upload) putHandler(w http.ResponseWriter, r *http.Request) {
 // PUT must fulfill. A used or expired token is rejected so a re-PUT cannot
 // re-enter the upload path with the same handle. It is single-use by
 // construction: once accepted, the token is marked used under the lock.
-func (cu *Upload) claim(token string) (name, handle string, ok bool) {
+func (cu *Upload) claim(token string) (name, handle, jwt string, ok bool) {
 	cu.mu.Lock()
 	defer cu.mu.Unlock()
 	t, exists := cu.tokens[token]
 	if !exists {
-		return "", "", false
+		return "", "", "", false
 	}
 	if t.used || cu.now().After(t.expiresAt) {
 		// Spent/expired endpoint: remove it so memory stays bounded and it can
@@ -415,7 +424,7 @@ func (cu *Upload) claim(token string) (name, handle string, ok bool) {
 		if t.handle != "" {
 			delete(cu.byHandle, t.handle)
 		}
-		return "", "", false
+		return "", "", "", false
 	}
 	t.used = true
 	cu.tokens[token] = t
@@ -424,7 +433,7 @@ func (cu *Upload) claim(token string) (name, handle string, ok bool) {
 	if t.handle != "" {
 		delete(cu.byHandle, t.handle)
 	}
-	return t.name, t.handle, true
+	return t.name, t.handle, t.jwt, true
 }
 
 // setNow overrides the clock used for expiry (test seam).

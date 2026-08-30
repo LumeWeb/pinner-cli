@@ -877,7 +877,7 @@ func TestOpenUploadManagerStaleHandleFallsBack(t *testing.T) {
 
 	// Valid live handle: continuing succeeds with the SAME endpoint and
 	// continued=true.
-	validURL, validHandle := cu.Prepare("stale.bin", transfer.DefaultHTTPUploadTTL)
+	validURL, validHandle := cu.Prepare(context.Background(), "stale.bin", transfer.DefaultHTTPUploadTTL)
 	if validURL == "" || validHandle == "" {
 		t.Fatalf("Prepare failed: url=%q handle=%q", validURL, validHandle)
 	}

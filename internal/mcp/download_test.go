@@ -24,7 +24,7 @@ func TestHTTPDownloadMintAndServe(t *testing.T) {
 	hd := transfer.NewHTTPDownload()
 	// Use a real loopback listener (stdio-style, baseURL empty) so the minted
 	// URL is reachable.
-	url, err := hd.Mint("report.pdf", 0, func(ctx context.Context, w io.Writer) error {
+	url, err := hd.Mint(context.Background(), "report.pdf", 0, func(ctx context.Context, w io.Writer) error {
 		_, err := w.Write([]byte("file payload"))
 		return err
 	}, 0)
@@ -51,7 +51,7 @@ func TestHTTPDownloadMintAndServe(t *testing.T) {
 
 func TestHTTPDownloadRejectsBadMethodAndUnknownToken(t *testing.T) {
 	hd := transfer.NewHTTPDownload()
-	url, err := hd.Mint("f.bin", 0, func(ctx context.Context, w io.Writer) error { return nil }, 0)
+	url, err := hd.Mint(context.Background(), "f.bin", 0, func(ctx context.Context, w io.Writer) error { return nil }, 0)
 	require.NoError(t, err)
 
 	// Unknown token → 404.
@@ -73,7 +73,7 @@ func TestHTTPDownloadExpiry(t *testing.T) {
 	hd := transfer.NewHTTPDownload()
 	frozen := time.Now()
 	hd.SetNow(func() time.Time { return frozen })
-	url, err := hd.Mint("f.bin", 0, func(ctx context.Context, w io.Writer) error {
+	url, err := hd.Mint(context.Background(), "f.bin", 0, func(ctx context.Context, w io.Writer) error {
 		_, _ = w.Write([]byte("x"))
 		return nil
 	}, time.Minute)
@@ -90,7 +90,7 @@ func TestHTTPDownloadExpiry(t *testing.T) {
 
 func TestHTTPDownloadSourceErrorFailures(t *testing.T) {
 	hd := transfer.NewHTTPDownload()
-	url, err := hd.Mint("bad.bin", 0, func(ctx context.Context, w io.Writer) error {
+	url, err := hd.Mint(context.Background(), "bad.bin", 0, func(ctx context.Context, w io.Writer) error {
 		return errors.New("source exploded")
 	}, 0)
 	require.NoError(t, err)
@@ -437,7 +437,7 @@ func TestVaultGetFileThreadsProfile(t *testing.T) {
 // token-gated filedrop GET route.
 func TestHTTPDownloadCORSReflectsDynamicSandboxOrigin(t *testing.T) {
 	hd := transfer.NewHTTPDownload()
-	url, err := hd.Mint("f.txt", 0, func(ctx context.Context, w io.Writer) error {
+	url, err := hd.Mint(context.Background(), "f.txt", 0, func(ctx context.Context, w io.Writer) error {
 		_, _ = w.Write([]byte("data"))
 		return nil
 	}, 0)
