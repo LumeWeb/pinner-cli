@@ -421,8 +421,10 @@ func interactiveLogin(ctx context.Context, authService auth.AuthService, output 
 	return nil
 }
 
-// defaultConfigManagerFactory creates a config manager using the default config path.
-func defaultConfigManagerFactory() (config.Manager, error) {
+// diskConfigManagerFactory creates a config manager using the default on-disk
+// config path. It is the concrete implementation backing the overridable
+// configManagerFactory var.
+func diskConfigManagerFactory() (config.Manager, error) {
 	configPath := config.DefaultConfigPath
 	cfgMgr, err := config.NewManager(configPath)
 	if err != nil {
@@ -432,6 +434,14 @@ func defaultConfigManagerFactory() (config.Manager, error) {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 	return cfgMgr, nil
+}
+
+// defaultConfigManagerFactory delegates to the overridable configManagerFactory
+// var so a hosted caller (BuildCatalogOpsDepsForHosted) can swap the factory
+// once at startup and have every catalog wiring closure resolve the hosted
+// config manager instead of reading from disk.
+func defaultConfigManagerFactory() (config.Manager, error) {
+	return configManagerFactory()
 }
 
 // defaultAuthServiceFactory creates an auth service with the given dependencies.
