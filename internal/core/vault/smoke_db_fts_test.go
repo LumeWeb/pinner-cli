@@ -1,3 +1,5 @@
+//go:build sqlite_fts5
+
 package vault
 
 import (
