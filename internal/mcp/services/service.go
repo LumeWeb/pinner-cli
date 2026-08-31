@@ -1,3 +1,5 @@
+//go:build !no_tunnel
+
 package services
 
 // This file defines the mcp↔service bridge surface. The lifecycle backend

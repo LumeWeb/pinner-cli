@@ -73,10 +73,10 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         # sqlite_fts5 is required to compile FTS5 into mattn/go-sqlite3 (vault
         # name search); without it the 0007 vault migration fails at runtime.
-        run: go build -v -tags sqlite_fts5 ./...
+        run: go build -v -tags "sqlite_fts5" ./...
 
       - name: Test
-        run: go test -v -count=1 ${{ matrix.race && '-race' || '' }} -tags sqlite_fts5 ./...
+        run: go test -v -count=1 ${{ matrix.race && '-race' || '' }} -tags "sqlite_fts5" ./...
 
   js:
     runs-on: ubuntu-latest
@@ -129,7 +129,7 @@ jobs:
       - name: Build pinner binary
         # sqlite_fts5 so the sunpeak e2e binary (exercised via `pinner mcp`)
         # can run the vault FTS5 migration like the shipped binary.
-        run: go build -tags sqlite_fts5 -o bin/pinner ./cmd/pinner
+        run: go build -tags "sqlite_fts5" -o bin/pinner ./cmd/pinner
 
       - name: Install test deps
         working-directory: tests/sunpeak
@@ -287,7 +287,7 @@ jobs:
       - name: Build pinner binary + integration test binary
         run: |
           mkdir -p dist
-          go build -tags sqlite_fts5 -o dist/pinner ./cmd/pinner
+          go build -tags "sqlite_fts5" -o dist/pinner ./cmd/pinner
           go test -tags "integration sqlite_fts5" -c -o dist/service-integration.test ./internal/service/
 
       - name: Run systemd user-service integration test
@@ -363,7 +363,7 @@ jobs:
         run: templ generate
 
       - name: Test with coverage
-        run: go test -v -race -tags sqlite_fts5 -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -v -race -tags "sqlite_fts5" -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Generate coverage report
         run: go tool cover -func=coverage.out

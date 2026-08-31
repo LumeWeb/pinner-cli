@@ -10,7 +10,7 @@ require (
 	github.com/a-h/templ v0.3.1020
 	github.com/avast/retry-go/v5 v5.0.0
 	github.com/cloudflare/cloudflare-go v0.117.0
-	github.com/cloudflare/cloudflared v0.0.0-20260814112252-733bfb939963
+	github.com/cloudflare/cloudflared v0.0.0-20260828153726-274888eb1e63
 	github.com/docker/go-units v0.5.0
 	github.com/gammazero/workerpool v1.2.1
 	github.com/ggwhite/go-masker v1.1.0
