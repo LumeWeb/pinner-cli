@@ -1,4 +1,4 @@
-.PHONY: build install clean generate
+.PHONY: build install clean generate templinstall mcpembed
 
 # A bare `make` must produce a binary, not just regenerate templ output.
 # generate was added above build, which silently made it (not build) the
@@ -46,12 +46,19 @@ LDFLAGS := -X '$(PKG).Version=$(VERSION)' \
 generate:
 	templ generate
 
+# templinstall installs the templ CLI used by `generate`, pinned to the version
+# declared in go.mod (github.com/a-h/templ). Runs from the repo root. Part of
+# `mcpembed` so a fresh checkout can regenerate templates without templ
+# pre-installed.
+templinstall:
+	go install github.com/a-h/templ/cmd/templ@v0.3.1020
+
 # jsbuild builds the MCP App JS bundles (packages/apps via tsdown) into
 # self-contained ESM files and copies them to internal/mcpapp/appsassets/dist/
 # so Go embeds them. Requires pnpm on PATH. Go build/test embed these bundles,
 # so jsbuild must run before any go build/test.
 jsbuild:
-	cd packages/apps && pnpm install --frozen-lockfile && pnpm build && cd ../.. && \
+	cd packages/apps && CI=true pnpm install --frozen-lockfile && pnpm build && cd ../.. && \
 	mkdir -p internal/mcpapp/appsassets/dist && \
 	cp packages/apps/dist/*.js internal/mcpapp/appsassets/dist/
 
@@ -62,13 +69,24 @@ jsbuild:
 cssbuild:
 	pnpm build:css
 
-build: generate jsbuild cssbuild
+# mcpembed regenerates everything the MCP embed surface depends on: installs
+# the templ CLI (templinstall), regenerates the templ *_templ.go files
+# (generate), builds the MCP App JS bundles (jsbuild, which runs
+# `pnpm install --frozen-lockfile` then `pnpm build`) and compiles the Tailwind
+# stylesheet (cssbuild). It is the single target that regenerates all
+# embeddable assets, and is what `go generate ./mcpembed` invokes. It is
+# declared .PHONY because a real source directory named mcpembed/ exists.
+# Must run before any go build/test so the go:embed directives pick up freshly
+# built assets.
+mcpembed: templinstall generate jsbuild cssbuild
+
+build: mcpembed
 	CGO_ENABLED=1 go build -tags="$(TAGS)" -ldflags="$(LDFLAGS)" -o pinner ./cmd/pinner
 
-install: generate jsbuild cssbuild
+install: mcpembed
 	CGO_ENABLED=1 go install -tags="$(TAGS)" -ldflags="$(LDFLAGS)" ./cmd/pinner
 
-test: jsbuild cssbuild
+test: mcpembed
 	go test -tags "$(TAGS)" ./...
 
 clean:
