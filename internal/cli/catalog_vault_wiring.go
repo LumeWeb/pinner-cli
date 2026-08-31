@@ -33,13 +33,14 @@ import (
 // wiring. The service getter reads the (test-overridable) vaultServiceFactory
 // var per invocation so tests that swap it keep working; the indexer URL is
 // resolved from config per invocation (never at package init).
-func vaultCatalogDeps() catalogops.VaultDeps {
+func vaultCatalogDeps(factory ...ConfigManagerFactory) catalogops.VaultDeps {
+	cfgFactory := resolveConfigFactory(factory...)
 	return catalogops.VaultDeps{
 		Service: func(profileName, indexerURL string) (vault.VaultService, error) {
 			return vaultServiceFactory(profileName, indexerURL)
 		},
 		ResolveIndexerURL: func() string {
-			cfgMgr, err := configManagerFactory()
+			cfgMgr, err := cfgFactory()
 			if err != nil {
 				return ""
 			}

@@ -9,18 +9,19 @@ import (
 // hosted (Portal-embedded) MCP server, pointed at the given config manager
 // instead of the on-disk config file.
 //
-// It overrides the package-level configManagerFactory so every catalog wiring
-// closure (catalogPinningDeps, catalogWebsitesDeps, etc.) resolves the hosted
-// config manager — never reading from disk. The override is set once at startup
-// and never restored: in a hosted process the CLI path is never active, so the
-// global swap is safe.
+// It threads the hosted config manager into the catalog wiring explicitly (via
+// buildCatalogOpsDeps) so every wiring closure (catalogPinningDeps,
+// catalogWebsitesDeps, etc.) resolves the hosted config manager — never reading
+// from disk — without mutating the package-level configManagerFactory. That
+// keeps standalone CLI command paths (pin/upload/config/setup) reading the
+// on-disk config no matter what a hosted process does in the same binary.
 //
 // Vault and admin domains are included for structural completeness but are
 // surface-disabled by mcpembed.SurfaceHosted (toInternal sets Vault/Admin to
 // false), so their closures are never invoked in a hosted assembly.
 func BuildCatalogOpsDepsForHosted(cfgMgr config.Manager) *mcpadapter.CatalogDepsBundle {
-	configManagerFactory = func() (config.Manager, error) {
+	hostedFactory := func() (config.Manager, error) {
 		return cfgMgr, nil
 	}
-	return buildCatalogOpsDeps()
+	return buildCatalogOpsDeps(hostedFactory)
 }

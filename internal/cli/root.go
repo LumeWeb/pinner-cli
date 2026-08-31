@@ -701,7 +701,7 @@ For more help on any command: pinner <command> --help`,
 		// websites, dns, ipns, api-keys, operations) goes LIVE for real
 		// invocations. The bundle resolves config and services lazily per
 		// request via buildCatalogOpsDeps, so live token reload is preserved.
-		mcpadapter.WithCatalogOps(buildCatalogOpsDeps),
+		mcpadapter.WithCatalogOps(func() *mcpadapter.CatalogDepsBundle { return buildCatalogOpsDeps() }),
 		// Enable the background continuous vault sync loop ("for any active
 		// vault") while the MCP server runs. Each tick resolves the active
 		// profiles) and drains each one's pending indexer events into its local

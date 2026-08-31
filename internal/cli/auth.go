@@ -436,12 +436,14 @@ func diskConfigManagerFactory() (config.Manager, error) {
 	return cfgMgr, nil
 }
 
-// defaultConfigManagerFactory delegates to the overridable configManagerFactory
-// var so a hosted caller (BuildCatalogOpsDepsForHosted) can swap the factory
-// once at startup and have every catalog wiring closure resolve the hosted
-// config manager instead of reading from disk.
+// defaultConfigManagerFactory is the on-disk config factory used by the CLI
+// command paths (pin/upload/download/config/auth/setup). It intentionally does
+// not route through the overridable configManagerFactory var: hosted assemblies
+// thread their own factory through the catalog wiring instead of swapping this
+// package-global, so CLI commands always read the user's on-disk config no
+// matter what a hosted process does.
 func defaultConfigManagerFactory() (config.Manager, error) {
-	return configManagerFactory()
+	return diskConfigManagerFactory()
 }
 
 // defaultAuthServiceFactory creates an auth service with the given dependencies.

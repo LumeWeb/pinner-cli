@@ -21,10 +21,11 @@ import (
 // catalogOperationsDeps builds catalogops.OperationsDeps with a live
 // OperationsService constructed per invocation (discard writer: handlers
 // return pure data, all rendering happens in renderOperationsResult).
-func catalogOperationsDeps() catalogops.OperationsDeps {
+func catalogOperationsDeps(factory ...ConfigManagerFactory) catalogops.OperationsDeps {
+	cfgFactory := resolveConfigFactory(factory...)
 	return catalogops.OperationsDeps{
 		Service: func(input map[string]any) operations.Service {
-			cfgMgr, err := configManagerFactory()
+			cfgMgr, err := cfgFactory()
 			if err != nil {
 				return nil
 			}

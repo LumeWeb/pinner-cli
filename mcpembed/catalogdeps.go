@@ -32,6 +32,10 @@ func NewCatalogDeps(apiEndpoint string, secure bool) (func() *mcp.CatalogDepsBun
 	if err != nil {
 		return nil, fmt.Errorf("mcpembed: create temp config dir: %w", err)
 	}
+	// The config manager reads its values from in-memory state after Load, so the
+	// backing temp dir is only needed during construction; drop it to avoid
+	// leaking a directory-plus-file into the process temp dir on every call.
+	defer os.RemoveAll(dir)
 	cfgPath := filepath.Join(dir, "config.yaml")
 	cfgMgr, err := config.NewManager(cfgPath)
 	if err != nil {

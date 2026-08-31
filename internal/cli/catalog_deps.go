@@ -28,19 +28,32 @@ import (
 // live. A domain whose deps are left nil degrades to operations that fail with
 // a clear "service unavailable" error at execution time, so the bundle can be
 // extended incrementally.
-func buildCatalogOpsDeps() *mcpadapter.CatalogDepsBundle {
+// resolveConfigFactory returns the effective config-manager factory for a
+// wiring call: the explicitly threaded factory when provided, otherwise the
+// package-level configManagerFactory var (the on-disk CLI path). Passing a
+// factory explicitly lets a hosted assembly scope its override to the catalog
+// wiring without mutating the package-global for every CLI command path.
+func resolveConfigFactory(factory ...ConfigManagerFactory) ConfigManagerFactory {
+	if len(factory) > 0 && factory[0] != nil {
+		return factory[0]
+	}
+	return configManagerFactory
+}
+
+func buildCatalogOpsDeps(factory ...ConfigManagerFactory) *mcpadapter.CatalogDepsBundle {
+	cfgFactory := resolveConfigFactory(factory...)
 	// The vault-setup domain (vault.create / vault.restore) reuses the vault
 	// deps and additionally needs the provisioning service. The vault deps are
 	// built as a base and the provisioner added so the hand-off operations
 	// drive create/restore out-of-band.
-	vaultSetupDeps := vaultCatalogDeps()
+	vaultSetupDeps := vaultCatalogDeps(cfgFactory)
 	vaultSetupDeps.Provisioner = func() *vault.Provisioner {
 		return vault.NewProvisioner()
 	}
 
 	return &mcpadapter.CatalogDepsBundle{
 		CfgMgr: func() config.Manager {
-			cfgMgr, err := configManagerFactory()
+			cfgMgr, err := cfgFactory()
 			if err != nil {
 				return nil
 			}
@@ -49,7 +62,7 @@ func buildCatalogOpsDeps() *mcpadapter.CatalogDepsBundle {
 		Auth: catalogops.AuthDeps{
 			// Live config manager: resolved per invocation, never frozen.
 			CfgMgr: func() config.Manager {
-				cfgMgr, err := configManagerFactory()
+				cfgMgr, err := cfgFactory()
 				if err != nil {
 					return nil
 				}
@@ -73,19 +86,19 @@ func buildCatalogOpsDeps() *mcpadapter.CatalogDepsBundle {
 				return cfgMgr.Config().AuthToken
 			},
 		},
-		Vault:      catalogops.VaultDeps(vaultCatalogDeps()),
+		Vault:      catalogops.VaultDeps(vaultCatalogDeps(cfgFactory)),
 		VaultSetup: catalogops.VaultDeps(vaultSetupDeps),
-		Pins:       catalogops.PinsDeps(catalogPinningDeps()),
-		Websites:   catalogops.WebsitesDeps(catalogWebsitesDeps()),
-		DNS:        catalogops.DNSDeps(catalogDNSDeps()),
-		IPNS:       catalogops.IPNSDeps(catalogIPNSDeps()),
-		ENS:        catalogops.ENSDeps(catalogENSDeps()),
-		APIKeys:    catalogops.APIKeysDeps(catalogAPIKeysDeps()),
-		Operations: catalogops.OperationsDeps(catalogOperationsDeps()),
+		Pins:       catalogops.PinsDeps(catalogPinningDeps(cfgFactory)),
+		Websites:   catalogops.WebsitesDeps(catalogWebsitesDeps(cfgFactory)),
+		DNS:        catalogops.DNSDeps(catalogDNSDeps(cfgFactory)),
+		IPNS:       catalogops.IPNSDeps(catalogIPNSDeps(cfgFactory)),
+		ENS:        catalogops.ENSDeps(catalogENSDeps(cfgFactory)),
+		APIKeys:    catalogops.APIKeysDeps(catalogAPIKeysDeps(cfgFactory)),
+		Operations: catalogops.OperationsDeps(catalogOperationsDeps(cfgFactory)),
 		Account: catalogops.AccountDeps{
 			// Live config manager: resolved per invocation, never frozen.
 			CfgMgr: func() config.Manager {
-				cfgMgr, err := configManagerFactory()
+				cfgMgr, err := cfgFactory()
 				if err != nil {
 					return nil
 				}
@@ -108,7 +121,7 @@ func buildCatalogOpsDeps() *mcpadapter.CatalogDepsBundle {
 		Admin: catalogops.AdminDeps{
 			// Live config manager shared with the rest of the bundle.
 			CfgMgr: func() config.Manager {
-				cfgMgr, err := configManagerFactory()
+				cfgMgr, err := cfgFactory()
 				if err != nil {
 					return nil
 				}
@@ -148,6 +161,6 @@ func buildCatalogOpsDeps() *mcpadapter.CatalogDepsBundle {
 
 // catalogENSDeps builds the catalogops.ENSDeps for the ENS operations. ENS
 // reuses the IPNS dependency graph (an ENS pointing is an IPNS key + publish).
-func catalogENSDeps() catalogops.ENSDeps {
-	return catalogops.ENSDeps{IPNS: catalogIPNSDeps()}
+func catalogENSDeps(factory ...ConfigManagerFactory) catalogops.ENSDeps {
+	return catalogops.ENSDeps{IPNS: catalogIPNSDeps(factory...)}
 }

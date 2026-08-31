@@ -37,17 +37,18 @@ import (
 // catalogWebsitesDeps builds the catalogops.WebsitesDeps from the live CLI
 // wiring. Service construction uses the core factories; all config is read
 // lazily per invocation.
-func catalogWebsitesDeps() catalogops.WebsitesDeps {
+func catalogWebsitesDeps(factory ...ConfigManagerFactory) catalogops.WebsitesDeps {
+	cfgFactory := resolveConfigFactory(factory...)
 	return catalogops.WebsitesDeps{
 		CfgMgr: func() config.Manager {
-			cfgMgr, err := defaultConfigManagerFactory()
+			cfgMgr, err := cfgFactory()
 			if err != nil {
 				return nil
 			}
 			return cfgMgr
 		},
 		Secure: func() bool {
-			cfgMgr, err := defaultConfigManagerFactory()
+			cfgMgr, err := cfgFactory()
 			if err != nil {
 				return false
 			}
@@ -58,7 +59,7 @@ func catalogWebsitesDeps() catalogops.WebsitesDeps {
 			return websites.NewAuthenticated(cfgMgr, token, secure)
 		},
 		GetAuthToken: func() string {
-			cfgMgr, err := defaultConfigManagerFactory()
+			cfgMgr, err := cfgFactory()
 			if err != nil {
 				return ""
 			}
@@ -74,7 +75,7 @@ func catalogWebsitesDeps() catalogops.WebsitesDeps {
 			return NewDownloadService(cfgMgr, NewOutputFormatter(false, false, true, false), opts...), nil
 		},
 		IPNSResolveFunc: func(ctx context.Context, name, authToken string) (string, error) {
-			cfgMgr, err := defaultConfigManagerFactory()
+			cfgMgr, err := cfgFactory()
 			if err != nil {
 				return "", err
 			}
