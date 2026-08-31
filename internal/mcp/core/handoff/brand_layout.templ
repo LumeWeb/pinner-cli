@@ -49,7 +49,10 @@ templ BrandLayout(title string) {
 						var txt = btn.textContent;
 						btn.textContent = ok ? "Copied" : "Copy failed";
 						btn.classList.toggle("copied", ok);
-						setTimeout(function () { btn.textContent = txt; btn.classList.remove("copied"); }, 1500);
+						setTimeout(function () {
+							btn.textContent = txt;
+							btn.classList.remove("copied");
+						}, 1500);
 					};
 					var fallback = function () {
 						var ta = document.createElement("textarea");
@@ -59,14 +62,22 @@ templ BrandLayout(title string) {
 						document.body.appendChild(ta);
 						ta.select();
 						var ok = false;
-						try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+						try {
+							ok = document.execCommand("copy");
+						} catch (e) {
+							ok = false;
+						}
 						document.body.removeChild(ta);
 						label(ok);
 					};
 					if (navigator.clipboard && navigator.clipboard.writeText) {
 						navigator.clipboard.writeText(text).then(
-							function () { label(true); },
-							function () { fallback(); }
+							function () {
+								label(true);
+							},
+							function () {
+								fallback();
+							},
 						);
 						return;
 					}

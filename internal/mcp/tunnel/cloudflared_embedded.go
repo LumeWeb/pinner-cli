@@ -1,3 +1,5 @@
+//go:build !no_tunnel
+
 package tunnel
 
 import (
@@ -11,7 +13,6 @@ import (
 	"github.com/cloudflare/cloudflared/client"
 	"github.com/cloudflare/cloudflared/config"
 	"github.com/cloudflare/cloudflared/connection"
-	"github.com/cloudflare/cloudflared/edgediscovery"
 	"github.com/cloudflare/cloudflared/edgediscovery/allregions"
 	"github.com/cloudflare/cloudflared/features"
 	"github.com/cloudflare/cloudflared/ingress"
@@ -37,10 +38,9 @@ var startTunnelDaemon = func(
 	cfg *supervisor.TunnelConfig,
 	orchestrator *orchestration.Orchestrator,
 	connectedSignal *signal.Signal,
-	reconnectCh chan supervisor.ReconnectSignal,
 	shutdown <-chan struct{},
 ) error {
-	return supervisor.StartTunnelDaemon(ctx, cfg, orchestrator, connectedSignal, reconnectCh, shutdown)
+	return supervisor.StartTunnelDaemon(ctx, cfg, orchestrator, connectedSignal, shutdown)
 }
 
 // buildCloudflaredTunnelProperties maps the persisted CloudflareTunnelState
@@ -137,14 +137,11 @@ func startEmbeddedCloudflared(ctx context.Context, state *CloudflareTunnelState,
 	}
 
 	connectedSignal := signal.New(make(chan struct{}))
-	reconnectCh := make(chan supervisor.ReconnectSignal, 4)
 
+	// The selector derives the edge transport protocol solely from the flag;
+	// account-level edge-discovery tuning is handled internally by cloudflared.
 	protocolSelector, err := connection.NewProtocolSelector(
 		connection.HTTP2.String(),
-		state.AccountID,
-		false, // no --token flag; the tunnel runs on the persisted credentials
-		edgediscovery.ProtocolPercentage,
-		connection.ResolveTTL,
 		logTransport,
 	)
 	if err != nil {
@@ -204,5 +201,5 @@ func startEmbeddedCloudflared(ctx context.Context, state *CloudflareTunnelState,
 	}
 
 	shutdown := make(chan struct{})
-	return startTunnelDaemon(ctx, tunnelConfig, orchestrator, connectedSignal, reconnectCh, shutdown)
+	return startTunnelDaemon(ctx, tunnelConfig, orchestrator, connectedSignal, shutdown)
 }

@@ -1,3 +1,5 @@
+//go:build !no_tunnel
+
 package tunnel
 
 import (

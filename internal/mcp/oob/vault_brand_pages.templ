@@ -125,7 +125,9 @@ templ createVaultDone(profile, vaultID, seedURL string) {
 		// linger below the result. The page collapses to the compact created
 		// state; the seed backup is a collapsible <details> below it.
 		var s = document.getElementById("status");
-		if (s) { s.innerHTML = ""; }
+		if (s) {
+			s.innerHTML = "";
+		}
 	</script>
 	<div class="status-done">
 		<h2>Vault created</h2>
@@ -142,7 +144,9 @@ templ createVaultDone(profile, vaultID, seedURL string) {
 templ restoreVaultDone(profile, vaultID string) {
 	<script>
 		var s = document.getElementById("status");
-		if (s) { s.innerHTML = ""; }
+		if (s) {
+			s.innerHTML = "";
+		}
 	</script>
 	<div class="status-done">
 		<h2>Vault restored</h2>
