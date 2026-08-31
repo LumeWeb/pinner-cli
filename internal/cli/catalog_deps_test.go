@@ -99,3 +99,31 @@ func domainPrefix(name string) string {
 	}
 	return name
 }
+
+// TestBuildCatalogOpsDepsForHostedDoesNotMutateGlobalFactory pins that the
+// hosted assembly threads its config manager through the wiring instead of
+// mutating the package-global configManagerFactory. A prior implementation
+// swapped that global to the hosted closure and never restored it, silently
+// redirecting every CLI command path (pin/upload/download/config/auth) onto
+// the hosted temp-dir config in any process that also hosted the MCP server.
+func TestBuildCatalogOpsDepsForHostedDoesNotMutateGlobalFactory(t *testing.T) {
+	globalCfg := configmocks.NewMockManager(t)
+	hostedCfg := configmocks.NewMockManager(t)
+
+	// Seed the package-global factory with a sentinel that proves it is never
+	// overwritten by the hosted assembly.
+	prev := configManagerFactory
+	configManagerFactory = func() (config.Manager, error) { return globalCfg, nil }
+	defer func() { configManagerFactory = prev }()
+
+	bundle := BuildCatalogOpsDepsForHosted(hostedCfg)
+	require.NotNil(t, bundle, "hosted bundle must construct")
+
+	// The global factory is untouched: it still resolves the sentinel manager.
+	resolved, err := configManagerFactory()
+	require.NoError(t, err)
+	require.Same(t, globalCfg, resolved, "hosted assembly must not swap the package-global configManagerFactory")
+
+	// The hosted bundle resolves the supplied hosted manager, not the global.
+	require.Same(t, hostedCfg, bundle.CfgMgr(), "hosted bundle must resolve the supplied hosted config manager")
+}

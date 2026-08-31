@@ -26,17 +26,18 @@ import (
 // rest are direct leaves. That nesting lives here, not in internal/catalog.
 
 // catalogIPNSDeps builds the catalogops.IPNSDeps from the live CLI wiring.
-func catalogIPNSDeps() catalogops.IPNSDeps {
+func catalogIPNSDeps(factory ...ConfigManagerFactory) catalogops.IPNSDeps {
+	cfgFactory := resolveConfigFactory(factory...)
 	return catalogops.IPNSDeps{
 		CfgMgr: func() config.Manager {
-			cfgMgr, err := defaultConfigManagerFactory()
+			cfgMgr, err := cfgFactory()
 			if err != nil {
 				return nil
 			}
 			return cfgMgr
 		},
 		Secure: func() bool {
-			cfgMgr, err := defaultConfigManagerFactory()
+			cfgMgr, err := cfgFactory()
 			if err != nil {
 				return false
 			}
@@ -47,7 +48,7 @@ func catalogIPNSDeps() catalogops.IPNSDeps {
 			return ipns.NewAuthenticated(cfgMgr, token, secure)
 		},
 		GetAuthToken: func() string {
-			cfgMgr, err := defaultConfigManagerFactory()
+			cfgMgr, err := cfgFactory()
 			if err != nil {
 				return ""
 			}

@@ -34,18 +34,19 @@ import (
 // catalogDNSDeps builds the catalogops.DNSDeps from the live CLI wiring.
 // Service construction uses a discard writer so handlers return pure data and
 // never render; all presentation happens in renderDNSResult.
-func catalogDNSDeps() catalogops.DNSDeps {
+func catalogDNSDeps(factory ...ConfigManagerFactory) catalogops.DNSDeps {
+	cfgFactory := resolveConfigFactory(factory...)
 	return catalogops.DNSDeps{
 		// Lazy config manager: resolved per invocation, never at package init.
 		CfgMgr: func() config.Manager {
-			cfgMgr, err := defaultConfigManagerFactory()
+			cfgMgr, err := cfgFactory()
 			if err != nil {
 				return nil
 			}
 			return cfgMgr
 		},
 		Secure: func() bool {
-			cfgMgr, err := defaultConfigManagerFactory()
+			cfgMgr, err := cfgFactory()
 			if err != nil {
 				return false
 			}
@@ -64,7 +65,7 @@ func catalogDNSDeps() catalogops.DNSDeps {
 			return svc
 		},
 		GetAuthToken: func() string {
-			cfgMgr, err := defaultConfigManagerFactory()
+			cfgMgr, err := cfgFactory()
 			if err != nil {
 				return ""
 			}

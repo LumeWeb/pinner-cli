@@ -41,18 +41,19 @@ import (
 // catalogPinningDeps builds the catalogops.PinsDeps from the live CLI wiring.
 // Service construction uses a discard writer so handlers return pure data and
 // NEVER render; all presentation happens in renderCatalogResult.
-func catalogPinningDeps() catalogops.PinsDeps {
+func catalogPinningDeps(factory ...ConfigManagerFactory) catalogops.PinsDeps {
+	cfgFactory := resolveConfigFactory(factory...)
 	return catalogops.PinsDeps{
 		// Lazy config manager: resolved per invocation, never at package init.
 		CfgMgr: func() config.Manager {
-			cfgMgr, err := defaultConfigManagerFactory()
+			cfgMgr, err := cfgFactory()
 			if err != nil {
 				return nil
 			}
 			return cfgMgr
 		},
 		Secure: func() bool {
-			cfgMgr, err := defaultConfigManagerFactory()
+			cfgMgr, err := cfgFactory()
 			if err != nil {
 				return false
 			}
@@ -68,7 +69,7 @@ func catalogPinningDeps() catalogops.PinsDeps {
 			// Read the auth token live from config. Handlers that use
 			// NewAuthenticated get a service pinned to this token; when unset
 			// they fall back to ServiceFactory, which also reads config.
-			cfgMgr, err := defaultConfigManagerFactory()
+			cfgMgr, err := cfgFactory()
 			if err != nil {
 				return ""
 			}

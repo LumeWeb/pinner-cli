@@ -12,7 +12,7 @@ import (
 
 // configManagerFactory is the factory function used by setupCommandContext.
 // It can be overridden in tests to inject mock config managers.
-var configManagerFactory ConfigManagerFactory = defaultConfigManagerFactory
+var configManagerFactory ConfigManagerFactory = diskConfigManagerFactory
 
 // applyDefaultTimeout wraps ctx with a context.WithTimeout derived from the
 // configured default timeout, returning a no-op cancel when no config manager

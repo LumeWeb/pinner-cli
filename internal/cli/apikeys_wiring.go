@@ -20,10 +20,11 @@ import (
 
 // catalogAPIKeysDeps builds catalogops.APIKeysDeps with a live apikeys.Service
 // constructed per invocation from the auth token (flag override then config).
-func catalogAPIKeysDeps() catalogops.APIKeysDeps {
+func catalogAPIKeysDeps(factory ...ConfigManagerFactory) catalogops.APIKeysDeps {
+	cfgFactory := resolveConfigFactory(factory...)
 	return catalogops.APIKeysDeps{
 		Service: func(input map[string]any) apikeys.Service {
-			cfgMgr, err := defaultConfigManagerFactory()
+			cfgMgr, err := cfgFactory()
 			if err != nil {
 				return nil
 			}
