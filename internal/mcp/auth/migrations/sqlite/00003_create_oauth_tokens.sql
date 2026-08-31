@@ -8,6 +8,7 @@ CREATE TABLE oauth_refresh_tokens (
     client_id  TEXT NOT NULL,
     resource   TEXT,
     user_id    INTEGER NOT NULL,
+    scope      TEXT,
     chain_root TEXT,
     expires_at DATETIME NOT NULL,
     used_at    DATETIME,
@@ -28,6 +29,7 @@ CREATE TABLE oauth_access_tokens (
     client_id  TEXT NOT NULL,
     resource   TEXT,
     user_id    INTEGER NOT NULL,
+    scope      TEXT,
     expires_at DATETIME NOT NULL
 );
 CREATE UNIQUE INDEX idx_oauth_access_token ON oauth_access_tokens (token);

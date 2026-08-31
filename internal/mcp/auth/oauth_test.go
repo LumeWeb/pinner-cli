@@ -365,7 +365,7 @@ func TestOAuthMiddlewareFlushReachable(t *testing.T) {
 	o := newTestOAuth(t)
 	access := "valid-token-for-flush"
 	require.NoError(t, o.store.SaveAccessToken(oauth.AccessToken{
-		Token: access, ClientID: "cli", UserID: 0, ExpiresAt: time.Now().Add(time.Hour),
+		Token: access, ClientID: "cli", UserID: 0, Resource: o.mcpResourceURL(), ExpiresAt: time.Now().Add(time.Hour),
 	}))
 
 	var flushErr error
@@ -383,6 +383,43 @@ func TestOAuthMiddlewareFlushReachable(t *testing.T) {
 	assert.NoError(t, flushErr, "Flush must succeed on the valid-token path (SSE must not stall)")
 }
 
+// TestOAuthMiddlewareAudienceBinding confirms RFC 8707 audience binding: a
+// token minted for a different MCP resource must be rejected even though it is
+// valid and unexpired, and a token bound to this MCP resource passes.
+func TestOAuthMiddlewareAudienceBinding(t *testing.T) {
+	o := newTestOAuth(t)
+
+	t.Run("wrong resource rejected", func(t *testing.T) {
+		require.NoError(t, o.store.SaveAccessToken(oauth.AccessToken{
+			Token: "other-mcp", ClientID: "cli", UserID: 0,
+			Resource: "https://other.example.com/mcp", ExpiresAt: time.Now().Add(time.Hour),
+		}))
+		bound := o.OfficialMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+		req.Header.Set("Authorization", "Bearer other-mcp")
+		rec := httptest.NewRecorder()
+		bound.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	})
+
+	t.Run("correct resource authorized", func(t *testing.T) {
+		require.NoError(t, o.store.SaveAccessToken(oauth.AccessToken{
+			Token: "right-mcp", ClientID: "cli", UserID: 0,
+			Resource: o.mcpResourceURL(), ExpiresAt: time.Now().Add(time.Hour),
+		}))
+		bound := o.OfficialMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+		req.Header.Set("Authorization", "Bearer right-mcp")
+		rec := httptest.NewRecorder()
+		bound.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusOK, rec.Code)
+	})
+}
+
 // TestOAuthMiddlewareDownstream401Untouched confirms a downstream handler's
 // own 401 (one that does not carry a bearer challenge) passes through the
 // enhanced-401 writer with its original status, body, and content type — it
@@ -390,7 +427,7 @@ func TestOAuthMiddlewareFlushReachable(t *testing.T) {
 func TestOAuthMiddlewareDownstream401Untouched(t *testing.T) {
 	o := newTestOAuth(t)
 	require.NoError(t, o.store.SaveAccessToken(oauth.AccessToken{
-		Token: "ok", ClientID: "cli", UserID: 0, ExpiresAt: time.Now().Add(time.Hour),
+		Token: "ok", ClientID: "cli", UserID: 0, Resource: o.mcpResourceURL(), ExpiresAt: time.Now().Add(time.Hour),
 	}))
 
 	// A valid bearer passes the auth gate; the downstream handler then returns
@@ -706,14 +743,14 @@ func TestCIMDFetchAndAuthorize(t *testing.T) {
 
 	rec = httptest.NewRecorder()
 	o.AuthorizePOST(rec, formPost(map[string]string{
-		"response_type":        "code",
-		"client_id":            cimdClientID,
-		"redirect_uri":         "http://localhost:9999/callback",
-		"state":                "st",
-		"password":             testSecret,
+		"response_type":         "code",
+		"client_id":             cimdClientID,
+		"redirect_uri":          "http://localhost:9999/callback",
+		"state":                 "st",
+		"password":              testSecret,
 		"code_challenge":        challenge,
 		"code_challenge_method": "S256",
-		"resource":             "https://mcp.example.com/mcp",
+		"resource":              "https://mcp.example.com/mcp",
 	}))
 	require.Equal(t, http.StatusFound, rec.Code, "authorize POST should redirect with code for CIMD client")
 	loc, err := url.Parse(rec.Header().Get("Location"))
@@ -842,14 +879,14 @@ func TestCIMDFullFlowThroughTokenExchange(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	o.AuthorizePOST(rec, formPost(map[string]string{
-		"response_type":        "code",
-		"client_id":            cimdClientID,
-		"redirect_uri":         "http://localhost:12345/callback",
-		"state":                "st",
-		"password":             testSecret,
+		"response_type":         "code",
+		"client_id":             cimdClientID,
+		"redirect_uri":          "http://localhost:12345/callback",
+		"state":                 "st",
+		"password":              testSecret,
 		"code_challenge":        challenge,
 		"code_challenge_method": "S256",
-		"resource":             res,
+		"resource":              res,
 	}))
 	require.Equal(t, http.StatusFound, rec.Code, "CIMD authorize should succeed with loopback port mismatch")
 	loc, _ := url.Parse(rec.Header().Get("Location"))
@@ -1054,14 +1091,14 @@ func TestCIMDReactivatesAfterReap(t *testing.T) {
 	// The next authorize must re-resolve and re-activate instead of rejecting.
 	rec := httptest.NewRecorder()
 	o.AuthorizePOST(rec, formPost(map[string]string{
-		"response_type":        "code",
-		"client_id":            cimdClientID,
-		"redirect_uri":         "http://localhost:9999/callback",
-		"state":                "st",
-		"password":             testSecret,
+		"response_type":         "code",
+		"client_id":             cimdClientID,
+		"redirect_uri":          "http://localhost:9999/callback",
+		"state":                 "st",
+		"password":              testSecret,
 		"code_challenge":        challenge,
 		"code_challenge_method": "S256",
-		"resource":             res,
+		"resource":              res,
 	}))
 	require.Equal(t, http.StatusFound, rec.Code, "authorize must succeed after CIMD cache eviction re-activates the client")
 	loc, err := url.Parse(rec.Header().Get("Location"))

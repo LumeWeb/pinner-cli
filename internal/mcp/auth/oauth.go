@@ -234,9 +234,9 @@ func (o *OAuthServer) deactivateClient(clientID string) {
 // (RFC 8414) so clients can find the authorize and token endpoints.
 func (o *OAuthServer) AsMetadataHandler(w http.ResponseWriter, r *http.Request) {
 	doc := map[string]any{
-		"issuer":                                o.Issuer,
-		"authorization_endpoint":                o.BaseURL + "/oauth/authorize",
-		"token_endpoint":                        o.BaseURL + "/oauth/token",
+		"issuer":                 o.Issuer,
+		"authorization_endpoint": o.BaseURL + "/oauth/authorize",
+		"token_endpoint":         o.BaseURL + "/oauth/token",
 		// DCR fallback: Claude Desktop/Web does not fall through to CIMD
 		// (anthropics/claude-ai-mcp#433) and needs registration_endpoint or a
 		// manual client ID. Claude Code / ChatGPT still prefer CIMD when both
@@ -671,13 +671,37 @@ func (o *OAuthServer) validTokenExpiry(tok string) (time.Time, bool) {
 	return exp, ok
 }
 
+// mcpResourceURL is the RFC 8707 resource (audience) this MCP server is issued
+// tokens for. The authorization server binds every token to it at issue time.
+func (o *OAuthServer) mcpResourceURL() string {
+	return strings.TrimRight(o.BaseURL, "/") + "/mcp"
+}
+
+// validTokenInfo validates a bearer token and enforces RFC 8707 audience
+// binding: the token must have been issued for this MCP resource, not merely
+// be known and unexpired. This prevents a token minted for a different MCP
+// server from being replayed against this one.
+func (o *OAuthServer) validTokenInfo(tok string) (oauth.ValidatedToken, bool) {
+	if o.as == nil {
+		return oauth.ValidatedToken{}, false
+	}
+	vt, ok := o.as.ValidateAccessTokenInfo(tok)
+	if !ok {
+		return oauth.ValidatedToken{}, false
+	}
+	if vt.Resource != o.mcpResourceURL() {
+		return oauth.ValidatedToken{}, false
+	}
+	return vt, true
+}
+
 func (o *OAuthServer) OfficialMiddleware(next http.Handler) http.Handler {
 	verifier := func(_ context.Context, token string, _ *http.Request) (*auth.TokenInfo, error) {
-		exp, ok := o.validTokenExpiry(token)
+		vt, ok := o.validTokenInfo(token)
 		if !ok {
-			return nil, fmt.Errorf("%w: the access token is unknown or has expired", auth.ErrInvalidToken)
+			return nil, fmt.Errorf("%w: the access token is unknown, expired, or was not issued for this MCP resource", auth.ErrInvalidToken)
 		}
-		return &auth.TokenInfo{Expiration: exp, UserID: tokenPrincipal(token)}, nil
+		return &auth.TokenInfo{Expiration: vt.Expiry, UserID: tokenPrincipal(token)}, nil
 	}
 	protected := auth.RequireBearerToken(verifier, &auth.RequireBearerTokenOptions{
 		ResourceMetadataURL: strings.TrimRight(o.BaseURL, "/") + "/.well-known/oauth-protected-resource",
