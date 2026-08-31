@@ -38,11 +38,18 @@ Running from source: `go run ./cmd/pinner <command>`.
 
 | Target | Depends on | Action |
 |---|---|---|
-| `make build` (default) | `generate jsbuild cssbuild` | `CGO_ENABLED=1 go build -ldflags="$(LDFLAGS)" -o pinner ./cmd/pinner` |
-| `make install` | `generate jsbuild cssbuild` | `CGO_ENABLED=1 go install -ldflags="$(LDFLAGS)" ./cmd/pinner` |
-| `make test` | `jsbuild cssbuild` | `go test ./...` |
+| `make build` (default) | `mcpembed` | `CGO_ENABLED=1 go build -ldflags="$(LDFLAGS)" -o pinner ./cmd/pinner` |
+| `make install` | `mcpembed` | `CGO_ENABLED=1 go install -ldflags="$(LDFLAGS)" ./cmd/pinner` |
+| `make test` | `mcpembed` | `go test ./...` |
+| `make mcpembed` | `templinstall generate jsbuild cssbuild` | Regenerates every embeddable asset (templ + JS + CSS) |
 | `make generate` | — | `templ generate` (recurses the repo from the root; *not* `go generate ./...`) |
+| `make templinstall` | — | `go install github.com/a-h/templ/cmd/templ@v0.3.1020` |
 | `make clean` | — | `rm -f pinner` |
+
+`mcpembed` is what `go generate ./mcpembed` invokes (`make -C .. mcpembed`).
+It is declared `.PHONY` because a real source directory named `mcpembed/`
+exists; without that, `make` would treat the directory as an up-to-date target
+and skip regeneration.
 
 The default goal is pinned to `build` so a bare `make` always produces a
 binary.
@@ -50,20 +57,23 @@ binary.
 ## Build Pipeline
 
 ```
-generate → jsbuild → cssbuild → go build / go install
+templinstall → generate → jsbuild → cssbuild → go build / go install
 ```
 
-1. **`generate`** — runs `templ generate` from the repo root. This is invoked
+1. **`templinstall`** — `go install github.com/a-h/templ/cmd/templ@v0.3.1020`
+   pins the templ CLI to the version declared in go.mod, so regeneration works
+   on a fresh checkout without templ pre-installed.
+2. **`generate`** — runs `templ generate` from the repo root. This is invoked
    deliberately as `templ generate`, **not** via `go generate ./...`, because
    templ files live in multiple packages and a single root-anchored pass
    covers every `*.templ` exactly once.
-2. **`jsbuild`** — `cd packages/apps && pnpm install --frozen-lockfile && pnpm
+3. **`jsbuild`** — `cd packages/apps && pnpm install --frozen-lockfile && pnpm
    build`, then copies the dist JS into `internal/mcpapp/appsassets/dist/`
    where Go embeds it.
-3. **`cssbuild`** — `pnpm build:css` compiles the Tailwind theme
+4. **`cssbuild`** — `pnpm build:css` compiles the Tailwind theme
    (`internal/mcpapp/css/input.css`) into the embedded stylesheet
    (`internal/mcpapp/css/tailwind.css`).
-4. **Go build** — `CGO_ENABLED=1` with `-ldflags` injecting version info.
+5. **Go build** — `CGO_ENABLED=1` with `-ldflags` injecting version info.
 
 ### Version Info (ldflags)
 

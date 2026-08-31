@@ -1,5 +1,14 @@
 package mcpembed
 
+// This package transitively embeds the templ output, MCP App JS bundles, and
+// Tailwind stylesheet (via internal/mcp → internal/mcpapp), so `go generate
+// ./mcpembed` regenerates them before any `go build`/`go test`. go:generate
+// runs with this package as its working directory; `..` is the repo root where
+// the Makefile lives. The `mcpembed` target installs templ, regenerates the
+// templ files, and runs `pnpm install --frozen-lockfile` plus the app builds
+// and CSS compile.
+//go:generate make -C .. mcpembed
+
 import (
 	"net/http"
 
