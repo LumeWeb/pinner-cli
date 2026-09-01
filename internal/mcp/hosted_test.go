@@ -2,12 +2,20 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"io"
+	"strings"
 	"testing"
 
 	corevault "go.lumeweb.com/pinner-cli/internal/core/vault"
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
+	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -106,4 +114,88 @@ func TestBuildHostedServerBaseURLConnectOrigins(t *testing.T) {
 	origins := ht.Upload.ConnectOrigins()
 	require.NotEmpty(t, origins)
 	require.Equal(t, "https://pinner.xyz", origins[0], "upload coordinator's CSP connectDomains must reflect the hosted BaseURL, not the loopback origin")
+}
+
+// TestBuildHostedServerViewDomainScopedToAssembly guards the process-wide leak
+// invariant: the hosted assembly installs the view-domain resolver ONLY for
+// its own app registration window. After BuildHostedServer returns the
+// resolver is nil again, so a later assembly in the same process (a
+// self-hosted CLI server, another embed, a test) registers its ui:// views
+// with NO domain instead of this deployment's origin. It also pins that the
+// views registered DURING the assembly carry the hosted origin.
+func TestBuildHostedServerViewDomainScopedToAssembly(t *testing.T) {
+	// Preserve whatever resolver is installed for other tests.
+	previous := apps.ViewDomainResolver()
+	apps.SetViewDomainResolver(nil)
+	t.Cleanup(func() { apps.SetViewDomainResolver(previous) })
+
+	tasks := transfer.NewUploadTaskManager(func(context.Context, io.Reader, int64, string, bool, string, bool) (any, error) {
+		return map[string]any{"cid": "QmTest"}, nil
+	}, 0)
+
+	srv, _, _, err := BuildHostedServer(HostedServerConfig{
+		CatalogDeps: func() *CatalogDepsBundle { return &CatalogDepsBundle{} },
+		BaseURL:     "https://hosted.example.com",
+		Options: []MCPServerOption{
+			WithUploadTaskManager(tasks),
+		},
+	})
+	require.NoError(t, err)
+
+	// Assembly-scoped: the resolver did NOT survive past registration.
+	require.Nil(t, apps.ViewDomainResolver(),
+		"BuildHostedServer must reset the view-domain resolver so a later assembly never inherits the hosted origin")
+
+	// Views registered during the assembly carry the hosted origin.
+	cs := connectOfficialClient(t, srv)
+	ctx := context.Background()
+	res, err := cs.ListResources(ctx, nil)
+	require.NoError(t, err)
+	var uploadView *mcp.Resource
+	for _, r := range res.Resources {
+		if r.URI == upload.IPFSUploadAppURI {
+			uploadView = r
+			break
+		}
+	}
+	require.NotNil(t, uploadView, "hosted upload app view registered")
+	ui, ok := uploadView.Meta["ui"].(map[string]any)
+	require.True(t, ok, "upload view carries _meta.ui")
+	require.Equal(t, "https://hosted.example.com", ui["domain"],
+		"views registered during the hosted assembly must attribute to the hosted BaseURL origin")
+
+	// A subsequent plain assembly in the same process emits NO domain.
+	appCatalog := NewToolCatalog()
+	appCatalog.Add(&model.ToolEntry{
+		Name:        auth.OpenAccountToolName,
+		Title:       "Open Account",
+		Description: "launcher",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
+		Handler:     func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) { return model.ToolResult{}, nil },
+	})
+	plain := sdk.NewServer(nil)
+	require.NoError(t, auth.RegisterAuthStatusApp(plain, appCatalog))
+	cs2 := connectOfficialClient(t, plain)
+	res2, err := cs2.ListResources(ctx, nil)
+	require.NoError(t, err)
+	var accountView *mcp.Resource
+	for _, r := range res2.Resources {
+		if r.URI == auth.AuthStatusAppURI {
+			accountView = r
+			break
+		}
+	}
+	require.NotNil(t, accountView, "plain assembly's account view registered")
+	stringMap := map[string]any{}
+	for k, v := range accountView.Meta {
+		if _, isString := v.(string); isString || strings.HasPrefix(k, "openai/widgetDomain") {
+			stringMap[k] = v
+		}
+	}
+	require.NotContains(t, stringMap, "openai/widgetDomain",
+		"later assembly must not carry the hosted origin as widget domain alias")
+	uiLater, ok := accountView.Meta["ui"].(map[string]any)
+	require.True(t, ok)
+	require.NotContains(t, uiLater, "domain",
+		"later assembly's views must carry no domain at all (no foreign origin)")
 }

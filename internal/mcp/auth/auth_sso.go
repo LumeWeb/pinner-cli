@@ -26,7 +26,7 @@ import (
 type authSSOArgs struct {
 	// Email is the account to sign in. Optional: the OOB page lets the human
 	// enter/confirm the address, and resume only needs the handle.
-	Email string `json:"email,omitempty"`
+	Email string `json:"email,omitempty" jsonschema:"description=The account email address to start sign-in for. Optional: the human can enter or confirm it on the out-of-band approval page."`
 }
 
 // NewAuthSSODescriptor returns the auth_sso tool: start an out-of-band
@@ -37,7 +37,7 @@ type authSSOArgs struct {
 // login to completion.
 // authSSODescription is shared between the static Description and the Fallback
 // MCPTarget so the descriptor carries a target list.
-const authSSODescription = "Start an out-of-band (OOB) browser sign-in for SSO authentication. Returns immediately with an approval URL the human opens, and a resume handle for the auth_resume tool. Non-blocking, and never asks the human for a password or OTP on this channel. Start here to authenticate."
+const authSSODescription = "Start an out-of-band (OOB) browser sign-in for SSO authentication. Returns immediately with an approval URL the human opens, and a resume handle for the auth_resume tool. Non-blocking, and never asks the human for a password or OTP on this channel. This tool is the entry point for OOB authentication."
 
 func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore, reg *handoff.HandoffRegistry) model.ToolDescriptor {
 	return model.ToolDescriptor{
@@ -165,7 +165,7 @@ func SSOResumeContinuation(oob *OutOfBandLogin, handles *session.AsyncHandleStor
 // authSSORevokeArgs is the argument for auth_sso_revoke: the handle of the
 // in-flight sign-in to cancel.
 type authSSORevokeArgs struct {
-	Handle string `json:"handle"`
+	Handle string `json:"handle" jsonschema:"description=The handle of the in-flight sign-in to revoke, as returned by auth_sso."`
 }
 
 // revokeSSOLogin cancels an in-flight sign-in by handle across its three

@@ -496,12 +496,13 @@ const agentGuideDescription = "Orientation for autonomous agents: the primary Pi
 
 func NewAgentGuideDescriptor() model.ToolDescriptor {
 	return model.ToolDescriptor{
-		Name:        "agent_guide",
-		Title:       "Pinner agent guide",
-		Description: agentGuideDescription,
-		Category:    model.CategoryCore,
-		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback(agentGuideDescription)),
-		InputSchema: toolargs.ToolSchemaFor[wizard.NoInput](),
+		Name:          "agent_guide",
+		Title:         "Pinner agent guide",
+		Description:   agentGuideDescription,
+		Category:      model.CategoryCore,
+		OpenWorldHint: false, // static local guidance payload; changes no state
+		MCPTargets:    toolforge.MCPTargets(toolforge.Fallback(agentGuideDescription)),
+		InputSchema:   toolargs.ToolSchemaFor[wizard.NoInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			guide := buildAgentGuide(profileFromRequest(request))
 			return model.ToolResult{StructuredContent: guide, Text: toolargs.ResultJSONText(guide)}, nil

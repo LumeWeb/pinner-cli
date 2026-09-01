@@ -56,7 +56,7 @@ type VaultPutFileInput struct {
 	// must be a file path (not a directory) free of parent-relative traversal.
 	// Any vault file path is allowed (e.g. vault:/docs/f.pdf); there is no
 	// single-folder restriction — see ValidateVaultFilePath.
-	VaultPath string `json:"vault_path" jsonschema:"description=Vault destination file path (e.g. vault:/docs/f.pdf or vault:/uploads/report.pdf). Required. Must be a file path, not a directory; traversal (.. or .) segments are rejected. Any vault file path is allowed."`
+	VaultPath string `json:"vault_path" jsonschema:"description=Vault destination file path (e.g. vault:/docs/f.pdf or vault:/uploads/report.pdf). Required. A file path, not a directory; traversal (.. or .) segments are rejected. Any vault file path is allowed."`
 	// Profile is the vault profile the file is written into. Defaults to the
 	// active profile on a single-profile server; on a multi-profile server it
 	// is REQUIRED — omitting it fails with profile_required instead of
@@ -136,10 +136,11 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 		meta = transfer.ChatGPTFileMeta()
 	}
 	return model.ToolDescriptor{
-		Name:        "vault_put_file",
-		Title:       "Store a file in the Pinner vault",
-		Description: vaultPutFileDescription(transport),
-		Category:    model.CategoryCore,
+		Name:          "vault_put_file",
+		Title:         "Store a file in the Pinner vault",
+		Description:   vaultPutFileDescription(transport),
+		Category:      model.CategoryCore,
+		OpenWorldHint: true, // may upload file bytes to the Sia network
 		// The input schema is compiled from the profile's feature set (see
 		// vaultPutFileSchema), so file-handoff presence, the source.mode enum,
 		// and the mode prose all follow the connected host.
@@ -313,9 +314,9 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 // only when FeatFileHostInput).
 func vaultPutFileSchema(features hostenv.FeatureSet) json.RawMessage {
 	return toolforge.Schema().
-		Property("source", toolargs.SchemaFor[transfer.UploadSource](), toolforge.Transform(transfer.VaultSourceSchemaTransform)).
+		Property("source", toolargs.SchemaFor[transfer.UploadSource](), toolforge.Description("The file to store as a transport-scoped source object. Choose the mode this transport accepts (see capabilities.source_modes): path=co-located stdio, mint=HTTP/tunnel presigned endpoint, url/data=relay. Omit when a host-provided file reference is used instead."), toolforge.Transform(transfer.VaultSourceSchemaTransform)).
 		Property("file", toolargs.SchemaFor[transfer.ChatGPTFileInput](), toolforge.When(hostenv.FeatFileHostInput)).
-		StringProperty("vault_path", "Vault destination file path (e.g. vault:/docs/f.pdf or vault:/uploads/report.pdf). Required. Must be a file path, not a directory; traversal (.. or .) segments are rejected. Any vault file path is allowed.").
+		StringProperty("vault_path", "Vault destination file path (e.g. vault:/docs/f.pdf or vault:/uploads/report.pdf). Required. A file path, not a directory; traversal (.. or .) segments are rejected. Any vault file path is allowed.").
 		StringProperty("profile", "Vault profile name to write into. Required when more than one profile is unlocked (omitting it returns profile_required and mints nothing); on a single-profile server it defaults to the active profile. Specify a different profile to store in another vault without changing the default.").
 		// archive_mode is only meaningful for source.mode=path (co-located
 		// stdio): the mint and url/data branches stream raw bytes with no

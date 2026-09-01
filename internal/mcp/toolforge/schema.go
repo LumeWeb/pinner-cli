@@ -56,6 +56,14 @@ func Transform(fn func(*jsonschema.Schema, hostenv.FeatureSet)) PropOpt {
 	return func(p *schemaProp) { p.transform = fn }
 }
 
+// Description sets the property's schema description. Most leaves use
+// StringProperty/BoolProperty which take prose directly; Description adapts a
+// pre-built nested-object property (e.g. the reflected UploadSource) that
+// carries no top-level prose of its own.
+func Description(d string) PropOpt {
+	return func(p *schemaProp) { p.schema.Description = d }
+}
+
 // Enum sets a fixed enum on the property (used for static leaf enums such as
 // archive_mode). For enums that vary by profile, prefer Transform.
 func Enum(values ...any) PropOpt {

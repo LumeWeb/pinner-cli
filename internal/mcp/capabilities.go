@@ -216,7 +216,7 @@ var capabilitiesLeadIn = toolforge.Static(
 	).
 	StaticSentence("download_file/vault_get_file take a sink: local writes to a path on the MCP server's own disk (not visible to a remote agent)").
 	WhenSentence(hostenv.FeatSinkDrop,
-		"or drop returns a one-time HTTP GET filedrop link to pull from out of band.",
+		"or drop returns a one-time filedrop link to pull from out of band.",
 	)
 
 // capabilitiesByteChooser is the upload byte-route chooser surfaced when
@@ -227,19 +227,19 @@ var capabilitiesLeadIn = toolforge.Static(
 // PUT + upload_status tail is correct here and never implies vault mints poll.
 var capabilitiesByteChooser = toolforge.List(toolforge.ListNumbered).
 	Intro("Pick the byte route in this order:").
-	ItemWhen(hostenv.FeatSourceMint, "a file the agent can read locally → upload_file(source.mode=mint), then the host PUT, then poll upload_status").
+	ItemWhen(hostenv.FeatSourceMint, "a file the agent can read locally → upload_file(source.mode=mint), then the host transfers the bytes, then poll upload_status").
 	ItemWhen(hostenv.FeatSourceURL, "bytes already at a public HTTPS URL → upload_url (server fetch; do not download then re-upload)").
 	ItemWhen(hostenv.FeatSourceData, "only raw bytes, no file, no URL → upload_data (an RFC 2397 data: URI) — last resort; never base64-encode a real file")
 
 // mintUploadCompletion is the upload_file(source.mode=mint) completion contract.
 // It is emitted only when upload_file is registered.
-const mintUploadCompletion = "upload_file(source.mode=mint) is asynchronous: it returns a url + upload_handle but has NOT stored bytes — PUT the agent-local file to the returned url, then poll upload_status until it reports completed (the returned CID is already pinned; do not call pins_add)."
+const mintUploadCompletion = "upload_file(source.mode=mint) is asynchronous: it returns a url + upload_handle but has NOT stored bytes — transfer the agent-local file to the returned url, then poll upload_status until it reports completed (the returned CID is already pinned, so pins_add is unnecessary)."
 
 // mintVaultCompletion is the vault_put_file(source.mode=mint, vault_path=...)
 // completion contract. It is emitted only when vault_put_file is registered.
 // The PUT response is the completed vault write and there is NO upload_status
 // poll: upload_status tracks upload_file's IPFS uploads, not vault writes.
-const mintVaultCompletion = "vault_put_file(source.mode=mint, vault_path=...) is non-blocking: it returns a one-time presigned PUT url bound to vault_path — PUT the agent-local file to it and the PUT returns quickly after staging the bytes locally (status: staged). The file is immediately readable from this instance; durability on Sia (upload + pin) happens in the background, or via the vault_flush tool (itself non-blocking — returns an accepted job { job_id, profile, path? }), so poll vault_flush_status(job_id) or vault_stat until status: durable when durability is needed before sharing. If a file stays non-durable across polls, read vault_stat's flush_attempts and flush_error to tell a failing flush (a flushing file: rising attempts, no error; a failed file: attempts + a non-empty error; a staged file that never started: zero attempts, no error). There is no upload_status to poll (upload_status tracks upload_file's IPFS uploads, not vault writes)."
+const mintVaultCompletion = "vault_put_file(source.mode=mint, vault_path=...) is non-blocking: it returns a one-time presigned upload url bound to vault_path — transfer the agent-local file to it and the upload returns quickly after staging the bytes locally (status: staged). The file is immediately readable from this instance; durability on Sia (upload + pin) happens in the background, or via the vault_flush tool (itself non-blocking — returns an accepted job { job_id, profile, path? }), so poll vault_flush_status(job_id) or vault_stat until status: durable when durability is needed before sharing. If a file stays non-durable across polls, read vault_stat's flush_attempts and flush_error to tell a failing flush (a flushing file: rising attempts, no error; a failed file: attempts + a non-empty error; a staged file that never started: zero attempts, no error). There is no upload_status to poll (upload_status tracks upload_file's IPFS uploads, not vault writes)."
 
 // uploadToolsFor lists the upload tools actually registered on THIS server, in
 // chooser order: upload_file first, then the relay tools. It gates each tool
@@ -324,12 +324,13 @@ func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile
 	// via the wiring-aware targets.
 	startupProfile := hostenv.ProfileForTransport(transfer.UploadFileTransport(coLocated, tunnelOpenAI)).CloneFeatures()
 	return model.ToolDescriptor{
-		Name:        "capabilities",
-		Title:       "Pinner file-input/output capabilities",
-		Description: capabilitiesDescriptionFor(startupProfile, uploadFile, vaultPutFile, downloadFile, vaultGetFile),
-		Category:    model.CategoryCore,
-		MCPTargets:  capabilitiesTargets(uploadFile, vaultPutFile, downloadFile, vaultGetFile),
-		InputSchema: toolargs.ToolSchemaFor[wizard.NoInput](),
+		Name:          "capabilities",
+		Title:         "Pinner file-input/output capabilities",
+		Description:   capabilitiesDescriptionFor(startupProfile, uploadFile, vaultPutFile, downloadFile, vaultGetFile),
+		Category:      model.CategoryCore,
+		OpenWorldHint: false, // pure local capability report; changes no state
+		MCPTargets:    capabilitiesTargets(uploadFile, vaultPutFile, downloadFile, vaultGetFile),
+		InputSchema:   toolargs.ToolSchemaFor[wizard.NoInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			// draft_x_mcp_file reports whether the CALLING client can speak the
 			// SEP-2356 x-mcp-file metadata — it is a per-host capability, not a

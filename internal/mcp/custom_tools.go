@@ -187,7 +187,7 @@ func registerCustomTools(deps customToolDeps) error {
 		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 			Name:        apps.OpenPinCreatorToolName,
 			Title:       "Create a Pin",
-			Description: "Open the interactive Create a Pin app. This is a UI launcher: it renders an iframe for a human to enter a CID and pin it. It is not a headless primitive. Prefer pins_add (headless) for autonomous workflows; call this only when a human-facing pin form is desired.",
+			Description: "Open the interactive Create a Pin app. This is a UI launcher: it renders an iframe for a human to enter a CID and pin it. It is not a headless primitive; the headless equivalent is pins_add for autonomous pin creation without a rendered form.",
 			Category:    model.CategoryCore,
 			ResourceURI: apps.PinCreateAppURI,
 		}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
@@ -209,55 +209,55 @@ func registerCustomTools(deps customToolDeps) error {
 	// so hosting must never advertise (or let a model attempt) a CLI SSO
 	// browser flow, an account password/email OOB change, or their app views.
 	if deps.oob != nil {
-	authSSO := auth.NewAuthSSODescriptor(deps.oob, deps.authHandles, deps.handoffReg)
-	authSSO.DirectVisible = true
-	authResume := auth.NewAuthResumeDescriptor(deps.handoffReg, deps.authHandles)
-	authSSORevoke := auth.NewAuthSSORevokeDescriptor(deps.oob, deps.authHandles, deps.handoffReg)
-	reg.add(customToolSpec{desc: authSSO, index: true})
-	reg.add(customToolSpec{desc: authResume, index: true})
-	reg.add(customToolSpec{desc: authSSORevoke, index: true})
+		authSSO := auth.NewAuthSSODescriptor(deps.oob, deps.authHandles, deps.handoffReg)
+		authSSO.DirectVisible = true
+		authResume := auth.NewAuthResumeDescriptor(deps.handoffReg, deps.authHandles)
+		authSSORevoke := auth.NewAuthSSORevokeDescriptor(deps.oob, deps.authHandles, deps.handoffReg)
+		reg.add(customToolSpec{desc: authSSO, index: true})
+		reg.add(customToolSpec{desc: authResume, index: true})
+		reg.add(customToolSpec{desc: authSSORevoke, index: true})
 
-	// auth_sso stays headless (it returns a needs_human URL+handle handoff);
-	// open_sso_signin is the ONLY tool that opens the Sign In app view.
-	reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
-		Name:        auth.OpenSSOSigninToolName,
-		Title:       "Sign In (App)",
-		Description: "Open the interactive Sign In app. This is a UI launcher: it renders an iframe for a human to complete SSO approval. It is not a headless primitive. Prefer auth_sso (headless) for autonomous sign-in, which returns the approval URL + resume handle without rendering a card.",
-		Category:    model.CategoryAccount,
-		ResourceURI: auth.AuthSSOAppURI,
-	}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
-		return auth.RegisterAuthSSOApp(srv, catalog, deps.handoffReg, deps.authHandles)
-	}))
+		// auth_sso stays headless (it returns a needs_human URL+handle handoff);
+		// open_sso_signin is the ONLY tool that opens the Sign In app view.
+		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+			Name:        auth.OpenSSOSigninToolName,
+			Title:       "Sign In (App)",
+			Description: "Open the interactive Sign In app. This is a UI launcher: it renders an iframe for a human to complete SSO approval. It is not a headless primitive; the headless equivalent is auth_sso, which returns the approval URL + resume handle without rendering a card.",
+			Category:    model.CategoryAccount,
+			ResourceURI: auth.AuthSSOAppURI,
+		}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
+			return auth.RegisterAuthSSOApp(srv, catalog, deps.handoffReg, deps.authHandles)
+		}))
 
-	// Out-of-band account credential tools: change the password (hosted browser
-	// form -> authenticated UpdatePassword, requires an authenticated session)
-	// and reset the password via an emailed link to the webapp. Direct-surface
-	// tools like the SSO pair; when the coordinator/service are absent they
-	// return a structured not-configured hand-off instead of hanging.
-	accountUpdate := auth.NewAccountPasswordUpdateDescriptor(deps.accountOOB, deps.wizardS.AuthService, deps.authHandles, deps.handoffReg)
-	accountReset := auth.NewAccountPasswordResetDescriptor(deps.wizardS.AuthService, deps.accountWebAppURL)
-	accountEmail := auth.NewAccountEmailChangeDescriptor(deps.accountOOB, deps.wizardS.AuthService)
-	reg.add(customToolSpec{desc: accountUpdate, index: true})
-	reg.add(customToolSpec{desc: accountReset, index: true})
-	reg.add(customToolSpec{desc: accountEmail, index: true})
+		// Out-of-band account credential tools: change the password (hosted browser
+		// form -> authenticated UpdatePassword, requires an authenticated session)
+		// and reset the password via an emailed link to the webapp. Direct-surface
+		// tools like the SSO pair; when the coordinator/service are absent they
+		// return a structured not-configured hand-off instead of hanging.
+		accountUpdate := auth.NewAccountPasswordUpdateDescriptor(deps.accountOOB, deps.wizardS.AuthService, deps.authHandles, deps.handoffReg)
+		accountReset := auth.NewAccountPasswordResetDescriptor(deps.wizardS.AuthService, deps.accountWebAppURL)
+		accountEmail := auth.NewAccountEmailChangeDescriptor(deps.accountOOB, deps.wizardS.AuthService)
+		reg.add(customToolSpec{desc: accountUpdate, index: true})
+		reg.add(customToolSpec{desc: accountReset, index: true})
+		reg.add(customToolSpec{desc: accountEmail, index: true})
 
-	// account_password_update / account_email_change stay headless (they return
-	// a needs_human URL handoff); open_account_password / open_account_email
-	// are the ONLY tools that open their one-shot deep-link app views.
-	reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
-		Name:        auth.OpenAccountPasswordToolName,
-		Title:       "Change Password (App)",
-		Description: "Open the interactive Change Password app. This is a UI launcher: it renders an iframe for a human to change their password. It is not a headless primitive. Prefer account_password_update (headless) for autonomous flows.",
-		Category:    model.CategoryAccount,
-		ResourceURI: auth.AccountPasswordAppURI,
-	}), auth.RegisterAccountPasswordApp))
-	reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
-		Name:        auth.OpenAccountEmailToolName,
-		Title:       "Change Email (App)",
-		Description: "Open the interactive Change Email app. This is a UI launcher: it renders an iframe for a human to change their email. It is not a headless primitive. Prefer account_email_change (headless) for autonomous flows.",
-		Category:    model.CategoryAccount,
-		ResourceURI: auth.AccountEmailAppURI,
-	}), auth.RegisterAccountEmailApp))
+		// account_password_update / account_email_change stay headless (they return
+		// a needs_human URL handoff); open_account_password / open_account_email
+		// are the ONLY tools that open their one-shot deep-link app views.
+		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+			Name:        auth.OpenAccountPasswordToolName,
+			Title:       "Change Password (App)",
+			Description: "Open the interactive Change Password app. This is a UI launcher: it renders an iframe for a human to change their password. It is not a headless primitive; the headless equivalent is account_password_update.",
+			Category:    model.CategoryAccount,
+			ResourceURI: auth.AccountPasswordAppURI,
+		}), auth.RegisterAccountPasswordApp))
+		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+			Name:        auth.OpenAccountEmailToolName,
+			Title:       "Change Email (App)",
+			Description: "Open the interactive Change Email app. This is a UI launcher: it renders an iframe for a human to change their email. It is not a headless primitive; the headless equivalent is account_email_change.",
+			Category:    model.CategoryAccount,
+			ResourceURI: auth.AccountEmailAppURI,
+		}), auth.RegisterAccountEmailApp))
 	} // end of CLI OOB / account-credential tool gating
 
 	// Vault create/restore OOB hand-offs ride the SAME generic handoff-resume
@@ -282,7 +282,7 @@ func registerCustomTools(deps customToolDeps) error {
 		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 			Name:        vault.OpenVaultCreateToolName,
 			Title:       "Create Vault (App)",
-			Description: "Open the interactive Create Vault app. This is a UI launcher: it renders an iframe for a human to create a vault (Sia approval + recovery seed). It is not a headless primitive. Prefer vault_create (headless) which returns the create URL + resume handle without rendering a card.",
+			Description: "Open the interactive Create Vault app. This is a UI launcher: it renders an iframe for a human to create a vault (Sia approval + recovery seed). It is not a headless primitive; the headless equivalent is vault_create, which returns the create URL + resume handle without rendering a card.",
 			Category:    model.CategoryVault,
 			ResourceURI: vault.VaultCreateAppURI,
 		}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
@@ -291,7 +291,7 @@ func registerCustomTools(deps customToolDeps) error {
 		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 			Name:        vault.OpenVaultRestoreToolName,
 			Title:       "Restore Vault (App)",
-			Description: "Open the interactive Restore Vault app. This is a UI launcher: it renders an iframe for a human to restore a vault from its recovery seed. It is not a headless primitive. Prefer vault_restore (headless) which returns the restore URL + resume handle without rendering a card.",
+			Description: "Open the interactive Restore Vault app. This is a UI launcher: it renders an iframe for a human to restore a vault from its recovery seed. It is not a headless primitive; the headless equivalent is vault_restore, which returns the restore URL + resume handle without rendering a card.",
 			Category:    model.CategoryVault,
 			ResourceURI: vault.VaultRestoreAppURI,
 		}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
@@ -303,7 +303,7 @@ func registerCustomTools(deps customToolDeps) error {
 		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 			Name:        vault.OpenVaultBrowserToolName,
 			Title:       "Vault Browser (App)",
-			Description: "Open the interactive Vault browser app. This is a UI launcher: it renders an iframe for a human to browse the vault. It is not a headless primitive. Prefer vault_status / vault_ls (headless) for autonomous access.",
+			Description: "Open the interactive Vault browser app. This is a UI launcher: it renders an iframe for a human to browse the vault. It is not a headless primitive; the headless equivalents are vault_status / vault_ls for autonomous access.",
 			Category:    model.CategoryVault,
 			ResourceURI: vault.VaultBrowserAppURI,
 		}), vault.RegisterVaultBrowserApp))
@@ -314,7 +314,7 @@ func registerCustomTools(deps customToolDeps) error {
 	reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 		Name:        download.OpenPinListToolName,
 		Title:       "Pin List (App)",
-		Description: "Open the interactive Pin list app. This is a UI launcher: it renders an iframe for a human to browse pins. It is not a headless primitive. Prefer pins_list (headless) for autonomous access.",
+		Description: "Open the interactive Pin list app. This is a UI launcher: it renders an iframe for a human to browse pins. It is not a headless primitive; the headless equivalent is pins_list for autonomous access.",
 		Category:    model.CategoryCore,
 		ResourceURI: download.PinListAppURI,
 	}), download.RegisterPinListApp))
@@ -325,7 +325,7 @@ func registerCustomTools(deps customToolDeps) error {
 		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 			Name:        auth.OpenAccountToolName,
 			Title:       "Account (App)",
-			Description: "Open the interactive Account app. This is a UI launcher: it renders an iframe for a human to view authentication status. It is not a headless primitive. Prefer auth_status (headless) for autonomous access.",
+			Description: "Open the interactive Account app. This is a UI launcher: it renders an iframe for a human to view authentication status. It is not a headless primitive; the headless equivalent is auth_status for autonomous access.",
 			Category:    model.CategoryAccount,
 			ResourceURI: auth.AuthStatusAppURI,
 		}), auth.RegisterAuthStatusApp))
@@ -444,7 +444,7 @@ func registerCustomTools(deps customToolDeps) error {
 		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 			Name:        download.OpenDownloadManagerToolName,
 			Title:       "Download from IPFS",
-			Description: "Open the interactive Download from IPFS app. This is a UI launcher: it renders an iframe for a human to initiate a download. It is not a headless primitive. Prefer download_file (headless) for autonomous workflows; call this only when a human downloader is desired.",
+			Description: "Open the interactive Download from IPFS app. This is a UI launcher: it renders an iframe for a human to initiate a download. It is not a headless primitive; the headless equivalent is download_file for autonomous downloads without a rendered form.",
 			Category:    model.CategoryCore,
 			ResourceURI: download.IPFSDownloadAppURI,
 		}), download.RegisterIPFSDownloadApp))
@@ -461,7 +461,7 @@ func registerCustomTools(deps customToolDeps) error {
 		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 			Name:        download.OpenVaultDownloadManagerToolName,
 			Title:       "Download from Vault",
-			Description: "Open the interactive Download from Vault app. This is a UI launcher: it renders an iframe for a human to initiate a vault download. It is not a headless primitive. Prefer vault_get_file (headless) for autonomous workflows; call this only when a human vault downloader is desired.",
+			Description: "Open the interactive Download from Vault app. This is a UI launcher: it renders an iframe for a human to initiate a vault download. It is not a headless primitive; the headless equivalent is vault_get_file for autonomous vault downloads without a rendered form.",
 			Category:    model.CategoryVault,
 			ResourceURI: download.VaultDownloadAppURI,
 		}), download.RegisterVaultDownloadApp))

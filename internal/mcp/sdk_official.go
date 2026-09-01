@@ -375,9 +375,11 @@ func registerOfficialSearchTools(srv *sdk.Server, catalog *ToolCatalog) error {
 	discoveryNote := "Search the internal tool catalog by a single keyword. No boolean (AND/OR) syntax: pass one keyword at a time (e.g. 'pin', not 'pin OR upload'). Name matches are ranked exact, then starts-with, contains, then within-segment subsequence (a fuzzy abbreviation within a single word of the name), then whole-word description matches; tools that never match are omitted. Use the 'category' filter to narrow scope and 'limit' to cap results. Leave query empty or use 'help' for an onboarding listing of just the primary start-here tools, which also carries agent_guide for the full flows and a hint pointing at category browsing for a specific domain. Workflow: after discovering a tool here, call describe_tool(name) for its input schema, then invoke_tool(name, arguments). Capability and file-transfer tools are exposed directly on the tool surface AND indexed here, so they are discoverable by name (e.g. 'upload', 'capabilities'). Interactive wizard flows (category 'wizard') are excluded unless you filter for them specifically."
 
 	desc := model.ToolDescriptor{
-		Name:        "search_tools",
-		Description: discoveryNote,
-		InputSchema: schema.raw(),
+		Name:          "search_tools",
+		Title:         "Search tool catalog",
+		Description:   discoveryNote,
+		OpenWorldHint: false,
+		InputSchema:   schema.raw(),
 	}
 
 	desc.Handler = model.PinnerToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
@@ -422,9 +424,11 @@ func registerOfficialDescribeTool(srv *sdk.Server, catalog *ToolCatalog) error {
 	})
 
 	desc := model.ToolDescriptor{
-		Name:        "describe_tool",
-		Description: "Get the full input schema for a single tool by name. Use the tool name returned by search_tools. The inputSchema field contains the JSON Schema that the tool's arguments must conform to.",
-		InputSchema: schema.raw(),
+		Name:          "describe_tool",
+		Title:         "Describe a catalog tool",
+		Description:   "Get the full input schema for a single tool by name. Use the tool name returned by search_tools. The inputSchema field contains the JSON Schema that the tool's arguments conform to.",
+		OpenWorldHint: false,
+		InputSchema:   schema.raw(),
 	}
 
 	desc.Handler = model.PinnerToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
@@ -472,9 +476,11 @@ func registerOfficialInvokeTool(srv *sdk.Server, catalog *ToolCatalog, stdioMode
 	})
 
 	desc := model.ToolDescriptor{
-		Name:        "invoke_tool",
-		Description: "Execute a tool by name with the given arguments. This is the third step of the discovery workflow: search_tools(name) to find a tool, describe_tool(name) for its input schema, then invoke_tool(name, arguments). The arguments object must match the tool's inputSchema returned by describe_tool.",
-		InputSchema: schema.raw(),
+		Name:          "invoke_tool",
+		Title:         "Invoke a catalog tool",
+		Description:   "Execute a tool by name with the given arguments. This is the third step of the discovery workflow: search_tools(name) to find a tool, describe_tool(name) for its input schema, then invoke_tool(name, arguments). The arguments object is validated against the tool's inputSchema returned by describe_tool.",
+		OpenWorldHint: false,
+		InputSchema:   schema.raw(),
 	}
 
 	desc.Handler = model.PinnerToolHandler(func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {

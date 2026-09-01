@@ -56,8 +56,18 @@ func RenderPinCreateAppHTML() string {
 func pinStatusDescriptor(pins PinningProvider) model.ToolDescriptor {
 	return model.ToolDescriptor{
 		Name:        "pin_status",
+		Title:       "Get pin status",
 		Description: "Poll the current status of a pinned CID. App-only helper for the Create a Pin view.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"cid":{"type":"string"}},"required":["cid"]}`),
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"cid":{"type":"string","description":"The IPFS CID being pinned, as submitted to the pin create flow."}},"required":["cid"]}`),
+		// OpenAI tool invocation labels shown by UI-capable hosts while the
+		// tool runs and after it finishes. Required alongside the openai
+		// outputTemplate this app helper carries.
+		Meta: map[string]any{
+			"openai/toolInvocation": map[string]any{
+				"invoking": "Checking pin status…",
+				"invoked":  "Pin status checked",
+			},
+		},
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			cid, _ := req.Arguments["cid"].(string)
 			if cid == "" {
@@ -109,5 +119,3 @@ func RegisterPinApp(srv *sdk.Server, catalog AppCatalog, pins PinningProvider) e
 		Helpers:  []model.ToolDescriptor{pinStatusDescriptor(pins)},
 	})
 }
-
-

@@ -45,6 +45,10 @@ type ToolEntry struct {
 	Category    ToolCategory
 	ReadOnly    bool
 	Destructive bool
+	// OpenWorldHint declares whether the tool may interact with the
+	// "open world" of external systems; carried through to the wire
+	// annotations (see ToolDescriptor.OpenWorldHint).
+	OpenWorldHint bool
 	// DirectVisible reports whether the tool is part of the directly-exposed
 	// surface (tools/list) in addition to progressive discovery. The curated
 	// registration loop registers every DirectVisible entry; the search/describe

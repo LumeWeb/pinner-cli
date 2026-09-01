@@ -29,8 +29,10 @@ import (
 type UploadFileInput struct {
 	// Source is the file to upload. Mode must be valid for the running
 	// transport: path=co-located stdio; mint=HTTP/tunnel (returns a presigned
-	// curl PUT URL); url/data=OpenAI tunnel (relayed through MCP).
-	Source *UploadSource `json:"source,omitempty"`
+	// curl PUT URL); url/data=OpenAI tunnel (relayed through MCP). Omit when a
+	// host-provided `file` reference is used; see capabilities.source_modes for
+	// the modes valid on this transport.
+	Source *UploadSource `json:"source,omitempty" jsonschema:"description=The file to upload, as a transport-scoped source object. Omit when a host-provided file reference is used instead; the valid mode values for this transport are listed in capabilities.source_modes (path=co-located stdio, mint=HTTP/tunnel presigned endpoint, url/data=relay)."`
 	// File is a host-provided file reference (temporary download_url +
 	// file_id). It enables a ChatGPT user to hand a file — including
 	// assistant-generated files in the assistant's sandbox — directly to Pinner
@@ -39,7 +41,7 @@ type UploadFileInput struct {
 	// the agent must NOT construct this object itself, base64-encode the
 	// file, or create a data URI when `file` can be used. Mutually exclusive
 	// with Source.
-	File *ChatGPTFileInput `json:"file,omitempty" jsonschema:"description=Host-provided file reference ({download_url, file_id}). Only valid when this host can actually supply one — check capabilities.host_file_input (most non-OpenAI hosts, including Grok, have it false). When host_file_input is true, pass the reference for a file the host runtime already holds instead of a source. When it is false, this property does not apply: use a transport-scoped source (e.g. source.mode=mint for HTTP), and do NOT construct download_url/file_id yourself, base64-encode the file, or mint a presigned URL."`
+	File *ChatGPTFileInput `json:"file,omitempty" jsonschema:"description=Host-provided file reference ({download_url, file_id}). Only valid when this host can actually supply one — check capabilities.host_file_input (most non-OpenAI hosts, including Grok, have it false). When host_file_input is true, pass the reference for a file the host runtime already holds instead of a source. When it is false, this property does not apply: use a transport-scoped source (e.g. source.mode=mint for HTTP) instead of constructing download_url/file_id manually, base64-encoding the file, or minting a presigned URL."`
 	// Name is the upload label (defaults to the source name or 'upload').
 	Name string `json:"name,omitempty" jsonschema:"description=Optional upload name (defaults to the file name)."`
 	// Wait waits for this upload's own pin operation to complete.
@@ -56,7 +58,7 @@ type UploadFileInput struct {
 	// mode on the handle at mint time and applies it when the PUT bytes
 	// arrive, but DEFAULTS to preserve — only an explicit convert extracts a
 	// streamed archive.
-	ArchiveMode string `json:"archive_mode,omitempty" jsonschema:"enum=convert,enum=preserve,description=How to treat an archive. convert extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. The archive's directory structure is preserved exactly, so index.html MUST be at the archive root (not inside a wrapper directory). preserve keeps the archive intact as a single file. IMPORTANT: the default depends on the source. Host-file, path, and url/data sources default to convert; the mint (presigned PUT) source defaults to preserve and ONLY converts when archive_mode=convert is passed explicitly. A website ZIP streamed via source.mode=mint therefore MUST pass archive_mode=convert, or it uploads as a raw single-file CID and websites_create will reject it."`
+	ArchiveMode string `json:"archive_mode,omitempty" jsonschema:"enum=convert,enum=preserve,description=How to treat an archive. convert extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. The archive's directory structure is preserved exactly, so index.html sits at the archive root (not inside a wrapper directory). preserve keeps the archive intact as a single file. IMPORTANT: the default depends on the source. Host-file, path, and url/data sources default to convert; the mint (presigned PUT) source defaults to preserve and ONLY converts when archive_mode=convert is passed explicitly. A website ZIP streamed via source.mode=mint therefore needs archive_mode=convert, or it uploads as a raw single-file CID and websites_create will reject it."`
 	// TTL is the presigned endpoint lifetime (e.g. 5m). Only used on transports
 	// that use presigned PUT endpoints (HTTP/tunnel).
 	TTL string `json:"ttl,omitempty" jsonschema:"description=Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used on transports that use presigned PUT endpoints."`
@@ -65,7 +67,7 @@ type UploadFileInput struct {
 	// not a bare file). Only affects single-file uploads (file / url / data /
 	// path to a file, or a mint PUT whose bytes are not an archive); directory
 	// and archive-converted uploads are already a directory root.
-	Wrap bool `json:"wrap,omitempty" jsonschema:"description=Wrap a single file in a directory root so the CID is a directory (required when the upload is a website). When wrap=true and no name is given, HTML content is auto-named index.html so the site resolves at its root. Do NOT set an explicit name like 'starter-site' — it is honored as-is and the page will only be reachable at /starter-site, not /. Only affects single-file uploads; directories and archive-converted uploads are already a directory root."`
+	Wrap bool `json:"wrap,omitempty" jsonschema:"description=Wrap a single file in a directory root so the CID is a directory (required when the upload is a website). When wrap=true and no name is given, HTML content is auto-named index.html so the site resolves at its root. An explicit name such as 'starter-site' is honored as-is and the page is then only reachable at /starter-site, not /. Only affects single-file uploads; directories and archive-converted uploads are already a directory root."`
 }
 
 // UploadFileHandler is the co-located local-path upload path for upload_file.
@@ -131,10 +133,11 @@ func newUploadFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenA
 		meta = ChatGPTFileMeta()
 	}
 	return model.ToolDescriptor{
-		Name:        "upload_file",
-		Title:       "Upload a file to Pinner",
-		Description: uploadFileDescription(transport),
-		Category:    model.CategoryCore,
+		Name:          "upload_file",
+		Title:         "Upload a file to Pinner",
+		Description:   uploadFileDescription(transport),
+		Category:      model.CategoryCore,
+		OpenWorldHint: true, // submits content to the Pinner/IPFS network
 		// The input schema is compiled from the profile's feature set: the
 		// `file` handoff is present only when FeatFileHostInput, source.mode is
 		// narrowed to the transport's modes, and the mode prose is rewritten
@@ -326,8 +329,8 @@ func newUploadFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenA
 // is correct on every profile); only their presence and the source-mode enum
 // vary by feature.
 const (
-	archiveModeSchemaDesc = "How to treat an archive. convert extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. The archive's directory structure is preserved exactly, so index.html MUST be at the archive root (not inside a wrapper directory). preserve keeps the archive intact as a single file. IMPORTANT: the default depends on the source. Host-file, path, and url/data sources default to convert; the mint (presigned PUT) source defaults to preserve and ONLY converts when archive_mode=convert is passed explicitly. A website ZIP streamed via source.mode=mint therefore MUST pass archive_mode=convert, or it uploads as a raw single-file CID and websites_create will reject it."
-	wrapSchemaDesc        = "Wrap a single file in a directory root so the CID is a directory (required when the upload is a website). When wrap=true and no name is given, HTML content is auto-named index.html so the site resolves at its root. Do NOT set an explicit name like 'starter-site' — it is honored as-is and the page will only be reachable at /starter-site, not /. Only affects single-file uploads; directories and archive-converted uploads are already a directory root."
+	archiveModeSchemaDesc = "How to treat an archive. convert extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. The archive's directory structure is preserved exactly, so index.html sits at the archive root (not inside a wrapper directory). preserve keeps the archive intact as a single file. IMPORTANT: the default depends on the source. Host-file, path, and url/data sources default to convert; the mint (presigned PUT) source defaults to preserve and ONLY converts when archive_mode=convert is passed explicitly. A website ZIP streamed via source.mode=mint therefore needs archive_mode=convert, or it uploads as a raw single-file CID and websites_create will reject it."
+	wrapSchemaDesc        = "Wrap a single file in a directory root so the CID is a directory (required when the upload is a website). When wrap=true and no name is given, HTML content is auto-named index.html so the site resolves at its root. An explicit name such as 'starter-site' is honored as-is and the page is then only reachable at /starter-site, not /. Only affects single-file uploads; directories and archive-converted uploads are already a directory root."
 )
 
 // sourceFallbackDesc is the mode.copy for hosts that accept a host-provided
@@ -431,7 +434,7 @@ func sourceSchemaTransform(s *jsonschema.Schema, fs hostenv.FeatureSet, vault bo
 func uploadFileSchema(features hostenv.FeatureSet) json.RawMessage {
 	return toolforge.Schema().
 		Property("file", toolargs.SchemaFor[ChatGPTFileInput](), toolforge.When(hostenv.FeatFileHostInput)).
-		Property("source", toolargs.SchemaFor[UploadSource](), toolforge.Transform(UploadSourceSchemaTransform)).
+		Property("source", toolargs.SchemaFor[UploadSource](), toolforge.Description("The file to upload as a transport-scoped source object. Choose the mode this transport accepts (see capabilities.source_modes): path=co-located stdio, mint=HTTP/tunnel presigned endpoint, url/data=relay. Omit when a host-provided file reference is used instead."), toolforge.Transform(UploadSourceSchemaTransform)).
 		StringProperty("name", "Optional upload name (defaults to the file name).").
 		BoolProperty("wait", "Wait until this upload's own pin operation completes before returning (the upload already pins; this only controls whether the call blocks for it).").
 		StringProperty("archive_mode", archiveModeSchemaDesc, toolforge.Enum("convert", "preserve"), toolforge.Transform(archiveModeSchemaTransform)).
@@ -445,7 +448,7 @@ func uploadFileSchema(features hostenv.FeatureSet) json.RawMessage {
 // sentences so the preserve-for-mint default and the convert-for-website rule
 // stay Grok-critical and independently maintainable.
 var mintOnlyArchiveModeDesc = toolforge.Static(
-	"convert extracts an archive and uploads its contents as a directory DAG (index.html must be at the archive root).",
+	"convert extracts an archive and uploads its contents as a directory DAG (index.html sits at the archive root).",
 ).
 	StaticSentence("preserve (the default for the mint source) keeps the archive intact as a single file.").
 	StaticSentence("For source.mode=mint, pass archive_mode=convert for a website ZIP or it uploads as a raw single-file CID that websites_create will reject.")
@@ -489,7 +492,7 @@ func mintOnlySource(fs hostenv.FeatureSet) bool {
 // (see mintOnlySource's comment for why relay capability features are ignored).
 // See mintOnlyArchiveModeDesc for the pure mint-only variant.
 var archiveModeDesc = toolforge.Static(
-	"How to treat an archive. convert extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. The archive's directory structure is preserved exactly, so index.html MUST be at the archive root (not inside a wrapper directory). preserve keeps the archive intact as a single file.",
+	"How to treat an archive. convert extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. The archive's directory structure is preserved exactly, so index.html sits at the archive root (not inside a wrapper directory). preserve keeps the archive intact as a single file.",
 ).
 	StaticSentence("The default depends on which sources this host accepts.").
 	WhenSentence(hostenv.FeatFileHostInput,
@@ -505,7 +508,7 @@ var archiveModeDesc = toolforge.Static(
 		"A url/data source defaults to convert.",
 	).
 	WhenTransportSentence(hostenv.TransportHTTP,
-		"A website ZIP streamed via source.mode=mint therefore MUST pass archive_mode=convert, or it uploads as a raw single-file CID that websites_create will reject.",
+		"A website ZIP streamed via source.mode=mint therefore needs archive_mode=convert, or it uploads as a raw single-file CID that websites_create will reject.",
 	)
 
 // uploadFileDescription resolves the tool description from the forge's

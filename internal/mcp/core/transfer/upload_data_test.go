@@ -31,7 +31,7 @@ func TestDataURIUploadDescriptionProfileRegisters(t *testing.T) {
 
 	grok, ok := toolforge.ResolveDescription(desc.MCPTargets, hostenv.ProfileGrokHTTP)
 	require.True(t, ok)
-	require.NotContains(t, grok, "Do NOT call this tool on this host", "Grok declares FeatSourceData so upload_data is usable for it")
+	require.NotContains(t, grok, "This transport has no data: URI relay", "Grok declares FeatSourceData so upload_data is usable for it")
 	require.NotContains(t, grok, "host_file_input == true", "no ChatGPT-oriented negation may survive")
 
 	// Generic HTTP declares no FeatSourceData: the tool must be omitted at
@@ -39,11 +39,11 @@ func TestDataURIUploadDescriptionProfileRegisters(t *testing.T) {
 	// description for that profile never surfaces a usable copy.
 	genericHTTP, ok := toolforge.ResolveDescription(desc.MCPTargets, hostenv.ProfileHTTPGeneric)
 	require.True(t, ok)
-	require.Contains(t, genericHTTP, "Do NOT call this tool on this host")
+	require.Contains(t, genericHTTP, "This transport has no data: URI relay")
 
 	openai, ok := toolforge.ResolveDescription(desc.MCPTargets, hostenv.ProfileOpenAITunnel)
 	require.True(t, ok)
-	require.NotContains(t, openai, "Do NOT call this tool on this host", "OpenAI tunnel keeps upload_data usable")
+	require.NotContains(t, openai, "This transport has no data: URI relay", "OpenAI tunnel keeps upload_data usable")
 }
 
 func TestDataURIUploadDescriptorRequiresFile(t *testing.T) {

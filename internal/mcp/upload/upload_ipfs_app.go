@@ -78,7 +78,15 @@ func ipfsUploadSubmitDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 		Name:        "ipfs_upload_submit",
 		Title:       "Prepare a one-time upload endpoint",
 		Description: "Prepare (or continue) a one-time presigned HTTP PUT endpoint bound to a canonical upload handle; the app's Uppy XHR uploader writes file bytes to it out of band. Passing a handle prepared by upload_file fulfills that same operation. App-only helper for the Upload to IPFS view.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"handle":{"type":"string"},"name":{"type":"string"},"ttl":{"type":"string"}}}`),
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"handle":{"type":"string","description":"Optional canonical upload handle prepared by upload_file; when given and still unfulfilled, the same endpoint+handle for that operation is returned instead of minting a new one."},"name":{"type":"string","description":"Optional upload name (defaults to the file name or 'upload')."},"ttl":{"type":"string","description":"Presigned endpoint lifetime as a duration string (e.g. 5m; default 5 minutes)."}}}`),
+		// OpenAI tool invocation labels shown by UI-capable hosts while the
+		// tool runs and after it finishes.
+		Meta: map[string]any{
+			"openai/toolInvocation": map[string]any{
+				"invoking": "Preparing upload endpoint…",
+				"invoked":  "Upload endpoint ready",
+			},
+		},
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[IPFSUploadSubmitInput](req)
 			if err != nil {
@@ -101,13 +109,13 @@ func ipfsUploadSubmitDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 			if in.Handle != "" {
 				if url, ok := hp.FindUpload(in.Handle); ok {
 					sc := map[string]any{
-						"url":            url,
-						"upload_handle":  in.Handle,
-						"ttl":            ttl.String(),
-						"max_bytes":      hp.MaxBytes(),
-						"poll_tool":      "ipfs_upload_status",
-						"continued":      true,
-						"response_body":  "the 202 body carries the SAME upload_handle; pass it to poll_tool",
+						"url":           url,
+						"upload_handle": in.Handle,
+						"ttl":           ttl.String(),
+						"max_bytes":     hp.MaxBytes(),
+						"poll_tool":     "ipfs_upload_status",
+						"continued":     true,
+						"response_body": "the 202 body carries the SAME upload_handle; pass it to poll_tool",
 					}
 					return model.ToolResult{
 						StructuredContent: sc,
@@ -184,7 +192,15 @@ func ipfsUploadStatusDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 		Name:        "ipfs_upload_status",
 		Title:       "Get upload status",
 		Description: "Return the status of an async upload by handle: queued, running, completed (with CID), failed, or cancelled. App-only helper for the Upload to IPFS view.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"handle":{"type":"string"}},"required":["handle"]}`),
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"handle":{"type":"string","description":"Opaque upload handle returned in the presigned upload's 202 response body."}},"required":["handle"]}`),
+		// OpenAI tool invocation labels shown by UI-capable hosts while the
+		// tool runs and after it finishes.
+		Meta: map[string]any{
+			"openai/toolInvocation": map[string]any{
+				"invoking": "Checking upload status…",
+				"invoked":  "Upload status retrieved",
+			},
+		},
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[UploadHandleInput](req)
 			if err != nil {

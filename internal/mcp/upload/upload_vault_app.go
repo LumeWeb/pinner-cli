@@ -58,7 +58,16 @@ func vaultUploadSubmitDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescrip
 		Name:        "vault_upload_submit",
 		Title:       "Prepare a vault upload endpoint",
 		Description: "Mint a one-time presigned PUT endpoint that writes the uploaded file body into the encrypted vault at the given path. App-only helper for the Upload to Vault view.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"vault_path":{"type":"string"},"ttl":{"type":"string"}},"required":["vault_path"]}`),
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"vault_path":{"type":"string","description":"Vault destination file path, e.g. vault:/uploads/report.pdf. Required."},"ttl":{"type":"string","description":"Optional presigned endpoint lifetime, e.g. 5m (default 5m)."}},"required":["vault_path"]}`),
+		// OpenAI tool invocation labels shown by UI-capable hosts while the
+		// tool runs and after it finishes. Required alongside the openai
+		// outputTemplate this app helper carries.
+		Meta: map[string]any{
+			"openai/toolInvocation": map[string]any{
+				"invoking": "Preparing vault upload endpoint…",
+				"invoked":  "Vault upload endpoint ready",
+			},
+		},
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[VaultUploadSubmitInput](req)
 			if err != nil {
@@ -121,6 +130,6 @@ func RegisterVaultUploadApp(srv *sdk.Server, catalog apps.AppCatalog, vu *transf
 		// Attach the UI view to the open_vault_manager LAUNCHER — not the
 		// headless vault_put_file primitive.
 		AttachTo: []string{OpenVaultManagerToolName},
-		Helpers:            []model.ToolDescriptor{vaultUploadSubmitDescriptor(vu)},
+		Helpers:  []model.ToolDescriptor{vaultUploadSubmitDescriptor(vu)},
 	})
 }

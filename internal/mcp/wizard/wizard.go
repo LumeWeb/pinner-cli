@@ -1373,9 +1373,10 @@ func buildStepResponse(sess *session.Session) StepResponse {
 
 // --- MCP tool registration ---
 
-func wizardEntry(name, description string, schema json.RawMessage, handler model.PinnerToolHandler) *model.ToolEntry {
+func wizardEntry(name, title, description string, schema json.RawMessage, handler model.PinnerToolHandler) *model.ToolEntry {
 	return &model.ToolEntry{
 		Name:        name,
+		Title:       title,
 		Description: description,
 		Category:    model.CategoryWizard,
 		InputSchema: schema,
@@ -1415,8 +1416,8 @@ type toolAdder interface {
 	Add(entry *model.ToolEntry)
 }
 
-func registerWizardStart(catalog toolAdder, name, description string, start func() (*session.Session, error)) {
-	catalog.Add(wizardEntry(name, description, json.RawMessage(`{"type":"object","properties":{}}`), func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+func registerWizardStart(catalog toolAdder, name, title, description string, start func() (*session.Session, error)) {
+	catalog.Add(wizardEntry(name, title, description, json.RawMessage(`{"type":"object","properties":{}}`), func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
 		sess, err := start()
 		if err != nil {
 			return marshalWizardResponse(StepResponse{Error: fmt.Sprintf("failed to create session: %v", err)})
@@ -1425,8 +1426,8 @@ func registerWizardStart(catalog toolAdder, name, description string, start func
 	}))
 }
 
-func registerWizardStep(catalog toolAdder, name, description string, store *session.SessionStore, completionMessage string) {
-	catalog.Add(wizardEntry(name, description, wizardStepSchema(), func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
+func registerWizardStep(catalog toolAdder, name, title, description string, store *session.SessionStore, completionMessage string) {
+	catalog.Add(wizardEntry(name, title, description, wizardStepSchema(), func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		in, err := toolargs.DecodeToolArgs[WizardStepInput](req)
 		if err != nil {
 			return marshalWizardResponse(StepResponse{Error: fmt.Sprintf("invalid step arguments: %v", err)})
@@ -1487,11 +1488,11 @@ func registerWizardStep(catalog toolAdder, name, description string, store *sess
 }
 
 func RegisterWizardTools(catalog toolAdder, store *session.SessionStore, wDeps WebsitesWizardDeps, sDeps SetupWizardDeps, dDeps DomainWizardDeps) error {
-	registerWizardStart(catalog, "domains_wizard_start", "Start a new domain addition wizard session.", func() (*session.Session, error) { return NewDomainSession(store, dDeps) })
-	registerWizardStep(catalog, "domains_wizard_step", "Advance a domain addition wizard session by one step. Once a wizard session has been started, treat its next_step and next_step_schema as the authoritative workflow: continue by calling this step tool with the requested input until the wizard explicitly reports complete or instructs a handoff to another tool. Do not abandon the wizard to rediscover equivalent low-level tools unless the wizard fails or cannot represent the user's request.", store, "Domains wizard completed successfully.")
-	registerWizardStart(catalog, "websites_wizard_start", "Start a new websites creation wizard session. Do NOT start this for a generic publish-after-upload request (e.g. 'publish this', 'host this', 'create me a website'): that headless path is the publish_website flow in agent_guide (upload_file then websites_create) and should not enter a guided wizard. Start this wizard only when the user explicitly asked for a guided, step-by-step website onboarding flow.", func() (*session.Session, error) { return NewWebsitesSession(store, wDeps) })
-	registerWizardStep(catalog, "websites_wizard_step", "Advance a websites wizard session by one step. Once a wizard session has been started, treat its next_step and next_step_schema as the authoritative workflow: continue by calling this step tool with the requested input until the wizard explicitly reports complete or instructs a handoff to another tool. Do not abandon the wizard to rediscover equivalent low-level tools unless the wizard fails or cannot represent the user's request.", store, "Websites wizard completed successfully.")
-	registerWizardStart(catalog, "setup_wizard_start", "Start a new setup wizard session.", func() (*session.Session, error) { return NewSetupSession(store, sDeps) })
-	registerWizardStep(catalog, "setup_wizard_step", "Advance a setup wizard session by one step. Once a wizard session has been started, treat its next_step and next_step_schema as the authoritative workflow: continue by calling this step tool with the requested input until the wizard explicitly reports complete or instructs a handoff to another tool. Do not abandon the wizard to rediscover equivalent low-level tools unless the wizard fails or cannot represent the user's request.", store, "Setup wizard completed successfully.")
+	registerWizardStart(catalog, "domains_wizard_start", "Start a Domain Wizard", "Start a new domain addition wizard session.", func() (*session.Session, error) { return NewDomainSession(store, dDeps) })
+	registerWizardStep(catalog, "domains_wizard_step", "Advance a Domain Wizard", "Advance a domain addition wizard session by one step. The session's next_step and next_step_schema are the authoritative workflow: the step tool is called with the requested input until the wizard reports complete or hands off to another tool. Rediscovering equivalent low-level tools is only relevant if the wizard fails or cannot represent the user's request.", store, "Domains wizard completed successfully.")
+	registerWizardStart(catalog, "websites_wizard_start", "Start a Website Wizard", "Start a new websites creation wizard session. Generic publish-after-upload requests (e.g. 'publish this', 'host this', 'create me a website') follow the headless publish_website flow in agent_guide (upload_file then websites_create) rather than a guided wizard. The guided wizard applies when the user explicitly asked for a step-by-step website onboarding flow.", func() (*session.Session, error) { return NewWebsitesSession(store, wDeps) })
+	registerWizardStep(catalog, "websites_wizard_step", "Advance a Website Wizard", "Advance a websites wizard session by one step. The session's next_step and next_step_schema are the authoritative workflow: the step tool is called with the requested input until the wizard reports complete or hands off to another tool. Rediscovering equivalent low-level tools is only relevant if the wizard fails or cannot represent the user's request.", store, "Websites wizard completed successfully.")
+	registerWizardStart(catalog, "setup_wizard_start", "Start a Setup Wizard", "Start a new setup wizard session.", func() (*session.Session, error) { return NewSetupSession(store, sDeps) })
+	registerWizardStep(catalog, "setup_wizard_step", "Advance a Setup Wizard", "Advance a setup wizard session by one step. The session's next_step and next_step_schema are the authoritative workflow: the step tool is called with the requested input until the wizard reports complete or hands off to another tool. Rediscovering equivalent low-level tools is only relevant if the wizard fails or cannot represent the user's request.", store, "Setup wizard completed successfully.")
 	return nil
 }

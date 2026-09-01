@@ -29,13 +29,13 @@ type RelayURLUploadInput struct {
 // unconditionally forbids the tool so a model never routes the byte path
 // through a URL fetch when mint + PUT is what works.
 var relayURLUploadDesc = toolforge.Static(
-	"Fetch a public HTTPS URL and upload it to Pinner, pinning the resulting CID. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation. Do not put Pinner's credentials in the URL; Pinner fetches with its own stored auth.",
+	"Fetch a public HTTPS URL and upload it to Pinner, pinning the resulting CID. The returned CID is already pinned, so pins_add is not needed afterward; the wait flag waits for this upload's own pin operation. Pinner's credentials are not placed in the URL; Pinner fetches with its own stored auth.",
 ).
 	When(hostenv.FeatSourceURL,
-		"Use when the bytes are already on the public web. Do not use for a file in the agent sandbox — that is upload_file(source.mode=mint) plus the host PUT. The server fetches the URL directly; do not download then re-upload.",
+		"Use when the bytes are already on the public web, not for a file in the agent sandbox — that is upload_file(source.mode=mint) plus the host PUT. The server fetches the URL directly (no download-then-re-upload).",
 	).
 	Unless(hostenv.FeatSourceURL,
-		"Do NOT call this tool on this host: it has no URL-fetch relay. Upload bytes with upload_file(source.mode=mint) by PUTting the agent-local file to the returned url, then poll upload_status.",
+		"This transport has no URL-fetch relay. Upload bytes with upload_file(source.mode=mint) by PUTting the agent-local file to the returned url, then poll upload_status.",
 	)
 
 // RelayURLUploadTargets is the per-profile description target for upload_url,
@@ -52,10 +52,11 @@ var RelayURLUploadTargets = toolforge.MCPTargets(model.ToolTarget{
 func RelayURLUploadDescriptor(handler transfer.RelayURLUploadHandler, allowedHosts []string, maxBytes int64) model.ToolDescriptor {
 	maxBytes = ieo.EffectiveRelayMaxBytes(maxBytes)
 	return model.ToolDescriptor{
-		Name:        "upload_url",
-		Title:       "Upload a file from a URL",
-		Description: relayURLUploadDesc.Resolve(hostenv.ProfileForTransport(transfer.TransportHTTP)),
-		Category:    model.CategoryCore,
+		Name:          "upload_url",
+		Title:         "Upload a file from a URL",
+		Description:   relayURLUploadDesc.Resolve(hostenv.ProfileForTransport(transfer.TransportHTTP)),
+		Category:      model.CategoryCore,
+		OpenWorldHint: true, // fetches a caller-supplied URL and submits to Pinner/IPFS
 		// Profile-aware target so the description resolves through the catalog
 		// seam (describe_tool/search_tools) per calling host like every other
 		// custom tool.

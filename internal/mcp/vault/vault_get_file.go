@@ -49,10 +49,11 @@ type VaultGetFileInput struct {
 // VaultPutHandler.
 func NewVaultGetFileDescriptor(getFn transfer.VaultGetHandler, hd *transfer.Download, downloadRoot string, maxDownloadBytes int64, tunnelOpenAI bool) model.ToolDescriptor {
 	return model.ToolDescriptor{
-		Name:        "vault_get_file",
-		Title:       "Download a file from the Pinner vault",
-		Description: vaultGetFileDescription(hd != nil, tunnelOpenAI),
-		Category:    model.CategoryCore,
+		Name:          "vault_get_file",
+		Title:         "Download a file from the Pinner vault",
+		Description:   vaultGetFileDescription(hd != nil, tunnelOpenAI),
+		Category:      model.CategoryCore,
+		OpenWorldHint: true, // may fetch file bytes from the Sia network
 		// The input schema advertises only the sink values valid for the running
 		// server (drop only when a reachable HTTP mux exists on a non-OpenAI
 		// tunnel), matching capabilities().download_sink_modes.

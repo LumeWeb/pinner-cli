@@ -48,12 +48,19 @@ func Tool(desc model.ToolDescriptor) *mcp.Tool {
 	if len(desc.OutputSchema) > 0 && json.Valid(desc.OutputSchema) {
 		tool.OutputSchema = json.RawMessage(desc.OutputSchema)
 	}
-	if desc.ReadOnly || desc.Destructive || desc.Title != "" {
-		tool.Annotations = &mcp.ToolAnnotations{
-			Title:           desc.Title,
-			ReadOnlyHint:    desc.ReadOnly,
-			DestructiveHint: &desc.Destructive,
-		}
+	// Platform compatibility checks (Claude directory, MCP tool-hints audit)
+	// require every annotated tool to declare all three behavior hints as
+	// booleans on the wire: readOnlyHint (state changes), destructiveHint
+	// (irreversible side effects), and openWorldHint (external/open-world
+	// interactions). The SDK serializes readOnlyHint unconditionally but omits
+	// nil pointer hints, so the pointer hints are always populated from the
+	// descriptor's booleans (false-omitted nil hints were read back as null/non
+	// -boolean by validators).
+	tool.Annotations = &mcp.ToolAnnotations{
+		Title:           desc.Title,
+		ReadOnlyHint:    desc.ReadOnly,
+		DestructiveHint: &desc.Destructive,
+		OpenWorldHint:   &desc.OpenWorldHint,
 	}
 	return tool
 }

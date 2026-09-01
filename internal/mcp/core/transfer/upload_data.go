@@ -17,10 +17,10 @@ import (
 // The File field has no omitempty tag, so the jsonschema reflector marks it
 // required (matching the wizard step-input convention).
 type DataURIUploadInput struct {
-	File string `json:"file" jsonschema:"format=uri,description=RFC 2397 data: URI with a base64-encoded payload, e.g. data:;base64,<base64 payload> or data:text/plain;base64,<base64 payload>; optional ;name=<name>;size=<n> parameters are accepted but not required. The payload must be base64. The bytes do not enter the model context; the host supplies this value from a user-attached file."`
+	File string `json:"file" jsonschema:"format=uri,description=RFC 2397 data: URI with a base64-encoded payload, e.g. data:;base64,<base64 payload> or data:text/plain;base64,<base64 payload>; optional ;name=<name>;size=<n> parameters are accepted but not required. The payload is base64. The bytes do not enter the model context; the host supplies this value from a user-attached file."`
 	Name string `json:"name,omitempty" jsonschema:"description=Optional upload name (defaults to the data URI name, else 'upload')."`
 	Wait bool   `json:"wait,omitempty" jsonschema:"description=Wait until this upload's own pin operation completes before returning (the upload already pins; this only controls whether the call blocks for it)."`
-	Wrap bool   `json:"wrap,omitempty" jsonschema:"description=Wrap the single file in a directory root so the resulting CID is a directory. Required when the upload is a website (a website must be a directory, not a bare file). When wrap=true and no name is given, HTML content is auto-named index.html so the site resolves at its root. Do NOT set an explicit name like 'starter-site' — it is honored as-is and the page will only be reachable at /starter-site, not /. True only affects single-file uploads; directory uploads are already a directory root."`
+	Wrap bool   `json:"wrap,omitempty" jsonschema:"description=Wrap the single file in a directory root so the resulting CID is a directory. Required when the upload is a website (a website resolves to a directory, not a bare file). When wrap=true and no name is given, HTML content is auto-named index.html so the site resolves at its root. An explicit name such as 'starter-site' is honored as-is and the page is then only reachable at /starter-site, not /. True only affects single-file uploads; directory uploads are already a directory root."`
 }
 
 // dataURIUploadDesc composes the upload_data tool description per profile.
@@ -32,16 +32,16 @@ type DataURIUploadInput struct {
 // gone: it was a negation that flipped meaning after the honest host_file_input
 // report, so the gate is now the presence of the data relay itself.
 var dataURIUploadDesc = toolforge.Static(
-	"Upload bytes from an RFC 2397 data: URI and pin the resulting CID. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation.",
+	"Upload bytes from an RFC 2397 data: URI and pin the resulting CID. The returned CID is already pinned, so pins_add is not needed afterward; the wait flag waits for this upload's own pin operation.",
 ).
 	When(hostenv.FeatSourceData,
-		"Last resort only — never use for a host-provided or assistant-generated file.",
+		"Last resort — not for a host-provided or assistant-generated file.",
 	).
 	WhenAll([]hostenv.Feature{hostenv.FeatSourceMint, hostenv.FeatSourceURL, hostenv.FeatSourceData},
 		"On this host prefer upload_file (mint + PUT) for an agent-local file and upload_url for a public HTTPS URL.",
 	).
 	Unless(hostenv.FeatSourceData,
-		"Do NOT call this tool on this host: this transport has no data: URI relay. Upload bytes with upload_file(source.mode=mint) by PUTting the agent-local file to the returned url, then poll upload_status. Never base64-encode a file as a data URI.",
+		"This transport has no data: URI relay. Upload bytes with upload_file(source.mode=mint) by PUTting the agent-local file to the returned url, then poll upload_status; a file is not base64-encoded as a data URI.",
 	)
 
 // DataURIUploadTargets is the per-profile description target for upload_data,
@@ -68,12 +68,13 @@ func DataURIUploadDescriptor(handler DataURIUploadHandler, maxBytes int64) model
 	// relay sees an unconditional forbid instead of this neutral copy.
 	dataURIUploadDescription := dataURIUploadDesc.Resolve(hostenv.ProfileForTransport(TransportOpenAI))
 	return model.ToolDescriptor{
-		Name:        "upload_data",
-		Title:       "Upload a file from a data URI",
-		Description: dataURIUploadDescription,
-		Category:    model.CategoryCore,
-		MCPTargets:  DataURIUploadTargets,
-		InputSchema: toolargs.ToolSchemaFor[DataURIUploadInput](),
+		Name:          "upload_data",
+		Title:         "Upload a file from a data URI",
+		Description:   dataURIUploadDescription,
+		Category:      model.CategoryCore,
+		OpenWorldHint: true, // submits content to the Pinner/IPFS network
+		MCPTargets:    DataURIUploadTargets,
+		InputSchema:   toolargs.ToolSchemaFor[DataURIUploadInput](),
 		// x-mcp-file marks the "file" property as a file-valued input per the
 		// draft spec; the SDK's Meta map carries it without a typed field.
 		Meta: map[string]any{"x-mcp-file": map[string]any{"file": map[string]any{"transferModes": []string{"inline"}}}},
