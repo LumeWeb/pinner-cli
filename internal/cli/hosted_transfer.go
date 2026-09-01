@@ -94,9 +94,11 @@ func ipfsDownloadHandler(cfgMgr config.Manager, output Output, secure bool) tran
 		var svcOpts []DownloadServiceOption
 		svcOpts = append(svcOpts, WithDownloadAuthService(authSvc), WithDownloadIPFSEndpoint(cfgMgr.Config().GetIPFSEndpointWithSecure(secure)))
 		downloadSvc := defaultDownloadServiceFactory(cfgMgr, output, svcOpts...)
-		if err := downloadSvc.RequireAuthenticated(); err != nil {
-			return err
-		}
+		// The auth gate lives in Cat → newSDKDownloadService, which is ctx-aware
+		// (a hosted transfer carries the per-request credential on the context).
+		// Do not pre-check with the ctx-less RequireAuthenticated here — on a
+		// hosted server the shared config token is empty and that would wrongly
+		// reject an authenticated caller.
 		reader, err := downloadSvc.Cat(ctx, ipfsPath)
 		if err != nil {
 			return err

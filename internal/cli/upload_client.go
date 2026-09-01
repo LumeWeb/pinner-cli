@@ -161,6 +161,19 @@ func (s *UploadServiceDefault) RequireAuthenticated() error {
 	return nil
 }
 
+// requireAuthenticatedCtx is the ctx-aware auth gate for the transfer executor
+// path. On a hosted (Portal-embedded) server the per-request credential travels
+// on the context (stamped via credctx), not in the shared config, so an
+// authenticated session must pass even when cfgMgr.Config().AuthToken is empty.
+// The context check mirrors resolveAuthToken's preference: a context credential
+// wins, then the override/config token.
+func (s *UploadServiceDefault) requireAuthenticatedCtx(ctx context.Context) error {
+	if mcp.CredentialFromContext(ctx) != "" || s.getAuthToken() != "" {
+		return nil
+	}
+	return fmt.Errorf("not authenticated: please run 'pinner auth' first or provide --auth-token")
+}
+
 // getAuthToken returns the auth token to use, with override taking precedence.
 func (s *UploadServiceDefault) getAuthToken() string {
 	if s.authToken != "" {
@@ -177,7 +190,9 @@ func (s *UploadServiceDefault) getAuthToken() string {
 func (s *UploadServiceDefault) Upload(ctx context.Context, filesystem fs.FS, name string, wait bool, wrap bool) (*UploadResult, error) {
 	startTime := time.Now()
 
-	if err := s.RequireAuthenticated(); err != nil {
+	// Use the ctx-aware gate: a hosted transfer executor authenticates via the
+	// per-request credential on the context, not the shared config token.
+	if err := s.requireAuthenticatedCtx(ctx); err != nil {
 		return nil, err
 	}
 
