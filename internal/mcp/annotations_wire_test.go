@@ -97,12 +97,15 @@ func TestAuthStatusAnnotationOverride(t *testing.T) {
 	require.True(t, entry.Destructive, "auth_status must declare destructiveHint=true (a sent email cannot be unsent)")
 	require.True(t, entry.OpenWorldHint, "auth_status classifies as open-world")
 
-	// A sibling read op without an override keeps the Safety mapping.
+	// A sibling read op without an override keeps the Safety mapping. Reads
+	// change no external state, so openWorldHint must stay false alongside
+	// readOnlyHint=true (directory validators reject readOnly+openWorld).
 	entry = catalogDescriptorToEntry(catalog.ToolDescriptor{
 		Name:   "pins_list",
 		Safety: catalog.SafetyRead,
 	}, nil, nil)
 	require.True(t, entry.ReadOnly, "pins_list keeps SafetyRead -> readOnlyHint=true")
+	require.False(t, entry.OpenWorldHint, "pins_list is a read; openWorldHint must be false for read-only tools")
 }
 
 // requireSharedViewOrigin asserts every registered ui:// resource carries one

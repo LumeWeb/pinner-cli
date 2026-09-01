@@ -56,7 +56,7 @@ func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *Download, downloa
 		Title:         "Download IPFS content to a file",
 		Description:   downloadFileDescription(hd != nil, tunnelOpenAI),
 		Category:      model.CategoryCore,
-		OpenWorldHint: true, // fetches content from the IPFS network
+		OpenWorldHint: false, // closed workflow: pulls content into local storage/filedrop; publishes nothing to the public internet
 		// The input schema advertises only the sink values valid for the running
 		// transport (drop only when a reachable HTTP mux exists on a non-OpenAI
 		// tunnel), matching capabilities().download_sink_modes so the published

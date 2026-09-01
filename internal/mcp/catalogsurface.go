@@ -83,10 +83,13 @@ func compiledHandler(cat catalog.Catalog, name string, resolveToken func(ctx con
 // auth_status is the only one so far: it can trigger out-of-band sign-in
 // communication (the SSO hand-off emails the human a verification link, which
 // cannot be unsent), so the Claude/MCP directory validators classify it as
-// non-read and destructive — a sent message is irreversible. Its hints must
-// declare that contract rather than the local "reads config only" shape.
-var readOnlyOverride = map[string]struct{ readOnly, destructive bool }{
-	"auth_status": {readOnly: false, destructive: true},
+// non-read, destructive and open-world — a sent message is irreversible. Its
+// hints must declare that contract rather than the local "reads config only"
+// shape.
+var readOnlyOverride = map[string]struct {
+	readOnly, destructive, openWorld bool
+}{
+	"auth_status": {readOnly: false, destructive: true, openWorld: true},
 }
 
 // catalogDescriptorToEntry converts a compiler-produced catalog.ToolDescriptor
@@ -98,19 +101,22 @@ var readOnlyOverride = map[string]struct{ readOnly, destructive bool }{
 //	SafetyDestructive -> Destructive=true
 //	SafetyMutate      -> neither
 //
-// Every compiled operation talks to the Pinner service (or the IPFS/Sia
-// networks), so the open-world hint defaults to true; the hints may be
-// corrected per tool via readOnlyOverride where the platform contract
-// demands it (see auth_status).
+// The open-world hint derives from Safety: mutating/destructive operations
+// change publicly visible internet state (pins, websites, DNS), while reads
+// change nothing external, so openWorldHint stays false for any SafetyRead
+// operation. The hints may be corrected per tool via readOnlyOverride where
+// the platform contract demands it (see auth_status).
 //
 // DirectVisible is left to markCurated (the curated product surface), matching
 // how every other tool is promoted to tools/list.
 func catalogDescriptorToEntry(d catalog.ToolDescriptor, cat catalog.Catalog, resolveToken func(ctx context.Context) (string, error)) *model.ToolEntry {
 	readOnly := d.Safety == catalog.SafetyRead
 	destructive := d.Safety == catalog.SafetyDestructive
+	openWorld := !readOnly
 	if override, ok := readOnlyOverride[d.Name]; ok {
 		readOnly = override.readOnly
 		destructive = override.destructive
+		openWorld = override.openWorld
 	}
 	entry := model.ToolEntryFromDescriptor(model.ToolDescriptor{
 		Name:          d.Name,
@@ -121,7 +127,7 @@ func catalogDescriptorToEntry(d catalog.ToolDescriptor, cat catalog.Catalog, res
 		OutputSchema:  outputSchemaForCompiled(d.Safety, d.Interaction),
 		ReadOnly:      readOnly,
 		Destructive:   destructive,
-		OpenWorldHint: true,
+		OpenWorldHint: openWorld,
 		MCPTargets:    toModelTargets(d.MCPTargets),
 		Handler:       compiledHandler(cat, d.Name, resolveToken),
 	})

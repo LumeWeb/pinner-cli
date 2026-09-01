@@ -53,7 +53,7 @@ func NewVaultGetFileDescriptor(getFn transfer.VaultGetHandler, hd *transfer.Down
 		Title:         "Download a file from the Pinner vault",
 		Description:   vaultGetFileDescription(hd != nil, tunnelOpenAI),
 		Category:      model.CategoryCore,
-		OpenWorldHint: true, // may fetch file bytes from the Sia network
+		OpenWorldHint: false, // closed workflow: pulls the caller's vault bytes to a local sink/filedrop; publishes nothing
 		// The input schema advertises only the sink values valid for the running
 		// server (drop only when a reachable HTTP mux exists on a non-OpenAI
 		// tunnel), matching capabilities().download_sink_modes.
