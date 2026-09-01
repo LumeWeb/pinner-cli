@@ -322,6 +322,53 @@ func TestUploadServiceDefault_Upload(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotEmpty(t, result.CID)
 	})
+
+	t.Run("uploads with context credential when no config token", func(t *testing.T) {
+		// Regresses the hosted (Portal-embedded) upload: the session is
+		// authenticated by the per-request credential carried on the context
+		// (credctx), while the shared config token is empty. The ctx-aware auth
+		// gate must accept it and the SDK request must authenticate as the
+		// context caller, not fail with "not authenticated".
+		ctxJWT := "hosted-caller-login-jwt"
+		baseEndpoint, server := createUploadMockServer(t, func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, "POST", r.Method)
+			assert.Equal(t, "Bearer "+ctxJWT, r.Header.Get("Authorization"))
+			assert.Contains(t, r.Header.Get("Content-Type"), "multipart/form-data")
+
+			err := r.ParseMultipartForm(int64(ipfs.DefaultUploadLimit))
+			require.NoError(t, err)
+
+			file, _, err := r.FormFile("file")
+			require.NoError(t, err)
+			defer require.NoError(t, file.Close())
+
+			body, err := io.ReadAll(file)
+			require.NoError(t, err)
+			assert.Greater(t, len(body), 10, "CAR data should have header")
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"CID":"bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi"}`))
+		})
+		defer server.Close()
+
+		h := newUploadTestHelpers(t)
+		tmpFile := h.createTestFile("test content")
+
+		// Empty config token: only the context credential authenticates.
+		h.setupUploadExpectations("", baseEndpoint, ipfs.DefaultUploadLimit, int64(ipfs.DefaultUploadLimit))
+
+		f, err := os.Open(tmpFile)
+		require.NoError(t, err)
+		defer func() { _ = f.Close() }()
+		filesystem := contentfs.NewSingleFileFS(f, "test.txt")
+
+		ctx := mcp.WithCredential(context.Background(), ctxJWT)
+		result, err := h.service.Upload(ctx, filesystem, "test.txt", false, false)
+
+		require.NoError(t, err)
+		assert.NotEmpty(t, result.CID)
+	})
 }
 
 // errorFS is a test helper that returns errors for all operations
@@ -388,6 +435,37 @@ func TestUploadServiceDefault_RequireAuthenticated(t *testing.T) {
 
 		err := h.service.RequireAuthenticated()
 		assert.NoError(t, err)
+	})
+}
+
+func TestUploadServiceDefault_requireAuthenticatedCtx(t *testing.T) {
+	t.Run("returns nil when context carries credential", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.cfg.AuthToken = ""
+		h.cfgMgr.EXPECT().Config().Return(h.cfg)
+
+		ctx := mcp.WithCredential(context.Background(), "hosted-jwt")
+		err := h.service.requireAuthenticatedCtx(ctx)
+		assert.NoError(t, err)
+	})
+
+	t.Run("returns nil when config token available", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.cfg.AuthToken = configToken
+		h.cfgMgr.EXPECT().Config().Return(h.cfg)
+
+		err := h.service.requireAuthenticatedCtx(context.Background())
+		assert.NoError(t, err)
+	})
+
+	t.Run("returns error when neither available", func(t *testing.T) {
+		h := newUploadTestHelpers(t)
+		h.cfg.AuthToken = ""
+		h.cfgMgr.EXPECT().Config().Return(h.cfg)
+
+		err := h.service.requireAuthenticatedCtx(context.Background())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not authenticated")
 	})
 }
 

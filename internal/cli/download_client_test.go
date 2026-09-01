@@ -46,6 +46,34 @@ func TestDownloadService_RequireAuthenticated(t *testing.T) {
 	})
 }
 
+func TestDownloadService_requireAuthenticatedCtx(t *testing.T) {
+	t.Run("returns nil when context carries credential", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: ""}).Maybe()
+		svc := &DownloadServiceDefault{configMgr: cfgMgr}
+		ctx := mcp.WithCredential(context.Background(), "hosted-jwt")
+		err := svc.requireAuthenticatedCtx(ctx)
+		assert.NoError(t, err)
+	})
+
+	t.Run("returns nil when config token available", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: "config-token"}).Maybe()
+		svc := &DownloadServiceDefault{configMgr: cfgMgr}
+		err := svc.requireAuthenticatedCtx(context.Background())
+		assert.NoError(t, err)
+	})
+
+	t.Run("returns error when neither available", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		cfgMgr.EXPECT().Config().Return(&config.Config{AuthToken: ""}).Maybe()
+		svc := &DownloadServiceDefault{configMgr: cfgMgr}
+		err := svc.requireAuthenticatedCtx(context.Background())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not authenticated")
+	})
+}
+
 func TestDownloadService_getAuthToken(t *testing.T) {
 	t.Run("override takes precedence", func(t *testing.T) {
 		cfgMgr := configmocks.NewMockManager(t)
@@ -437,6 +465,21 @@ func TestDownloadService_newSDKDownloadService(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, dlService)
 		assert.Equal(t, "test-token", dlService.AuthToken())
+	})
+
+	t.Run("accepts context credential with no config token", func(t *testing.T) {
+		// Regresses the hosted (Portal-embedded) download: the session is
+		// authenticated by the per-request credential on the context (credctx),
+		// while the shared config token is empty. The ctx-aware gate must pass
+		// and the SDK service build from the context credential, not fail with
+		// "not authenticated".
+		svc := newDownloadSvc(t, "") // empty config token
+		svc.ipfsEndpoint = "http://127.0.0.1:1"
+
+		ctx := mcp.WithCredential(context.Background(), "hosted-caller-login-jwt")
+		dl, err := svc.newSDKDownloadService(ctx)
+		require.NoError(t, err)
+		assert.NotNil(t, dl)
 	})
 }
 
