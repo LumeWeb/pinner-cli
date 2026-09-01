@@ -313,7 +313,7 @@ func renderAccountResult(_ context.Context, c *cli.Command, op catalog.Operation
 			if q.Limit != nil {
 				limitStr = fmt.Sprintf("%d", *q.Limit)
 			}
-			remStr := "unlimited"
+			remStr := "n/a"
 			if q.Remaining != nil {
 				remStr = fmt.Sprintf("%d", *q.Remaining)
 			}

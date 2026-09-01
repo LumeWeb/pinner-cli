@@ -34,13 +34,12 @@ func quotaStatusMap(used int, limit, remaining, reserved, threshold *int, percen
 	return m
 }
 
-// hasQuotaRemaining reports whether a remaining-allowance bound is usable
-// (unlimited or with positive remaining allowance).
+// hasQuotaRemaining reports whether an explicit remaining-allowance bound
+// proves usable. A nil remaining (omitted) must NOT count as covered: the
+// schema has no unlimited marker and zero-quota accounts report all nil, so
+// coverage requires an explicit positive remaining.
 func hasQuotaRemaining(remaining *int) bool {
-	if remaining == nil {
-		return true
-	}
-	return *remaining > 0
+	return remaining != nil && *remaining > 0
 }
 
 // accountStatusAdapter wraps cli.AuthService and config to satisfy the MCP

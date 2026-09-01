@@ -186,12 +186,14 @@ func TestAccountQuotaNoRemaining(t *testing.T) {
 	}
 }
 
-// TestAccountQuotaUnlimitedIsCovered verifies a dimension with no remaining
-// bound (unlimited) counts as covered quota.
-func TestAccountQuotaUnlimitedIsCovered(t *testing.T) {
+// TestAccountQuotaNilRemainingIsNotCovered verifies that a dimension with an
+// omitted remaining bound (nil) is NOT treated as covered: the schema has no
+// explicit unlimited marker and zero-quota accounts report all-nil, so an
+// account with no explicit allowance must not surface has_quota=true.
+func TestAccountQuotaNilRemainingIsNotCovered(t *testing.T) {
 	fake := &fakeAuthService{
 		quotaFn: func(_ context.Context) (*account.QuotaStatus, error) {
-			return &account.QuotaStatus{}, nil // all remaining==nil => unlimited
+			return &account.QuotaStatus{}, nil // all remaining == nil (no explicit allowance)
 		},
 	}
 	op := accountQuota(accountDisableDeps(t, fake))
@@ -200,8 +202,8 @@ func TestAccountQuotaUnlimitedIsCovered(t *testing.T) {
 		t.Fatalf("account quota handler: %v", err)
 	}
 	result := res.(*AccountQuotaResult)
-	if !result.HasQuota {
-		t.Fatal("expected has_quota=true when quota is unlimited")
+	if result.HasQuota {
+		t.Fatal("expected has_quota=false when no dimension has an explicit positive remaining allowance")
 	}
 }
 

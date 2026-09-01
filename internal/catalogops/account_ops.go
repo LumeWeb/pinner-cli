@@ -339,8 +339,9 @@ func accountSubscription(d AccountDeps) catalog.Operation {
 }
 
 // AccountQuotaType reports usage, limits, and remaining allowance for a single
-// quota dimension (upload, download, or storage). A nil Limit/Remaining means
-// the dimension is unlimited.
+// quota dimension (upload, download, or storage). A nil Limit means no explicit
+// cap was reported; a nil Remaining means no explicit allowance was reported
+// (NOT a guaranteed-unlimited signal — see remainingUsable).
 type AccountQuotaType struct {
 	Used       int  `json:"used"`
 	Limit      *int `json:"limit,omitempty"`
@@ -379,13 +380,14 @@ func quotaTypeFrom(used int, limit, remaining, reserved, threshold *int, percent
 	}
 }
 
-// remainingUsable reports whether a remaining-allowance bound is usable:
-// unlimited (nil) or with positive remaining allowance.
+// remainingUsable reports whether a remaining-allowance bound proves usable.
+// A nil remaining means the server omitted an allowance bound for this
+// dimension; the QuotaStatusResponse schema marks only used/percentage as
+// required and carries no explicit unlimited marker, so a nil remaining must
+// NOT count as covered — otherwise accounts with no quota grant (all nil) are
+// reported as has_quota=true. Coverage requires an explicit positive remaining.
 func remainingUsable(remaining *int) bool {
-	if remaining == nil {
-		return true
-	}
-	return *remaining > 0
+	return remaining != nil && *remaining > 0
 }
 
 // accountQuota is the `account quota` operation: reads the account's quota
