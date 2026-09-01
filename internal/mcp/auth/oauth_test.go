@@ -134,8 +134,30 @@ func TestOAuthAuthorizeGET_ClientURIValidHTTPSurfaced(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	// Only an absolute http(s) client_uri is rendered as a link.
 	body := rec.Body.String()
-	assert.Contains(t, body, "https://publisher.example/oauth-client.json")
+	// The href keeps the full metadata URL; the link text is the domain and
+	// carries the on-brand link color.
+	assert.Contains(t, body, `href="https://publisher.example/oauth-client.json"`)
 	assert.Contains(t, body, "Publisher:")
+	assert.Contains(t, body, ">publisher.example</a>")
+	assert.Contains(t, body, "brand-link")
+	assert.NotContains(t, body, ">https://publisher.example/oauth-client.json</a>")
+}
+
+func TestClientURIHost(t *testing.T) {
+	for _, tt := range []struct {
+		in   string
+		want string
+	}{
+		{"https://publisher.example/oauth-client.json", "publisher.example"},
+		{"https://www.mcpjam.com/.well-known/oauth/client-metadata.json", "www.mcpjam.com"},
+		{"http://mcp.example:8080/md", "mcp.example:8080"},
+		{"", ""},
+		{"not a url", ""},
+	} {
+		if got := clientURIHost(tt.in); got != tt.want {
+			t.Errorf("clientURIHost(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
 }
 
 func TestOAuthAuthorizeGET_ClientURISchemeRejected(t *testing.T) {

@@ -12,7 +12,11 @@ type oauthAuthorizeData struct {
 	// ClientURI is the client's metadata document URL (RFC 9291), surfaced so
 	// the resource owner can see which publisher is requesting access. It is
 	// empty for clients that do not publish a CIMD document.
-	ClientURI           string
+	ClientURI string
+	// ClientDomain is the host portion of ClientURI, shown as the publisher
+	// link text so resource owners see a recognizable publisher instead of the
+	// raw metadata JSON URL.
+	ClientDomain        string
 	RedirectURI         string
 	State               string
 	CodeChallenge       string
@@ -32,7 +36,7 @@ templ oauthLoginPage(data oauthAuthorizeData) {
 			</p>
 			if data.ClientURI != "" {
 				<p class="brand-card-text">
-					Publisher: <a href={ data.ClientURI } target="_blank" rel="noopener noreferrer">{ data.ClientURI }</a>
+					Publisher: <a class="brand-link" href={ data.ClientURI } target="_blank" rel="noopener noreferrer">{ data.ClientDomain }</a>
 				</p>
 			}
 			<form method="post" action={ data.Action }>

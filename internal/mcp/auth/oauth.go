@@ -242,6 +242,17 @@ func (o *OAuthServer) displayClientURI(clientID string) string {
 	return c.ClientURI
 }
 
+// clientURIHost extracts the host portion of an already-validated client_uri
+// for display as the publisher link text. It returns "" for a value that is
+// not a parseable URL so the authorize page renders nothing.
+func clientURIHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	return u.Host
+}
+
 // authorizeGET renders the login page.
 func (o *OAuthServer) AuthorizeGET(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -250,11 +261,14 @@ func (o *OAuthServer) AuthorizeGET(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	clientID := q.Get("client_id")
+	clientURI := o.displayClientURI(clientID)
 	err := oauthLoginPage(oauthAuthorizeData{
 		Action:              o.BaseURL + "/oauth/authorize",
 		ResponseType:        q.Get("response_type"),
-		ClientID:            q.Get("client_id"),
-		ClientURI:           o.displayClientURI(q.Get("client_id")),
+		ClientID:            clientID,
+		ClientURI:           clientURI,
+		ClientDomain:        clientURIHost(clientURI),
 		RedirectURI:         q.Get("redirect_uri"),
 		State:               q.Get("state"),
 		CodeChallenge:       q.Get("code_challenge"),
@@ -359,11 +373,14 @@ func (o *OAuthServer) AuthorizePOST(w http.ResponseWriter, r *http.Request) {
 		// 401 so programmatic clients still observe the failed authorization.
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusUnauthorized)
+		clientID := r.PostFormValue("client_id")
+		clientURI := o.displayClientURI(clientID)
 		_ = oauthLoginPage(oauthAuthorizeData{
 			Action:              o.BaseURL + "/oauth/authorize",
 			ResponseType:        r.PostFormValue("response_type"),
-			ClientID:            r.PostFormValue("client_id"),
-			ClientURI:           o.displayClientURI(r.PostFormValue("client_id")),
+			ClientID:            clientID,
+			ClientURI:           clientURI,
+			ClientDomain:        clientURIHost(clientURI),
 			RedirectURI:         r.PostFormValue("redirect_uri"),
 			State:               r.PostFormValue("state"),
 			CodeChallenge:       r.PostFormValue("code_challenge"),

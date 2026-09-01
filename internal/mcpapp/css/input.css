@@ -228,6 +228,23 @@ body {
   @apply my-1 text-muted-foreground text-sm leading-relaxed;
 }
 
+/* OOB inline link (e.g. the authorize publisher link). Uses the accent teal so
+   it reads as a Pinner link rather than a browser-default blue/purple, and
+   keeps the visited state on-brand. */
+@utility brand-link {
+  @apply text-accent underline underline-offset-2;
+
+  &:hover {
+    @apply text-teal;
+  }
+  &:focus-visible {
+    @apply outline-none ring-2 ring-accent/70 rounded;
+  }
+  &:visited {
+    @apply text-accent;
+  }
+}
+
 /* OOB form fields (auth + seed). */
 @utility brand-input {
   @apply w-full px-3 py-2.5 rounded-lg bg-background-deep border border-border text-foreground text-[0.95rem] font-sans outline-none placeholder:text-muted-foreground focus:border-accent;
