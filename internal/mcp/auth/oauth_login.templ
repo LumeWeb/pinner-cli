@@ -6,9 +6,13 @@ import "go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 // authorization page, including hidden form echoes that must round-trip on
 // POST.
 type oauthAuthorizeData struct {
-	Action              string
-	ResponseType        string
-	ClientID            string
+	Action       string
+	ResponseType string
+	ClientID     string
+	// ClientURI is the client's metadata document URL (RFC 9291), surfaced so
+	// the resource owner can see which publisher is requesting access. It is
+	// empty for clients that do not publish a CIMD document.
+	ClientURI           string
 	RedirectURI         string
 	State               string
 	CodeChallenge       string
@@ -26,6 +30,11 @@ templ oauthLoginPage(data oauthAuthorizeData) {
 				server, which executes CLI tools in-process. Enter the shared auth secret
 				to authorize.
 			</p>
+			if data.ClientURI != "" {
+				<p class="brand-card-text">
+					Publisher: <a href={ data.ClientURI } target="_blank" rel="noopener noreferrer">{ data.ClientURI }</a>
+				</p>
+			}
 			<form method="post" action={ data.Action }>
 				<input type="hidden" name="response_type" value={ data.ResponseType }/>
 				<input type="hidden" name="client_id" value={ data.ClientID }/>
