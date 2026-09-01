@@ -141,6 +141,10 @@ type AuthService interface {
 
 	// GetSubscriptionStatus returns the account's active subscription status.
 	GetSubscriptionStatus(ctx context.Context) (*portalsdk.SubscriptionStatus, error)
+
+	// GetQuota returns the account's current quota status (upload, download,
+	// and storage usage / limits / remaining allowance).
+	GetQuota(ctx context.Context) (*portalsdk.QuotaStatus, error)
 }
 
 // AuthServiceOption configures an AuthService.
@@ -630,6 +634,19 @@ func (s *AuthServiceDefault) GetSubscriptionStatus(ctx context.Context) (*portal
 		return nil, fmt.Errorf("failed to get subscription status: %w", err)
 	}
 	return status, nil
+}
+
+// GetQuota returns the account's current quota status.
+func (s *AuthServiceDefault) GetQuota(ctx context.Context) (*portalsdk.QuotaStatus, error) {
+	client, err := s.GetAuthenticatedClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("authentication failed: %w", err)
+	}
+	quota, err := client.GetQuota(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get quota status: %w", err)
+	}
+	return quota, nil
 }
 
 // GetJWTPurpose extracts the purpose from a JWT token's audience claim.

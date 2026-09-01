@@ -11,6 +11,37 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 )
 
+// quotaStatusMap converts a quota dimension's primitive fields into a JSON map
+// for the pinner://account/status resource. It takes primitives because the
+// SDK surfaces these under an internal (pinner-unimportable) struct type.
+func quotaStatusMap(used int, limit, remaining, reserved, threshold *int, percentage int) map[string]any {
+	m := map[string]any{
+		"used":       used,
+		"percentage": percentage,
+	}
+	if limit != nil {
+		m["limit"] = *limit
+	}
+	if remaining != nil {
+		m["remaining"] = *remaining
+	}
+	if reserved != nil {
+		m["reserved"] = *reserved
+	}
+	if threshold != nil {
+		m["threshold"] = *threshold
+	}
+	return m
+}
+
+// hasQuotaRemaining reports whether an explicit remaining-allowance bound
+// proves usable. A nil remaining (omitted) must NOT count as covered: the
+// schema has no unlimited marker and zero-quota accounts report all nil, so
+// coverage requires an explicit positive remaining.
+func hasQuotaRemaining(remaining *int) bool {
+	return remaining != nil && *remaining > 0
+}
+
 // accountStatusAdapter wraps cli.AuthService and config to satisfy the MCP
 // AccountStatusProvider interface. It holds cfgMgr (not a config snapshot)
 // so IsAuthenticated and APIKey reflect latest auth state at request time.
@@ -48,9 +79,26 @@ func (a *accountStatusAdapter) APIKey() string {
 	return "****" + t[len(t)-4:]
 }
 
-func (a *accountStatusAdapter) Quota(_ context.Context) map[string]any {
-	// TODO: wire quota via portal account API; resource handler tolerates nil.
-	return nil
+func (a *accountStatusAdapter) Quota(ctx context.Context) map[string]any {
+	if a.auth == nil {
+		return nil
+	}
+	q, err := a.auth.GetQuota(ctx)
+	if err != nil {
+		// Best-effort: the resource handler tolerates a missing/nil quota and
+		// still reports auth + config. Surface the error so the agent can see
+		// why quota is unavailable rather than silently omitting it.
+		return map[string]any{"error": err.Error()}
+	}
+	if q == nil {
+		return nil
+	}
+	return map[string]any{
+		"has_quota": hasQuotaRemaining(q.Upload.Remaining) || hasQuotaRemaining(q.Download.Remaining) || hasQuotaRemaining(q.Storage.Remaining),
+		"upload":    quotaStatusMap(q.Upload.Used, q.Upload.Limit, q.Upload.Remaining, q.Upload.Reserved, q.Upload.Threshold, q.Upload.Percentage),
+		"download":  quotaStatusMap(q.Download.Used, q.Download.Limit, q.Download.Remaining, q.Download.Reserved, q.Download.Threshold, q.Download.Percentage),
+		"storage":   quotaStatusMap(q.Storage.Used, q.Storage.Limit, q.Storage.Remaining, q.Storage.Reserved, q.Storage.Threshold, q.Storage.Percentage),
+	}
 }
 
 func (a *accountStatusAdapter) ConfigSummary() map[string]any {

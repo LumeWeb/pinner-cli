@@ -139,10 +139,16 @@ func accountWiringParent() []*cli.Command {
 			// at the returned web URL); it is not part of the data contract and
 			// never appears on the MCP surface. Add it to read commands that
 			// surface a web URL.
-			if op.Name() == "account_subscription" {
+			switch op.Name() {
+			case "account_subscription":
 				c.Flags = append(c.Flags, &cli.BoolFlag{
 					Name:  "open",
 					Usage: "Open the subscription page in your default browser",
+				})
+			case "account_quota":
+				c.Flags = append(c.Flags, &cli.BoolFlag{
+					Name:  "open",
+					Usage: "Open the account/usage page in your default browser",
 				})
 			}
 		}
@@ -215,6 +221,8 @@ func shouldOpen(c *cli.Command) bool {
 func accountResultURL(result any) string {
 	switch r := result.(type) {
 	case *catalogops.AccountSubscriptionResult:
+		return r.WebURL
+	case *catalogops.AccountQuotaResult:
 		return r.WebURL
 	}
 	return ""
@@ -292,6 +300,38 @@ func renderAccountResult(_ context.Context, c *cli.Command, op catalog.Operation
 		}
 		if r.WebURL != "" {
 			output.Printfln("Manage subscription: %s", r.WebURL)
+		}
+		return nil
+
+	case *catalogops.AccountQuotaResult:
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		output.Printfln("Quota usage:")
+		printQuotaType := func(label string, q catalogops.AccountQuotaType) {
+			limitStr := "unlimited"
+			if q.Limit != nil {
+				limitStr = fmt.Sprintf("%d", *q.Limit)
+			}
+			remStr := "n/a"
+			if q.Remaining != nil {
+				remStr = fmt.Sprintf("%d", *q.Remaining)
+			}
+			output.Printfln("  %-8s used=%d limit=%s remaining=%s (%d%%)", label, q.Used, limitStr, remStr, q.Percentage)
+		}
+		printQuotaType("upload", r.Upload)
+		printQuotaType("download", r.Download)
+		printQuotaType("storage", r.Storage)
+		if r.HasQuota {
+			output.Printfln("Covered by granted quota; no subscription required.")
+		} else {
+			output.Printfln("No usable quota remaining; a subscription or additional granted usage is required.")
+		}
+		if r.WebURL != "" {
+			output.Printfln("Manage usage / subscribe: %s", r.WebURL)
+		}
+		if r.Message != "" {
+			output.Printfln("%s", r.Message)
 		}
 		return nil
 
