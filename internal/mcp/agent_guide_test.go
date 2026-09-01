@@ -381,6 +381,39 @@ func TestAgentGuidePublishBranchesPerProfile(t *testing.T) {
 	}
 }
 
+// TestAgentGuideCDNDeployNotice verifies every website publish path (generic
+// platform subdomain, explicit label, custom domain) and the update flow tells
+// the agent to inform the user that CDN deployment can take up to 5 minutes, so
+// the user is set to expect the site to not be reachable at its URL immediately.
+func TestAgentGuideCDNDeployNotice(t *testing.T) {
+	for _, p := range []*hostenv.PlatformProfile{
+		strPtr(hostenv.ProfileStdioGeneric),
+		strPtr(hostenv.ProfileHTTPGeneric),
+		strPtr(hostenv.ProfileGrokHTTP),
+		strPtr(hostenv.ProfileOpenAITunnel),
+	} {
+		guide := buildAgentGuide(p)
+
+		pub := guideFlowByName(t, guide, "publish_website")
+		require.NotNil(t, pub.Decision, "publish_website must be a decision flow for %s", p.Transport)
+		var domain *GuideDecision
+		for _, br := range pub.Decision.Branches {
+			if domain == nil && br.Next != nil {
+				domain = br.Next
+			}
+		}
+		require.NotNil(t, domain, "publish_website must nest the domain decision for %s", p.Transport)
+		require.Len(t, domain.Branches, 3, "publish_website must keep the generic/label/custom-domain branches for %s", p.Transport)
+		for _, br := range domain.Branches {
+			require.Contains(t, br.Detail, "5 minutes to fully deploy to the CDN",
+				"every publish domain branch must carry the CDN deploy notice for %s", p.Transport)
+		}
+
+		up := guideFlowByName(t, guide, "update_website")
+		require.Contains(t, up.Detail, "5 minutes to fully deploy to the CDN", "update_website must carry the CDN deploy notice for %s", p.Transport)
+	}
+}
+
 // TestAgentGuideSandboxFilesRouteToFileNotMint regresses audit F-002. On a host
 // with both FeatFileHostInput and mint (OpenAI HTTP, host_file_first), an
 // assistant-generated sandbox file must route to the `file` parameter; the mint

@@ -27,6 +27,13 @@ var htmlRootClause = toolforge.Static("Upload with wrap=true and do NOT set an e
 // the platform-subdomain publish branches.
 var validateAfterCreateClause = toolforge.Static("After creation, call websites_validate to confirm DNS propagation.")
 
+// cdnDeployNoticeClause tells the agent to inform the user that a newly
+// published or updated site can take up to 5 minutes to fully deploy to the
+// CDN, so it may not be reachable at its URL immediately even though
+// create/validation succeeded. CDN deployment is independent of validation
+// (platform-domain validation is instant).
+var cdnDeployNoticeClause = toolforge.Static("Let the user know that after publishing, the site can take up to 5 minutes to fully deploy to the CDN, so it may not be reachable at its URL immediately even though create/validation succeeded.")
+
 // reconcileNoSleep is the reconciliation-lag guidance for hosts with no sleep
 // tool: pending validation is lag, not failure, so re-check later.
 var reconcileNoSleep = toolforge.Static("On this host there is no sleep tool: if validation is still pending or failing, treat that as reconciliation lag rather than failure and re-call websites_validate after other work, without starting a new flow.")

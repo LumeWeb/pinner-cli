@@ -123,7 +123,7 @@ Read the pinner://websites/{domain}/dns-requirements resource (substitute the do
 {{define "website_step_validate"}}Read the pinner://websites/{id}/validation-status resource (use the website ID from the create step's response). If validation fails, instruct the user to wait for DNS propagation (may take minutes to hours) and retry. Call `websites_wizard_step` with input: {"retry": true} to re-run validation. Call with input: {} to accept the current status and finish.
 {{end}}
 
-{{define "website_step_complete"}}When the wizard returns "complete": true, the website onboarding is done. Summarize the result for the user: domain, CID, target type, DNS mode, and validation status. If validation failed, provide the reason and suggest next steps. DNS validation confirms reachability, not content correctness — if the root URL serves a directory listing or 404 instead of the expected page, the CID's directory layout is likely wrong (e.g. missing index.html at the root).
+{{define "website_step_complete"}}When the wizard returns "complete": true, the website onboarding is done. Summarize the result for the user: domain, CID, target type, DNS mode, and validation status. Let the user know the site can take up to 5 minutes to fully deploy to the CDN, so it may not resolve at its URL immediately even though create/validation succeeded. If validation failed, provide the reason and suggest next steps. DNS validation confirms reachability, not content correctness — if the root URL serves a directory listing or 404 instead of the expected page, the CID's directory layout is likely wrong (e.g. missing index.html at the root).
 {{end}}
 
 {{/* website-update prompt templates. Rendered when updating an existing website's
@@ -203,5 +203,6 @@ If the error mentions an unpinned CID (CID_NOT_PINNED), go back to the ensure_pi
 
 {{define "website_update_step_complete"}}Update workflow finished.
 Summarize the new CID ({{.CID}}){{if .CurrentType}}, target type preserved ({{.CurrentType}}){{end}}, and the current
-validation status. If DNS is still reconciling, advise checking again in a few minutes.
+validation status. Let the user know the site can take up to 5 minutes to fully deploy to the CDN, so it may
+not resolve at its URL immediately after the update.
 {{end}}
