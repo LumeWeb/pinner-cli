@@ -15,7 +15,9 @@ import (
 //   - It must contain the "do NOT combine" guidance.
 //   - It must contain the archive_mode=convert guidance.
 //   - It must contain the wrap=true / auto-name guidance.
-//   - It must contain the pins_add negation.
+//   - It must contain the pins_add-unnecessary guidance (reworded to avoid
+//
+// instruction-like "do NOT call" phrasing the directory validators flag).
 //   - It must NOT contain the file-parameter preferred-path clause (Grok has no file).
 func TestWebsitesCreateDescGrok(t *testing.T) {
 	desc := websitesCreateDesc.Resolve(hostenv.ProfileGrokHTTP)
@@ -23,15 +25,15 @@ func TestWebsitesCreateDescGrok(t *testing.T) {
 	require.Contains(t, desc, "Create a website that serves an IPFS CID")
 	require.Contains(t, desc, "directory whose root contains index.html")
 	require.Contains(t, desc, "rejects a CID whose root has no index.html")
-	require.Contains(t, desc, "Do NOT combine a multi-file website")
+	require.Contains(t, desc, "A multi-file website is published as its component files")
 	require.Contains(t, desc, "archive_mode=convert")
 	require.Contains(t, desc, "wrap=true")
 	require.Contains(t, desc, "auto-names wrapped HTML to index.html")
 	require.Contains(t, desc, "starter-site")
 	require.Contains(t, desc, `{"cid":"<cid>"}`)
 	require.Contains(t, desc, "platform subdomain is auto-minted")
-	require.Contains(t, desc, "do NOT invent a domain or label")
-	require.Contains(t, desc, "do NOT call pins_add after upload")
+	require.Contains(t, desc, "a domain or label is not invented for a generic request")
+	require.Contains(t, desc, "the upload already pinned it, so pins_add after upload is unnecessary")
 	require.Contains(t, desc, "publish_website flow")
 	require.Contains(t, desc, "Returns the created website")
 
@@ -46,10 +48,10 @@ func TestWebsitesCreateDescOpenAITunnel(t *testing.T) {
 
 	require.Contains(t, desc, "Create a website that serves an IPFS CID")
 	require.Contains(t, desc, "directory whose root contains index.html")
-	require.Contains(t, desc, "Do NOT combine a multi-file website")
+	require.Contains(t, desc, "A multi-file website is published as its component files")
 	require.Contains(t, desc, "archive_mode=convert")
 	require.Contains(t, desc, "wrap=true")
-	require.Contains(t, desc, "do NOT call pins_add after upload")
+	require.Contains(t, desc, "the upload already pinned it, so pins_add after upload is unnecessary")
 	require.Contains(t, desc, "file parameter is the preferred byte path",
 		"OpenAI tunnel has FeatFileHostInput and must see the file-parameter clause")
 }
@@ -63,7 +65,7 @@ func TestWebsitesCreateDescStdio(t *testing.T) {
 	require.Contains(t, desc, "Create a website that serves an IPFS CID")
 	require.Contains(t, desc, "directory whose root contains index.html")
 	require.Contains(t, desc, "archive_mode=convert")
-	require.Contains(t, desc, "do NOT call pins_add after upload")
+	require.Contains(t, desc, "the upload already pinned it, so pins_add after upload is unnecessary")
 
 	require.NotContains(t, desc, "file parameter is the preferred byte path",
 		"stdio generic has no FeatFileHostInput")

@@ -40,10 +40,12 @@ type ToolDetail struct {
 	Title       string             `json:"title,omitempty"`
 	Description string             `json:"description"`
 	Category    model.ToolCategory `json:"category,omitempty"`
-	ReadOnly    bool               `json:"readOnlyHint,omitempty"`
-	Destructive bool               `json:"destructiveHint,omitempty"`
-	Interaction model.Interaction  `json:"interaction,omitempty"`
-	InputSchema json.RawMessage    `json:"inputSchema"`
+	// ReadOnly/Destructive always serialize as booleans (never omitted) so a
+	// catalog consumer can tell a real false from a missing hint.
+	ReadOnly    bool              `json:"readOnlyHint"`
+	Destructive bool              `json:"destructiveHint"`
+	Interaction model.Interaction `json:"interaction,omitempty"`
+	InputSchema json.RawMessage   `json:"inputSchema"`
 }
 
 // ToolCatalog is an in-memory registry of tools that are discovered through

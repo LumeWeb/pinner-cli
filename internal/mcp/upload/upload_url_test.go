@@ -33,15 +33,15 @@ func TestRelayURLUploadDescriptionProfileRegisters(t *testing.T) {
 
 	grok, ok := toolforge.ResolveDescription(desc.MCPTargets, hostenv.ProfileGrokHTTP)
 	require.True(t, ok)
-	require.NotContains(t, grok, "Do NOT call this tool on this host", "Grok declares FeatSourceURL so upload_url is usable for it")
+	require.NotContains(t, grok, "This transport has no URL-fetch relay", "Grok declares FeatSourceURL so upload_url is usable for it")
 
 	genericHTTP, ok := toolforge.ResolveDescription(desc.MCPTargets, hostenv.ProfileHTTPGeneric)
 	require.True(t, ok)
-	require.Contains(t, genericHTTP, "Do NOT call this tool on this host")
+	require.Contains(t, genericHTTP, "This transport has no URL-fetch relay")
 
 	openai, ok := toolforge.ResolveDescription(desc.MCPTargets, hostenv.ProfileOpenAITunnel)
 	require.True(t, ok)
-	require.NotContains(t, openai, "Do NOT call this tool on this host", "OpenAI tunnel keeps upload_url usable")
+	require.NotContains(t, openai, "This transport has no URL-fetch relay", "OpenAI tunnel keeps upload_url usable")
 }
 
 func TestRelayURLUploadDescriptorRejectsNonHTTPS(t *testing.T) {

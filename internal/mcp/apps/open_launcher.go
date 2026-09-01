@@ -54,7 +54,7 @@ func NewOpenLauncherDescriptor(spec OpenLauncherSpec) model.ToolDescriptor {
 	if desc == "" {
 		desc = "Open the " + spec.Title + " app view."
 	}
-	desc += " Prefer open_app (the consolidated launcher) on hosts where it is visible; this per-app launcher is discoverable via search_tools."
+	desc += " open_app (the consolidated launcher) is the unified entry point on hosts where it is visible; this per-app launcher is also discoverable via search_tools."
 
 	return model.ToolDescriptor{
 		Name:        spec.Name,

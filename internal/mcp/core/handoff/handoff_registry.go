@@ -190,7 +190,7 @@ func (r *HandoffRegistry) pruneLocked() []string {
 // resumeArgs is the input of any *_resume tool.
 type resumeArgs struct {
 	// Handle is the handle returned by the matching start tool.
-	Handle string `json:"handle" jsonschema:"required"`
+	Handle string `json:"handle" jsonschema:"required,description=The handle returned by the matching start tool, used to poll the pending hand-off."`
 }
 
 // ResumeToolSpec carries the per-domain copy + restart steering for a *_resume
@@ -271,6 +271,15 @@ func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *session.A
 		Category:    spec.CategoryOrDefault(),
 		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback(spec.Description)),
 		InputSchema: toolargs.ToolSchemaFor[resumeArgs](),
+		// OpenAI tool invocation labels shown by UI-capable hosts while the
+		// tool runs and after it finishes. Required alongside the openai
+		// outputTemplate the app-helper status variants carry.
+		Meta: map[string]any{
+			"openai/toolInvocation": map[string]any{
+				"invoking": "Checking hand-off status…",
+				"invoked":  "Hand-off status checked",
+			},
+		},
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			if reg == nil || handles == nil {
 				return model.NeedsHumanResult(model.NeedsHuman{

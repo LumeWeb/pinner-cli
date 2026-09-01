@@ -38,7 +38,15 @@ type AppResourceCSP struct {
 // AppResourceMeta is the typed, SDK-neutral form of the `_meta.ui` block on a
 // ui:// resource (served on the resource list entry and the read result).
 type AppResourceMeta struct {
-	CSP           *AppResourceCSP `json:"csp,omitempty"`
-	Domain        string          `json:"domain,omitempty"`
-	PrefersBorder *bool           `json:"prefersBorder,omitempty"`
+	CSP *AppResourceCSP `json:"csp,omitempty"`
+	// Domain is the exact HTTPS origin the widget layer attributes this view
+	// to (ChatGPT app-directory check; one origin shared by all views of an
+	// app, no path).
+	Domain string `json:"domain,omitempty"`
+	// WidgetDescription is the human-readable description directory surfaces
+	// render for the widget. It is read from _meta.ui.widgetDescription by
+	// directory submissions; the SDK also mirrors it under the OpenAI
+	// compatibility alias _meta["openai/widgetDescription"].
+	WidgetDescription string `json:"widgetDescription,omitempty"`
+	PrefersBorder     *bool  `json:"prefersBorder,omitempty"`
 }

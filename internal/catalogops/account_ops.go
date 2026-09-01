@@ -400,7 +400,7 @@ func accountQuota(d AccountDeps) catalog.Operation {
 		Summary:     "Show your quota usage and remaining allowance",
 		Description: "Fetch your Pinner.xyz quota status (upload, download, and storage usage/limits/remaining) and whether granted usage currently covers the account. Quota TRUMPS a subscription: if has_quota is true the user can proceed without a subscription. Returns the web_app web_url deep-link for managing usage / subscribing.",
 		MCPTargets: catalog.MCPTargets(
-			catalog.Fallback("Call account_quota to read the account's quota status and whether it is covered by granted usage (has_quota). Quota trumps a subscription: if has_quota is true the user needs no subscription and you should proceed. Only when has_quota is false, fall back to account_subscription; if that says not-subscribed, present the returned web_url deep-link so the human opens the web app to subscribe — you cannot subscribe on their behalf."),
+			catalog.Fallback("Call account_quota to read the account's quota status and whether it is covered by granted usage (has_quota). Quota trumps a subscription: when has_quota is true the user needs no subscription. When has_quota is false the result relates to account_subscription; when that reports not-subscribed the response carries a web_url deep-link that the human opens in the web app to subscribe — the model acting alone cannot subscribe on their behalf."),
 		),
 		Category:    "account",
 		Safety:      catalog.SafetyRead,

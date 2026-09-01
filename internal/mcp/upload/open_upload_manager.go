@@ -26,7 +26,7 @@ const OpenUploadManagerToolName = "open_upload_manager"
 const openUploadManagerDescription = "Open the interactive Upload to IPFS file picker. This is a UI launcher: it renders an HTML iframe so the user can pick a file. It is not a headless primitive. " +
 	"Pass an optional 'handle' from a prior upload_file mint call to continue that exact operation; if the handle is stale/expired a fresh one is prepared. " +
 	"Returns an upload_handle; poll upload_status to retrieve the final CID. " +
-	"Prefer upload_file (headless) for autonomous workflows; call this only when a human file picker is actually desired."
+	"The headless equivalent is upload_file for autonomous uploads without a rendered file picker."
 
 // OpenUploadManagerInput is the typed argument shape for the model-facing
 // Upload to IPFS launcher. handle is optional: when provided, the launcher

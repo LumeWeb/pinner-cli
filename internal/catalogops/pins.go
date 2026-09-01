@@ -182,7 +182,7 @@ func pinsAdd(d PinsDeps) catalog.Operation {
 		Name:        "pins_add",
 		Title:       "Add a pin",
 		Summary:     "Pin existing content by CID",
-		Description: "Import and pin content that already exists on IPFS by its CID. Use only for existing EXTERNAL IPFS CIDs: do NOT call this after a Pinner upload operation, which already creates and pins its uploaded content. Supply concrete CIDs in the cids field. wait defaults to true (blocks until confirmed, can time out on large/queued batches); pass wait=false to submit and return immediately, then poll pins_status with the returned name/pin id.",
+		Description: "Import and pin content that already exists on IPFS by its CID. This is for existing EXTERNAL IPFS CIDs; a Pinner upload operation already creates and pins its uploaded content, so that content is already pinned. Supply concrete CIDs in the cids field. wait defaults to true (blocks until confirmed, can time out on large/queued batches); pass wait=false to submit and return immediately, then poll pins_status with the returned name/pin id.",
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
@@ -318,7 +318,7 @@ func pinsRemove(d PinsDeps) catalog.Operation {
 		Visibility:  catalog.VisibilityBoth,
 		Positional:  "<cid...>",
 		Args: []catalog.OperationArg{
-			{Name: "cids", Type: catalog.ArgTypeStringSlice, SelectionGroup: "remove", Help: "Content identifiers to unpin", AgentHelp: "Concrete CIDs to unpin. Omit only when removing all pins (all=true). Do not pass CLI positional/file/stdin syntax; supply the values here."},
+			{Name: "cids", Type: catalog.ArgTypeStringSlice, SelectionGroup: "remove", Help: "Content identifiers to unpin", AgentHelp: "Concrete CIDs to unpin. Omitted only when removing all pins (all=true). The field takes concrete values; CLI positional/file/stdin syntax is not used here."},
 			{Name: "confirm", Type: catalog.ArgTypeBool, Required: true, Help: "Confirm the destructive unpin", AgentHelp: "Must be true to remove pins; this is destructive and cannot be undone."},
 			{Name: "all", Type: catalog.ArgTypeBool, SelectionGroup: "remove", Default: "false", Help: "Remove all pins"},
 			{Name: "status", Type: catalog.ArgTypeString, Help: "When all=true, only unpin pins with this status (e.g. failed)"},

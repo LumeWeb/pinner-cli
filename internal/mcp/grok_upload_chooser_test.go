@@ -114,12 +114,12 @@ func TestUploadURLDescriptionSaysWhenToUse(t *testing.T) {
 	require.Contains(t, grok, "already on the public web")
 	require.Contains(t, grok, "file in the agent sandbox")
 	require.Contains(t, grok, "upload_file(source.mode=mint)")
-	require.NotContains(t, grok, "Do NOT call this tool on this host")
+	require.NotContains(t, grok, "This transport has no data: URI relay")
 
 	// Generic HTTP: still omitted / forbidden.
 	generic, ok := toolforge.ResolveDescription(desc.MCPTargets, hostenv.ProfileHTTPGeneric)
 	require.True(t, ok)
-	require.Contains(t, generic, "Do NOT call this tool on this host")
+	require.Contains(t, generic, "This transport has no URL-fetch relay")
 }
 
 // TestUploadDataDescriptionNamesPriorTools locks in audit item 6: upload_data
@@ -129,10 +129,10 @@ func TestUploadURLDescriptionSaysWhenToUse(t *testing.T) {
 func TestUploadDataDescriptionNamesPriorTools(t *testing.T) {
 	grok, ok := toolforge.ResolveDescription(transfer.DataURIUploadTargets, hostenv.ProfileGrokHTTP)
 	require.True(t, ok)
-	require.Contains(t, grok, "Last resort only")
-	require.Contains(t, grok, "never use for a host-provided or assistant-generated file")
+	require.Contains(t, grok, "Last resort")
+	require.Contains(t, grok, "not for a host-provided or assistant-generated file")
 	require.Contains(t, grok, "prefer upload_file (mint + PUT) for an agent-local file and upload_url for a public HTTPS URL")
-	require.NotContains(t, grok, "Do NOT call this tool on this host")
+	require.NotContains(t, grok, "This transport has no URL-fetch relay")
 }
 
 // TestAgentGuideUploadDetailNamesRelayTools locks in audit item 7: the agent

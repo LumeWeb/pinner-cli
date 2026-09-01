@@ -2,13 +2,29 @@ package mcp
 
 import (
 	"fmt"
+	"net/url"
+	"strings"
 
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 )
+
+// httpsOriginOf returns the exact HTTPS origin (scheme://host[:port], no
+// path) of a public base URL, or empty when baseURL is empty or malformed.
+func httpsOriginOf(baseURL string) string {
+	if strings.TrimSpace(baseURL) == "" {
+		return ""
+	}
+	u, err := url.Parse(baseURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
 
 // HostedServerConfig holds everything needed to assemble a hosted
 // (Portal-embedded) Pinner MCP server. A hosted assembly is the SAME MCP
@@ -73,6 +89,16 @@ func BuildHostedServer(cfg HostedServerConfig) (*sdk.Server, *ToolCatalog, *Host
 		surface = HostedSurface
 	}
 	var hostedTransfer *HostedTransfer
+	// The app views (ui:// widgets) must be attributed to THIS deployment's
+	// own origin for the ChatGPT app-directory surface. Resolve the exact
+	// HTTPS origin from the configured public BaseURL once, before any app
+	// registration runs; when no BaseURL is configured the resolver stays
+	// unset and views carry no domain at all — a hosted deployment without a
+	// public origin (and any self-hosted server) must never advertise a
+	// foreign domain.
+	if origin := httpsOriginOf(cfg.BaseURL); origin != "" {
+		apps.SetViewDomainResolver(func() string { return origin })
+	}
 	srv, cat, err := BuildServer(ServerConfig{
 		Hosted:      true, // hosted mode is declared here, at the one construction seam
 		Surface:     surface,

@@ -100,6 +100,13 @@ type ToolDescriptor struct {
 	Category    ToolCategory
 	ReadOnly    bool
 	Destructive bool
+	// OpenWorldHint declares whether the tool may interact with the
+	// "open world" of external systems (public internet state, third-party
+	// services) as opposed to a closed/private workflow local to the server.
+	// It is emitted alongside readOnlyHint/destructiveHint in the wire tool
+	// annotations; platform directory checks require all three hints to be
+	// present as booleans on every annotated tool.
+	OpenWorldHint bool
 	// DirectVisible reports whether the tool is part of the directly-exposed
 	// surface (tools/list) in addition to progressive discovery. It replaces
 	// the adhoc name-allowlist predicate (IsCuratedTool) used to filter the
@@ -137,6 +144,7 @@ func DescriptorFromTool(entry *ToolEntry) ToolDescriptor {
 		Category:        entry.Category,
 		ReadOnly:        entry.ReadOnly,
 		Destructive:     entry.Destructive,
+		OpenWorldHint:   entry.OpenWorldHint,
 		DirectVisible:   entry.DirectVisible,
 		InputSchema:     entry.InputSchema,
 		OutputSchema:    entry.OutputSchema,
@@ -160,6 +168,7 @@ func ToolEntryFromDescriptor(desc ToolDescriptor) *ToolEntry {
 		Category:        desc.Category,
 		ReadOnly:        desc.ReadOnly,
 		Destructive:     desc.Destructive,
+		OpenWorldHint:   desc.OpenWorldHint,
 		DirectVisible:   desc.DirectVisible,
 		InputSchema:     desc.InputSchema,
 		OutputSchema:    desc.OutputSchema,

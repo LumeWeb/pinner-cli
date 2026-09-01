@@ -266,9 +266,26 @@ func UnregisterAppResource(srv *Server, uri string) error {
 	return nil
 }
 
-// appResourceUIMeta marshals an AppResourceMeta into the `_meta.ui` map, or an
-// empty meta map when the meta carries no fields (mirroring the previous
-// "always an empty _meta.ui" wire shape for a bare app resource).
+// appResourceWidgetMeta returns the OpenAI compatibility alias keys for the
+// app-directory widget surface, non-empty only when the matching widget field
+// is set.
+func appResourceWidgetAliases(meta model.AppResourceMeta) mcp.Meta {
+	out := mcp.Meta{}
+	if meta.Domain != "" {
+		out["openai/widgetDomain"] = meta.Domain
+	}
+	if meta.WidgetDescription != "" {
+		out["openai/widgetDescription"] = meta.WidgetDescription
+	}
+	return out
+}
+
+// appResourceUIMeta marshals an AppResourceMeta into the `_meta.ui` map plus
+// the `openai/widget*` alias keys, or an empty meta map when the meta carries
+// no fields (mirroring the previous "always an empty _meta.ui" wire shape for
+// a bare app resource). Directory submissions that do not read the nested
+// _meta.ui block can still resolve the domain/widget description via the
+// alias keys.
 func appResourceUIMeta(meta model.AppResourceMeta) mcp.Meta {
 	out := mcp.Meta{}
 	if meta == (model.AppResourceMeta{}) {
@@ -283,6 +300,9 @@ func appResourceUIMeta(meta model.AppResourceMeta) mcp.Meta {
 		return out
 	}
 	out["ui"] = uiAny
+	for k, v := range appResourceWidgetAliases(meta) {
+		out[k] = v
+	}
 	return out
 }
 

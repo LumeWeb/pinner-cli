@@ -394,7 +394,7 @@ func websitesCreate(d WebsitesDeps) catalog.Operation {
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
 			{Name: "website", Type: catalog.ArgTypeString, Required: false, Help: "Custom domain for the new website (optional: a platform subdomain is minted when omitted)", AgentHelp: "The destination domain. A subdomain of a platform root (e.g. myapp.pinned.site) is treated as a platform claim (label/root parsed); any other domain is a custom domain. Omit to default to a minted platform subdomain."},
-			{Name: "cid", Type: catalog.ArgTypeString, Required: true, Help: "IPFS CID to serve", AgentHelp: "The IPFS CID to serve. If from a Pinner upload tool, use its returned CID directly (already pinned, no pins_add). Only call pins_add first when the CID is external to Pinner."},
+			{Name: "cid", Type: catalog.ArgTypeString, Required: true, Help: "IPFS CID to serve", AgentHelp: "The IPFS CID to serve. A CID returned by a Pinner upload tool is already pinned and can be used directly. A CID external to Pinner requires pinning first via pins_add."},
 			{Name: "target-type", Type: catalog.ArgTypeString, Default: "ipfs", Help: "Target type (ipfs|ipns)"},
 			{Name: "dns-hosting", Type: catalog.ArgTypeNullableBool, Help: "Let Pinner manage DNS for this website (true = managed, false = self-managed, omit = managed default; ignored for platform subdomains, which are always managed)", AgentHelp: "true lets Pinner manage DNS; false leaves DNS self-managed. Omit to use the default. Ignored for platform subdomains (always managed)."},
 			{Name: "namespace", Type: catalog.ArgTypeString, Default: "icann", Help: "Domain namespace for a custom domain: icann (default) or hns (Handshake alt-root)", AgentHelp: "The namespace of the custom domain: \"icann\" (traditional, default) or \"hns\" for a Handshake (alt-root) name like acme/. Only applies to the custom-domain path; platform subdomains derive their namespace from the platform root."},
@@ -569,7 +569,7 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 		Summary:     "Update a website",
 		Description: "Update an existing website: change its cid, target-type (ipfs|ipns), rename its domain (rename-to), set the domain namespace (namespace: icann or hns for Handshake/alt-root names), or set dns-hosting (true = Pinner-managed, false = self-managed, omit = unchanged). Select the site by website; set at least one optional field. With only cid set (no target-type), the site's current target type is preserved automatically.",
 		MCPTargets: catalog.MCPTargets(
-			catalog.Fallback("Update an existing website: change its cid, target-type (ipfs|ipns), rename its domain (rename-to), set the domain namespace (namespace: icann or hns for a Handshake/alt-root name), or set dns-hosting (true = Pinner-managed, false = self-managed, omit = unchanged). Select the site by website; set at least one optional field. A CID produced by an upload tool is already pinned and usable directly. Only when the CID is an EXTERNAL IPFS CID must you call pins_add first; a bare update with an unpinned CID fails with CID_NOT_PINNED. With only cid set (no target-type), the site's current target type is preserved automatically. For the full guided flow, fetch the website-update prompt (prompts/get website-update)."),
+			catalog.Fallback("Update an existing website: change its cid, target-type (ipfs|ipns), rename its domain (rename-to), set the domain namespace (namespace: icann or hns for a Handshake/alt-root name), or set dns-hosting (true = Pinner-managed, false = self-managed, omit = unchanged). Select the site by website; set at least one optional field. A CID produced by an upload tool is already pinned and usable directly. A CID that is an EXTERNAL IPFS CID needs pins_add first; a bare update with an unpinned CID fails with CID_NOT_PINNED. With only cid set (no target-type), the site's current target type is preserved automatically. For the guided flow, the website-update prompt (prompts/get website-update) provides the decision tree."),
 		),
 		Category:    "core",
 		Safety:      catalog.SafetyMutate,
@@ -579,7 +579,7 @@ func websitesUpdate(d WebsitesDeps) catalog.Operation {
 		Args: []catalog.OperationArg{
 			{Name: "website", Type: catalog.ArgTypeString, Help: "Website ID or domain to update"},
 			{Name: "rename-to", Type: catalog.ArgTypeString, Help: "New domain for the website"},
-			{Name: "cid", Type: catalog.ArgTypeString, Help: "New target CID", AgentHelp: "The IPFS CID to serve. If produced by a Pinner upload tool, it is already pinned — use it directly. Only call pins_add(cids=[\"<cid>\"], wait=true) first when the CID is an external IPFS CID; an unpinned CID fails with CID_NOT_PINNED. With a bare cid (no target-type), the site's current targeting is preserved automatically."},
+			{Name: "cid", Type: catalog.ArgTypeString, Help: "New target CID", AgentHelp: "The IPFS CID to serve. A CID produced by a Pinner upload tool is already pinned and used directly. A CID that is an external IPFS CID requires pins_add(cids=[\"<cid>\"], wait=true) first; an unpinned CID fails with CID_NOT_PINNED. With a bare cid (no target-type), the site's current targeting is preserved automatically."},
 			{Name: "target-type", Type: catalog.ArgTypeString, Help: "New target type (ipfs|ipns); when omitted with cid, the site's current target type is preserved"},
 			{Name: "dns-hosting", Type: catalog.ArgTypeNullableBool, Help: "Set Pinner-managed DNS (true = managed, false = self-managed, omit = leave unchanged)", AgentHelp: "true enables Pinner-managed DNS; false disables it (self-managed). Omit to leave the current DNS hosting state unchanged."},
 			{Name: "namespace", Type: catalog.ArgTypeString, Help: "DNS namespace of the domain (icann or hns); omit = leave unchanged. Use with rename-to when switching to a Handshake (alt-root) name.", AgentHelp: "The DNS namespace of the custom domain: \"icann\" (traditional) or \"hns\" for a Handshake (alt-root) name. Omit to leave the current namespace unchanged. When renaming to an HNS name with rename-to, set namespace to \"hns\"."},
@@ -857,7 +857,7 @@ func websitesPlatformDomainsList(d WebsitesDeps) catalog.Operation {
 		Summary:     "List available platform subdomain roots",
 		Description: "List the platform-owned root domains that are enabled and available for users to claim free subdomains under. Each entry carries the root domain, its DNS namespace, zone id, and whether it is enabled.",
 		MCPTargets: catalog.MCPTargets(
-			catalog.Fallback("List the platform-owned root domains that are enabled and available for users to claim free subdomains under. Only needed when the user explicitly requests a specific subdomain label — use this to discover roots before checking availability with websites_platform_domain_availability. If the user has no label preference, skip this and call websites_create with no domain (auto-generates a platform subdomain)."),
+			catalog.Fallback("List the platform-owned root domains that are enabled and available for users to claim free subdomains under. Relevant when the user explicitly requests a specific subdomain label — discover roots here before checking availability with websites_platform_domain_availability. When the user has no label preference, websites_create with no domain auto-generates a platform subdomain."),
 		),
 		Category:    "core",
 		Safety:      catalog.SafetyRead,
@@ -890,7 +890,7 @@ func websitesPlatformDomainAvailability(d WebsitesDeps) catalog.Operation {
 		Summary:     "Check if a label is available as a platform subdomain",
 		Description: "Check whether a candidate subdomain label is claimable on each enabled platform (free-subdomain) root. label is required. Returns one availability result per platform-owned root.",
 		MCPTargets: catalog.MCPTargets(
-			catalog.Fallback("Check whether a candidate subdomain label is claimable on each enabled platform (free-subdomain) root. label is required. Returns one availability result per platform-owned root. Use only when a concrete subdomain label has already been supplied by the user or is required by an explicit user request for custom naming. Do not generate a label solely to call this tool — if no label preference exists, use websites_create with no domain (auto-generates a platform subdomain) instead."),
+			catalog.Fallback("Check whether a candidate subdomain label is claimable on each enabled platform (free-subdomain) root. label is required. Returns one availability result per platform-owned root. The check applies when a concrete subdomain label has already been supplied by the user or is required by an explicit user request for custom naming. A label is not generated solely for this check; when no label preference exists, websites_create with no domain auto-generates a platform subdomain."),
 		),
 		Category:    "core",
 		Safety:      catalog.SafetyRead,

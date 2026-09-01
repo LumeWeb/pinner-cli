@@ -11,13 +11,13 @@ import (
 // segments whose required features are satisfied by the profile are
 // concatenated.
 var uploadFileDesc = Static(
-	"Upload a file and pin it. The returned CID is already pinned: do NOT call pins_add afterward; the wait flag waits for this upload's own pin operation.",
+	"Upload a file and pin it. The returned CID is already pinned, so importing it again with pins_add is unnecessary; the wait flag waits for this upload's own pin operation.",
 ).
 	When(hostenv.FeatFileHostInput,
-		"MUST use `file` when the host already has the file (user-uploaded attachments AND assistant-generated files in the assistant's sandbox); the OpenAI runtime converts it to a temporary download_url + file_id this tool receives — do NOT base64-encode, create a data URI, or manually construct the download_url object.",
+		"Use `file` when the host already has the file (user-uploaded attachments AND assistant-generated files in the assistant's sandbox); the OpenAI runtime converts it to a temporary download_url + file_id this tool receives — the file is passed as-is, without base64 encoding, a data URI, or manually constructing the download_url object.",
 	).
 	When(hostenv.FeatSourceMint,
-		"Use source.mode=mint to get a one-time presigned HTTP PUT endpoint. Mint does NOT store bytes: PUT your agent-local file to the returned url (curl -sS -T <file> \"<url>\"), then poll upload_status with the returned upload_handle until it reports completed — the completed CID is already pinned; do not call pins_add. For a website ZIP, mint holds the bytes as a raw archive unless you pass archive_mode=convert, so always pass archive_mode=convert for a site ZIP (or wrap=true for a single HTML page).",
+		"Use source.mode=mint to get a one-time presigned HTTP PUT endpoint. Mint does NOT store bytes: PUT your agent-local file to the returned url (curl -sS -T <file> \"<url>\"), then poll upload_status with the returned upload_handle until it reports completed — the completed CID is already pinned, so pins_add is unnecessary. For a website ZIP, mint holds the bytes as a raw archive unless you pass archive_mode=convert, so always pass archive_mode=convert for a site ZIP (or wrap=true for a single HTML page).",
 	).
 	When(hostenv.FeatSourcePath,
 		"Use source.mode=path with a host-side file/directory/archive path.",
@@ -26,10 +26,10 @@ var uploadFileDesc = Static(
 		"Use source.mode=url (server-fetchable HTTPS URL) or source.mode=data (RFC 2397 data: URI) — the server fetches/decodes and uploads them.",
 	).
 	When(hostenv.FeatFileHostInput,
-		"Website ZIPs: if you already have a site ZIP on the host (index.html + CSS/JS/images), call upload_file with file=<host file> and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update. Do NOT upload individual images/assets, and do NOT mint a presigned curl URL for a file your host already holds. Before uploading a site ZIP, verify that index.html is at the archive root (not inside a wrapper directory) — websites_create/update will reject a CID whose root lacks index.html.",
+		"Website ZIPs: if you already have a site ZIP on the host (index.html + CSS/JS/images), call upload_file with file=<host file> and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update. Individual images/assets are not uploaded separately, and no presigned curl URL is minted for a file the host already holds. Before uploading a site ZIP, verify that index.html is at the archive root (not inside a wrapper directory) — websites_create/update will reject a CID whose root lacks index.html.",
 	).
 	When(hostenv.FeatSourcePath,
-		"Website ZIPs: if you already have a site ZIP on the host (index.html + CSS/JS/images), call upload_file with source.mode=path and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update. Do NOT upload individual images/assets. Before uploading a site ZIP, verify that index.html is at the archive root (not inside a wrapper directory) — websites_create/update will reject a CID whose root lacks index.html.",
+		"Website ZIPs: if you already have a site ZIP on the host (index.html + CSS/JS/images), call upload_file with source.mode=path and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update. Individual images/assets are not uploaded separately. Before uploading a site ZIP, verify that index.html is at the archive root (not inside a wrapper directory) — websites_create/update will reject a CID whose root lacks index.html.",
 	).
 	When(hostenv.FeatSourceMint,
 		"Website ZIPs: call upload_file with source.mode=mint and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update.",
@@ -49,7 +49,7 @@ var vaultPutFileDesc = Static(
 	"Store a file in the encrypted Pinner vault.",
 ).
 	When(hostenv.FeatFileHostInput,
-		"If your host provides a generated file directly, pass it in the file input (a temporary download_url + file_id) and Pinner fetches and stores its bytes at vault_path. Do NOT mint a presigned URL to curl a file when the host already holds it; pass the file reference instead.",
+		"If your host provides a generated file directly, pass it in the file input (a temporary download_url + file_id) and Pinner fetches and stores its bytes at vault_path; a presigned URL is not minted to curl a file the host already holds — pass the file reference instead.",
 	).
 	When(hostenv.FeatSourceMint,
 		"Use source.mode=mint plus vault_path: mint returns a one-time presigned PUT url bound to vault_path (it has NOT stored bytes yet). PUT the agent-local file to the returned url (curl -sS -T <file> \"<url>\"); the PUT is non-blocking — it returns after staging the bytes locally (status: staged), so the file is immediately readable but durability on Sia (upload + pin) happens in the background or via vault_flush. There is no upload_status to poll (upload_status tracks upload_file's IPFS uploads, not vault writes).",

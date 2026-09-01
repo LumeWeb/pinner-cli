@@ -2417,3 +2417,32 @@ func TestSetupWizard_FirstStepThroughHandler(t *testing.T) {
 	require.False(t, stepRes.IsError, "first step must not error")
 	require.Contains(t, stepRes.Text, "current_step")
 }
+
+// TestWizardToolsCarryTitles pins that every catalog wizard tool (the _start and
+// _step variants across the setup/websites/domains families) carries a non-empty
+// top-level title on its catalog entry, satisfying the describe_tool title contract.
+func TestWizardToolsCarryTitles(t *testing.T) {
+	cfgMgr := newConfigMgr(t, true)
+	authSvc := &mockAuthService{}
+	store := session.NewSessionStore()
+	deps := wizard.SetupWizardDeps{
+		CfgMgr:       cfgMgr,
+		AuthService:  authSvc,
+		SetupFactory: testSetupFactory,
+	}
+	cat := &testCatalog{}
+	require.NoError(t, wizard.RegisterWizardTools(cat, store,
+		wizard.WebsitesWizardDeps{WebsitesFactory: testWebsitesFactory},
+		deps,
+		wizard.DomainWizardDeps{DomainFactory: testDomainFactory}))
+
+	for _, name := range []string{
+		"setup_wizard_start", "setup_wizard_step",
+		"websites_wizard_start", "websites_wizard_step",
+		"domains_wizard_start", "domains_wizard_step",
+	} {
+		entry, ok := cat.Get(name)
+		require.True(t, ok, "%s registered", name)
+		require.NotEmpty(t, entry.Title, "%s must carry a non-empty title", name)
+	}
+}

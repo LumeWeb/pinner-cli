@@ -26,7 +26,7 @@ const OpenVaultManagerToolName = "open_vault_manager"
 // Fallback MCPTarget so the launcher descriptor carries a target list.
 const openVaultManagerDescription = "Open the interactive Upload to Vault file picker. This is a UI launcher: it renders an HTML iframe so the user can pick a file. It is not a headless primitive. " +
 	"It returns a presigned PUT URL plus the vault_path; the iframe's Uppy uploader POSTs file bytes to that URL directly, and the PUT returns after staging locally (status: staged) — durability on Sia happens in the background or via the vault_flush tool. " +
-	"Prefer vault_put_file (headless) for autonomous workflows; call this only when a human file picker is actually desired."
+	"The headless equivalent is vault_put_file for autonomous uploads without a rendered file picker."
 
 // OpenVaultManagerInput is the typed argument shape for the model-facing
 // Vault upload launcher. Vault uploads are non-blocking: bytes are staged

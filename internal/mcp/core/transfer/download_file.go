@@ -52,10 +52,11 @@ type DownloadFileInput struct {
 // any byte is read or written.
 func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *Download, downloadRoot string, maxDownloadBytes int64, tunnelOpenAI bool) model.ToolDescriptor {
 	return model.ToolDescriptor{
-		Name:        "download_file",
-		Title:       "Download IPFS content to a file",
-		Description: downloadFileDescription(hd != nil, tunnelOpenAI),
-		Category:    model.CategoryCore,
+		Name:          "download_file",
+		Title:         "Download IPFS content to a file",
+		Description:   downloadFileDescription(hd != nil, tunnelOpenAI),
+		Category:      model.CategoryCore,
+		OpenWorldHint: true, // fetches content from the IPFS network
 		// The input schema advertises only the sink values valid for the running
 		// transport (drop only when a reachable HTTP mux exists on a non-OpenAI
 		// tunnel), matching capabilities().download_sink_modes so the published

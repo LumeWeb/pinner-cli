@@ -32,13 +32,13 @@ import (
 type accountPasswordUpdateArgs struct {
 	// Email is optional context; the page derives nothing from it. It is NOT
 	// the password.
-	Email string `json:"email,omitempty"`
+	Email string `json:"email,omitempty" jsonschema:"description=Optional account email context; the out-of-band page derives nothing from it and it is not a password."`
 }
 
 // accountPasswordResetArgs is the input of account_password_reset.
 type accountPasswordResetArgs struct {
 	// Email is the account address to send the reset link to. Required.
-	Email string `json:"email,omitempty"`
+	Email string `json:"email,omitempty" jsonschema:"description=The account email address to send the password reset link to."`
 }
 
 // NewAccountPasswordUpdateDescriptor returns the account_password_update tool:
@@ -51,8 +51,8 @@ func NewAccountPasswordUpdateDescriptor(oob *OOBAccountChange, svc AuthService, 
 	return model.ToolDescriptor{
 		Name:        "account_password_update",
 		Title:       "Change Password (Out-of-Band)",
-		Description: "Start an out-of-band (OOB) password change. Returns a short-lived page URL the human opens in a browser to enter their current and new password; the password never reaches this channel. The account must be signed in first. Start here to change your password.",
-		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback("Start an out-of-band (OOB) password change. Returns a short-lived page URL the human opens in a browser to enter their current and new password; the password never reaches this channel. The account must be signed in first. Start here to change your password.")),
+		Description: "Start an out-of-band (OOB) password change. Returns a short-lived page URL the human opens in a browser to enter their current and new password; the password never reaches this channel. The account must be signed in first. This tool is the entry point for changing the account password.",
+		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback("Start an out-of-band (OOB) password change. Returns a short-lived page URL the human opens in a browser to enter their current and new password; the password never reaches this channel. The account must be signed in first. This tool is the entry point for changing the account password.")),
 		Category:    model.CategoryAccount,
 		Destructive: true,
 		InputSchema: toolargs.ToolSchemaFor[accountPasswordUpdateArgs](),
@@ -102,8 +102,8 @@ func NewAccountEmailChangeDescriptor(oob *OOBAccountChange, svc AuthService) mod
 	return model.ToolDescriptor{
 		Name:        "account_email_change",
 		Title:       "Change Email (Out-of-Band)",
-		Description: "Start an out-of-band (OOB) email change. Returns a short-lived page URL the human opens in a browser to enter the new email and their current password; the password never reaches this channel. The account must be signed in first. Start here to change your email.",
-		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback("Start an out-of-band (OOB) email change. Returns a short-lived page URL the human opens in a browser to enter the new email and their current password; the password never reaches this channel. The account must be signed in first. Start here to change your email.")),
+		Description: "Start an out-of-band (OOB) email change. Returns a short-lived page URL the human opens in a browser to enter the new email and their current password; the password never reaches this channel. The account must be signed in first. This tool is the entry point for changing the account email.",
+		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback("Start an out-of-band (OOB) email change. Returns a short-lived page URL the human opens in a browser to enter the new email and their current password; the password never reaches this channel. The account must be signed in first. This tool is the entry point for changing the account email.")),
 		Category:    model.CategoryAccount,
 		Destructive: true,
 		InputSchema: toolargs.ToolSchemaFor[accountPasswordUpdateArgs](),

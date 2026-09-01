@@ -20,6 +20,49 @@ import (
 // app by filling in an AppView and calling RegisterAppView — no direct
 // _meta.ui, resources/list, or CSP manipulation.
 
+// viewDomainResolverMu guards viewDomainResolver: the deployment origin is
+// installed once at server assembly, and app registration may happen on
+// another goroutine / server instance (tests).
+var (
+	viewDomainResolverMu sync.RWMutex
+	viewDomainResolver   func() string
+)
+
+// SetViewDomainResolver installs the origin a deployment attributes its
+// ui:// views to (e.g. the hosted BaseURL origin or the tunnel origin). The
+// resolver is invoked at app-registration time so the value reflects the live
+// deployment. Unset (zero) — the normal case for a fully self-hosted CLI
+// server with no public origin — means views carry NO domain at all, so a
+// self-hosted server never advertises a domain that is not its own.
+func SetViewDomainResolver(f func() string) {
+	viewDomainResolverMu.Lock()
+	viewDomainResolver = f
+	viewDomainResolverMu.Unlock()
+}
+
+// ViewDomainResolver returns the currently installed view-domain resolver (or
+// nil). Exposed so tests can save and restore the deployment origin.
+func ViewDomainResolver() func() string {
+	viewDomainResolverMu.RLock()
+	defer viewDomainResolverMu.RUnlock()
+	return viewDomainResolver
+}
+
+// viewDomain returns the origin for a view: an explicit AppView.Domain
+// override wins, else the deployment resolver, else empty (no domain emitted).
+func viewDomain(override string) string {
+	if override != "" {
+		return override
+	}
+	viewDomainResolverMu.RLock()
+	f := viewDomainResolver
+	viewDomainResolverMu.RUnlock()
+	if f == nil {
+		return ""
+	}
+	return f()
+}
+
 // AppView declares one ui:// MCP App. A view is an HTML document served at a
 // ui:// URI, attached to the existing model-visible tool(s) it renders for,
 // plus any app-only helper tools the view calls. RegisterAppView wires all of
@@ -31,13 +74,26 @@ type AppView struct {
 	Name string
 	// Title is the human-facing view title.
 	Title string
-	// Description is the resource description surfaced in resources/list.
+	// Description is the resource description surfaced in resources/list. It
+	// also serves as the default widget description (_meta.ui.widgetDescription
+	// and _meta["openai/widgetDescription"]) that directory submissions expose
+	// for the rendered view.
 	Description string
 	// HTML is the complete, self-contained mcp-app document served at URI.
 	// Build it with mcpapp.RenderMcpAppDoc(title, body, module) so it shares the app
 	// shell/theme/bootstrap. Served verbatim; the sandboxed iframe needs no
 	// network request.
 	HTML string
+	// Domain is the exact HTTPS origin (e.g. "https://mcp.pinner.xyz") the
+	// ChatGPT/Apps widget layer attributes this view to, emitted as
+	// _meta.ui.domain and _meta["openai/widgetDomain"]. A domain is REQUIRED by
+	// the ChatGPT app-directory check and must be a bare origin (no path); all
+	// views in one app must share the same origin. When empty, the deployment
+	// view-domain resolver supplies the origin (see SetViewDomainResolver); on
+	// a self-hosted server with no resolver and no override no domain is
+	// emitted at all — a self-hosted server must never advertise a domain that
+	// is not its own.
+	Domain string
 	// PrefersBorder hints hosts to render the iframe with a border.
 	PrefersBorder bool
 	// ConnectDomainsFunc, when set, resolves the CSP connectDomains the
@@ -146,6 +202,7 @@ func RegisterAppView(srv *sdk.Server, catalog AppCatalog, v AppView) error {
 		return fmt.Errorf("mcp: app view %q requires html", v.URI)
 	}
 
+	domain := viewDomain(v.Domain)
 	info := AppViewInfo{URI: v.URI, Name: v.Name, Title: v.Title}
 	for _, toolName := range v.AttachTo {
 		if err := AttachAppMeta(catalog, toolName, v.URI); err != nil {
@@ -157,12 +214,15 @@ func RegisterAppView(srv *sdk.Server, catalog AppCatalog, v AppView) error {
 	}
 
 	if err := sdk.RegisterAppResource(srv, sdk.AppResource{
-		URI:         v.URI,
-		Name:        v.Name,
-		Title:       v.Title,
+		URI:   v.URI,
+		Name:  v.Name,
+		Title: v.Title,
+		// Description is also the widget description for directory surfaces.
 		Description: v.Description,
 		Meta: model.AppResourceMeta{
-			PrefersBorder: new(v.PrefersBorder),
+			Domain:            domain,
+			WidgetDescription: v.Description,
+			PrefersBorder:     new(v.PrefersBorder),
 		},
 		ConnectDomainsFunc: v.ConnectDomainsFunc,
 		HTML:               v.HTML,
