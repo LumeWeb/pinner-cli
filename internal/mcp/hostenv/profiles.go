@@ -97,13 +97,14 @@ var ProfileGrokStdio = newProfile(
 
 // ProfileClaudeHTTP is Anthropic's Claude Web client (clientInfo name
 // "Anthropic/ClaudeAI", User-Agent "Claude-User") connecting over HTTP +
-// OAuth. Claude Web grants the agent no network egress (no curl) and no
-// OpenAI-style file references, so its only real byte path is the base64
-// upload_data relay — declared via FeatSourceData (which registers the
-// upload_data tool; it does NOT flip upload_file's transport-bound mint
-// source). It supports MCP Apps UI. Downloads are effectively not
-// deliverable to the user: mint is unusable without curl, sink=drop needs an
-// out-of-band fetch, and sink=local writes to the server's unreachable disk.
+// OAuth. Like any HTTP-transport host it derives mint/drop from the
+// transport, but over a self-hosted (non-hosted) deployment it cannot exercise
+// those endpoints and has no OpenAI-style file references, so its only real
+// byte path in that mode is the base64 upload_data relay, declared via
+// FeatSourceData (which registers the upload_data tool; it does NOT flip
+// upload_file's transport-bound mint source). It supports MCP Apps UI. A
+// hosted (Portal-embedded) deployment lets Claude Web use the mint/drop
+// endpoints like any other HTTP host, so it needs no special-casing.
 var ProfileClaudeHTTP = newProfile(
 	FeatureSet{
 		FeatSourceData: true,

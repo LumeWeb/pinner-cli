@@ -136,6 +136,20 @@ func Not(p Predicate) Predicate {
 	return func(prof PlatformProfile) bool { return !p(prof) }
 }
 
+// And returns a predicate that passes only when every given predicate passes.
+// Builders use it to gate a rule on a conjunction that no single gate
+// expresses (e.g. "this host AND this deployment mode").
+func And(preds ...Predicate) Predicate {
+	return func(prof PlatformProfile) bool {
+		for _, p := range preds {
+			if !p(prof) {
+				return false
+			}
+		}
+		return true
+	}
+}
+
 // TransportIs matches profiles running on the given transport. It is a
 // convenience constructor so description DSL call sites read as prose
 // (WhenTransport(hostenv.TransportOpenAI, ...)) rather than spelling out a

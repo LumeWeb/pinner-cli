@@ -450,6 +450,14 @@ func (g *GuideSpec) RuleWhenHost(h hostenv.HostType, text string) *GuideSpec {
 	return g
 }
 
+// RuleWhenPred adds a rule included only when pred passes for the profile. It
+// is the escape hatch for gates no single Feature/Host/Hosted selector
+// expresses, e.g. a conjunction built with hostenv.And.
+func (g *GuideSpec) RuleWhenPred(pred hostenv.Predicate, text string) *GuideSpec {
+	g.rules = append(g.rules, gatedRule{text: text, pred: pred})
+	return g
+}
+
 // RuleUnlessHost adds a rule included only when the profile's host does NOT match h.
 func (g *GuideSpec) RuleUnlessHost(h hostenv.HostType, text string) *GuideSpec {
 	g.rules = append(g.rules, gatedRule{text: text, pred: hostenv.Not(hostenv.HostIs(h))})

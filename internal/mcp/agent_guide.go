@@ -341,13 +341,16 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 		Rule(guideCIDStructure).
 		RuleWhen(hostenv.FeatMCPApps,
 			"MCP Apps rule: this host renders interactive app views. When a user explicitly requests a visual interface, call open_app with the app name (vault_browser, sso_signin, pin_creator, upload_manager, pin_list, account, vault_create, vault_restore, account_password, account_email). open_app returns a ui:// view the host renders as an iframe. Prefer headless primitives (vault_status, vault_put_file, pins_list, auth_sso, ...) for autonomous workflows — call open_app only when a human-facing screen is needed.").
-		// Claude Web (host "claude") has no network egress and no file
-		// references, so its transport-derived mint/sink capabilities are
-		// unusable: the only working upload is the base64 upload_data relay,
-		// and downloads cannot be delivered to the user. Scoped to the Web
-		// host only — Claude Desktop (a different HostType) is co-located
-		// with full local file access and must NOT get this notice.
-		RuleWhenHost(hostenv.HostClaude,
+		// Claude Web (host "claude") on a self-hosted (non-hosted) deployment
+		// cannot exercise the transport-derived mint/sink endpoints, so the
+		// only working upload is the base64 upload_data relay and downloads
+		// cannot be delivered to the user. Scoped to the Web host AND
+		// non-hosted deployment only (RuleWhenPred) — Claude Desktop (a
+		// different HostType) is co-located with full local file access and
+		// must NOT get this notice, and a hosted (Portal-embedded) deployment
+		// lets Claude Web use the mint/drop endpoints like any other HTTP
+		// host, so it is not treated as special.
+		RuleWhenPred(hostenv.And(hostenv.HostIs(hostenv.HostClaude), hostenv.Not(hostenv.HostedIs(true))),
 			"Host capability notice (Claude Web): this agent has no network egress (no curl) and no file references, so the ONLY working upload is upload_data (RFC 2397 base64 data: URI passed in the tool args). upload_file's source.mode=mint and the sink=drop download link both require the agent to curl or fetch out of band, which this host cannot do, and sink=local writes to the MCP server's own unreachable disk — so warn the user before offering a download that the content cannot be delivered to them.").
 		// Hosted (Portal-embedded) deployments establish the caller's identity
 		// via Portal OAuth before the request reaches the MCP server. State that
