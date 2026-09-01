@@ -98,6 +98,12 @@ func BuildHostedServer(cfg HostedServerConfig) (*sdk.Server, *ToolCatalog, *Host
 	// foreign domain.
 	if origin := httpsOriginOf(cfg.BaseURL); origin != "" {
 		apps.SetViewDomainResolver(func() string { return origin })
+		// Scoped to this assembly: view domains are resolved during app
+		// registration (inside BuildServer), so clearing the resolver when the
+		// assembly returns keeps any LATER assembly in the same process (tests,
+		// multi-embed hosts, a self-hosted server built after the hosted one)
+		// from attributing its views to this deployment's origin.
+		defer apps.SetViewDomainResolver(nil)
 	}
 	srv, cat, err := BuildServer(ServerConfig{
 		Hosted:      true, // hosted mode is declared here, at the one construction seam
