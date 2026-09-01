@@ -142,9 +142,11 @@ func TestAgentGuideModesMatchProfile(t *testing.T) {
 }
 
 // TestAgentGuideClaudeWebNoticeScoped ensures the Claude Web network-
-// restriction rule is surfaced only for the Web host and absent for Claude
-// Desktop (co-located, full local file access) and generic HTTP hosts.
+// restriction rule is surfaced only for the Web host in NON-hosted deployments
+// and absent for Claude Desktop (co-located, full local file access), generic
+// HTTP hosts, and hosted mode (where Claude Web can curl like any HTTP host).
 func TestAgentGuideClaudeWebNoticeScoped(t *testing.T) {
+	// Default activeHosted() is false: Claude Web gets the notice.
 	web := buildAgentGuide(&hostenv.ProfileClaudeHTTP)
 	require.Contains(t, strings.Join(web.Rules, "\n"), "Host capability notice (Claude Web)")
 	require.Contains(t, strings.Join(web.Rules, "\n"), "upload_data")
@@ -154,6 +156,27 @@ func TestAgentGuideClaudeWebNoticeScoped(t *testing.T) {
 
 	generic := buildAgentGuide(&hostenv.ProfileHTTPGeneric)
 	require.NotContains(t, strings.Join(generic.Rules, "\n"), "Host capability notice (Claude Web)")
+}
+
+// TestAgentGuideClaudeWebHostedNoRestriction proves hosted Claude Web is not
+// special-cased: the "can't curl" notice is gone and the generic mint/drop
+// (file/drop curl) guidance applies, exactly as for Grok and other HTTP hosts.
+func TestAgentGuideClaudeWebHostedNoRestriction(t *testing.T) {
+	SetHosted(true)
+	defer SetHosted(false)
+
+	web := buildAgentGuide(&hostenv.ProfileClaudeHTTP)
+	rules := strings.Join(web.Rules, "\n")
+	require.NotContains(t, rules, "Host capability notice (Claude Web)", "hosted Claude Web must not get the no-curl notice")
+	require.NotContains(t, rules, "has no network egress", "hosted Claude Web must not be told it cannot curl")
+
+	upload := guideFlowByName(t, web, "upload")
+	require.Contains(t, upload.Detail, "curl -sS -T", "hosted Claude Web's upload flow must keep the generic mint PUT guidance")
+	require.Contains(t, upload.Detail, "poll upload_status", "hosted Claude Web must keep the mint completion contract")
+
+	download := guideFlowByName(t, web, "download")
+	require.Contains(t, download.Detail, "Prefer sink=drop", "hosted Claude Web's download flow must keep the generic filedrop guidance")
+	require.Contains(t, download.Detail, "curl -o", "hosted Claude Web must be told to pull the drop link with curl -o")
 }
 
 // segHasToken reports whether any active segment text contains tok.

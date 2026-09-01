@@ -23,6 +23,21 @@ func newTokenInfo() *TokenInfo {
 	}
 }
 
+// TestAndPredicate verifies the And combinator passes only when every given
+// predicate passes, including with zero predicates (trivially true).
+func TestAndPredicate(t *testing.T) {
+	hosted := ProfileGrokHTTP.CloneFeatures()
+	hosted.Hosted = true
+	local := ProfileGrokHTTP
+
+	isGrok := HostIs(HostGrok)
+	require.True(t, And()(local), "no predicates must be trivially true")
+	require.True(t, isGrok(local))
+	require.False(t, And(isGrok, HostedIs(true))(local), "local grok must fail the hosted conjunct")
+	require.True(t, And(isGrok, HostedIs(true))(hosted), "hosted grok must match both conjuncts")
+	require.False(t, And(isGrok, Not(HostedIs(true)))(hosted), "hosted grok must not match the !hosted conjunct")
+}
+
 // ---------------------------------------------------------------------------
 // Detector tests
 // ---------------------------------------------------------------------------

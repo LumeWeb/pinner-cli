@@ -160,3 +160,19 @@ func TestSurfaceAndHostedGating(t *testing.T) {
 	require.Equal(t, []string{"local rule", "vault rule"}, gottenLocal.Rules)
 	require.Equal(t, []string{"local_tool"}, gottenLocal.Flows[0].Decision.Branches[0].Steps)
 }
+
+// TestRuleWhenPredAndGate exercises RuleWhenPred with a hostenv.And
+// conjunction (host + deployment mode), the pattern the Claude Web notice
+// uses so a hosted deployment stops special-casing the host.
+func TestRuleWhenPredAndGate(t *testing.T) {
+	grokLocal := hostenv.ProfileGrokHTTP
+	grokHosted := grokLocal.CloneFeatures()
+	grokHosted.Hosted = true
+
+	spec := Guide().
+		RuleWhenPred(hostenv.And(hostenv.HostIs(hostenv.HostGrok), hostenv.Not(hostenv.HostedIs(true))), "grok local-only rule").
+		RuleWhenPred(hostenv.And(hostenv.HostIs(hostenv.HostGrok), hostenv.HostedIs(true)), "grok hosted rule")
+
+	require.Equal(t, []string{"grok local-only rule"}, spec.Resolve(grokLocal).Rules)
+	require.Equal(t, []string{"grok hosted rule"}, spec.Resolve(grokHosted).Rules)
+}
