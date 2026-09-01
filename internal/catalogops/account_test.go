@@ -9,6 +9,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
+	account "go.lumeweb.com/portal-sdk"
 )
 
 // fakeAuthService mocks auth.AuthService for the account otp disable handler,
@@ -18,6 +19,7 @@ type fakeAuthService struct {
 	auth.AuthService
 
 	disableOTPFn func(ctx context.Context, password string) (*auth.DisableOTPResult, error)
+	quotaFn      func(ctx context.Context) (*account.QuotaStatus, error)
 }
 
 func (f *fakeAuthService) DisableOTP(ctx context.Context, password string) (*auth.DisableOTPResult, error) {
@@ -26,6 +28,15 @@ func (f *fakeAuthService) DisableOTP(ctx context.Context, password string) (*aut
 	}
 	return &auth.DisableOTPResult{}, nil
 }
+
+func (f *fakeAuthService) GetQuota(ctx context.Context) (*account.QuotaStatus, error) {
+	if f.quotaFn != nil {
+		return f.quotaFn(ctx)
+	}
+	return &account.QuotaStatus{}, nil
+}
+
+func intPtr(v int) *int { return &v }
 
 // accountDisableDeps returns an AccountDeps whose auth service is backed by the
 // given fake, with a config manager present so authClientHandler resolves.
@@ -114,5 +125,100 @@ func TestAccountUpdateEnvCLIOnly(t *testing.T) {
 	}
 	if envs["account_info"] != catalog.EnvBoth {
 		t.Errorf("account_info.Environment() = %v, want EnvBoth", envs["account_info"])
+	}
+}
+
+// TestAccountQuotaReturnsTypedResult verifies the account_quota handler maps a
+// positive-remaining quota into a typed result with has_quota=true (quota
+// covers access regardless of subscription).
+func TestAccountQuotaReturnsTypedResult(t *testing.T) {
+	fake := &fakeAuthService{
+		quotaFn: func(_ context.Context) (*account.QuotaStatus, error) {
+			q := &account.QuotaStatus{}
+			q.Upload.Used = 5
+			q.Upload.Limit = intPtr(100)
+			q.Upload.Remaining = intPtr(95)
+			q.Upload.Percentage = 5
+			q.Download.Remaining = intPtr(0)
+			return q, nil
+		},
+	}
+	op := accountQuota(accountDisableDeps(t, fake))
+	res, err := op.Handler().Execute(context.Background(), map[string]any{})
+	if err != nil {
+		t.Fatalf("account quota handler: %v", err)
+	}
+	result, ok := res.(*AccountQuotaResult)
+	if !ok {
+		t.Fatalf("result type = %T, want *AccountQuotaResult", res)
+	}
+	if !result.HasQuota {
+		t.Fatal("expected has_quota=true when upload has remaining allowance")
+	}
+	if result.Upload.Used != 5 || result.Upload.Remaining == nil || *result.Upload.Remaining != 95 {
+		t.Fatalf("upload fields wrong: %+v", result.Upload)
+	}
+	if result.Message == "" {
+		t.Fatal("expected a human-readable message")
+	}
+}
+
+// TestAccountQuotaNoRemaining verifies has_quota=false when every dimension is
+// exhausted, and the message reflects that a subscription/grant is needed.
+func TestAccountQuotaNoRemaining(t *testing.T) {
+	fake := &fakeAuthService{
+		quotaFn: func(_ context.Context) (*account.QuotaStatus, error) {
+			q := &account.QuotaStatus{}
+			q.Upload.Remaining = intPtr(0)
+			q.Download.Remaining = intPtr(0)
+			q.Storage.Remaining = intPtr(0)
+			return q, nil
+		},
+	}
+	op := accountQuota(accountDisableDeps(t, fake))
+	res, err := op.Handler().Execute(context.Background(), map[string]any{})
+	if err != nil {
+		t.Fatalf("account quota handler: %v", err)
+	}
+	result := res.(*AccountQuotaResult)
+	if result.HasQuota {
+		t.Fatal("expected has_quota=false when all dimensions are exhausted")
+	}
+}
+
+// TestAccountQuotaUnlimitedIsCovered verifies a dimension with no remaining
+// bound (unlimited) counts as covered quota.
+func TestAccountQuotaUnlimitedIsCovered(t *testing.T) {
+	fake := &fakeAuthService{
+		quotaFn: func(_ context.Context) (*account.QuotaStatus, error) {
+			return &account.QuotaStatus{}, nil // all remaining==nil => unlimited
+		},
+	}
+	op := accountQuota(accountDisableDeps(t, fake))
+	res, err := op.Handler().Execute(context.Background(), map[string]any{})
+	if err != nil {
+		t.Fatalf("account quota handler: %v", err)
+	}
+	result := res.(*AccountQuotaResult)
+	if !result.HasQuota {
+		t.Fatal("expected has_quota=true when quota is unlimited")
+	}
+}
+
+// TestAccountQuotaPropagatesServiceError verifies the handler propagates a
+// GetQuota error with the operation prefix.
+func TestAccountQuotaPropagatesServiceError(t *testing.T) {
+	fake := &fakeAuthService{
+		quotaFn: func(_ context.Context) (*account.QuotaStatus, error) {
+			return nil, errors.New("quota service down")
+		},
+	}
+	op := accountQuota(accountDisableDeps(t, fake))
+	_, err := op.Handler().Execute(context.Background(), map[string]any{})
+	if err == nil {
+		t.Fatal("expected error when GetQuota fails")
+	}
+	if err.Error() != "account_quota: quota service down" {
+		t.Fatalf("err = %q, want account_quota: quota service down", err.Error())
 	}
 }

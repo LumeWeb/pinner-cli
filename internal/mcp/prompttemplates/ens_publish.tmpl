@@ -40,7 +40,7 @@ Rules:
 
 ENS name: {{.ENSName}}{{end}}{{end}}
 
-{{define "ens_publish_auth_status"}}Read the pinner://account/status resource above. If "authenticated" is false, instruct the user to authenticate first. Do not proceed until authentication is confirmed.
+{{define "ens_publish_auth_status"}}Read the pinner://account/status resource above. If "authenticated" is false, instruct the user to authenticate first. Do not proceed until authentication is confirmed. Before publishing, verify access: call account_quota (search_tools query "quota"); if has_quota is true the user is covered by granted usage and needs no subscription. Only when has_quota is false, check account_subscription; if not subscribed, surface the returned web_url deep-link so the human can subscribe (you cannot subscribe for them).
 {{end}}
 
 {{define "ens_publish_content_upload"}}Step: content

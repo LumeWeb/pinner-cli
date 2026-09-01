@@ -358,6 +358,7 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 		// auth_login/auth_logout, which are CLI/local-only surfaces absent here.
 		RuleWhenHosted(true,
 			"Hosted instance notice: a Portal OAuth identity is already established for the current request and authenticated operations run as that user. Do NOT call auth_login or auth_logout (they are unavailable on this hosted surface); identity cannot be switched mid-session.").
+		Rule("Access policy (quota trumps a subscription): before a paid/metered action, check the user's access via account_quota (discover it with search_tools query \"quota\"). Its has_quota flag is authoritative — if true, granted quota covers the user and they need NO subscription, so proceed without asking about one. Only when has_quota is false, check account_subscription (search_tools query \"subscription\"): if subscribed, proceed; if not subscribed, surface the returned web_url deep-link so the human opens the web app to subscribe — you can neither subscribe on their behalf nor treat a subscription as a substitute when quota is available.").
 		Flow(toolforge.Flow("auth", "Authenticate").
 			Steps("auth_status", "auth_sso", "auth_resume", "auth_status").
 			Detail(toolforge.Static("Run auth_status; if unauthenticated, call auth_sso and poll auth_resume with the returned handle until the human completes the browser sign-in.").
@@ -447,16 +448,16 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 // flowSurface maps each agent_guide flow name to the surface flag that gates
 // it. Flows not listed are gated by no flag (always kept).
 var flowSurface = map[string]func(Surface) bool{
-	"auth":           Surface.AccountOn,
-	"vault_create":   Surface.VaultOn,
-	"vault_restore":  Surface.VaultOn,
-	"vault_upload":   Surface.VaultOn,
-	"vault_download": Surface.VaultOn,
-	"vault_share":    Surface.VaultOn,
-	"vault_sync":     Surface.VaultOn,
-	"upload":         Surface.UploadOn,
-	"download":       Surface.UploadOn,
-	"pins":           Surface.PinsOn,
+	"auth":            Surface.AccountOn,
+	"vault_create":    Surface.VaultOn,
+	"vault_restore":   Surface.VaultOn,
+	"vault_upload":    Surface.VaultOn,
+	"vault_download":  Surface.VaultOn,
+	"vault_share":     Surface.VaultOn,
+	"vault_sync":      Surface.VaultOn,
+	"upload":          Surface.UploadOn,
+	"download":        Surface.UploadOn,
+	"pins":            Surface.PinsOn,
 	"publish_website": Surface.WebsitesOn,
 	"update_website":  Surface.WebsitesOn,
 	"ens_publish":     Surface.ENSOn,

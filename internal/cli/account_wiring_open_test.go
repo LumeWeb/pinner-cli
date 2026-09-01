@@ -13,6 +13,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
 	"go.lumeweb.com/pinner-cli/internal/core/auth"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
+	account "go.lumeweb.com/portal-sdk"
 )
 
 // fakeAccountDeps returns a hermetic AccountDeps whose subscription operation
@@ -103,4 +104,75 @@ func TestAccountSubscriptionOpenWithoutJSON(t *testing.T) {
 	require.NoError(t, err, "account_subscription --open")
 	// Human mode should still print the URL/management message.
 	require.NotEmpty(t, bytes.TrimSpace(out), "expected human-readable output in non-JSON mode")
+}
+
+// fakeAccountQuotaDeps returns a hermetic AccountDeps whose account_quota
+// operation returns a canned web URL, backed by a mocked auth service that
+// returns a known quota status.
+func fakeAccountQuotaDeps(t *testing.T) catalogops.AccountDeps {
+	cfgMgr := newTestConfigMgr(t)
+	authService := NewMockAuthService(t)
+	quota := &account.QuotaStatus{}
+	quota.Upload.Remaining = ptrInt(95)
+	quota.Download.Remaining = ptrInt(0)
+	quota.Storage.Remaining = ptrInt(0)
+	authService.EXPECT().GetQuota(mock.Anything).Return(quota, nil)
+	return catalogops.AccountDeps{
+		CfgMgr: func() config.Manager { return cfgMgr },
+		AuthService: func(cfgMgr config.Manager, token string) auth.AuthService {
+			return authService
+		},
+		PortalURL: func(cfgMgr config.Manager) string {
+			return "https://account.pinner.xyz/account/usage"
+		},
+	}
+}
+
+func ptrInt(v int) *int { return &v }
+
+// buildQuotaCmd assembles the account_quota catalog operation wrapped by the
+// same accountActionAdapter used in production, with the CLI-only --open flag
+// appended (as accountWiringParent does).
+func buildQuotaCmd(t *testing.T) *cli.Command {
+	t.Helper()
+	var op catalog.Operation
+	for _, o := range catalogops.AccountOperations(fakeAccountQuotaDeps(t)) {
+		if o.Name() == "account_quota" {
+			op = o
+			break
+		}
+	}
+	if op == nil {
+		t.Fatal("account_quota operation not found")
+	}
+	cmd := &cli.Command{Name: "account_quota"}
+	cmd.Action = accountActionAdapter(op)
+	cmd.Flags = append(cmd.Flags, &cli.BoolFlag{Name: "open"})
+	return cmd
+}
+
+// TestAccountQuotaOpenJSONSuppressesMessages pins the wiring contract for
+// quota: with --json and --open, browser chatter must NOT appear on stdout;
+// the output is a single valid JSON object carrying web_url and has_quota.
+func TestAccountQuotaOpenJSONSuppressesMessages(t *testing.T) {
+	cfgMgr := newTestConfigMgr(t)
+	orig := configManagerFactory
+	configManagerFactory = func() (config.Manager, error) { return cfgMgr, nil }
+	t.Cleanup(func() { configManagerFactory = orig })
+
+	quotaCmd := buildQuotaCmd(t)
+	root := &cli.Command{
+		Name:     "pinner",
+		Flags:    []cli.Flag{&cli.BoolFlag{Name: FlagJSON}},
+		Commands: []*cli.Command{quotaCmd},
+	}
+	var buf bytes.Buffer
+	root.Writer = &buf
+
+	err := root.Run(context.Background(), []string{"pinner", "account_quota", "--json", "--open"})
+	require.NoError(t, err, "account_quota --json --open")
+	var v map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &v), "output is not valid JSON: %s", buf.String())
+	require.Equal(t, "https://account.pinner.xyz/account/usage", v["web_url"])
+	require.True(t, v["has_quota"].(bool))
 }

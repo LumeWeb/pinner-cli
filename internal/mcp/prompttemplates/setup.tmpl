@@ -22,7 +22,7 @@ Rules:
   - Read pinner://account/status to verify the auth state before and after.
 {{end}}
 
-{{define "setup_auth_status_check"}}Read the pinner://account/status resource above. If "authenticated" is true and "token_valid" is true, the user may skip the auth step. Otherwise, they will need to sign in or create an account.
+{{define "setup_auth_status_check"}}Read the pinner://account/status resource above. If "authenticated" is true and "token_valid" is true, the user may skip the auth step. Otherwise, they will need to sign in or create an account. When the flow leads to a paid/metered action, verify access up front: call account_quota (search_tools query "quota"); if its has_quota is true the user is covered by granted usage and needs no subscription — only check account_subscription and surface its web_url deep-link to the human when has_quota is false and they are not subscribed.
 {{end}}
 
 {{define "setup_start"}}Call the `setup_wizard_start` tool (no arguments). It returns a session_id and the first step (auth). Store the session_id for subsequent calls.

@@ -539,6 +539,68 @@ func (_c *MockAuthService_GetSubscriptionStatus_Call) RunAndReturn(run func(ctx 
 	return _c
 }
 
+// GetQuota provides a mock function for the type MockAuthService
+func (_mock *MockAuthService) GetQuota(ctx context.Context) (*account.QuotaStatus, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetQuota")
+	}
+
+	var r0 *account.QuotaStatus
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) (*account.QuotaStatus, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) *account.QuotaStatus); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*account.QuotaStatus)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockAuthService_GetQuota_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetQuota'
+type MockAuthService_GetQuota_Call struct {
+	*mock.Call
+}
+
+// GetQuota is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *MockAuthService_Expecter) GetQuota(ctx interface{}) *MockAuthService_GetQuota_Call {
+	return &MockAuthService_GetQuota_Call{Call: _e.mock.On("GetQuota", ctx)}
+}
+
+func (_c *MockAuthService_GetQuota_Call) Run(run func(ctx context.Context)) *MockAuthService_GetQuota_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockAuthService_GetQuota_Call) Return(quotaStatus *account.QuotaStatus, err error) *MockAuthService_GetQuota_Call {
+	_c.Call.Return(quotaStatus, err)
+	return _c
+}
+
+func (_c *MockAuthService_GetQuota_Call) RunAndReturn(run func(ctx context.Context) (*account.QuotaStatus, error)) *MockAuthService_GetQuota_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // LoginCheck provides a mock function for the type MockAuthService
 func (_mock *MockAuthService) LoginCheck(ctx context.Context, email string, password string) (*account.LoginResult, error) {
 	ret := _mock.Called(ctx, email, password)

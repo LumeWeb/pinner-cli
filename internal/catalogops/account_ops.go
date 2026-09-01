@@ -101,6 +101,7 @@ func AccountOperations(d AccountDeps) []catalog.Operation {
 		accountUpdatePassword(d),
 		accountOTPDisable(d),
 		accountSubscription(d),
+		accountQuota(d),
 	}
 }
 
@@ -152,18 +153,18 @@ type AccountSubscriptionResult struct {
 // accountInfo is the `account info` operation: reads the account profile.
 func accountInfo(d AccountDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:             "account_info",
-		Title:            "Account info",
-		Summary:          "Show your Pinner.xyz account profile",
-		Description:      "Fetch your account profile: the email address, first/last name, user id, email-verified flag, and whether 2FA is enabled.",
+		Name:        "account_info",
+		Title:       "Account info",
+		Summary:     "Show your Pinner.xyz account profile",
+		Description: "Fetch your account profile: the email address, first/last name, user id, email-verified flag, and whether 2FA is enabled.",
 		MCPTargets: catalog.MCPTargets(
 			catalog.Fallback("Call account_info to read the authenticated user's profile (email, name, user id, verified, otp_enabled). Read-only."),
 		),
-		Category:         "account",
-		Safety:           catalog.SafetyRead,
-		Interaction:      catalog.InteractionAgentSafe,
-		Visibility:       catalog.VisibilityBoth,
-		Positional:       "",
+		Category:    "account",
+		Safety:      catalog.SafetyRead,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Positional:  "",
 		Handler: authClientHandler(d, func(ctx context.Context, svc auth.AuthService, input map[string]any) (any, error) {
 			info, err := svc.GetAccount(ctx)
 			if err != nil {
@@ -188,19 +189,19 @@ func accountInfo(d AccountDeps) catalog.Operation {
 // requiring the current password for verification.
 func accountUpdateEmail(d AccountDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:             "account_update_email",
-		Title:            "Update account email",
-		Summary:          "Change the email address on your account",
-		Description:      "Change the email address associated with your account. Your current password is required for verification. On success a verification email is sent to the new address.",
+		Name:        "account_update_email",
+		Title:       "Update account email",
+		Summary:     "Change the email address on your account",
+		Description: "Change the email address associated with your account. Your current password is required for verification. On success a verification email is sent to the new address.",
 		MCPTargets: catalog.MCPTargets(
 			catalog.Fallback("Call account_update_email to change the account's email address. Requires the current password for verification. On success the user must confirm via the verification email sent to the new address."),
 		),
-		Category:         "account",
-		Safety:           catalog.SafetyMutate,
-		Interaction:      catalog.InteractionAgentSafe,
-		Visibility:       catalog.VisibilityBoth,
-		Environment:      catalog.EnvCLIOnly,
-		Positional:       "<email>",
+		Category:    "account",
+		Safety:      catalog.SafetyMutate,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Environment: catalog.EnvCLIOnly,
+		Positional:  "<email>",
 		Args: []catalog.OperationArg{
 			{Name: "email", Type: catalog.ArgTypeString, Required: true, Help: "New email address", AgentHelp: "The new email address for the account."},
 			{Name: "password", Type: catalog.ArgTypeString, Required: true, Sensitive: true, Help: "Current account password for verification", AgentHelp: "The user's current account password, used to verify the change."},
@@ -229,19 +230,19 @@ func accountUpdateEmail(d AccountDeps) catalog.Operation {
 // password, requiring the current password.
 func accountUpdatePassword(d AccountDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:             "account_update_password",
-		Title:            "Update account password",
-		Summary:          "Change the password on your account",
-		Description:      "Change the password associated with your account. Your current password is required.",
+		Name:        "account_update_password",
+		Title:       "Update account password",
+		Summary:     "Change the password on your account",
+		Description: "Change the password associated with your account. Your current password is required.",
 		MCPTargets: catalog.MCPTargets(
 			catalog.Fallback("Call account_update_password to change the account's password. Requires the current password and a new password."),
 		),
-		Category:         "account",
-		Safety:           catalog.SafetyMutate,
-		Interaction:      catalog.InteractionAgentSafe,
-		Visibility:       catalog.VisibilityBoth,
-		Environment:      catalog.EnvCLIOnly,
-		Positional:       "",
+		Category:    "account",
+		Safety:      catalog.SafetyMutate,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Environment: catalog.EnvCLIOnly,
+		Positional:  "",
 		Args: []catalog.OperationArg{
 			{Name: "current_password", Type: catalog.ArgTypeString, Required: true, Sensitive: true, Help: "Current password", AgentHelp: "The user's current account password."},
 			{Name: "new_password", Type: catalog.ArgTypeString, Required: true, Sensitive: true, Help: "New password", AgentHelp: "The new password to set for the account."},
@@ -268,18 +269,18 @@ func accountUpdatePassword(d AccountDeps) catalog.Operation {
 // verification.
 func accountOTPDisable(d AccountDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:             "account_otp_disable",
-		Title:            "Disable two-factor authentication",
-		Summary:          "Disable 2FA on your account",
-		Description:      "Disables two-factor authentication on your account. Your current account password is required to verify.",
+		Name:        "account_otp_disable",
+		Title:       "Disable two-factor authentication",
+		Summary:     "Disable 2FA on your account",
+		Description: "Disables two-factor authentication on your account. Your current account password is required to verify.",
 		MCPTargets: catalog.MCPTargets(
 			catalog.Fallback("Call account_otp_disable to turn off the account's two-factor authentication. Requires the user's current account password."),
 		),
-		Category:         "account",
-		Safety:           catalog.SafetyMutate,
-		Interaction:      catalog.InteractionAgentSafe,
-		Visibility:       catalog.VisibilityBoth,
-		Positional:       "",
+		Category:    "account",
+		Safety:      catalog.SafetyMutate,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Positional:  "",
 		Args: []catalog.OperationArg{
 			{Name: "password", Type: catalog.ArgTypeString, Required: true, Sensitive: true, Help: "Current account password for verification", AgentHelp: "The user's current account password, used to verify disabling two-factor authentication."},
 		},
@@ -300,18 +301,18 @@ func accountOTPDisable(d AccountDeps) catalog.Operation {
 // subscription status and returns the web-portal deep-link to manage it.
 func accountSubscription(d AccountDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:             "account_subscription",
-		Title:            "Active subscription",
-		Summary:          "Show your active subscription status",
-		Description:      "Fetch your active Pinner.xyz subscription status (subscribed, plan period, gateway, cancellation/pause state) and the web-app URL where you manage or start a subscription.",
+		Name:        "account_subscription",
+		Title:       "Active subscription",
+		Summary:     "Show your active subscription status",
+		Description: "Fetch your active Pinner.xyz subscription status (subscribed, plan period, gateway, cancellation/pause state) and the web-app URL where you manage or start a subscription.",
 		MCPTargets: catalog.MCPTargets(
 			catalog.Fallback("Call account_subscription to read the user's active subscription status and obtain the web_url deep-link to https://account.<portal>/account/subscription where they sign in and manage/subscribe. The URL is returned as data; a human must open it in a browser to actually subscribe or change their plan."),
 		),
-		Category:         "account",
-		Safety:           catalog.SafetyRead,
-		Interaction:      catalog.InteractionAgentSafe,
-		Visibility:       catalog.VisibilityBoth,
-		Positional:       "",
+		Category:    "account",
+		Safety:      catalog.SafetyRead,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Positional:  "",
 		Handler: authClientHandler(d, func(ctx context.Context, svc auth.AuthService, input map[string]any) (any, error) {
 			status, err := svc.GetSubscriptionStatus(ctx)
 			if err != nil {
@@ -331,6 +332,97 @@ func accountSubscription(d AccountDeps) catalog.Operation {
 				out.Message = "Subscribed. Manage your subscription in the web app."
 			} else {
 				out.Message = "Not subscribed. Open the web app to choose a plan and subscribe."
+			}
+			return out, nil
+		}),
+	})
+}
+
+// AccountQuotaType reports usage, limits, and remaining allowance for a single
+// quota dimension (upload, download, or storage). A nil Limit/Remaining means
+// the dimension is unlimited.
+type AccountQuotaType struct {
+	Used       int  `json:"used"`
+	Limit      *int `json:"limit,omitempty"`
+	Remaining  *int `json:"remaining,omitempty"`
+	Reserved   *int `json:"reserved,omitempty"`
+	Threshold  *int `json:"threshold,omitempty"`
+	Percentage int  `json:"percentage"`
+}
+
+// AccountQuotaResult is the data returned by the account_quota operation:
+// per-dimension usage plus a derived has_quota signal. has_quota reports
+// whether the account has any usable granted/remaining allowance, which TRUMPS
+// subscription state: a user with quota does not need a subscription. When
+// has_quota is false the caller should consult account_subscription; the
+// human (not the agent) follows web_url to subscribe.
+type AccountQuotaResult struct {
+	Upload   AccountQuotaType `json:"upload"`
+	Download AccountQuotaType `json:"download"`
+	Storage  AccountQuotaType `json:"storage"`
+	HasQuota bool             `json:"has_quota"`
+	Message  string           `json:"message,omitempty"`
+	WebURL   string           `json:"web_url"`
+}
+
+// quotaTypeFrom assembles an AccountQuotaType from a quota dimension's
+// primitive fields. It takes primitives because the SDK surfaces these under
+// an internal (pinner-unimportable) struct type; mapping is field-by-field.
+func quotaTypeFrom(used int, limit, remaining, reserved, threshold *int, percentage int) AccountQuotaType {
+	return AccountQuotaType{
+		Used:       used,
+		Limit:      limit,
+		Remaining:  remaining,
+		Reserved:   reserved,
+		Threshold:  threshold,
+		Percentage: percentage,
+	}
+}
+
+// remainingUsable reports whether a remaining-allowance bound is usable:
+// unlimited (nil) or with positive remaining allowance.
+func remainingUsable(remaining *int) bool {
+	if remaining == nil {
+		return true
+	}
+	return *remaining > 0
+}
+
+// accountQuota is the `account quota` operation: reads the account's quota
+// status and derives whether granted usage covers access (quota trumps a
+// subscription).
+func accountQuota(d AccountDeps) catalog.Operation {
+	return catalog.NewOperation(catalog.OperationSpec{
+		Name:        "account_quota",
+		Title:       "Account quota",
+		Summary:     "Show your quota usage and remaining allowance",
+		Description: "Fetch your Pinner.xyz quota status (upload, download, and storage usage/limits/remaining) and whether granted usage currently covers the account. Quota TRUMPS a subscription: if has_quota is true the user can proceed without a subscription. Returns the web_app web_url deep-link for managing usage / subscribing.",
+		MCPTargets: catalog.MCPTargets(
+			catalog.Fallback("Call account_quota to read the account's quota status and whether it is covered by granted usage (has_quota). Quota trumps a subscription: if has_quota is true the user needs no subscription and you should proceed. Only when has_quota is false, fall back to account_subscription; if that says not-subscribed, present the returned web_url deep-link so the human opens the web app to subscribe — you cannot subscribe on their behalf."),
+		),
+		Category:    "account",
+		Safety:      catalog.SafetyRead,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Positional:  "",
+		Handler: authClientHandler(d, func(ctx context.Context, svc auth.AuthService, input map[string]any) (any, error) {
+			quota, err := svc.GetQuota(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("account_quota: %w", err)
+			}
+			out := &AccountQuotaResult{}
+			if quota != nil {
+				out.Upload = quotaTypeFrom(quota.Upload.Used, quota.Upload.Limit, quota.Upload.Remaining, quota.Upload.Reserved, quota.Upload.Threshold, quota.Upload.Percentage)
+				out.Download = quotaTypeFrom(quota.Download.Used, quota.Download.Limit, quota.Download.Remaining, quota.Download.Reserved, quota.Download.Threshold, quota.Download.Percentage)
+				out.Storage = quotaTypeFrom(quota.Storage.Used, quota.Storage.Limit, quota.Storage.Remaining, quota.Storage.Reserved, quota.Storage.Threshold, quota.Storage.Percentage)
+				out.HasQuota = remainingUsable(quota.Upload.Remaining) || remainingUsable(quota.Download.Remaining) || remainingUsable(quota.Storage.Remaining)
+			}
+			out.WebURL = d.portalURL()
+			out.WebURL = d.portalURL()
+			if out.HasQuota {
+				out.Message = "Account is covered by granted quota; no subscription required."
+			} else {
+				out.Message = "No usable quota remaining. A subscription (or additional granted usage) is needed to continue."
 			}
 			return out, nil
 		}),
