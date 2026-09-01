@@ -81,3 +81,29 @@ func TestBuildHostedServerWiresIPFSTransfer(t *testing.T) {
 	require.False(t, report.VaultPutFile, "hosted surface must never report vault_put_file")
 	require.False(t, report.VaultGetFile, "hosted surface must never report vault_get_file")
 }
+
+// TestBuildHostedServerBaseURLConnectOrigins guards the ordering invariant that
+// a hosted server applies its externally reachable BaseURL to the IPFS upload
+// coordinator BEFORE computing the app resource's CSP connectDomains. If the
+// base URL were applied afterward, ConnectOrigins would capture the loopback
+// origin and the sandbox CSP would block the cross-origin presigned PUT to the
+// real origin.
+func TestBuildHostedServerBaseURLConnectOrigins(t *testing.T) {
+	tasks := transfer.NewUploadTaskManager(func(context.Context, io.Reader, int64, string, bool, string, bool) (any, error) {
+		return map[string]any{"cid": "QmTest"}, nil
+	}, 0)
+
+	_, _, ht, err := BuildHostedServer(HostedServerConfig{
+		CatalogDeps: func() *CatalogDepsBundle { return &CatalogDepsBundle{} },
+		BaseURL:     "https://pinner.xyz",
+		Options: []MCPServerOption{
+			WithUploadTaskManager(tasks),
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, ht)
+	require.NotNil(t, ht.Upload, "wired IPFS upload task manager must produce an upload coordinator")
+	origins := ht.Upload.ConnectOrigins()
+	require.NotEmpty(t, origins)
+	require.Equal(t, "https://pinner.xyz", origins[0], "upload coordinator's CSP connectDomains must reflect the hosted BaseURL, not the loopback origin")
+}

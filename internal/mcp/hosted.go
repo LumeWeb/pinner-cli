@@ -35,6 +35,14 @@ type HostedServerConfig struct {
 	// Options enables optional custom-tool wiring for the hosted surface
 	// (e.g. WithPrompts, IPFS upload/download providers).
 	Options []MCPServerOption
+
+	// BaseURL is the externally reachable origin of this hosted server (e.g.
+	// https://pinner.xyz). It is applied to the IPFS byte-route coordinators
+	// BEFORE their ConnectOrigins are computed for the upload app resource's
+	// connectDomains, so the CSP permits the cross-origin presigned PUT to the
+	// real origin. When empty, the coordinators keep their loopback-derived
+	// origin.
+	BaseURL string
 }
 
 // HostedTransfer carries the IPFS byte-route coordinators a hosted server built
@@ -104,6 +112,18 @@ func BuildHostedServer(cfg HostedServerConfig) (*sdk.Server, *ToolCatalog, *Host
 			if opts.ipfsDownload != nil {
 				dl = transfer.NewHTTPDownload()
 				dl.AddTrustedOrigins(opts.downloadTrustedOrigins...)
+			}
+			// Apply the externally reachable base URL to the coordinators before
+			// ConnectOrigins is computed (for the upload app connectDomains), so
+			// the sandbox CSP permits the cross-origin presigned PUT to the real
+			// origin rather than the pre-BaseURL loopback.
+			if cfg.BaseURL != "" {
+				if curlUpload != nil {
+					curlUpload.SetBaseURL(cfg.BaseURL)
+				}
+				if dl != nil {
+					dl.SetBaseURL(cfg.BaseURL)
+				}
 			}
 			hostedTransfer = &HostedTransfer{Upload: curlUpload, Download: dl}
 			// HTTP transport with no tunnel.

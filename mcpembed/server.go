@@ -120,6 +120,7 @@ func New(opts Options) (http.Handler, error) {
 		},
 		ResourceFactory: opts.ResourceFactory,
 		Options:         serverOptions,
+		BaseURL:         opts.BaseURL,
 	})
 	if err != nil {
 		return nil, err
@@ -131,19 +132,6 @@ func New(opts Options) (http.Handler, error) {
 	streamable := mcp.HTTPHandler(srv, opts.CredentialResolver, opts.DisableLocalhostProtection)
 	if opts.OAuthHandler != nil {
 		streamable = opts.OAuthHandler.WrapHTTP(streamable)
-	}
-
-	// Point the byte-route coordinators at the public origin (when known) so the
-	// presigned PUT/GET URLs a hosted agent mints are actually reachable.
-	if opts.BaseURL != "" {
-		if ht != nil {
-			if ht.Upload != nil {
-				ht.Upload.SetBaseURL(opts.BaseURL)
-			}
-			if ht.Download != nil {
-				ht.Download.SetBaseURL(opts.BaseURL)
-			}
-		}
 	}
 
 	// Mount the streamable MCP endpoint plus the IPFS byte routes on a mux, so
