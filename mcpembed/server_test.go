@@ -4,7 +4,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"go.lumeweb.com/pinner-cli/internal/core/config"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp"
 
@@ -89,4 +92,52 @@ func (c configCred) TokenForRequest(ctx context.Context) (string, error) {
 		return "", mcp.ErrNotAuthenticated
 	}
 	return c.token, nil
+}
+
+// TestNewWiresIPFSTransferByteRoutes verifies that a hosted embed whose catalog
+// deps carry a live config manager auto-wires the IPFS transfer surface, and
+// that the returned handler serves both the /mcp streamable endpoint and the
+// IPFS presigned upload/drop byte-route paths. Never vault.
+func TestNewWiresIPFSTransferByteRoutes(t *testing.T) {
+	cfgMgr := newTestCfgMgr(t)
+	deps := &mcp.CatalogDepsBundle{CfgMgr: func() config.Manager { return cfgMgr }}
+
+	handler, err := New(Options{
+		Surface:     SurfaceHosted,
+		CatalogDeps: func() *mcp.CatalogDepsBundle { return deps },
+	})
+	require.NoError(t, err, "New with a functioning CatalogDeps must assemble")
+	require.NotNil(t, handler)
+
+	// The handler should serve the /mcp streamable endpoint (a request is at
+	// least guaranteed to be handled or rejected without panicking).
+	mcpRec := httptest.NewRecorder()
+	handler.ServeHTTP(mcpRec, httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)))
+	require.NotEqual(t, http.StatusNotFound, mcpRec.Code, "/mcp must be routed to the streamable handler")
+
+	// Byte routes: /upload/<token> and /download/<token> must be MOUNTED on the
+	// returned mux. An unminted token is legitimately rejected by the
+	// coordinator with its own 404 — the distinguishing signal vs a router-level
+	// 404 is the coordinator's body text ("upload endpoint"), which proves the
+	// route reached the coordinator rather than falling through the mux.
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/upload/0102030405", strings.NewReader("")))
+	require.Contains(t, rec.Body.String(), "upload endpoint", "PUT /upload/... must be handled by the presigned coordinator")
+
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/download/0102030405", strings.NewReader("")))
+	require.Contains(t, rec.Body.String(), "download", "GET /download/... must be handled by the filedrop coordinator")
+}
+
+// newTestCfgMgr builds a throwaway config.Manager for hosted transfer tests. It
+// needs a real base endpoint so the IPFS upload/download executors can be
+// constructed (the config manager otherwise has no API endpoint to resolve).
+func newTestCfgMgr(t *testing.T) config.Manager {
+	t.Helper()
+	dir := t.TempDir()
+	cfgMgr, err := config.NewManager(dir + "/config.yaml")
+	require.NoError(t, err)
+	require.NoError(t, cfgMgr.SetBaseEndpoint("https://pinner.xyz"))
+	require.NoError(t, cfgMgr.SetSecure(true))
+	return cfgMgr
 }
