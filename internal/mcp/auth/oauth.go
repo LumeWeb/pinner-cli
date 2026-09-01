@@ -8,8 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -32,9 +30,9 @@ import (
 // All OAuth domain logic (PKCE, authorization codes, access tokens, RFC 9700
 // refresh-token rotation + reuse detection, dynamic client registration) is
 // delegated to *oauth.AuthorizationServer from go.lumeweb.com/oauth. This
-// struct is a thin HTTP + auth layer: it renders the login form, resolves CIMD
-// client metadata documents (which stay pinner-cli specific), and adapts the
-// typed results into HTTP responses / MCP middleware.
+// struct is a thin HTTP + auth layer: it renders the login form, adapts the
+// typed results into HTTP responses / MCP middleware, and wires the library's
+// RFC 9291 CIMD resolver (WithCIMDResolver) onto the shared server.
 type OAuthServer struct {
 	mu      sync.Mutex
 	secret  []byte
@@ -43,19 +41,18 @@ type OAuthServer struct {
 
 	// as is the shared authorization server that owns all domain logic.
 	as *oauth.AuthorizationServer
-	// store is the library's storage backend, kept here for CIMD client
-	// registration/deactivation and for closing the underlying database.
+	// store is the library's storage backend, kept here for closing the
+	// underlying database.
 	store oauth.Storage
+
+	// cimd is the library's RFC 9291 CIMD resolver, attached to as via
+	// WithCIMDResolver. It is kept here so the metadata handler can advertise
+	// client_id_metadata_document_supported only when CIMD is actually enabled.
+	cimd *oauth.CIMDResolver
 
 	// clockSkew is the grace window applied to expired access tokens by the
 	// bearer middleware.
 	clockSkew time.Duration
-
-	// cimdCache stores fetched CIMD client metadata documents keyed by URL.
-	// TTL-bounded so a restarted client that rotates its metadata document
-	// is picked up without a process restart.
-	cimdCache   map[string]cimdEntry
-	cimdCacheMu sync.Mutex
 
 	// done stops the background reaper.
 	done      chan struct{}
@@ -66,73 +63,13 @@ type OAuthServer struct {
 	logger *zap.Logger
 }
 
-// oauthClient is the subset of a client's metadata the HTTP layer needs for
-// CIMD resolution. Registered clients live in the shared store; only
-// CIMD-resolved clients are tracked here (with a short TTL).
-type oauthClient struct {
-	redirectURIs      []string
-	clientName        string
-	tokenEndpointAuth string
-}
-
-// cimdEntry is a cached CIMD metadata document with an expiry.
-type cimdEntry struct {
-	client    oauthClient
-	fetchedAt time.Time
-}
-
-// cimdCacheTTL is how long a fetched CIMD document stays fresh before the
-// server re-fetches on next use.
-const cimdCacheTTL = 5 * time.Minute
-
-// cimdFetchTimeout bounds the outbound HTTP GET so a slow or hostile host
-// cannot stall the authorize flow.
-const cimdFetchTimeout = 10 * time.Second
-
-// cimdAllowedHosts is the allowlist of hosts whose CIMD documents the server
-// will fetch. This prevents SSRF — an attacker cannot use a client_id URL
-// pointing at internal/cloud-metadata endpoints. Loopback hosts are
-// permitted for development and testing.
-var cimdAllowedHosts = map[string]bool{
-	"claude.ai":  true,
-	"vscode.dev": true,
-}
-
-// allowedCIMDHost reports whether host is an allowlisted CIMD metadata host.
-// Only known hosts in cimdAllowedHosts are fetched. This prevents SSRF — an
-// attacker cannot use a client_id URL pointing at internal/cloud-metadata
-// endpoints. Loopback hosts must be explicitly added to cimdAllowedHosts
-// (e.g., by tests adding the test server's address).
-func allowedCIMDHost(rawURL string) bool {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return false
-	}
-	host := u.Hostname()
-	if host == "" {
-		return false
-	}
-	if cimdAllowedHosts[host] {
-		return true
-	}
-	// Reject any host that resolves to a private/link-local/multicast IP as
-	// a defense-in-depth measure, even if it somehow passed the allowlist.
-	ips, err := net.LookupIP(host)
-	if err != nil {
-		return false
-	}
-	for _, ip := range ips {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
-			return false
-		}
-	}
-	return false
-}
-
 // NewOAuthServer wraps a shared *oauth.AuthorizationServer with the HTTP/auth
 // layer. cfg is taken from the authorization server itself; store is the same
-// Storage instance the server was built with, reused here for CIMD client
-// registration and shutdown.
+// Storage instance the server was built with, reused here for shutdown.
+//
+// It enables the library's RFC 9291 CIMD support on the shared server via
+// WithCIMDResolver. The resolver is open-by-default — any public https URL
+// surviving the library's always-on SSRF gate may act as a CIMD client.
 func NewOAuthServer(secret, BaseURL string, as *oauth.AuthorizationServer, store oauth.Storage) *OAuthServer {
 	cfg := oauth.DefaultConfig()
 	if as != nil {
@@ -147,7 +84,14 @@ func NewOAuthServer(secret, BaseURL string, as *oauth.AuthorizationServer, store
 		clockSkew: cfg.ClockSkew,
 		done:      make(chan struct{}),
 		logger:    log,
-		cimdCache: make(map[string]cimdEntry),
+	}
+	if as != nil {
+		// Enable the library's RFC 9291 CIMD resolution. The resolver is
+		// open-by-default (any public https URL that passes the always-on SSRF
+		// gate is accepted); no host allowlist is configured.
+		resolver := oauth.NewCIMDResolver()
+		as.WithCIMDResolver(resolver)
+		o.cimd = resolver
 	}
 	// Periodic reaper so long-running public tunnels do not grow the maps
 	// without bound as codes go unredeemed and CIMD entries go stale.
@@ -197,37 +141,13 @@ func (o *OAuthServer) sweep() {
 	}
 }
 
-// reapLocked evicts expired durable rows via the authorization server and
-// drops stale CIMD cache entries, deactivating their transient client
-// registrations in the store so rotated metadata is re-fetched on next use.
+// reapLocked evicts expired durable rows via the authorization server. CIMD
+// metadata documents are cached internally by the library's resolver (with its
+// own TTL), so there is nothing to evict here.
 func (o *OAuthServer) reapLocked() {
-	now := time.Now()
-	o.cimdCacheMu.Lock()
-	for k, e := range o.cimdCache {
-		if now.Sub(e.fetchedAt) >= cimdCacheTTL {
-			delete(o.cimdCache, k)
-			o.deactivateClient(k)
-		}
-	}
-	o.cimdCacheMu.Unlock()
 	if o.as != nil {
 		_ = o.as.Reap()
 	}
-}
-
-// deactivateClient flips a CIMD-derived client's IsActive to false in the
-// store. The next authorize for that client re-resolves its metadata document
-// and re-activates it, so a rotated document is picked up.
-func (o *OAuthServer) deactivateClient(clientID string) {
-	if o.store == nil {
-		return
-	}
-	c, err := o.store.GetClient(clientID)
-	if err != nil {
-		return
-	}
-	c.IsActive = false
-	_ = o.store.SaveClient(c)
 }
 
 // asMetadataHandler serves the OAuth 2.0 Authorization Server Metadata
@@ -247,7 +167,7 @@ func (o *OAuthServer) AsMetadataHandler(w http.ResponseWriter, r *http.Request) 
 		"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
 		"token_endpoint_auth_methods_supported": []string{"none"},
 		"code_challenge_methods_supported":      []string{"S256"},
-		"client_id_metadata_document_supported": true,
+		"client_id_metadata_document_supported": o.cimd != nil,
 		"scopes_supported":                      []string{"offline_access"},
 	}
 	writeJSON(w, http.StatusOK, doc)
@@ -324,50 +244,16 @@ func oauthReqFromValues(q url.Values) oauth.AuthorizeRequest {
 	}
 }
 
-// validateAuthorizeQuery resolves any CIMD client_id, then delegates the
-// authorization-request validation to the shared authorization server. It
-// returns the built request so callers can re-use it for code issuance.
+// validateAuthorizeQuery delegates the authorization-request validation to the
+// shared authorization server, which resolves URL-form CIMD client_ids
+// through its configured CIMD resolver. It returns the built request so
+// callers can re-use it for code issuance.
 func (o *OAuthServer) validateAuthorizeQuery(q url.Values) (oauth.AuthorizeRequest, error) {
 	req := oauthReqFromValues(q)
-	if err := o.ensureClient(req.ClientID); err != nil {
-		return req, err
-	}
 	if o.as == nil {
 		return req, fmt.Errorf("oauth server unavailable")
 	}
 	return req, o.as.ValidateAuthorizeRequest(req)
-}
-
-// ensureClient makes a CIMD-derived client_id resolvable by the shared
-// authorization server. CIMD clients are always run through the TTL-bounded
-// metadata resolve (resolveCIMDClient) and re-registered as active, so a
-// client deactivated by reap (see deactivateClient) is re-activated and any
-// rotated metadata document is picked up on the next authorize. Non-CIMD
-// client IDs are left untouched for the library to reject or accept on their
-// persisted registration.
-func (o *OAuthServer) ensureClient(clientID string) error {
-	if o.store == nil || clientID == "" {
-		return nil
-	}
-	if !isCIMDClientID(clientID) {
-		return nil
-	}
-	cimdClient, err := o.resolveCIMDClient(clientID)
-	if err != nil {
-		return err
-	}
-	if err := o.store.SaveClient(oauth.Client{
-		ClientID:          clientID,
-		ClientName:        cimdClient.clientName,
-		RedirectURIs:      cimdClient.redirectURIs,
-		GrantTypes:        []string{"authorization_code", "refresh_token"},
-		ResponseTypes:     []string{"code"},
-		TokenEndpointAuth: cimdClient.tokenEndpointAuth,
-		IsActive:          true,
-	}); err != nil {
-		return fmt.Errorf("register CIMD client: %w", err)
-	}
-	return nil
 }
 
 // RegisterHandler handles Dynamic Client Registration (RFC 7591 §3.1).
@@ -473,105 +359,6 @@ func (o *OAuthServer) AuthorizePOST(w http.ResponseWriter, r *http.Request) {
 		loc = redirectURI + "&" + params.Encode()
 	}
 	http.Redirect(w, r, loc, http.StatusFound)
-}
-
-// isCIMDClientID reports whether clientID is a URL-form client identifier
-// that the server should resolve as a CIMD document. Per the spec the URL
-// must use https and contain a path component. http is accepted for loopback
-// hosts so development and test environments can exercise the CIMD path
-// without provisioning TLS certificates.
-func isCIMDClientID(clientID string) bool {
-	u, err := url.Parse(clientID)
-	if err != nil {
-		return false
-	}
-	if u.Host == "" || u.Path == "" || u.Path == "/" {
-		return false
-	}
-	switch u.Scheme {
-	case "https":
-		return true
-	case "http":
-		switch u.Hostname() {
-		case "localhost", "127.0.0.1", "::1":
-			return true
-		}
-	}
-	return false
-}
-
-// resolveCIMDClient fetches the client metadata document at the given HTTPS
-// URL, validates it, and returns the parsed client. Results are cached for
-// cimdCacheTTL so repeated authorize requests from the same client within
-// the window do not re-fetch.
-func (o *OAuthServer) resolveCIMDClient(clientID string) (oauthClient, error) {
-	o.cimdCacheMu.Lock()
-	if entry, ok := o.cimdCache[clientID]; ok {
-		if time.Since(entry.fetchedAt) < cimdCacheTTL {
-			o.cimdCacheMu.Unlock()
-			return entry.client, nil
-		}
-	}
-	o.cimdCacheMu.Unlock()
-
-	if !allowedCIMDHost(clientID) {
-		o.logf().Warn("CIMD fetch rejected: host not allowlisted", zap.String("client_id", clientID))
-		return oauthClient{}, fmt.Errorf("client metadata host is not allowlisted")
-	}
-
-	client := &http.Client{
-		Timeout: cimdFetchTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-
-	resp, err := client.Get(clientID)
-	if err != nil {
-		o.logf().Warn("CIMD fetch failed", zap.String("client_id", clientID), zap.Error(err))
-		return oauthClient{}, fmt.Errorf("could not fetch client metadata document")
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		o.logf().Warn("CIMD fetch returned non-200", zap.String("client_id", clientID), zap.Int("status", resp.StatusCode))
-		return oauthClient{}, fmt.Errorf("client metadata document returned HTTP %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-	if err != nil {
-		return oauthClient{}, fmt.Errorf("could not read client metadata document")
-	}
-
-	var doc struct {
-		ClientID                string   `json:"client_id"`
-		ClientName              string   `json:"client_name"`
-		RedirectURIs            []string `json:"redirect_uris"`
-		TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
-	}
-	if err := json.Unmarshal(body, &doc); err != nil {
-		return oauthClient{}, fmt.Errorf("invalid client metadata document JSON")
-	}
-	if doc.ClientID != clientID {
-		o.logf().Warn("CIMD client_id mismatch", zap.String("expected", clientID), zap.String("got", doc.ClientID))
-		return oauthClient{}, fmt.Errorf("client_id in metadata document does not match the request URL")
-	}
-	if len(doc.RedirectURIs) == 0 {
-		return oauthClient{}, fmt.Errorf("client metadata document has no redirect_uris")
-	}
-
-	if doc.TokenEndpointAuthMethod != "" && doc.TokenEndpointAuthMethod != "none" {
-		return oauthClient{}, fmt.Errorf("client metadata requires unsupported token_endpoint_auth_method: %s", doc.TokenEndpointAuthMethod)
-	}
-
-	oc := oauthClient{
-		redirectURIs:      doc.RedirectURIs,
-		clientName:        doc.ClientName,
-		tokenEndpointAuth: doc.TokenEndpointAuthMethod,
-	}
-	o.cimdCacheMu.Lock()
-	o.cimdCache[clientID] = cimdEntry{client: oc, fetchedAt: time.Now()}
-	o.cimdCacheMu.Unlock()
-	return oc, nil
 }
 
 // tokenHandler exchanges an authorization code or refresh token for tokens.
