@@ -155,6 +155,12 @@ func buildCatalogOpsDeps(factory ...ConfigManagerFactory) *mcpadapter.CatalogDep
 				}
 				return admin.DefaultWebsiteAdminServiceFactory(cfgMgr), nil
 			},
+			SocialProviderAdminService: func(cfgMgr config.Manager) (admin.SocialProviderAdminService, error) {
+				if cfgMgr == nil {
+					return nil, fmt.Errorf("no config manager available")
+				}
+				return admin.DefaultSocialProviderAdminServiceFactory(cfgMgr), nil
+			},
 		},
 	}
 }

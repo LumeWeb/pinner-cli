@@ -43,7 +43,7 @@ require (
 	go.lumeweb.com/ipfs-sdk v0.1.89
 	go.lumeweb.com/ipfs-sdk/dnsname v0.1.64
 	go.lumeweb.com/oauth v0.1.6
-	go.lumeweb.com/portal-sdk v0.1.69
+	go.lumeweb.com/portal-sdk v0.1.71
 	go.lumeweb.com/queryutil v0.3.19
 	go.sia.tech/core v0.21.7
 	go.sia.tech/indexd v0.4.4

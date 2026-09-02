@@ -194,6 +194,7 @@ const (
 	CmdAdmin              = "admin"
 	CmdPprof              = "pprof"
 	CmdPlatformDomains    = "platform-domains"
+	CmdSocialProviders    = "social-providers"
 	CmdSetBlockRate       = "set-block-rate"
 	CmdSetMutexFraction   = "set-mutex-fraction"
 	CmdIndex              = "index"

@@ -31,6 +31,10 @@ Profiling operations include:
   - Configure block and mutex profiling rates
   - View profiling status
 
+Social provider operations include:
+  - List, create, update, delete social login providers
+  - Enable/disable providers for login
+
 Examples:
   pinner admin quota plans list
   pinner admin quota allowances list
@@ -44,6 +48,7 @@ Examples:
 			newAdminWebsitesCommand(),
 			newAdminPprofCommand(),
 			newAdminPlatformDomainsCommand(),
+			newAdminSocialProvidersCommand(),
 		},
 	}
 }
@@ -61,4 +66,3 @@ func newQuotaCommand() *cli.Command {
 func newBillingCommand() *cli.Command {
 	return newAdminBillingCatalogCommand()
 }
-

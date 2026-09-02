@@ -39,6 +39,8 @@ type AdminDeps struct {
 	WebsiteAdminService func(cfgMgr config.Manager) (admin.WebsiteAdminService, error)
 	// PlatformDomainAdminService resolves the core admin.PlatformDomainAdminService.
 	PlatformDomainAdminService func(cfgMgr config.Manager) (admin.PlatformDomainAdminService, error)
+	// SocialProviderAdminService resolves the core admin.SocialProviderAdminService.
+	SocialProviderAdminService func(cfgMgr config.Manager) (admin.SocialProviderAdminService, error)
 }
 
 // config returns the live config manager for this invocation, or nil.
@@ -108,6 +110,15 @@ func (d AdminDeps) billing() (admin.BillingAdminService, error) {
 	return resolveService(cfgMgr, d.BillingAdminService, "billing")
 }
 
+// socialProviders resolves the SocialProviderAdminService for this invocation.
+func (d AdminDeps) socialProviders() (admin.SocialProviderAdminService, error) {
+	cfgMgr, err := d.requireConfig()
+	if err != nil {
+		return nil, err
+	}
+	return resolveService(cfgMgr, d.SocialProviderAdminService, "social-provider")
+}
+
 // AdminOperations returns the catalog operations for the admin domain. Each
 // admin section registers its operations here.
 func AdminOperations(d AdminDeps) []catalog.Operation {
@@ -121,6 +132,14 @@ func AdminOperations(d AdminDeps) []catalog.Operation {
 		// admin websites
 		adminWebsitesBlock(d),
 		adminWebsitesUnblock(d),
+		// admin social-providers
+		adminSocialProvidersList(d),
+		adminSocialProvidersGet(d),
+		adminSocialProvidersCreate(d),
+		adminSocialProvidersUpdate(d),
+		adminSocialProvidersDelete(d),
+		adminSocialProvidersEnable(d),
+		adminSocialProvidersDisable(d),
 		// admin quota
 		adminQuotaPlansList(d),
 		adminQuotaPlansGet(d),
