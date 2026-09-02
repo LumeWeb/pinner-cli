@@ -8,11 +8,28 @@ import (
 	"go.lumeweb.com/portal-sdk/admin"
 )
 
-// SocialProvidersListResult wraps the ([]*admin.SocialProvider, total, error)
-// result.
-type SocialProvidersListResult struct {
-	Count     int                      `json:"count"`
-	Providers []*admin.SocialProvider  `json:"providers"`
+// socialProvidersListResult builds the shared ListResult view for the social
+// providers list operation.
+func socialProvidersListResult(providers []*admin.SocialProvider) ListResult {
+	headers := []string{"ID", "PROVIDER", "DISPLAY NAME", "ENABLED", "ORDER"}
+	return NewListResult(providers, ListResultMeta{Noun: "social provider(s)", Headers: headers, Rows: socialProviderRows(providers)})
+}
+
+// socialProvidersListResultTotal is socialProvidersListResult with the backend
+// total attached (for list pagination display).
+func socialProvidersListResultTotal(providers []*admin.SocialProvider, total int) ListResult {
+	return NewListResult(providers, ListResultMeta{Noun: "social provider(s)", Headers: []string{"ID", "PROVIDER", "DISPLAY NAME", "ENABLED", "ORDER"}, Rows: socialProviderRows(providers), Total: total})
+}
+
+func socialProviderRows(providers []*admin.SocialProvider) [][]string {
+	rows := make([][]string, 0, len(providers))
+	for _, p := range providers {
+		rows = append(rows, []string{
+			fmt.Sprintf("%d", p.Id), p.ProviderId, p.DisplayName,
+			adminYesNo(p.Enabled), fmt.Sprintf("%d", p.OrderIndex),
+		})
+	}
+	return rows
 }
 
 // SocialProvidersDeleteResult reports a deleted social provider.
@@ -62,12 +79,13 @@ func adminSocialProvidersList(d AdminDeps) catalog.Operation {
 			if err := svc.RequireAuthenticated(); err != nil {
 				return nil, err
 			}
-			providers, _, err := svc.ListSocialProviders(ctx)
+			providers, total, err := svc.ListSocialProviders(ctx)
 			if err != nil {
 				return nil, err
 			}
 			page := catalog.ParseList(input)
-			return SocialProvidersListResult{Count: len(slicePage(providers, page.Start, page.Limit)), Providers: slicePage(providers, page.Start, page.Limit)}, nil
+			paged := slicePage(providers, page.Start, page.Limit)
+			return socialProvidersListResultTotal(paged, total), nil
 		}),
 	})
 }
@@ -162,11 +180,10 @@ func adminSocialProvidersUpdate(d AdminDeps) catalog.Operation {
 		Name:    "admin_social_providers_update",
 		Title:   "Update a social provider",
 		Summary: "Update a social login provider configuration",
-		// The backend update is a full-replace PUT and the API never returns the
-		// client secret, so there is no way to merge "keep the current secret".
-		// The secret must be re-supplied on every update; read-visible fields are
-		// merged from the existing provider when omitted.
-		Description: "Update an existing social login provider configuration. Client secrets are never returned by the API, so client-secret is required on every update even when unchanged. Fields not supplied keep their current values. Requires admin privileges.",
+		// Nullable arg types matter for updates: omitted must be distinguishable
+		// from the zero value, else an update without the enabled flag would
+		// arrive as enabled=false and the backend would disable the provider.
+		Description: "Update an existing social login provider configuration. Only the fields provided are changed; others keep their current values (an omitted client-secret keeps the stored secret). Requires admin privileges.",
 		Category:    "admin",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
@@ -174,7 +191,7 @@ func adminSocialProvidersUpdate(d AdminDeps) catalog.Operation {
 		Positional:  "<provider-id>",
 		Args: []catalog.OperationArg{
 			{Name: "id", Type: catalog.ArgTypeString, Required: true, Help: "Social provider ID", PositionalOnly: true},
-			{Name: "client-secret", Type: catalog.ArgTypeString, Required: true, Help: "OAuth2 client secret (required; the API never returns it)"},
+			{Name: "client-secret", Type: catalog.ArgTypeString, Help: "OAuth2 client secret (omit to keep the stored secret)"},
 			{Name: "provider-key", Type: catalog.ArgTypeString, Help: "Provider type identifier (e.g. github, google)"},
 			{Name: "client-id", Type: catalog.ArgTypeString, Help: "OAuth2 client ID"},
 			{Name: "display-name", Type: catalog.ArgTypeString, Help: "Human-readable provider name"},
@@ -200,66 +217,46 @@ func adminSocialProvidersUpdate(d AdminDeps) catalog.Operation {
 			if id == "" {
 				return nil, fmt.Errorf("admin_social_providers_update: provider ID is required")
 			}
-			secret := catalog.StrArg(input, "client-secret", "")
-			if secret == "" {
-				return nil, fmt.Errorf("admin_social_providers_update: client-secret is required (the API never returns the stored secret)")
-			}
-			existing, err := svc.GetSocialProvider(ctx, id)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get existing provider: %w", err)
-			}
-			// Full-replace PUT: fill any un-supplied read-visible field from the
-			// existing provider so the CLI's always-filled args can't zero them.
-			req := &admin.SocialProviderRequest{
-				ProviderId:   existing.ProviderId,
-				ClientId:     existing.ClientId,
-				ClientSecret: secret,
-				DisplayName:  existing.DisplayName,
-				AuthUrl:      existing.AuthUrl,
-				TokenUrl:     existing.TokenUrl,
-				UserUrl:      existing.UserUrl,
-				Scopes:       existing.Scopes,
-				UserIdKey:    existing.UserIdKey,
-				UserEmailKey: existing.UserEmailKey,
-				UserNameKey:  existing.UserNameKey,
-				OrderIndex:   existing.OrderIndex,
-				Enabled:      existing.Enabled,
-			}
+			// Nil fields are sent omitted and the backend leaves them unchanged.
+			req := &admin.SocialProviderUpdateRequest{}
 			if v := catalog.StrArg(input, "provider-key", ""); v != "" {
-				req.ProviderId = v
+				req.ProviderId = &v
 			}
 			if v := catalog.StrArg(input, "client-id", ""); v != "" {
-				req.ClientId = v
+				req.ClientId = &v
+			}
+			if v := catalog.StrArg(input, "client-secret", ""); v != "" {
+				req.ClientSecret = &v
 			}
 			if v := catalog.StrArg(input, "display-name", ""); v != "" {
-				req.DisplayName = v
+				req.DisplayName = &v
 			}
 			if v := catalog.StrArg(input, "auth-url", ""); v != "" {
-				req.AuthUrl = v
+				req.AuthUrl = &v
 			}
 			if v := catalog.StrArg(input, "token-url", ""); v != "" {
-				req.TokenUrl = v
+				req.TokenUrl = &v
 			}
 			if v := catalog.StrArg(input, "user-url", ""); v != "" {
-				req.UserUrl = v
+				req.UserUrl = &v
 			}
 			if v := catalog.StrSliceArg(input, "scopes"); v != nil {
-				req.Scopes = v
+				req.Scopes = &v
 			}
 			if v := catalog.StrArg(input, "user-id-key", ""); v != "" {
-				req.UserIdKey = v
+				req.UserIdKey = &v
 			}
 			if v := catalog.StrArg(input, "user-email-key", ""); v != "" {
-				req.UserEmailKey = v
+				req.UserEmailKey = &v
 			}
 			if v := catalog.StrArg(input, "user-name-key", ""); v != "" {
-				req.UserNameKey = v
+				req.UserNameKey = &v
 			}
 			if v := catalog.IntArgPtr(input, "order-index"); v != nil {
-				req.OrderIndex = *v
+				req.OrderIndex = v
 			}
 			if v := catalog.BoolArgPtr(input, "enabled"); v != nil {
-				req.Enabled = *v
+				req.Enabled = v
 			}
 			return svc.UpdateSocialProvider(ctx, id, req)
 		}),

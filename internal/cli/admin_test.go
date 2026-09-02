@@ -22,7 +22,7 @@ func TestNewAdminCommand(t *testing.T) {
 		cmd := newAdminCommand()
 
 		require.NotNil(t, cmd.Commands)
-		assert.Len(t, cmd.Commands, 5)
+		assert.Len(t, cmd.Commands, 6)
 
 		subcommandNames := getSubcommandNames(cmd)
 		assert.Contains(t, subcommandNames, "quota")
@@ -30,6 +30,7 @@ func TestNewAdminCommand(t *testing.T) {
 		assert.Contains(t, subcommandNames, "websites")
 		assert.Contains(t, subcommandNames, "pprof")
 		assert.Contains(t, subcommandNames, "platform-domains")
+		assert.Contains(t, subcommandNames, "social-providers")
 	})
 }
 

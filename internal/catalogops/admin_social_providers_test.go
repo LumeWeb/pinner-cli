@@ -20,7 +20,7 @@ type fakeSocialProviderService struct {
 	listFn      func(ctx context.Context) ([]*admin.SocialProvider, int, error)
 	getFn       func(ctx context.Context, id string) (*admin.SocialProvider, error)
 	createFn    func(ctx context.Context, req *admin.SocialProviderRequest) (*admin.SocialProvider, error)
-	updateFn    func(ctx context.Context, id string, req *admin.SocialProviderRequest) (*admin.SocialProvider, error)
+	updateFn    func(ctx context.Context, id string, req *admin.SocialProviderUpdateRequest) (*admin.SocialProvider, error)
 	deleteFn    func(ctx context.Context, id string) error
 	enableFn    func(ctx context.Context, id string) (*admin.SocialProvider, error)
 	disableFn   func(ctx context.Context, id string) (*admin.SocialProvider, error)
@@ -54,7 +54,7 @@ func (f *fakeSocialProviderService) CreateSocialProvider(ctx context.Context, re
 	return nil, nil
 }
 
-func (f *fakeSocialProviderService) UpdateSocialProvider(ctx context.Context, id string, req *admin.SocialProviderRequest) (*admin.SocialProvider, error) {
+func (f *fakeSocialProviderService) UpdateSocialProvider(ctx context.Context, id string, req *admin.SocialProviderUpdateRequest) (*admin.SocialProvider, error) {
 	if f.updateFn != nil {
 		return f.updateFn(ctx, id, req)
 	}
@@ -185,7 +185,7 @@ func TestAdminSocialProvidersCreateForwarding(t *testing.T) {
 			return sampleSocialProvider(), nil
 		},
 	}
-	op := adminSocialProvidersCreate(testSocialProvidersDeps(t,svc))
+	op := adminSocialProvidersCreate(testSocialProvidersDeps(t, svc))
 	input := map[string]any{
 		"provider-id":    "github",
 		"client-id":      "cid",
@@ -240,18 +240,15 @@ func TestAdminSocialProvidersCreateValidation(t *testing.T) {
 	}
 }
 
-// TestAdminSocialProvidersUpdateMergesExisting asserts update re-supplies the
-// client secret, merges omitted fields from the provider returned by get, and
-// forwards the applied overrides.
-func TestAdminSocialProvidersUpdateMergesExisting(t *testing.T) {
-	var gotReq *admin.SocialProviderRequest
+// TestAdminSocialProvidersUpdatePatchOnlySuppliedFields asserts supplied args
+// map to the patch request's pointer fields while everything else stays nil,
+// so the backend leaves omitted fields unchanged.
+func TestAdminSocialProvidersUpdatePatchOnlySuppliedFields(t *testing.T) {
+	var gotReq *admin.SocialProviderUpdateRequest
 	var gotID string
 	svc := &fakeSocialProviderService{
 		requireAuth: func() error { return nil },
-		getFn: func(ctx context.Context, id string) (*admin.SocialProvider, error) {
-			return sampleSocialProvider(), nil
-		},
-		updateFn: func(ctx context.Context, id string, req *admin.SocialProviderRequest) (*admin.SocialProvider, error) {
+		updateFn: func(ctx context.Context, id string, req *admin.SocialProviderUpdateRequest) (*admin.SocialProvider, error) {
 			gotID, gotReq = id, req
 			return sampleSocialProvider(), nil
 		},
@@ -259,8 +256,11 @@ func TestAdminSocialProvidersUpdateMergesExisting(t *testing.T) {
 	op := adminSocialProvidersUpdate(testSocialProvidersDeps(t, svc))
 	_, err := op.Handler().Execute(context.Background(), map[string]any{
 		"id":            "3",
-		"client-secret": "new-secret",
 		"display-name":  "GitHub (updated)",
+		"enabled":       false,
+		"order-index":   5,
+		"scopes":        []string{"user:email"},
+		"client-secret": "rotated",
 	})
 	if err != nil {
 		t.Fatalf("update: %v", err)
@@ -271,35 +271,44 @@ func TestAdminSocialProvidersUpdateMergesExisting(t *testing.T) {
 	if gotReq == nil {
 		t.Fatal("update request did not reach the service")
 	}
-	if gotReq.ClientSecret != "new-secret" {
-		t.Fatalf("supplied secret was not used: %+v", gotReq)
-	}
-	if gotReq.DisplayName != "GitHub (updated)" {
+	if gotReq.DisplayName == nil || *gotReq.DisplayName != "GitHub (updated)" {
 		t.Fatalf("override not applied: %+v", gotReq)
 	}
-	// Omitted fields must be carried over from the existing provider.
-	if gotReq.ProviderId != "github" || len(gotReq.Scopes) != 2 || gotReq.OrderIndex != 2 || !gotReq.Enabled {
-		t.Fatalf("existing fields not preserved: %+v", gotReq)
+	if gotReq.Enabled == nil || *gotReq.Enabled != false {
+		t.Fatalf("explicit disable not applied: %+v", gotReq)
+	}
+	if gotReq.OrderIndex == nil || *gotReq.OrderIndex != 5 {
+		t.Fatalf("order index not applied: %+v", gotReq)
+	}
+	if gotReq.Scopes == nil || len(*gotReq.Scopes) != 1 || (*gotReq.Scopes)[0] != "user:email" {
+		t.Fatalf("scopes not applied: %+v", gotReq)
+	}
+	if gotReq.ClientSecret == nil || *gotReq.ClientSecret != "rotated" {
+		t.Fatalf("secret not applied: %+v", gotReq)
+	}
+	// Everything not supplied stays nil on the wire.
+	if gotReq.ProviderId != nil || gotReq.ClientId != nil || gotReq.AuthUrl != nil {
+		t.Fatalf("omitted fields must not be set: %+v", gotReq)
 	}
 }
 
-// TestAdminSocialProvidersUpdateRequiresSecret asserts the full-replace contract
-// for the client secret.
-func TestAdminSocialProvidersUpdateRequiresSecret(t *testing.T) {
+// TestAdminSocialProvidersUpdateEmptyPatch asserts an update with no editable
+// args still succeeds (the empty patch leaves the provider untouched).
+func TestAdminSocialProvidersUpdateEmptyPatch(t *testing.T) {
 	called := false
 	svc := &fakeSocialProviderService{
-		updateFn: func(ctx context.Context, id string, req *admin.SocialProviderRequest) (*admin.SocialProvider, error) {
+		updateFn: func(ctx context.Context, id string, req *admin.SocialProviderUpdateRequest) (*admin.SocialProvider, error) {
 			called = true
-			return nil, nil
+			return sampleSocialProvider(), nil
 		},
 	}
 	op := adminSocialProvidersUpdate(testSocialProvidersDeps(t, svc))
 	_, err := op.Handler().Execute(context.Background(), map[string]any{"id": "3"})
-	if err == nil || !strings.Contains(err.Error(), "client-secret") {
-		t.Fatalf("expected client-secret validation error, got %v", err)
+	if err != nil {
+		t.Fatalf("empty patch must be accepted: %v", err)
 	}
-	if called {
-		t.Fatal("service must not be called without the secret")
+	if !called {
+		t.Fatal("service must be called for an empty patch")
 	}
 }
 

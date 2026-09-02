@@ -64,6 +64,12 @@ func catalogAdminDeps() catalogops.AdminDeps {
 			}
 			return coreadmin.DefaultBillingAdminServiceFactory(cfgMgr), nil
 		},
+		SocialProviderAdminService: func(cfgMgr config.Manager) (coreadmin.SocialProviderAdminService, error) {
+			if cfgMgr == nil {
+				return nil, fmt.Errorf("no config manager available")
+			}
+			return coreadmin.DefaultSocialProviderAdminServiceFactory(cfgMgr), nil
+		},
 	}
 }
 
@@ -82,6 +88,13 @@ func newAdminPlatformDomainsCatalogCommand() *cli.Command {
 // into a `websites` command for the `admin` parent: block, unblock.
 func newAdminWebsitesCatalogCommand() *cli.Command {
 	return newAdminSectionCommand("admin_websites_", CmdWebsites, "Manage IPFS websites (admin)")
+}
+
+// newAdminSocialProvidersCatalogCommand compiles the admin social-providers
+// catalog operations and returns the `social-providers` command to mount under
+// the `admin` parent: list, get, create, update, delete, enable, disable.
+func newAdminSocialProvidersCatalogCommand() *cli.Command {
+	return newAdminSectionCommand("admin_social_providers_", CmdSocialProviders, "Manage social login providers")
 }
 
 // adminSectionGroup maps an admin sub-op prefix (after the section prefix) to

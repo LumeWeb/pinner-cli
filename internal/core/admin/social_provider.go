@@ -47,10 +47,10 @@ type SocialProviderAdminService interface {
 	// client secret is never returned by the API.
 	GetSocialProvider(ctx context.Context, id string) (*admin.SocialProvider, error)
 
-	// UpdateSocialProvider replaces a social login provider configuration. The
-	// client secret is never returned by the API, so the caller must supply it
-	// on every update.
-	UpdateSocialProvider(ctx context.Context, id string, req *admin.SocialProviderRequest) (*admin.SocialProvider, error)
+	// UpdateSocialProvider patches a social login provider configuration.
+	// Omitted fields are left unchanged; an omitted client secret keeps the
+	// stored one.
+	UpdateSocialProvider(ctx context.Context, id string, req *admin.SocialProviderUpdateRequest) (*admin.SocialProvider, error)
 
 	// DeleteSocialProvider removes a social login provider configuration.
 	DeleteSocialProvider(ctx context.Context, id string) error
@@ -117,8 +117,8 @@ func (s *socialProviderAdminService) GetSocialProvider(ctx context.Context, id s
 	})
 }
 
-// UpdateSocialProvider replaces a social login provider configuration.
-func (s *socialProviderAdminService) UpdateSocialProvider(ctx context.Context, id string, req *admin.SocialProviderRequest) (*admin.SocialProvider, error) {
+// UpdateSocialProvider patches a social login provider configuration.
+func (s *socialProviderAdminService) UpdateSocialProvider(ctx context.Context, id string, req *admin.SocialProviderUpdateRequest) (*admin.SocialProvider, error) {
 	return with2(s, ctx, func(svc *admin.SocialProviderService) (*admin.SocialProvider, error) {
 		return svc.UpdateSocialProvider(ctx, id, req)
 	})
