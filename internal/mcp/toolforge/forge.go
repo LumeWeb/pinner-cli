@@ -149,7 +149,7 @@ func copyMeta(m map[string]any) map[string]any {
 // the corresponding feature.
 var instructionsTemplate = template.Must(template.New("instructions").Parse(`This server exposes a curated set of common Pinner tools directly, including upload, pin, list, status, download, vault, website, website/domain wizard tools, and the agent-facing out-of-band sign-in tools (auth_sso and auth_resume). Setup wizard tools are kept out of the curated direct list because they duplicate the auth_sso/vault_create/vault_restore flows for CLI-style onboarding; they never accept passwords or OTP over this channel and remain reachable via search_tools.
 
-The tool surface is intentionally two-tier. The tools listed directly in tools/list are the curated, most-used surface. The rest of the catalog (see count below) is served through progressive disclosure and is NOT broken or missing: any tool not listed directly is reachable via search_tools -> describe_tool -> invoke_tool. If a tool you expect is absent from tools/list, search for it rather than assuming it is unavailable. A large catalog is deliberately kept off the direct list to keep the initial tool surface small and the context budget predictable.
+The tool surface is intentionally two-tier. The tools listed directly in tools/list are the curated, most-used surface. The rest of the catalog (see count below) is served through progressive disclosure and is NOT broken or missing: any tool not listed directly is reachable via search_tools -> describe_tool -> invoke_read_tool/invoke_write_tool/invoke_destructive_tool (the describe_tool response names the typed dispatcher for each tool). If a tool you expect is absent from tools/list, search for it rather than assuming it is unavailable. A large catalog is deliberately kept off the direct list to keep the initial tool surface small and the context budget predictable.
 
 For authentication, prefer the out-of-band flow: call auth_sso, give the returned approval URL to the human, then poll auth_resume with the returned handle until it reports done. This avoids an invalid or missing API key blocking work.
 
@@ -162,7 +162,7 @@ Common flows start here:
 - search:   search_tools({ "query": "<one keyword>" })
 - filter:   search_tools({ "category": "vault", "query": "<one keyword>" })
 
-Some internal commands are human-only or read piped stdin; when an agent invokes one via invoke_tool, the server returns a structured needs_human redirect instead of blocking. Commands that prompt interactively are hidden from search_tools entirely.
+Some internal commands are human-only or read piped stdin; when an agent invokes one via the invoke dispatchers, the server returns a structured needs_human redirect instead of blocking. Commands that prompt interactively are hidden from search_tools entirely.
 
 The internal catalog has {{.ToolCount}} tools.
 {{if .FileHostInput}}
@@ -179,12 +179,12 @@ Companion interactive pages (MCP Apps) may render alongside tool results when a 
 
 // instructionsData is the template execution context.
 type instructionsData struct {
-	ToolCount      int
-	FileHostInput  bool
-	SourcePath     bool
-	SourceMint     bool
-	SourceRelay    bool
-	MCPApps        bool
+	ToolCount     int
+	FileHostInput bool
+	SourcePath    bool
+	SourceMint    bool
+	SourceRelay   bool
+	MCPApps       bool
 }
 
 // buildInstructions returns the MCP server instructions for the given

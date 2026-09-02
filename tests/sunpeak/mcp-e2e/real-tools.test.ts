@@ -24,7 +24,7 @@ test('account_info returns the seeded account, not an auth error', async ({ mcp 
   // must surface that account rather than an authentication failure.
   expect(result).toHaveTextContent('e2e@example.com');
 
-  // invoke_tool returns the JSON both as text content and as structuredContent,
+  // The invoke dispatcher returns the JSON both as text content and as structuredContent,
   // so assert the structured shape directly. Assert only the field this test's
   // intent requires (the seeded email) rather than a full record snapshot, so
   // a schema addition to the account object does not break the test.

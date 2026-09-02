@@ -45,14 +45,20 @@ type ToolDetail struct {
 	ReadOnly    bool              `json:"readOnlyHint"`
 	Destructive bool              `json:"destructiveHint"`
 	Interaction model.Interaction `json:"interaction,omitempty"`
-	InputSchema json.RawMessage   `json:"inputSchema"`
+	// InvokeTool names the typed invoke dispatcher that executes this tool
+	// (invoke_read_tool / invoke_write_tool / invoke_destructive_tool), so an
+	// agent never has to guess which safety class a tool belongs to when the
+	// typed dispatchers enforce the split.
+	InvokeTool  string          `json:"invokeTool,omitempty"`
+	InputSchema json.RawMessage `json:"inputSchema"`
 }
 
 // ToolCatalog is an in-memory registry of tools that are discovered through
-// the meta-tools (search_tools, describe_tool, invoke_tool) instead of being
-// listed directly in tools/list. This implements server-side progressive
-// disclosure: the MCP client sees only 3 meta-tools, while the real tool
-// catalog stays internal.
+// the meta-tools (search_tools, describe_tool, and the typed invoke
+// dispatchers invoke_read_tool / invoke_write_tool / invoke_destructive_tool)
+// instead of being listed directly in tools/list. This implements server-side
+// progressive disclosure: the MCP client sees only the meta-tools, while the
+// real tool catalog stays internal.
 type ToolCatalog struct {
 	mu    sync.RWMutex
 	tools map[string]*model.ToolEntry
@@ -304,7 +310,7 @@ func isPrimaryTool(name string) bool {
 
 // Suggest returns up to max tool names close to the given (unknown) name,
 // ordered by ascending Levenshtein distance then name. It lets describe_tool
-// and invoke_tool answer with "did you mean ...?" instead of a bare
+// and the invoke dispatchers answer with "did you mean ...?" instead of a bare
 // unknown-tool error. Tools that Search deliberately hides — wizards and
 // interactive/human-only tools — are excluded so suggestions never surface a
 // tool the agent could not discover. Distance uses a local zero-dependency
@@ -408,6 +414,7 @@ func (c *ToolCatalog) Describe(name string) (*ToolDetail, error) {
 		ReadOnly:    entry.ReadOnly,
 		Destructive: entry.Destructive,
 		Interaction: entry.Interaction,
+		InvokeTool:  classifyEntry(entry).dispatcher(),
 		InputSchema: entry.InputSchema,
 	}, nil
 }
@@ -435,6 +442,7 @@ func (c *ToolCatalog) DescribeFor(name string, profile *hostenv.PlatformProfile)
 		ReadOnly:    entry.ReadOnly,
 		Destructive: entry.Destructive,
 		Interaction: entry.Interaction,
+		InvokeTool:  classifyEntry(entry).dispatcher(),
 		InputSchema: entry.InputSchema,
 	}, nil
 }
@@ -525,7 +533,7 @@ func (c *ToolCatalog) Invoke(ctx context.Context, name string, args map[string]a
 		return model.ToolResult{}, fmt.Errorf("unknown tool: %s", name)
 	}
 	if entry.Category == model.CategoryAdmin {
-		return model.ToolResult{IsError: true, Text: fmt.Sprintf("admin tool %s is not available through invoke_tool; use search_tools with category=admin to discover admin tools", name)}, nil
+		return model.ToolResult{IsError: true, Text: fmt.Sprintf("admin tool %s is not available through the invoke dispatchers; use search_tools with category=admin to discover admin tools", name)}, nil
 	}
 
 	log.Info("meta-tool invoke", zap.String("tool", name))

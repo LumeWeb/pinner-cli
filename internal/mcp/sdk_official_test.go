@@ -18,11 +18,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
@@ -190,10 +190,12 @@ func TestOfficialMetaToolsListed(t *testing.T) {
 	for _, tool := range res.Tools {
 		names[tool.Name] = true
 	}
-	require.Len(t, res.Tools, 3)
+	require.Len(t, res.Tools, 5)
 	require.True(t, names["search_tools"], "search_tools listed")
 	require.True(t, names["describe_tool"], "describe_tool listed")
-	require.True(t, names["invoke_tool"], "invoke_tool listed")
+	require.True(t, names["invoke_read_tool"], "invoke_read_tool listed")
+	require.True(t, names["invoke_write_tool"], "invoke_write_tool listed")
+	require.True(t, names["invoke_destructive_tool"], "invoke_destructive_tool listed")
 	require.False(t, names["pinner_status"], "catalog tool must stay hidden")
 }
 
@@ -317,7 +319,7 @@ func TestOfficialInvokeToolExecutesCatalog(t *testing.T) {
 	cs := connectOfficialClient(t, srv)
 
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "invoke_tool",
+		Name: "invoke_read_tool",
 		Arguments: map[string]any{
 			"name":      "pinner_status",
 			"arguments": map[string]any{"json": true},
@@ -333,7 +335,7 @@ func TestOfficialInvokeToolUnknownIsError(t *testing.T) {
 	cs := connectOfficialClient(t, srv)
 
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "invoke_tool",
+		Name: "invoke_read_tool",
 		Arguments: map[string]any{
 			"name": "pinner_does_not_exist",
 		},
@@ -342,8 +344,113 @@ func TestOfficialInvokeToolUnknownIsError(t *testing.T) {
 	require.True(t, res.IsError)
 }
 
-// TestOfficialInvokeToolRedirectsInteractiveOnly verifies that invoke_tool
-// steers agents away from interactive (human-only setup) tools by returning a
+// TestOfficialInvokeClassGate pins the typed-invoke safety split: each
+// dispatcher admits only its own class (read / mutating / destructive) and
+// refuses out-of-class tools with a pointer to the right dispatcher. This is
+// the platform requirement that no single MCP tool may mix safe and unsafe
+// operations.
+func TestOfficialInvokeClassGate(t *testing.T) {
+	catalog := NewToolCatalog()
+	catalog.Add(&model.ToolEntry{
+		Name:        "read_probe",
+		Description: "Read-only probe",
+		ReadOnly:    true,
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Handler: func(context.Context, model.ToolRequest) (model.ToolResult, error) {
+			return model.ToolResult{Text: "read"}, nil
+		},
+	})
+	catalog.Add(&model.ToolEntry{
+		Name:        "write_probe",
+		Description: "Mutating probe",
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Handler: func(context.Context, model.ToolRequest) (model.ToolResult, error) {
+			return model.ToolResult{Text: "write"}, nil
+		},
+	})
+	run := false
+	catalog.Add(&model.ToolEntry{
+		Name:          "destroy_probe",
+		Description:   "Destructive probe",
+		Destructive:   true,
+		OpenWorldHint: true,
+		InputSchema:   json.RawMessage(`{"type":"object"}`),
+		Handler: func(context.Context, model.ToolRequest) (model.ToolResult, error) {
+			run = true
+			return model.ToolResult{Text: "destroy"}, nil
+		},
+	})
+
+	srv := sdk.NewServer(nil)
+	require.NoError(t, RegisterOfficialMetaTools(srv, catalog, false, nil, nil, nil))
+	cs := connectOfficialClient(t, srv)
+	defer cs.Close()
+
+	call := func(t *testing.T, dispatcher, name string) (bool, string) {
+		t.Helper()
+		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+			Name: dispatcher,
+			Arguments: map[string]any{
+				"name":      name,
+				"arguments": map[string]any{},
+			},
+		})
+		require.NoError(t, err)
+		return res.IsError, requireText(t, res)
+	}
+
+	// Right dispatcher: the inner handler runs.
+	isErr, text := call(t, "invoke_read_tool", "read_probe")
+	require.False(t, isErr, text)
+	require.Equal(t, "read", text)
+
+	isErr, text = call(t, "invoke_write_tool", "write_probe")
+	require.False(t, isErr, text)
+	require.Equal(t, "write", text)
+
+	isErr, text = call(t, "invoke_destructive_tool", "destroy_probe")
+	require.False(t, isErr)
+	require.True(t, run)
+
+	// Wrong dispatcher: refused with guidance, handler never runs.
+	isErr, text = call(t, "invoke_read_tool", "write_probe")
+	require.True(t, isErr)
+	require.Contains(t, text, "mutating operation")
+	require.Contains(t, text, "invoke_write_tool")
+
+	isErr, text = call(t, "invoke_read_tool", "destroy_probe")
+	require.True(t, isErr)
+	require.Contains(t, text, "destructive operation")
+	require.Contains(t, text, "invoke_destructive_tool")
+
+	isErr, text = call(t, "invoke_write_tool", "read_probe")
+	require.True(t, isErr)
+	require.Contains(t, text, "read-only operation")
+	require.Contains(t, text, "invoke_read_tool")
+
+	// describe_tool names the dispatcher for each class so agents can route
+	// without guessing.
+	for _, tc := range []struct {
+		name, want string
+	}{
+		{"read_probe", "invoke_read_tool"},
+		{"write_probe", "invoke_write_tool"},
+		{"destroy_probe", "invoke_destructive_tool"},
+	} {
+		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+			Name:      "describe_tool",
+			Arguments: map[string]any{"name": tc.name},
+		})
+		require.NoError(t, err)
+		require.False(t, res.IsError)
+		var detail ToolDetail
+		require.NoError(t, json.Unmarshal([]byte(requireText(t, res)), &detail))
+		require.Equal(t, tc.want, detail.InvokeTool, "%s must name its dispatcher", tc.name)
+	}
+}
+
+// TestOfficialInvokeToolRedirectsInteractiveOnly verifies that the invoke
+// dispatchers steer agents away from interactive (human-only setup) tools by returning a
 // needs_human hand-off instead of running them, while agent-safe tools
 // (including the OOB vault restore) run their handler directly. Stdin gating
 // is a CLI-side concern; the MCP invoke path does not perform stdin gating.
@@ -380,7 +487,7 @@ func TestOfficialInvokeToolRedirectsInteractiveOnly(t *testing.T) {
 
 	// Interactive tool -> needs_human redirect, handler not called.
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "invoke_tool",
+		Name: "invoke_write_tool",
 		Arguments: map[string]any{
 			"name":      "pinner_setup",
 			"arguments": map[string]any{},
@@ -397,7 +504,7 @@ func TestOfficialInvokeToolRedirectsInteractiveOnly(t *testing.T) {
 	// Agent-safe tool (vault restore OOB) runs its handler, with no stdin
 	// gating.
 	res, err = cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "invoke_tool",
+		Name: "invoke_write_tool",
 		Arguments: map[string]any{
 			"name":      "pinner_vault_restore",
 			"arguments": map[string]any{},
@@ -449,7 +556,7 @@ func TestOfficialReadResourceTemplate(t *testing.T) {
 // buildCatalog (with an OOB restore coordinator wired) and asserts the stdin
 // gate still redirects it. This is the regression the hand-built-catalog tests
 // do not cover: buildCatalog previously reclassified pinner_vault_restore to
-// agent_safe, which made the invoke_tool switch on entry.Interaction fall
+// agent_safe, which made the invoke dispatchers' switch on entry.Interaction fall
 // through and run os.Stdin — desyncing the stdio transport — instead of
 // honoring the gate. The enum must stay stdin_input so the gate holds, while
 // the non-stdin OOB hand-off (bypassGate) remains reachable.
@@ -495,7 +602,7 @@ func TestOfficialInvokeVaultRestoreRoutesAgentSafeHandoff(t *testing.T) {
 	// A plain restore invoke (no seed on the channel) must reach the handler and
 	// return a needs_human restore_url hand-off.
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "invoke_tool",
+		Name: "invoke_write_tool",
 		Arguments: map[string]any{
 			"name":      vault.CompiledVaultRestoreToolName,
 			"arguments": map[string]any{},

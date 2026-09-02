@@ -7,8 +7,13 @@ package mcp
 //     booleans (readOnlyHint, destructiveHint, openWorldHint); a nil pointer
 //     hint is emitted as null on the wire and fails validators.
 //   - The progressive-disclosure meta-tools (search_tools/describe_tool/
-//     invoke_tool) additionally carry top-level titles (the Claude directory
-//     submission requires them; annotations.title is only a legacy fallback).
+//     invoke_read_tool/invoke_write_tool/invoke_destructive_tool) additionally
+//     carry top-level titles (the Claude directory submission requires them;
+//     annotations.title is only a legacy fallback).
+//   - The typed invoke dispatchers carry truthfully split safety hints
+//     (read: readOnly=true; mutating: openWorld=true; destructive:
+//     destructive=true, openWorld=true) so no single MCP tool straddles the
+//     safe/unsafe boundary the directory validators reject.
 //   - auth_status's hints declare the platform-required values (an out-of-band
 //     sign-in email cannot be unsent, so readOnly=false / destructive=true).
 //   - Every ui:// app view declares one exact HTTPS origin (_meta.ui.domain
@@ -63,20 +68,36 @@ func TestWireAnnotationsOnMetaTools(t *testing.T) {
 	require.NoError(t, err)
 
 	titles := map[string]string{
-		"search_tools":  "Search tool catalog",
-		"describe_tool": "Describe a catalog tool",
-		"invoke_tool":   "Invoke a catalog tool",
+		"search_tools":            "Search tool catalog",
+		"describe_tool":           "Describe a catalog tool",
+		"invoke_read_tool":        "Invoke a read-only catalog tool",
+		"invoke_write_tool":       "Invoke a mutating catalog tool",
+		"invoke_destructive_tool": "Invoke a destructive catalog tool",
+	}
+	wantHints := map[string][3]bool{
+		// {readOnlyHint, destructiveHint, openWorldHint}
+		"search_tools":            {false, false, false},
+		"describe_tool":           {false, false, false},
+		"invoke_read_tool":        {true, false, false},
+		"invoke_write_tool":       {false, false, true},
+		"invoke_destructive_tool": {false, true, true},
 	}
 	seen := map[string]bool{}
 	for _, tool := range res.Tools {
 		requireBoolHints(t, tool)
 		seen[tool.Name] = true
 		want, ok := titles[tool.Name]
-		if !ok {
-			continue
+		if ok {
+			require.Equal(t, want, tool.Title, "%s: top-level title required for directory submission", tool.Name)
+			require.Equal(t, want, tool.Annotations.Title, "%s: annotations.title mirrors the title", tool.Name)
 		}
-		require.Equal(t, want, tool.Title, "%s: top-level title required for directory submission", tool.Name)
-		require.Equal(t, want, tool.Annotations.Title, "%s: annotations.title mirrors the title", tool.Name)
+		if hints, ok := wantHints[tool.Name]; ok {
+			require.Equal(t, hints[0], tool.Annotations.ReadOnlyHint, "%s: readOnlyHint", tool.Name)
+			require.NotNil(t, tool.Annotations.DestructiveHint, "%s: destructiveHint present", tool.Name)
+			require.Equal(t, hints[1], *tool.Annotations.DestructiveHint, "%s: destructiveHint", tool.Name)
+			require.NotNil(t, tool.Annotations.OpenWorldHint, "%s: openWorldHint present", tool.Name)
+			require.Equal(t, hints[2], *tool.Annotations.OpenWorldHint, "%s: openWorldHint", tool.Name)
+		}
 	}
 	for name := range titles {
 		require.True(t, seen[name], "%s must be listed", name)

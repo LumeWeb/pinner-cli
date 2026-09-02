@@ -89,7 +89,9 @@ var serverCardTools = []map[string]any{
 	{"name": "upload_file", "description": "Upload a file to IPFS"},
 	{"name": "search_tools", "description": "Search the tool catalog"},
 	{"name": "describe_tool", "description": "Get a tool's input schema"},
-	{"name": "invoke_tool", "description": "Invoke a catalog tool"},
+	{"name": "invoke_read_tool", "description": "Invoke a read-only catalog tool"},
+	{"name": "invoke_write_tool", "description": "Invoke a mutating catalog tool"},
+	{"name": "invoke_destructive_tool", "description": "Invoke a destructive catalog tool"},
 }
 
 // serverCardHandler serves the static MCP server card used by directory
@@ -766,7 +768,7 @@ func routeVaultSetupHandlers(catalog *ToolCatalog, create, restore model.PinnerT
 // mcpInstructionsBase is sent to MCP clients in the initialize response.
 const mcpInstructionsBase = `This server exposes a curated set of common Pinner tools directly, including upload, pin, list, status, download, vault, website, website/domain wizard tools, and the agent-facing out-of-band sign-in tools (auth_sso and auth_resume). Setup wizard tools are kept out of the curated direct list because they duplicate the auth_sso/vault_create/vault_restore flows for CLI-style onboarding; they never accept passwords or OTP over this channel and remain reachable via search_tools.
 
-The tool surface is intentionally two-tier. The tools listed directly in tools/list are the curated, most-used surface. The rest of the catalog (see count below) is served through progressive disclosure and is NOT broken or missing: any tool not listed directly is reachable via search_tools -> describe_tool -> invoke_tool. If a tool you expect is absent from tools/list, search for it rather than assuming it is unavailable. A large catalog is deliberately kept off the direct list to keep the initial tool surface small and the context budget predictable.
+The tool surface is intentionally two-tier. The tools listed directly in tools/list are the curated, most-used surface. The rest of the catalog (see count below) is served through progressive disclosure and is NOT broken or missing: any tool not listed directly is reachable via search_tools -> describe_tool -> invoke_read_tool/invoke_write_tool/invoke_destructive_tool (the describe_tool response names the typed dispatcher for each tool). If a tool you expect is absent from tools/list, search for it rather than assuming it is unavailable. A large catalog is deliberately kept off the direct list to keep the initial tool surface small and the context budget predictable.
 
 For authentication, prefer the out-of-band flow: call auth_sso, give the returned approval URL to the human, then poll auth_resume with the returned handle until it reports done. This avoids an invalid or missing API key blocking work.
 
@@ -779,12 +781,12 @@ Common flows start here:
 - search:   search_tools({ "query": "<one keyword>" })
 - filter:   search_tools({ "category": "vault", "query": "<one keyword>" })
 
-Some internal commands are human-only or read piped stdin; when an agent invokes one via invoke_tool, the server returns a structured needs_human redirect instead of blocking. Commands that prompt interactively are hidden from search_tools entirely.
+Some internal commands are human-only or read piped stdin; when an agent invokes one via the invoke dispatchers, the server returns a structured needs_human redirect instead of blocking. Commands that prompt interactively are hidden from search_tools entirely.
 
 Less common CLI tools remain available through progressive disclosure:
 1. search_tools({ "query": "..." }): Find tools by keyword. Returns matching names, descriptions, and categories.
-2. describe_tool({ "name": "..." }): Get the full input schema for one internal tool.
-3. invoke_tool({ "name": "...", "arguments": { ... } }): Execute one internal tool.
+2. describe_tool({ "name": "..." }): Get the full input schema for one internal tool; the response carries invokeTool, the dispatcher that executes it.
+3. invoke_read_tool / invoke_write_tool / invoke_destructive_tool({ "name": "...", "arguments": { ... } }): Execute one internal tool with the dispatcher named by invokeTool.
 
 The internal catalog has %d tools. Local path arguments refer to the MCP server host, not the remote agent's filesystem. Upload and vault copy therefore require a host-side file handoff. File attachments can use the directly visible upload_file (IPFS) and vault_put_file (vault) tools over the banner-visible source modes; Pinner fetches the temporary file URL locally and uses its existing authenticated TUS path. Large uploads use TUS internally; the SDK result includes an upload location for resume/status management. TUS is never anonymous. Vault cat returns bounded base64 JSON in agent mode and never writes raw bytes to the MCP transport.`
 

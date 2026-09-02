@@ -12,7 +12,7 @@ test.describe.configure({ mode: 'serial' });
 
 /**
  * DNS domain tools (dns_zones_* / dns_records_*) driven through the
- * host-discovery contract: every call goes through invoke_tool (the
+ * host-discovery contract: every call goes through the typed invoke dispatchers (the
  * progressive-disclosure meta-tool) with { name, args }, never by calling the
  * direct tool name.
  *
@@ -52,7 +52,7 @@ test.describe.configure({ mode: 'serial' });
  *   - dns_zones_delete / dns_records_delete are SafetyDestructive; the MCP
  *     dispatch layer refuses destructive ops invoked by a model actor with a
  *     needs_human confirmation handoff BEFORE the handler runs. So through
- *     invoke_tool they always return the confirmation hand-off, not a delete.
+ *     the invoke tool they always return the confirmation hand-off, not a delete.
  *     This test locks that gate.
  */
 
@@ -94,7 +94,7 @@ test('dns_zones_list now contains the created zone', async ({ mcp }) => {
 
 test('dns_zones_get resolves the zone by domain name (round-trip)', async ({ mcp }) => {
   // Resolve the zone by its domain (resolveZoneID lists zones and matches
-  // .Domain), proving the full invoke_tool -> SDK -> HTTP -> fake chain.
+  // .Domain), proving the full invoke dispatchers -> SDK -> HTTP -> fake chain.
   const result = await invoke(mcp, 'dns_zones_get', { zone: Domain });
 
   expect(isCleanSuccess(result)).toBe(true);

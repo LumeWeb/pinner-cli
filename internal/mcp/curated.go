@@ -8,7 +8,7 @@ package mcp
 // human-reviewable order.
 //
 // This is a deliberately small front door. The full tool catalog (~170 ops)
-// remains behind the search_tools / describe_tool / invoke_tool progressive-
+// remains behind the search_tools / describe_tool / typed-invoke progressive-
 // disclosure meta-tools. Everything listed here is either essential for first-
 // call orientation (auth_status), vault lifecycle entry points (vault_create,
 // vault_restore, vault_status), the vault's distinctive share primitive

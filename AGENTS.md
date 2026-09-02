@@ -149,7 +149,9 @@ tests/sunpeak/              MCP integration tests (driver `pinner mcp` over stdi
   - `catalog.go` — `ToolCatalog`: a two-tier tool surface. Curated, most-used
     tools are listed directly in `tools/list`; the rest of the catalog is
     served through progressive disclosure (`search_tools` → `describe_tool` →
-    `invoke_tool`).
+    the typed invoke dispatchers `invoke_read_tool` / `invoke_write_tool` /
+    `invoke_destructive_tool`, split by safety class so each dispatcher's MCP
+    annotations are truthful for platform directory validation).
   - `hostenv/` + `toolforge/` — the MCP surface is host-aware: tool
     descriptions, schemas, and variants are resolved against the connected host
     profile (platform/transport/auth) via feature gating (`hostenv.Feature`
@@ -341,7 +343,7 @@ refused (human confirms via hand-off), and the handler additionally rejects
 **MCP surface:** `ens_point` / `ens_unpoint` are single-level catalog ops
 (category `ens`) and are **not** in `compiledCuratedToolNames`, so they stay
 behind progressive disclosure (`search_tools {query:"ens"}` →
-`describe_tool` → `invoke_tool`) and never bloat `tools/list`. The
+`describe_tool` → the typed invoke dispatchers) and never bloat `tools/list`. The
 `agent_guide` `ens_publish` flow and the `ens-publish` prompt
 (`internal/mcp/prompttemplates/ens_publish.tmpl`) steer an agent to them.
 

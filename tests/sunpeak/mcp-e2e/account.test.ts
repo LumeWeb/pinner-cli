@@ -3,7 +3,7 @@ import { invoke } from './helpers';
 
 /**
  * Account domain tool (account_subscription) driven through the
- * host-discovery contract: every call goes through invoke_tool (the
+ * host-discovery contract: every call goes through the typed invoke dispatchers (the
  * progressive-disclosure meta-tool) with { name, args } — the same path a
  * ChatGPT/Claude host uses to surface catalog tools.
  *

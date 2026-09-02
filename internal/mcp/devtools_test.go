@@ -120,8 +120,8 @@ func TestDevRequestHandlerNilCapsSafe(t *testing.T) {
 	require.False(t, res.IsError)
 }
 
-// TestInvokeToolThreadsCaps guards the invoke_tool behavior dev tools rely on:
-// when a catalog tool is invoked through the invoke_tool meta-tool, the calling
+// TestInvokeToolThreadsCaps guards the invoke dispatcher behavior dev tools rely on:
+// when a catalog tool is invoked through a typed invoke dispatcher, the calling
 // client's Caps must be threaded to the inner handler. It regresses a latent bug
 // where Caps (and thus the resolved host profile) was dropped on this path.
 func TestInvokeToolThreadsCaps(t *testing.T) {
@@ -142,7 +142,7 @@ func TestInvokeToolThreadsCaps(t *testing.T) {
 	defer cs.Close()
 
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "invoke_tool",
+		Name: "invoke_write_tool",
 		Arguments: map[string]any{
 			"name":      "probe",
 			"arguments": map[string]any{},
@@ -150,5 +150,5 @@ func TestInvokeToolThreadsCaps(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.False(t, res.IsError)
-	require.True(t, seenCaps, "invoke_tool must thread Caps (with resolved profile) to the inner handler")
+	require.True(t, seenCaps, "invoke_write_tool must thread Caps (with resolved profile) to the inner handler")
 }

@@ -577,7 +577,7 @@ func registerCustomTools(deps customToolDeps) error {
 	// Always expose the agent guide so a model can orient to the primary flows
 	// without probing each tool's description. It is both directly visible on
 	// tools/list and indexed in the catalog so a cold-start host that follows
-	// search_tools(help) can resolve and read it via describe_tool / invoke_tool.
+	// search_tools(help) can resolve and read it via describe_tool / the typed invoke dispatchers.
 	reg.add(customToolSpec{desc: NewAgentGuideDescriptor(), index: true, direct: true})
 
 	// Optionally expose the prompt templates, filtered to the surface so a

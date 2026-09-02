@@ -3,8 +3,9 @@ import { test, expect } from 'sunpeak/test';
 /**
  * Progressive-disclosure contract for pinner's public `tools/list` surface.
  *
- * Pinner's MCP server hides the full operation catalog behind three meta-tools
- * (search_tools / describe_tool / invoke_tool). The client-visible `tools/list`
+ * Pinner's MCP server hides the full operation catalog behind the meta-tools
+ * (search_tools / describe_tool / invoke_read_tool / invoke_write_tool /
+ * invoke_destructive_tool). The client-visible `tools/list`
  * advertises ONLY those meta-tools plus the host-curated direct tools
  * (compiledCuratedToolNames + the custom transport tools that register
  * DirectVisible=true).
@@ -32,9 +33,15 @@ import { test, expect } from 'sunpeak/test';
  * provides no signal and is not part of this contract.
  */
 
-const META_TOOLS = ['search_tools', 'describe_tool', 'invoke_tool'];
+const META_TOOLS = [
+  'search_tools',
+  'describe_tool',
+  'invoke_read_tool',
+  'invoke_write_tool',
+  'invoke_destructive_tool',
+];
 
-// Catalog tools that MUST live only behind invoke_tool and never leak into
+// Catalog tools that MUST live only behind the typed invoke dispatchers and never leak into
 // tools/list. Guard rail: a name surfacing in tools/list that is in this list
 // (or carries one of these prefixes) is an accidental leak.
 const HIDDEN_BEHIND_INVOKE = [

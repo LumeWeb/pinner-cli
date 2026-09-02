@@ -148,11 +148,11 @@ func TestOfficialToolHandlerAnnotatesHandoffEndToEnd(t *testing.T) {
 	require.Contains(t, uiText, "https://example.com/account/password/tok", "URL must be preserved")
 }
 
-// TestInvokeToolAnnotatesAppBackedHandoff regresses the invoke_tool meta-path:
+// TestInvokeToolAnnotatesAppBackedHandoff regresses the typed-invoke meta-path:
 // a non-DirectVisible, app-backed catalog tool (e.g. vault_create/vault_restore)
-// is dispatched by the invoke_tool closure directly to the inner catalog
+// is dispatched by the invoke_write_tool closure directly to the inner catalog
 // handler, so the outer officialToolHandler annotation (keyed on the wired name
-// "invoke_tool") never sees the real tool. The closure must annotate with the
+// "invoke_write_tool") never sees the real tool. The closure must annotate with the
 // resolved inner name so a text-only host still learns the companion app exists.
 func TestInvokeToolAnnotatesAppBackedHandoff(t *testing.T) {
 	registerTestAppView(t, "vault_create", apps.AppViewInfo{
@@ -183,7 +183,7 @@ func TestInvokeToolAnnotatesAppBackedHandoff(t *testing.T) {
 	cs := connectOfficialClient(t, srv)
 
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "invoke_tool",
+		Name: "invoke_write_tool",
 		Arguments: map[string]any{
 			"name":      "vault_create",
 			"arguments": map[string]any{},
@@ -193,7 +193,7 @@ func TestInvokeToolAnnotatesAppBackedHandoff(t *testing.T) {
 	require.False(t, res.IsError)
 	require.NotNil(t, res.Content, "expected text content")
 	text := requireText(t, res)
-	require.Contains(t, text, "Create Vault", "companion-app title must annotate invoke_tool-dispatched hand-off")
+	require.Contains(t, text, "Create Vault", "companion-app title must annotate invoke_write_tool-dispatched hand-off")
 	require.Contains(t, text, "is also available in Apps-capable clients", "text-only client expects fallback wording")
 	require.Contains(t, text, "https://example.com/vault/create/tok", "raw URL must be preserved")
 }

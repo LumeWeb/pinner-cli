@@ -12,7 +12,7 @@ test.describe.configure({ mode: 'serial' });
 
 /**
  * Pins domain tools (pins_add / pins_list / pins_status / pins_rm) driven
- * through the host-discovery contract: every call goes through invoke_tool
+ * through the host-discovery contract: every call goes through the typed invoke dispatchers
  * (the progressive-disclosure meta-tool) with { name, args }, never by
  * calling the direct tool name. pins_add/list/status/rm are directly curated
  * onto tools/list, but this suite deliberately routes them through invoke to
@@ -42,13 +42,13 @@ test.describe.configure({ mode: 'serial' });
  *     RequestID field), and the fake derives it as "req-<cid>".
  *   - pins_status takes a `cid` (it looks a pin up by CID and returns its
  *     status), NOT `request_id`. So the round-trip that proves the full
- *     invoke_tool -> SDK -> HTTP -> fake chain is pins_add(cid) ->
+ *     invoke dispatchers -> SDK -> HTTP -> fake chain is pins_add(cid) ->
  *     pins_status(cid). We still capture the request_id from pins_add (per the
  *     spec) so it is available, but the tool resolves by CID.
  *   - pins_rm is SafetyDestructive. The MCP dispatch layer refuses destructive
  *     ops invoked by a model actor with a needs_human confirmation handoff
  *     (Reason=confirmation) BEFORE the handler runs — unconditionally, even
- *     when `confirm:true` is passed. So through invoke_tool pins_rm cannot
+ *     when `confirm:true` is passed. So through the invoke tool pins_rm cannot
  *     actually delete; it always returns the confirmation hand-off. This test
  *     locks that gate and asserts the pin survives.
  */
@@ -129,7 +129,7 @@ test('pins_list now contains the added pin', async ({ mcp }) => {
 
 test('pins_status resolves the added pin (round-trip)', async ({ mcp }) => {
   // Round-trip: the pin created by pins_add above must be resolvable back
-  // through the full invoke_tool -> SDK -> HTTP -> fake chain. pins_status
+  // through the full invoke dispatchers -> SDK -> HTTP -> fake chain. pins_status
   // resolves by `cid` (its catalog contract), NOT by `request_id`.
   //
   // The fake's GET /pins (internal/mcptest/ipfs/pins.go GetPins) honors the

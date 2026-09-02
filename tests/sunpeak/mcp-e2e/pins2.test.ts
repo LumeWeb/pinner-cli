@@ -12,7 +12,7 @@ test.describe.configure({ mode: 'serial' });
 
 /**
  * Pins domain tools for pins_update + list filtering, driven through the
- * host-discovery contract: every call goes through invoke_tool (the
+ * host-discovery contract: every call goes through the typed invoke dispatchers (the
  * progressive-disclosure meta-tool) with { name, args }, never by calling the
  * direct tool name.
  *

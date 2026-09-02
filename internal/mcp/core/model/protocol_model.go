@@ -159,7 +159,7 @@ func DescriptorFromTool(entry *ToolEntry) ToolDescriptor {
 // It lets a tool that is registered as a direct (tools/list) descriptor, such
 // as the out-of-band sign-in tools, ALSO be surfaced through progressive
 // discovery (search_tools/describe_tool) so both discovery surfaces stay in
-// sync. The entry keeps its handler so invoke_tool can call it.
+// sync. The entry keeps its handler so the typed invoke dispatchers can call it.
 func ToolEntryFromDescriptor(desc ToolDescriptor) *ToolEntry {
 	return &ToolEntry{
 		Name:            desc.Name,
