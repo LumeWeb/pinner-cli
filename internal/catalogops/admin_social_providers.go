@@ -198,6 +198,13 @@ func adminSocialProvidersUpdate(d AdminDeps) catalog.Operation {
 			{Name: "auth-url", Type: catalog.ArgTypeString, Help: "OAuth2 authorization endpoint"},
 			{Name: "token-url", Type: catalog.ArgTypeString, Help: "OAuth2 token endpoint"},
 			{Name: "user-url", Type: catalog.ArgTypeString, Help: "User info endpoint"},
+			{Name: "scopes", Type: catalog.ArgTypeStringSlice, Help: "OAuth2 scopes to request (replaces the current set; omit to keep it)"},
+			{Name: "provider-key", Type: catalog.ArgTypeString, Help: "Provider type identifier (e.g. github, google)"},
+			{Name: "client-id", Type: catalog.ArgTypeString, Help: "OAuth2 client ID"},
+			{Name: "display-name", Type: catalog.ArgTypeString, Help: "Human-readable provider name"},
+			{Name: "auth-url", Type: catalog.ArgTypeString, Help: "OAuth2 authorization endpoint"},
+			{Name: "token-url", Type: catalog.ArgTypeString, Help: "OAuth2 token endpoint"},
+			{Name: "user-url", Type: catalog.ArgTypeString, Help: "User info endpoint"},
 			{Name: "scopes", Type: catalog.ArgTypeStringSlice, Help: "OAuth2 scopes to request"},
 			{Name: "user-id-key", Type: catalog.ArgTypeString, Help: "User info JSON key holding the user ID"},
 			{Name: "user-email-key", Type: catalog.ArgTypeString, Help: "User info JSON key holding the email"},
@@ -240,7 +247,10 @@ func adminSocialProvidersUpdate(d AdminDeps) catalog.Operation {
 			if v := catalog.StrArg(input, "user-url", ""); v != "" {
 				req.UserUrl = &v
 			}
-			if v := catalog.StrSliceArg(input, "scopes"); v != nil {
+			// An omitted slice arg normalizes to a non-nil empty []string, so
+			// presence is judged by length: forwarding that empty slice on the
+			// patch would erase all scopes a provider still needs.
+			if v := catalog.StrSliceArg(input, "scopes"); len(v) > 0 {
 				req.Scopes = &v
 			}
 			if v := catalog.StrArg(input, "user-id-key", ""); v != "" {

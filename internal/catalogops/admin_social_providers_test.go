@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"go.lumeweb.com/pinner-cli/internal/catalog"
 	coreadmin "go.lumeweb.com/pinner-cli/internal/core/admin"
 	"go.lumeweb.com/pinner-cli/internal/core/config"
 	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
@@ -289,6 +290,34 @@ func TestAdminSocialProvidersUpdatePatchOnlySuppliedFields(t *testing.T) {
 	// Everything not supplied stays nil on the wire.
 	if gotReq.ProviderId != nil || gotReq.ClientId != nil || gotReq.AuthUrl != nil {
 		t.Fatalf("omitted fields must not be set: %+v", gotReq)
+	}
+}
+
+// TestAdminSocialProvidersUpdateOmittedScopesKeepExisting guards the slice
+// edge: an omitted scopes arg normalizes to an empty (non-nil) []string, and
+// forwarding that on the patch would erase all scopes the provider needs. The
+// update must leave Scopes nil when no scopes were supplied.
+func TestAdminSocialProvidersUpdateOmittedScopesKeepExisting(t *testing.T) {
+	var gotReq *admin.SocialProviderUpdateRequest
+	svc := &fakeSocialProviderService{
+		updateFn: func(ctx context.Context, id string, req *admin.SocialProviderUpdateRequest) (*admin.SocialProvider, error) {
+			gotReq = req
+			return sampleSocialProvider(), nil
+		},
+	}
+	op := adminSocialProvidersUpdate(testSocialProvidersDeps(t, svc))
+	// Normalize like Catalog.Invoke does: this is the step that coerces an
+	// omitted slice arg to a non-nil empty []string, so the regression is only
+	// visible through the same path production dispatch takes.
+	normalized, err := catalog.NormalizeOperationInput(op, map[string]any{"id": "3"})
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if _, err := op.Handler().Execute(context.Background(), normalized); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if gotReq.Scopes != nil {
+		t.Fatalf("omitted scopes must stay nil, got %+v", gotReq.Scopes)
 	}
 }
 
