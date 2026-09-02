@@ -8,6 +8,17 @@ import (
 	"go.lumeweb.com/portal-sdk/admin"
 )
 
+// Operation names (constants kept alongside the platform-domains ops for the
+// wiring layer, which resolves provider keys to numeric IDs by op name).
+const (
+	OpAdminSocialProvidersCreate  = "admin_social_providers_create"
+	OpAdminSocialProvidersGet     = "admin_social_providers_get"
+	OpAdminSocialProvidersUpdate  = "admin_social_providers_update"
+	OpAdminSocialProvidersDelete  = "admin_social_providers_delete"
+	OpAdminSocialProvidersEnable  = "admin_social_providers_enable"
+	OpAdminSocialProvidersDisable = "admin_social_providers_disable"
+)
+
 // socialProvidersListResult builds the shared ListResult view for the social
 // providers list operation.
 func socialProvidersListResult(providers []*admin.SocialProvider) ListResult {
@@ -93,7 +104,7 @@ func adminSocialProvidersList(d AdminDeps) catalog.Operation {
 // adminSocialProvidersGet is the `admin social-providers get` operation.
 func adminSocialProvidersGet(d AdminDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "admin_social_providers_get",
+		Name:        OpAdminSocialProvidersGet,
 		Title:       "Get a social provider",
 		Summary:     "Get a social login provider by ID",
 		Description: "Get a single social login provider by numeric ID. Client secrets are never returned. Requires admin privileges.",
@@ -125,7 +136,7 @@ func adminSocialProvidersGet(d AdminDeps) catalog.Operation {
 // adminSocialProvidersCreate is the `admin social-providers create` operation.
 func adminSocialProvidersCreate(d AdminDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "admin_social_providers_create",
+		Name:        OpAdminSocialProvidersCreate,
 		Title:       "Create a social provider",
 		Summary:     "Create a social login provider configuration",
 		Description: "Create a new social login provider configuration (OAuth2 endpoints, client credentials, attribute keys and display metadata). Requires admin privileges.",
@@ -177,7 +188,7 @@ func adminSocialProvidersCreate(d AdminDeps) catalog.Operation {
 // adminSocialProvidersUpdate is the `admin social-providers update` operation.
 func adminSocialProvidersUpdate(d AdminDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:    "admin_social_providers_update",
+		Name:    OpAdminSocialProvidersUpdate,
 		Title:   "Update a social provider",
 		Summary: "Update a social login provider configuration",
 		// Nullable arg types matter for updates: omitted must be distinguishable
@@ -270,7 +281,7 @@ func adminSocialProvidersUpdate(d AdminDeps) catalog.Operation {
 // DESTRUCTIVE: requires confirm=true.
 func adminSocialProvidersDelete(d AdminDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "admin_social_providers_delete",
+		Name:        OpAdminSocialProvidersDelete,
 		Title:       "Delete a social provider",
 		Summary:     "Delete a social login provider by ID",
 		Description: "Delete a social login provider configuration by ID. DESTRUCTIVE: users will no longer be able to sign in with this provider. Requires confirm=true. Requires admin privileges.",
@@ -309,7 +320,7 @@ func adminSocialProvidersDelete(d AdminDeps) catalog.Operation {
 // adminSocialProvidersEnable is the `admin social-providers enable` operation.
 func adminSocialProvidersEnable(d AdminDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "admin_social_providers_enable",
+		Name:        OpAdminSocialProvidersEnable,
 		Title:       "Enable a social provider",
 		Summary:     "Enable a social login provider",
 		Description: "Enable a previously disabled social login provider so users can sign in with it. Requires admin privileges.",
@@ -342,7 +353,7 @@ func adminSocialProvidersEnable(d AdminDeps) catalog.Operation {
 // operation.
 func adminSocialProvidersDisable(d AdminDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "admin_social_providers_disable",
+		Name:        OpAdminSocialProvidersDisable,
 		Title:       "Disable a social provider",
 		Summary:     "Disable a social login provider",
 		Description: "Disable a social login provider so it can no longer be used to authenticate. Requires admin privileges.",

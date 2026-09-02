@@ -282,6 +282,21 @@ func adminActionAdapter(op catalog.Operation) cli.ActionFunc {
 				}
 				input["id"] = resolved
 			}
+
+		// The social-provider ops are likewise keyed by numeric ID, but the
+		// provider key (e.g. google) is the natural handle an operator has.
+		case catalogops.OpAdminSocialProvidersGet,
+			catalogops.OpAdminSocialProvidersUpdate,
+			catalogops.OpAdminSocialProvidersDelete,
+			catalogops.OpAdminSocialProvidersEnable,
+			catalogops.OpAdminSocialProvidersDisable:
+			if id := catalog.StrArg(input, "id", ""); id != "" {
+				resolved, err := resolveSocialProviderID(ctx, adminCatalogDepsVar, id)
+				if err != nil {
+					return err
+				}
+				input["id"] = resolved
+			}
 		}
 
 		// Destructive gate: destructive admin ops require confirm=true. Other
@@ -377,6 +392,37 @@ func resolvePlatformDomainID(ctx context.Context, deps catalogops.AdminDeps, idO
 	return "", fmt.Errorf("platform domain not found for %q", idOrDomain)
 }
 
+// resolveSocialProviderID resolves a social-provider identifier an operator may
+// supply either as the numeric record ID or as the provider key (e.g. google).
+// Numeric identifiers pass through unchanged; a key is resolved by listing the
+// configured providers and matching on ProviderId. Mirrors resolvePlatformDomainID.
+func resolveSocialProviderID(ctx context.Context, deps catalogops.AdminDeps, idOrKey string) (string, error) {
+	if _, err := strconv.Atoi(idOrKey); err == nil {
+		return idOrKey, nil
+	}
+	if deps.CfgMgr == nil || deps.SocialProviderAdminService == nil {
+		return "", fmt.Errorf("social provider service unavailable (not wired)")
+	}
+	cfgMgr := deps.CfgMgr()
+	svc, err := deps.SocialProviderAdminService(cfgMgr)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve social provider service: %w", err)
+	}
+	if err := svc.RequireAuthenticated(); err != nil {
+		return "", err
+	}
+	providers, _, err := svc.ListSocialProviders(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to look up social provider by key: %w", err)
+	}
+	for _, p := range providers {
+		if p.ProviderId == idOrKey {
+			return fmt.Sprintf("%d", p.Id), nil
+		}
+	}
+	return "", fmt.Errorf("social provider %q not found; run 'pinner admin social-providers list' to see configured providers", idOrKey)
+}
+
 // renderAdminResult renders an admin handler's typed result through the CLI
 // Output formatter.
 func renderAdminResult(_ context.Context, c *cli.Command, op catalog.Operation, result any) error {
@@ -421,6 +467,36 @@ func renderAdminResult(_ context.Context, c *cli.Command, op catalog.Operation, 
 			return output.PrintJSON(map[string]any{"deleted": r.Deleted, "id": r.ID})
 		}
 		output.Printfln("Platform domain %s deleted", r.ID)
+		return nil
+
+	case *catalogops.SocialProvidersDeleteResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"deleted": r.Deleted, "id": r.ID})
+		}
+		output.Printfln("Social provider %s deleted", r.ID)
+		return nil
+
+	case *admin.SocialProvider:
+		// create/get/update/enable/disable all return the provider object;
+		// client secrets are never present on this response.
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		output.PrintFields(FieldGroup{Title: "Social provider", Fields: []Field{
+			{"ID", fmt.Sprintf("%d", r.Id)},
+			{"Provider", r.ProviderId},
+			{"Display name", r.DisplayName},
+			{"Enabled", yesNo(r.Enabled)},
+			{"Order", fmt.Sprintf("%d", r.OrderIndex)},
+			{"Client ID", r.ClientId},
+			{"Auth URL", r.AuthUrl},
+			{"Token URL", r.TokenUrl},
+			{"User URL", r.UserUrl},
+			{"Scopes", strings.Join(r.Scopes, ", ")},
+			{"User ID key", r.UserIdKey},
+			{"User email key", r.UserEmailKey},
+			{"User name key", r.UserNameKey},
+		}})
 		return nil
 
 	case *admin.QuotaPlan:
