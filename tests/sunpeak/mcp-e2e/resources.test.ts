@@ -17,7 +17,7 @@ test.describe.configure({ mode: 'serial' });
  * These are MCP RESOURCES (MCP resources/list + resources/read over stdio),
  * NOT tools — so they are driven through the mcp fixture's protocol
  * primitives (mcp.listResources() / mcp.readResource(uri)), never through
- * invoke_tool (which dispatches catalog tools only).
+ * the typed invoke tools (which dispatch catalog tools only).
  *
  * The pinner resource set (internal/mcp/resources.go ResourceDescriptors):
  *   static (resources/list)                          templates (resources/templates/list)

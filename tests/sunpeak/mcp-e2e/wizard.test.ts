@@ -11,7 +11,7 @@ test.describe.configure({ mode: 'serial' });
 
 /**
  * Wizard FSM session lifecycle (websites_*), driven through the
- * host-discovery contract: every call goes through invoke_tool with
+ * host-discovery contract: every call goes through the typed invoke dispatchers with
  * { name, args }, never by calling the direct tool name.
  *
  * CONTRACT (from internal/mcp/wizard/wizard.go, marshalWizardResponse at

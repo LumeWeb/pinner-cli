@@ -172,7 +172,8 @@ the frontends.
 - `catalog.go` — `ToolCatalog`: the in-memory registry behind a **two-tier
   tool surface**. Curated, most-used tools are listed directly in
   `tools/list`; the remaining catalog is served through progressive disclosure
-  (`search_tools` → `describe_tool` → `invoke_tool`), keeping the initial tool
+  (`search_tools` → `describe_tool` → the typed invoke dispatchers
+  `invoke_read_tool`/`invoke_write_tool`/`invoke_destructive_tool`), keeping the initial tool
   surface small and the context budget predictable.
 - `catalogassembly.go` — `AssembleCatalogOps(deps *CatalogDepsBundle)` builds
   one catalog covering every domain (auth, account, vault, pins, websites,

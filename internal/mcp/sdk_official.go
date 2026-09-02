@@ -5,8 +5,9 @@
 // registrations on the official MCP server, preserving Pinner's wire JSON
 // contract exactly:
 //
-//   - the three visible meta-tools (search_tools, describe_tool,
-//     invoke_tool) and their serialized schemas;
+//   - the visible meta-tools (search_tools, describe_tool, and the typed
+//     invoke dispatchers invoke_read_tool / invoke_write_tool /
+//     invoke_destructive_tool) and their serialized schemas;
 //   - the progressive-disclosure catalog invocation behavior;
 //   - pinner:// resource and resource-template URIs, MIME types and payloads;
 //   - prompt names, arguments, roles, text and embedded resources.
@@ -292,10 +293,12 @@ func registerTool(srv *sdk.Server, desc model.ToolDescriptor, handler model.Pinn
 	return sdk.RegisterTool(srv, sdkHandlerDeps, desc)
 }
 
-// RegisterOfficialMetaTools registers the three progressive-disclosure
-// meta-tools (search_tools, describe_tool, invoke_tool) on an official-SDK
-// server. The catalog itself stays hidden; the only tools visible via
-// tools/list are these three, preserving progressive disclosure.
+// RegisterOfficialMetaTools registers the progressive-disclosure meta-tools
+// (search_tools, describe_tool, and the typed invoke dispatchers
+// invoke_read_tool / invoke_write_tool / invoke_destructive_tool) on an
+// official-SDK server. The catalog itself stays hidden; the tools visible via
+// tools/list are these five, preserving progressive disclosure while keeping
+// each invoke tool's hints truthful about the safety class it executes.
 func RegisterOfficialMetaTools(srv *sdk.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *oob.SeedDrop, oobRestore *oob.OOBRestore, oobCreate *oob.OOBCreate) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
@@ -310,7 +313,7 @@ func RegisterOfficialMetaTools(srv *sdk.Server, catalog *ToolCatalog, stdioMode 
 	if err := registerOfficialDescribeTool(srv, catalog); err != nil {
 		return err
 	}
-	return registerOfficialInvokeTool(srv, catalog, stdioMode, seedDrop, oobRestore, oobCreate)
+	return registerOfficialInvokeTools(srv, catalog, stdioMode, seedDrop, oobRestore, oobCreate)
 }
 
 // metaToolSchema is a tiny SDK-neutral input schema builder for the static
@@ -348,7 +351,8 @@ type describeToolInput struct {
 	Name string `json:"name" jsonschema:"description=Tool name from search_tools result."`
 }
 
-// invokeToolInput is the typed argument shape for invoke_tool.
+// invokeToolInput is the typed argument shape for the typed invoke
+// dispatchers (invoke_read_tool / invoke_write_tool / invoke_destructive_tool).
 type invokeToolInput struct {
 	Name      string         `json:"name" jsonschema:"description=Tool name from search_tools result."`
 	Arguments map[string]any `json:"arguments,omitempty" jsonschema:"description=Arguments object matching the tool's inputSchema."`
@@ -372,7 +376,7 @@ func registerOfficialSearchTools(srv *sdk.Server, catalog *ToolCatalog) error {
 	// Discovery workflow. This description documents the full search ->
 	// describe -> invoke loop and the dual-surface policy (some file-I/O
 	// tools are host-curated and not in this catalog).
-	discoveryNote := "Search the internal tool catalog by a single keyword. No boolean (AND/OR) syntax: pass one keyword at a time (e.g. 'pin', not 'pin OR upload'). Name matches are ranked exact, then starts-with, contains, then within-segment subsequence (a fuzzy abbreviation within a single word of the name), then whole-word description matches; tools that never match are omitted. Use the 'category' filter to narrow scope and 'limit' to cap results. Leave query empty or use 'help' for an onboarding listing of just the primary start-here tools, which also carries agent_guide for the full flows and a hint pointing at category browsing for a specific domain. Workflow: after discovering a tool here, call describe_tool(name) for its input schema, then invoke_tool(name, arguments). Capability and file-transfer tools are exposed directly on the tool surface AND indexed here, so they are discoverable by name (e.g. 'upload', 'capabilities'). Interactive wizard flows (category 'wizard') are excluded unless you filter for them specifically."
+	discoveryNote := "Search the internal tool catalog by a single keyword. No boolean (AND/OR) syntax: pass one keyword at a time (e.g. 'pin', not 'pin OR upload'). Name matches are ranked exact, then starts-with, contains, then within-segment subsequence (a fuzzy abbreviation within a single word of the name), then whole-word description matches; tools that never match are omitted. Use the 'category' filter to narrow scope and 'limit' to cap results. Leave query empty or use 'help' for an onboarding listing of just the primary start-here tools, which also carries agent_guide for the full flows and a hint pointing at category browsing for a specific domain. Workflow: after discovering a tool here, call describe_tool(name) for its input schema; the describe response carries an invokeTool field naming the typed dispatcher that executes it (invoke_read_tool for read-only tools, invoke_write_tool for mutating tools, invoke_destructive_tool for destructive tools — each dispatcher refuses out-of-class tools, so route by the named one). Capability and file-transfer tools are exposed directly on the tool surface AND indexed here, so they are discoverable by name (e.g. 'upload', 'capabilities'). Interactive wizard flows (category 'wizard') are excluded unless you filter for them specifically."
 
 	desc := model.ToolDescriptor{
 		Name:          "search_tools",
@@ -464,98 +468,209 @@ func registerOfficialDescribeTool(srv *sdk.Server, catalog *ToolCatalog) error {
 	return sdk.RegisterTool(srv, sdkHandlerDeps, desc)
 }
 
-func registerOfficialInvokeTool(srv *sdk.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *oob.SeedDrop, oobRestore *oob.OOBRestore, oobCreate *oob.OOBCreate) error {
-	schema := &metaToolSchema{}
-	schema.property("name", map[string]any{
-		"type":        "string",
-		"description": "Tool name from search_tools result",
-	})
-	schema.property("arguments", map[string]any{
-		"type":        "object",
-		"description": "Arguments object matching the tool's inputSchema. Use describe_tool to see the schema.",
-	})
+// invokeClass identifies the safety class a typed invoke dispatcher admits.
+// The platform directory validators (OpenAI/Claude) require a tool's hints to
+// match what the tool CAN do, and explicitly reject a single catch-all tool
+// that mixes safe and unsafe operations. name+arguments dispatch therefore
+// lives in three typed tools, each admitted exactly one safety class, so the
+// wire annotations are truthful and no dispatcher straddles a safety
+// boundary.
+type invokeClass int
 
-	desc := model.ToolDescriptor{
-		Name:          "invoke_tool",
-		Title:         "Invoke a catalog tool",
-		Description:   "Execute a tool by name with the given arguments. This is the third step of the discovery workflow: search_tools(name) to find a tool, describe_tool(name) for its input schema, then invoke_tool(name, arguments). The arguments object is validated against the tool's inputSchema returned by describe_tool.",
-		OpenWorldHint: false,
-		InputSchema:   schema.raw(),
+const (
+	invokeClassRead invokeClass = iota
+	invokeClassWrite
+	invokeClassDestructive
+)
+
+// classifyEntry maps a catalog entry's platform hints onto the typed-invoke
+// safety class. The hint values (not the raw catalog Safety) drive the split
+// because they are the platform-truthful classification — e.g. the auth_status
+// override (an out-of-band sign-in email cannot be unsent) moves it into the
+// destructive bucket despite its SafetyRead origin. A readOnly entry that
+// still declares openWorld contradicts the read contract (validators reject
+// readOnly+openWorld), so it is conservatively reachable only through the
+// write dispatcher, whose hints cover it.
+func classifyEntry(entry *model.ToolEntry) invokeClass {
+	switch {
+	case entry.Destructive:
+		return invokeClassDestructive
+	case entry.ReadOnly && !entry.OpenWorldHint:
+		return invokeClassRead
+	default:
+		return invokeClassWrite
+	}
+}
+
+// dispatcher is the MCP tool name of the typed invoke tool for this class.
+func (c invokeClass) dispatcher() string {
+	switch c {
+	case invokeClassRead:
+		return "invoke_read_tool"
+	case invokeClassDestructive:
+		return "invoke_destructive_tool"
+	default:
+		return "invoke_write_tool"
+	}
+}
+
+// registerOfficialInvokeTools registers the three typed invoke dispatchers.
+// Each executes only catalog tools of its own safety class and refuses the
+// rest with a pointer to the right dispatcher, keeping progressive discovery
+// while making every MCP tool's annotations match its real capabilities.
+func registerOfficialInvokeTools(srv *sdk.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *oob.SeedDrop, oobRestore *oob.OOBRestore, oobCreate *oob.OOBCreate) error {
+	specs := []struct {
+		name        string
+		title       string
+		description string
+		class       invokeClass
+		readOnly    bool
+		destructive bool
+		openWorld   bool
+	}{
+		{
+			name:        "invoke_read_tool",
+			title:       "Invoke a read-only catalog tool",
+			description: "Execute a read-only catalog tool by name with the given arguments. This is the third step of the discovery workflow: search_tools(name) to find a tool, describe_tool(name) for its input schema (the describe response names the dispatcher to invoke), then invoke_read_tool(name, arguments) for any tool whose describe response names invoke_read_tool — read-only tools with readOnlyHint=true and no open-world interaction. The dispatcher refuses non-read-only tools; use invoke_write_tool or invoke_destructive_tool for those. The arguments object is validated against the tool's inputSchema returned by describe_tool.",
+			class:       invokeClassRead,
+			readOnly:    true,
+		},
+		{
+			name:        "invoke_write_tool",
+			title:       "Invoke a mutating catalog tool",
+			description: "Execute a state-mutating (but not destructive, and generally not read-only) catalog tool by name with the given arguments. This is the third step of the discovery workflow: search_tools(name) to find a tool, describe_tool(name) for its input schema (the describe response names the dispatcher to invoke), then invoke_write_tool(name, arguments) for any tool whose describe response names invoke_write_tool — every tool that is neither read-only (invoke_read_tool) nor destructive (invoke_destructive_tool). The dispatcher refuses read-only and destructive tools; use invoke_read_tool or invoke_destructive_tool for those. The arguments object is validated against the tool's inputSchema returned by describe_tool.",
+			class:       invokeClassWrite,
+			openWorld:   true,
+		},
+		{
+			name:        "invoke_destructive_tool",
+			title:       "Invoke a destructive catalog tool",
+			description: "Execute a destructive (irreversible / deletion) catalog tool by name with the given arguments. This is the third step of the discovery workflow: search_tools(name) to find a tool, describe_tool(name) for its input schema (the describe response names the dispatcher to invoke), then invoke_destructive_tool(name, arguments) for any tool whose describe response names invoke_destructive_tool — tools whose hints carry destructiveHint=true. Destructive operations additionally require human confirmation (the server returns a needs_human hand-off before running). The dispatcher refuses non-destructive tools; use invoke_read_tool or invoke_write_tool for those. The arguments object is validated against the tool's inputSchema returned by describe_tool.",
+			class:       invokeClassDestructive,
+			destructive: true,
+			openWorld:   true,
+		},
 	}
 
-	desc.Handler = model.PinnerToolHandler(func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
-		in, err := toolargs.DecodeToolArgs[invokeToolInput](request)
-		if err != nil {
-			return model.ToolResult{IsError: true, Text: err.Error()}, nil
+	for _, spec := range specs {
+		schema := &metaToolSchema{}
+		schema.property("name", map[string]any{
+			"type":        "string",
+			"description": "Tool name from search_tools result",
+		})
+		schema.property("arguments", map[string]any{
+			"type":        "object",
+			"description": "Arguments object matching the tool's inputSchema. Use describe_tool to see the schema.",
+		})
+
+		desc := model.ToolDescriptor{
+			Name:          spec.name,
+			Title:         spec.title,
+			Description:   spec.description,
+			ReadOnly:      spec.readOnly,
+			Destructive:   spec.destructive,
+			OpenWorldHint: spec.openWorld,
+			InputSchema:   schema.raw(),
 		}
-		if in.Name == "" {
-			return model.ToolResult{IsError: true, Text: "name is required"}, nil
-		}
-		toolArgs := in.Arguments
-		if toolArgs == nil {
-			toolArgs = map[string]any{}
-		}
-		entry, ok := catalog.Get(in.Name)
-		if !ok {
-			// Unknown tool: offer nearest names so the agent can recover
-			// without a separate search round-trip.
-			suggestions := catalog.Suggest(in.Name, 3)
-			resp := map[string]any{
-				"error":   fmt.Sprintf("unknown tool: %s", in.Name),
-				"suggest": suggestions,
+
+		desc.Handler = model.PinnerToolHandler(func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
+			in, err := toolargs.DecodeToolArgs[invokeToolInput](request)
+			if err != nil {
+				return model.ToolResult{IsError: true, Text: err.Error()}, nil
 			}
-			if len(suggestions) > 0 {
-				resp["message"] = "unknown tool. did you mean one of these?"
+			if in.Name == "" {
+				return model.ToolResult{IsError: true, Text: "name is required"}, nil
 			}
-			out, _ := json.Marshal(resp)
-			return model.ToolResult{IsError: true, Text: string(out)}, nil
-		}
+			toolArgs := in.Arguments
+			if toolArgs == nil {
+				toolArgs = map[string]any{}
+			}
+			entry, ok := catalog.Get(in.Name)
+			if !ok {
+				// Unknown tool: offer nearest names so the agent can recover
+				// without a separate search round-trip.
+				suggestions := catalog.Suggest(in.Name, 3)
+				resp := map[string]any{
+					"error":   fmt.Sprintf("unknown tool: %s", in.Name),
+					"suggest": suggestions,
+				}
+				if len(suggestions) > 0 {
+					resp["message"] = "unknown tool. did you mean one of these?"
+				}
+				out, _ := json.Marshal(resp)
+				return model.ToolResult{IsError: true, Text: string(out)}, nil
+			}
 
-		// Admin tools are gated from invoke_tool, matching the search/describe
-		// gate: an agent that somehow knows an admin tool name by heart cannot
-		// invoke it. Admin tools are only discoverable via
-		// search_tools(category=admin) and are not invokable through this path.
-		if entry.Category == model.CategoryAdmin {
-			return model.ToolResult{IsError: true, Text: fmt.Sprintf("admin tool %s is not available through invoke_tool; use search_tools with category=admin to discover admin tools", in.Name)}, nil
-		}
+			// Safety-class gate: each dispatcher admits one class only. This is
+			// the server-side half of the typed-invoke split — the annotations
+			// claim a capability, and the handler enforces that the capability
+			// boundary actually holds at dispatch time.
+			if got := classifyEntry(entry); got != spec.class {
+				return model.ToolResult{IsError: true, Text: fmt.Sprintf("tool %s is a %s operation; call %s(name, arguments) instead", in.Name, classNoun(got), got.dispatcher())}, nil
+			}
 
-		// Steer agents away from commands they cannot run safely over the MCP
-		// channel, instead of letting them hang. A human-only (interactive)
-		// command always redirects. Everything else runs normally.
-		//
-		// Stdin-reading is a CLI-side concern only and is never gated here: a
-		// command whose action reads piped stdin (e.g. `vault restore
-		// --seed-stdin`) is a human/terminal mechanism that is not exposed
-		// through MCP. The agent-facing vault tools are the agent-safe OOB
-		// hand-offs (vaultSetupOps), which never touch os.Stdin. So the invoke
-		// gate only redirects interactive (human-only setup) tools.
-		switch entry.Interaction {
-		case model.InteractionInteractive:
-			return model.NeedsHumanResult(model.NeedsHuman{
-				Reason:     model.ReasonInteractiveOnly,
-				ResumeTool: "",
-				Detail:     "This command is human-only (it prompts interactively) and has no agent-safe form. Run it via the CLI, or use the curated agent tool for the same workflow.",
-			}), nil
-		}
+			// Admin tools are gated from the invoke dispatchers, matching the
+			// search/describe gate: an agent that somehow knows an admin tool
+			// name by heart cannot invoke it. Admin tools are only discoverable
+			// via search_tools(category=admin) and are not invokable through
+			// this path.
+			if entry.Category == model.CategoryAdmin {
+				return model.ToolResult{IsError: true, Text: fmt.Sprintf("admin tool %s is not available through the invoke dispatchers; use search_tools with category=admin to discover admin tools", in.Name)}, nil
+			}
 
-		// Thread the calling client's Caps through to the inner tool so it can
-		// adapt per host (e.g. profile-aware dev_* tools). Caps was previously
-		// dropped here; every handler already nil-guards it.
-		result, err := entry.Handler(ctx, model.ToolRequest{Name: in.Name, Arguments: toolArgs, Caps: request.Caps})
-		if err != nil {
-			return model.ToolResult{IsError: true, Text: err.Error()}, nil
-		}
-		// invoke_tool dispatches to the inner catalog handler directly, so the
-		// outer adapter's annotation (keyed on req.Params.Name ==
-		// "invoke_tool") never sees the real tool. Annotate here with the
-		// resolved inner name so companion-app metadata reaches text-only hosts
-		// for non-DirectVisible tools (e.g. vault_create/vault_restore) that are
-		// only reachable through this meta-tool.
-		annotateAppOnHandoff(in.Name, request.Caps, &result)
-		return result, nil
-	})
+			// Steer agents away from commands they cannot run safely over the MCP
+			// channel, instead of letting them hang. A human-only (interactive)
+			// command always redirects. Everything else runs normally.
+			//
+			// Stdin-reading is a CLI-side concern only and is never gated here: a
+			// command whose action reads piped stdin (e.g. `vault restore
+			// --seed-stdin`) is a human/terminal mechanism that is not exposed
+			// through MCP. The agent-facing vault tools are the agent-safe OOB
+			// hand-offs (vaultSetupOps), which never touch os.Stdin. So the invoke
+			// gate only redirects interactive (human-only setup) tools.
+			switch entry.Interaction {
+			case model.InteractionInteractive:
+				return model.NeedsHumanResult(model.NeedsHuman{
+					Reason:     model.ReasonInteractiveOnly,
+					ResumeTool: "",
+					Detail:     "This command is human-only (it prompts interactively) and has no agent-safe form. Run it via the CLI, or use the curated agent tool for the same workflow.",
+				}), nil
+			}
 
-	return sdk.RegisterTool(srv, sdkHandlerDeps, desc)
+			// Thread the calling client's Caps through to the inner tool so it can
+			// adapt per host (e.g. profile-aware dev_* tools). Caps was previously
+			// dropped here; every handler already nil-guards it.
+			result, err := entry.Handler(ctx, model.ToolRequest{Name: in.Name, Arguments: toolArgs, Caps: request.Caps})
+			if err != nil {
+				return model.ToolResult{IsError: true, Text: err.Error()}, nil
+			}
+			// The typed dispatcher routes to the inner catalog handler directly,
+			// so the outer adapter's annotation (keyed on the dispatcher name)
+			// never sees the real tool. Annotate here with the resolved inner
+			// name so companion-app metadata reaches text-only hosts for
+			// non-DirectVisible tools (e.g. vault_create/vault_restore) that are
+			// only reachable through the meta-tools.
+			annotateAppOnHandoff(in.Name, request.Caps, &result)
+			return result, nil
+		})
+
+		if err := sdk.RegisterTool(srv, sdkHandlerDeps, desc); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// classNoun names a safety class in human-readable error text.
+func classNoun(c invokeClass) string {
+	switch c {
+	case invokeClassRead:
+		return "read-only"
+	case invokeClassDestructive:
+		return "destructive"
+	default:
+		return "mutating"
+	}
 }
 
 // RegisterOfficialDescriptor adds one Pinner-owned tool directly to tools/list.
@@ -572,7 +687,8 @@ func RegisterOfficialDescriptor(srv *sdk.Server, desc model.ToolDescriptor) erro
 // RegisterOfficialCuratedTools exposes the catalog's directly-visible tools
 // (those with DirectVisible set) as standard tools/list tools. Remaining
 // catalog entries stay behind the progressive-disclosure meta-tools
-// (search_tools / describe_tool / invoke_tool) which index the whole catalog.
+// (search_tools / describe_tool / invoke_read_tool / invoke_write_tool /
+// invoke_destructive_tool) which index the whole catalog.
 func RegisterOfficialCuratedTools(srv *sdk.Server, catalog *ToolCatalog) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")

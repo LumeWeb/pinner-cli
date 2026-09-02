@@ -474,7 +474,7 @@ It is **not** an MCP tool.
 Do not pass `<host PUT>` to:
 
 - `describe_tool`
-- `invoke_tool`
+- the typed invoke dispatchers (`invoke_read_tool` / `invoke_write_tool` / `invoke_destructive_tool`)
 
 It represents the host action of PUTing bytes to the minted URL.
 

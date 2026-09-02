@@ -45,7 +45,7 @@ func TestBuildInstructionsEmbedsCount(t *testing.T) {
 	// The two-tier surface is documented so clients that read tools/list learn
 	// an absent tool is reachable via discovery, not missing/broken.
 	require.Contains(t, got, "intentionally two-tier")
-	require.Contains(t, got, "reachable via search_tools -> describe_tool -> invoke_tool")
+	require.Contains(t, got, "reachable via search_tools -> describe_tool -> invoke_read_tool/invoke_write_tool/invoke_destructive_tool")
 	// The system prompt must direct agents to agent_guide and include the
 	// publish/website flow so agents know how to create websites.
 	require.Contains(t, got, "call agent_guide first")
@@ -122,7 +122,7 @@ func TestStringSliceFlagEmitsArraySchema(t *testing.T) {
 // TestVaultRestoreInteractionStaysStdinInputThroughBuildCatalog asserts that
 // buildCatalog never reclassifies pinner_vault_restore away from stdin_input,
 // even when an OOB restore coordinator is wired. The Interaction enum drives
-// the invoke_tool stdin gate (sdk_official.go), which switches on
+// the invoke dispatchers' stdin gate (sdk_official.go), which switches on
 // entry.Interaction: if it became agent_safe, a --seed-stdin invocation would
 // fall through the switch and run io.ReadAll(os.Stdin), desyncing the stdio
 // MCP transport. The non-stdin OOB hand-off is already permitted by the
@@ -184,7 +184,7 @@ func TestSSOToolsDiscoverableInCatalog(t *testing.T) {
 	assert.Equal(t, 1, ssoCount, "auth_sso must be listed exactly once")
 	assert.Equal(t, 1, resumeCount, "auth_resume must be listed exactly once")
 
-	// describe_tool / invoke_tool must also resolve them. auth_sso is an
+	// describe_tool / the invoke dispatchers must also resolve them. auth_sso is an
 	// account-domain tool, so it surfaces under CategoryAccount.
 	d, err := catalog.Describe("auth_sso")
 	require.NoError(t, err)

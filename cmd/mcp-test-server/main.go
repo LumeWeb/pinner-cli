@@ -1,7 +1,7 @@
 // Command mcp-test-server boots the swagger-generated fake Pinner API
 // (internal/mcptest) on a localhost port. It is the upstream API double used
 // by the Sunpeak MCP end-to-end tests: the pinner MCP server is pointed at
-// this endpoint so `invoke_tool` calls return real data instead of an
+// this endpoint so the invoke dispatchers return real data instead of an
 // "authentication required" error.
 //
 // It is a test-only binary, not part of the production pinner command.

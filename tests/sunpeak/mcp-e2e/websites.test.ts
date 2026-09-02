@@ -12,7 +12,7 @@ test.describe.configure({ mode: 'serial' });
 
 /**
  * Website tools (websites_* / websites_domains_*) driven through the
- * host-discovery contract: every call goes through invoke_tool with
+ * host-discovery contract: every call goes through the typed invoke dispatchers with
  * { name, args }, never by calling the direct tool name.
  *
  * CI-PENDING: this file is verified in CI (it drives tools through the real

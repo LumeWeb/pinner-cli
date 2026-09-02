@@ -16,7 +16,7 @@ const (
 )
 
 // Interaction classifies how a tool behaves when invoked by an agent over the
-// MCP channel (via invoke_tool). It lets the server steer agents away from
+// MCP channel (via the typed invoke dispatchers). It lets the server steer agents away from
 // commands that would read drained stdin or block on a prompt, and instead
 // return a structured redirect so an agent never hangs on a deep command.
 //
@@ -31,7 +31,7 @@ const (
 	InteractionAgentSafe Interaction = "agent_safe"
 	// InteractionInteractive marks a tool that is purely human-facing (a
 	// wizard/setup flow that prompts interactively). Agents should not invoke
-	// it; invoke_tool redirects, and search_tools hides it.
+	// it; the invoke dispatchers redirect, and search_tools hides it.
 	InteractionInteractive Interaction = "interactive"
 )
 

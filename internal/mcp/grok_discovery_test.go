@@ -79,7 +79,8 @@ func TestGuideHintTargetIsResolvable(t *testing.T) {
 	_, err := catalog.Describe("agent_guide")
 	require.NoError(t, err)
 
-	// invoke_tool(agent_guide) must be invokable (registered, seeded handler).
+	// agent_guide must be invokable (registered, seeded handler); the typed
+	// invoke dispatchers call it through catalog.Get.
 	_, ok := catalog.Get("agent_guide")
 	require.True(t, ok, "agent_guide must be registered for invoke")
 }

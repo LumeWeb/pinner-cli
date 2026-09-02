@@ -18,7 +18,7 @@ type customToolSpec struct {
 	desc model.ToolDescriptor
 
 	// index adds the tool to the ToolCatalog so it is discoverable through
-	// search_tools/describe_tool/invoke_tool. App views resolve their
+	// search_tools/describe_tool/typed-invoke dispatchers. App views resolve their
 	// launchers against the catalog, so index always precedes app install.
 	index bool
 

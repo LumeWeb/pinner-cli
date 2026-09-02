@@ -10,7 +10,7 @@ test.describe.configure({ mode: 'serial' });
 /**
  * IPNS domain tools (ipns_keys_* / ipns_publish / ipns_republish /
  * ipns_resolve) driven through the host-discovery contract: every call goes
- * through invoke_tool (the progressive-disclosure meta-tool) with { name,
+ * through the typed invoke dispatchers (the progressive-disclosure meta-tools) with { name,
  * args }, never by calling the direct tool name.
  *
  * CI-PENDING: this file is verified in CI (it drives tools through the real
@@ -39,7 +39,7 @@ test.describe.configure({ mode: 'serial' });
  *   - ipns_republish takes `key-name` and returns {count, message}.
  *   - ipns_keys_delete is SafetyDestructive; the MCP dispatch layer refuses
  *     destructive ops invoked by a model actor with a needs_human
- *     confirmation handoff BEFORE the handler runs. Through invoke_tool it
+ *     confirmation handoff BEFORE the handler runs. Through the invoke tool it
  *     always returns the confirmation hand-off, not a delete. This locks the
  *     gate.
  */

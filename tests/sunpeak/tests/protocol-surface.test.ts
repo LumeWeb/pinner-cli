@@ -15,14 +15,20 @@ test('server exposes the progressive-disclosure tool surface', async ({ mcp }) =
   const tools = await mcp.listTools();
   const names = tools.map((t) => t.name);
 
-  // The three always-visible adapter tools are the discovery entry points.
-  for (const name of ['search_tools', 'describe_tool', 'invoke_tool']) {
+  // The always-visible adapter tools are the discovery entry points.
+  for (const name of [
+    'search_tools',
+    'describe_tool',
+    'invoke_read_tool',
+    'invoke_write_tool',
+    'invoke_destructive_tool',
+  ]) {
     expect(names).toContain(name);
   }
 
-  // The catalog surface is larger than the always-visible trio (auth, vault,
-  // upload, account ops, etc.).
-  expect(tools.length).toBeGreaterThan(3);
+  // The catalog surface is larger than the always-visible meta set (auth,
+  // vault, upload, account ops, etc.).
+  expect(tools.length).toBeGreaterThan(5);
 });
 
 test('every advertised tool carries a valid JSON schema with required args', async ({ mcp }) => {
@@ -55,7 +61,7 @@ test('describe_tool returns a schema for a known catalog tool', async ({ mcp }) 
 });
 
 test('unauthenticated call fails cleanly with a machine-readable error, not a crash', async ({ mcp }) => {
-  // `invoke_tool` dispatches to a real catalog operation. Without an authed
+  // The typed invoke dispatchers route to a real catalog operation. Without an authed
   // session it must fail with isError:true and a useful message rather than
   // hang or hard-crash the server process. Use a real registered tool
   // (account_info) so we exercise the auth check, not the unknown-tool path.
@@ -65,11 +71,11 @@ test('unauthenticated call fails cleanly with a machine-readable error, not a cr
   // authenticated, so `account_info` legitimately succeeds and the
   // unauthenticated-error contract cannot be exercised. Skip in that case
   // rather than fail the run; CI has no token and still asserts the gate.
-  const probe = await mcp.callTool('invoke_tool', { name: 'account_info', args: {} });
+  const probe = await mcp.callTool('invoke_read_tool', { name: 'account_info', args: {} });
   if (!probe.isError) {
     test.skip(true, 'environment is already authenticated; cannot exercise the unauthenticated path');
   }
-  const result = await mcp.callTool('invoke_tool', { name: 'account_info', args: {} });
+  const result = await mcp.callTool('invoke_read_tool', { name: 'account_info', args: {} });
   expect(result.isError).toBe(true);
   const text = result.content?.map((c) => c.text ?? '').join('') ?? '';
   // The actual error is `authentication failed: not authenticated: no auth

@@ -733,7 +733,7 @@ When running under an MCP client, the server exposes three meta-tools for progre
 |-----------|---------|
 | `search_tools` | Search the internal tool catalog by keyword or category (`core`, `admin`, `wizard`) |
 | `describe_tool` | Get the full JSON Schema input definition for a specific tool |
-| `invoke_tool` | Execute a tool by name with arguments |
+| `invoke_read_tool` / `invoke_write_tool` / `invoke_destructive_tool` | Execute a tool by name with arguments; the dispatchers are split by safety class (read-only / mutating / destructive) and `describe_tool` names the right one |
 
 **Wizard tools** (website onboarding, setup) are also available through the meta-tools. They use FSM-based sessions with a 30-minute TTL and a 100-session limit.
 
@@ -900,7 +900,7 @@ pinner-cli/
 ├── pkg/internal/mcp/              # MCP adapter (MCPCommand, sessions, resources, prompts)
 │   ├── adapter.go                 # MCPCommand build and stdio serving
 │   ├── catalog.go                 # Tool catalog with progressive disclosure
-│   ├── meta_tools.go             # search_tools, describe_tool, invoke_tool
+│   ├── meta_tools.go             # search_tools, describe_tool, typed invoke dispatchers
 │   ├── session.go                # FSM-based wizard session store
 │   ├── wizard.go                 # Website and setup wizard MCP tools
 │   ├── resources.go              # pinner:// resource handlers
@@ -934,7 +934,7 @@ pinner-cli/
 | `BillingAdminService` | Admin credits, price lines, pricing plans, subscribers |
 | `WebsiteAdminService` | Admin website block/unblock |
 
-**MCP Adapter**: `pkg/internal/mcp/` adapts the urfave/cli command tree into an MCP server (`mcp.MCPCommand`). It exposes subcommands as MCP tools via progressive disclosure (only `search_tools`, `describe_tool`, `invoke_tool` are visible in `tools/list`). Tool invocation is in-process — no subprocess fork. The adapter injects `--agent` automatically for all invocations. Wizard sessions are FSM-based with TTL cleanup. Resources and prompts are registered via `ResourceProvidersFactory` and `WithPrompts()`.
+**MCP Adapter**: `pkg/internal/mcp/` adapts the urfave/cli command tree into an MCP server (`mcp.MCPCommand`). It exposes subcommands as MCP tools via progressive disclosure (only `search_tools`, `describe_tool`, and the typed invoke dispatchers `invoke_read_tool`/`invoke_write_tool`/`invoke_destructive_tool` are visible in `tools/list`). Tool invocation is in-process — no subprocess fork. The adapter injects `--agent` automatically for all invocations. Wizard sessions are FSM-based with TTL cleanup. Resources and prompts are registered via `ResourceProvidersFactory` and `WithPrompts()`.
 
 **Output Formatting**: The `Output` interface provides methods for formatted output (`Print`, `Printf`, `PrintTable`, `PrintJSON`, etc.) with both human-readable and JSON implementations, selected by the `--json` flag.
 

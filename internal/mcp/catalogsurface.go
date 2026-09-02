@@ -32,7 +32,7 @@ func startupProfile() hostenv.PlatformProfile {
 // This file is the bridge between the operation catalog (the compiler-backed
 // source of truth for MCP tool descriptions/schemas) and the legacy ToolCatalog
 // that drives the official MCP server's progressive-disclosure meta-tools
-// (search_tools, describe_tool, invoke_tool).
+// (search_tools, describe_tool, invoke_read_tool/invoke_write_tool/invoke_destructive_tool).
 //
 // The compiled catalog yields ToolDescriptors whose Description/InputSchema
 // come from the catalogops MCPTargets fallback and typed arg metadata, so CLI

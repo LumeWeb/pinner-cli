@@ -2,19 +2,21 @@ import { test, expect } from 'sunpeak/test';
 import { invoke, describeTool, searchTool, textOf } from './helpers';
 
 /**
- * Progressive-disclosure meta-tools: search_tools / describe_tool / invoke_tool
- * and the host-curated orientation tools (capabilities / agent_guide).
+ * Progressive-disclosure meta-tools: search_tools / describe_tool and the
+ * typed invoke dispatchers (invoke_read_tool / invoke_write_tool /
+ * invoke_destructive_tool) plus the host-curated orientation tools
+ * (capabilities / agent_guide).
  *
- * search_tools / describe_tool / invoke_tool operate over the FULL operation
+ * The meta-tools operate over the FULL operation
  * catalog (reachable by keyword / name); capabilities and agent_guide are
  * direct tools on the public surface. These tests lock the discovery contract:
  * ranked keyword search, input-schema introspection, the clean error paths of
- * invoke_tool, and the structured orientation output of the two direct tools.
+ * the typed invoke tools, and the structured orientation output of the two direct tools.
  *
  * Keywords / structured shapes below were probed against the running server
  * (2026-08-22) before being locked.
  *
- * NOTE on isCleanSuccess: it is tuned for API-touching invoke_tool results and
+ * NOTE on isCleanSuccess: it is tuned for API-touching invoke results and
  * flags the words "authenticated"/"authentication" as auth failures. Those words
  * legitimately appear inside catalog *descriptions* returned by search_tools /
  * describe_tool, so for those discovery tools we use `not.toBeError()` as the
@@ -78,16 +80,16 @@ test('describe_tool returns the input schema', async ({ mcp }) => {
   expect(accountInfo).toHaveTextContent('"type":"object"');
 });
 
-// ── invoke_tool: unknown + validation error paths ───────────────────
+// ── typed invoke tools: unknown + validation error paths ───────────
 
-test('invoke_tool with unknown name returns a clean error', async ({ mcp }) => {
+test('invoke with unknown name returns a clean error', async ({ mcp }) => {
   const result = await invoke(mcp, '_definitely_not_a_real_tool_', {});
   expect(result).toBeError();
   // A clean error still carries explanatory text; it must not crash the session.
   expect(result).toHaveTextContent('unknown tool');
 });
 
-test('invoke_tool with missing required arg returns a validation error', async ({ mcp }) => {
+test('invoke with missing required arg returns a validation error', async ({ mcp }) => {
   const result = await invoke(mcp, 'pins_add', {});
   expect(result).toBeError();
   // pins_add requires cids; the validation failure names the missing field.
@@ -175,7 +177,7 @@ test('agent_guide returns a coherent guide whose steps resolve to real tools', a
   }
 
   // Cross-surface invariant: every step tool the guide names resolves to a real
-  // tool in the catalog (advertised OR behind invoke_tool). describe_tool alone
+  // tool in the catalog (advertised OR behind the typed invoke tools). describe_tool alone
   // only resolves catalog operations, so host-curated direct tools the guide
   // legitimately references (e.g. capabilities) would be flagged "unknown".
   // A step is real if it is either on the advertised tools/list (covers direct
@@ -189,14 +191,14 @@ test('agent_guide returns a coherent guide whose steps resolve to real tools', a
 });
 
 // Sanity: the session is still healthy after the error-path tests (unknown tool
-// and validation failure). We re-route a call through invoke_tool and confirm
+// and validation failure). We re-route a call through the typed invoke tool and confirm
 // it still VALIDATES deterministically (clean arg-validation error, not a
 // crashed/hung session). We deliberately avoid an upstream-API-touching call
 // (e.g. account_info) here: the fake API is shared and its auth-ping route is
 // flaky under the parallel suite, which would make this session-health check
 // depend on an unrelated upstream double.
 test('session survives the error-path tests', async ({ mcp }) => {
-  // invoke_tool must still be responsive and validating after the earlier
+  // The invoke tool must still be responsive and validating after the earlier
   // unknown-tool and missing-arg errors — a clean validation error proves the
   // session did not crash or wedge.
   const result = await invoke(mcp, 'pins_add', {});

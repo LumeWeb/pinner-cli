@@ -11,11 +11,11 @@ test.describe.configure({ mode: 'serial' });
 
 /**
  * Auth domain tools (auth_status / auth_login / auth_logout) driven through
- * the host-discovery contract: every call goes through invoke_tool (the
+ * the host-discovery contract: every call goes through the typed invoke dispatchers (the
  * progressive-disclosure meta-tool) with { name, args } — the same path a
  * ChatGPT/Claude host uses to surface catalog tools. auth_status and
  * auth_logout are directly curated onto tools/list; auth_login deliberately
- * lives only behind invoke_tool (tool-surface.test.ts enforces that).
+ * lives only behind the typed invoke tools (tool-surface.test.ts enforces that).
  *
  * STATE SAFETY (the tricky part): auth_login and auth_logout are LOCAL config
  * operations — they persist the edited credential to

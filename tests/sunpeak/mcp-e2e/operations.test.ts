@@ -3,12 +3,12 @@ import { invoke } from './helpers';
 
 /**
  * Operations domain tools (operations_list / operations_get) driven through
- * the host-discovery contract: every call goes through invoke_tool with
+ * the host-discovery contract: every call goes through the typed invoke dispatchers with
  * { name, args } — the same path a ChatGPT/Claude host uses.
  *
  * These read the seeded operations (internal/mcptest/account SeedOperations
  * seeds two deterministic rows: id 1 = completed pin, id 2 = running upload),
- * proving the full invoke_tool -> MCP -> SDK -> fake-API chain returns real
+ * proving the full typed-invoke -> MCP -> SDK -> fake-API chain returns real
  * operation data (not a 501 stub or a generic error).
  */
 test.describe.configure({ mode: 'serial' });
