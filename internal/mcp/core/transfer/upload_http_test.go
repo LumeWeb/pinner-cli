@@ -44,10 +44,24 @@ func TestUploadCredentialPropagatesToExecutor(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, resp.StatusCode)
 	resp.Body.Close()
 
-	v := got.Load().(struct {
+	// The PUT returns 202 while the upload task executes on its own
+	// goroutine, so the executor result races these assertions.
+	var v struct {
 		body string
 		jwt  string
-	})
+	}
+	require.Eventually(t, func() bool {
+		loaded, ok := got.Load().(struct {
+			body string
+			jwt  string
+		})
+		if !ok {
+			return false
+		}
+		v = loaded
+		return true
+	}, 5*time.Second, 10*time.Millisecond, "executor must have run and stored its result")
+
 	require.Equal(t, "credentialed body", v.body)
 	require.Equal(t, "portal.jwt.upload", v.jwt, "executor must receive the mint-time JWT via credctx")
 }
@@ -78,10 +92,24 @@ func TestUploadNoCredentialIsEmpty(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, resp.StatusCode)
 	resp.Body.Close()
 
-	v := got.Load().(struct {
+	// The PUT returns 202 while the upload task executes on its own
+	// goroutine, so the executor result races these assertions.
+	var v struct {
 		body string
 		jwt  string
-	})
+	}
+	require.Eventually(t, func() bool {
+		loaded, ok := got.Load().(struct {
+			body string
+			jwt  string
+		})
+		if !ok {
+			return false
+		}
+		v = loaded
+		return true
+	}, 5*time.Second, 10*time.Millisecond, "executor must have run and stored its result")
+
 	require.Equal(t, "plain body", v.body)
 	require.Equal(t, "", v.jwt, "no JWT minted => credctx.From must be empty")
 }
