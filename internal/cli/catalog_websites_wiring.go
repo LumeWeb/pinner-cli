@@ -319,7 +319,7 @@ func websitesActionAdapter(op catalog.Operation) cli.ActionFunc {
 					}
 					headers := []string{"Field", "Value"}
 					rows := [][]string{
-						{"Status", website.Ssl.Status},
+						{"Status", string(website.Ssl.Status)},
 						{"Issued At", formatTimePtr(website.Ssl.IssuedAt)},
 						{"Last Updated", formatTimePtr(website.Ssl.LastUpdatedAt)},
 					}
@@ -471,10 +471,10 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operatio
 			}
 			status := ""
 			if d.Status != nil {
-				status = *d.Status
+				status = string(*d.Status)
 			}
 			return []string{
-				fmt.Sprintf("%d", d.Id), d.Domain, d.Namespace, status, zoneName,
+				fmt.Sprintf("%d", d.Id), d.Domain, string(d.Namespace), status, zoneName,
 			}
 		})
 		output.PrintTable(headers, rows)
@@ -572,7 +572,7 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operatio
 func renderDomainResponse(output Output, r *ipfs.DomainResponse) {
 	status := ""
 	if r.Status != nil {
-		status = *r.Status
+		status = string(*r.Status)
 	}
 	zoneName := ""
 	if r.ZoneName != nil {
@@ -581,7 +581,7 @@ func renderDomainResponse(output Output, r *ipfs.DomainResponse) {
 	fields := []Field{
 		{"ID", fmt.Sprintf("%d", r.Id)},
 		{"Domain", r.Domain},
-		{"Namespace", r.Namespace},
+		{"Namespace", string(r.Namespace)},
 		{"Status", status},
 		{"Zone Name", zoneName},
 		// Surface the per-domain DNS hosting state so the user can verify
@@ -603,7 +603,7 @@ func renderDomainResponse(output Output, r *ipfs.DomainResponse) {
 func renderDomainDANEResponse(output Output, r *ipfs.DomainDANERepublishResponse) {
 	status := ""
 	if r.Status != nil {
-		status = *r.Status
+		status = string(*r.Status)
 	}
 	ownerName := ""
 	if r.OwnerName != nil {
@@ -617,7 +617,7 @@ func renderDomainDANEResponse(output Output, r *ipfs.DomainDANERepublishResponse
 		Fields: []Field{
 			{"ID", fmt.Sprintf("%d", r.Id)},
 			{"Domain", r.Domain},
-			{"Namespace", r.Namespace},
+			{"Namespace", string(r.Namespace)},
 			{"Status", status},
 			{"Owner Name", ownerName},
 			{"TLSA Record", tlsaRecord},
@@ -683,7 +683,7 @@ func renderWebsiteSSLStatusHuman(output Output, r *ipfs.WebsiteResponse) {
 	}
 	headers := []string{"Field", "Value"}
 	rows := [][]string{
-		{"Status", r.Ssl.Status},
+		{"Status", string(r.Ssl.Status)},
 		{"Issued At", formatTimePtr(r.Ssl.IssuedAt)},
 		{"Last Updated", formatTimePtr(r.Ssl.LastUpdatedAt)},
 	}

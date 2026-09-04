@@ -12,6 +12,14 @@ type icannDelegationDriver struct{}
 
 func (i *icannDelegationDriver) Render(output Output, result *ipfs.DomainResponse, managed bool) {
 	d := result.Delegation
+	if d == nil {
+		// An ICANN binding with no bundle means Pinner holds nothing for this
+		// name yet (e.g. not bound as a managed domain); there is nothing to
+		// publish from here.
+		output.Printfln("")
+		output.Printfln("No delegation records are available for %s.", result.Domain)
+		return
+	}
 
 	parentTitle := "Parent records (configure at your registrar)"
 

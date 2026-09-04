@@ -111,7 +111,7 @@ func singleWebsiteFixture() *domainsService {
 			return []ipfs.WebsiteItem{{Id: 7, Domain: "example.test"}}, nil
 		},
 		listDomainsFn: func(_ context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
-			return []ipfs.DomainResponse{{Id: 3, Domain: "example.test", Namespace: "icann"}}, nil
+			return []ipfs.DomainResponse{{Id: 3, Domain: "example.test", Namespace: ipfs.DomainNamespaceICANN}}, nil
 		},
 	}
 }
@@ -121,7 +121,7 @@ func TestWebsitesDomainsListResolvesWebsite(t *testing.T) {
 	var gotWebsiteID string
 	fake.listDomainsFn = func(_ context.Context, websiteID string) ([]ipfs.DomainResponse, error) {
 		gotWebsiteID = websiteID
-		return []ipfs.DomainResponse{{Id: 3, Domain: "example.test", Namespace: "icann"}}, nil
+		return []ipfs.DomainResponse{{Id: 3, Domain: "example.test", Namespace: ipfs.DomainNamespaceICANN}}, nil
 	}
 
 	op := websitesDomainsList(domainsDeps(t, fake))
@@ -179,7 +179,7 @@ func TestWebsitesDomainsAddRejectsInvalidNamespace(t *testing.T) {
 	var bindCalled bool
 	fake.bindDomainFn = func(_ context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
 		bindCalled = true
-		return &ipfs.DomainResponse{Id: 9, Domain: req.Domain, Namespace: req.Namespace}, nil
+		return &ipfs.DomainResponse{Id: 9, Domain: req.Domain, Namespace: ipfs.DomainNamespace(req.Namespace)}, nil
 	}
 
 	op := websitesDomainsAdd(domainsDeps(t, fake))
@@ -199,7 +199,7 @@ func TestWebsitesDomainsAddValidNamespaceReachesBindDomain(t *testing.T) {
 	var gotReq ipfs.DomainRequest
 	fake.bindDomainFn = func(_ context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
 		gotReq = req
-		return &ipfs.DomainResponse{Id: 9, Domain: req.Domain, Namespace: req.Namespace}, nil
+		return &ipfs.DomainResponse{Id: 9, Domain: req.Domain, Namespace: ipfs.DomainNamespace(req.Namespace)}, nil
 	}
 
 	op := websitesDomainsAdd(domainsDeps(t, fake))

@@ -61,7 +61,7 @@ func (w *websiteSite) toResponse() WebsiteResponse {
 		ActiveCid:            w.ActiveCid,
 		Created:              w.Created,
 		DnsHostingEnabled:    w.DnsHostingEnabled,
-		DnsZoneId:            w.DnsZoneId,
+		ZoneId:               w.DnsZoneId,
 		Domain:               w.Domain,
 		Expired:              w.Expired,
 		GatewayDomain:        w.GatewayDomain,
@@ -87,7 +87,7 @@ func (w *websiteSite) toItem() WebsiteItem {
 		ActiveCid:            r.ActiveCid,
 		Created:              r.Created,
 		DnsHostingEnabled:    r.DnsHostingEnabled,
-		DnsZoneId:            r.DnsZoneId,
+		ZoneId:               r.ZoneId,
 		Domain:               r.Domain,
 		Expired:              r.Expired,
 		GatewayDomain:        r.GatewayDomain,
@@ -202,7 +202,7 @@ func (s *Server) domainByID(w *websiteSite, domainIDParam string) (*websiteDomai
 
 // GetApiWebsites lists websites for the authenticated user
 // (GET /api/websites).
-func (s *Server) GetApiWebsites(w http.ResponseWriter, r *http.Request) {
+func (s *Server) GetApiWebsites(w http.ResponseWriter, r *http.Request, params GetApiWebsitesParams) {
 	if !s.authorized(r) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
 		return
@@ -228,7 +228,7 @@ func (s *Server) PostApiWebsites(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if body.Domain == "" {
+	if body.Domain == nil || *body.Domain == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "domain is required"})
 		return
 	}
@@ -254,7 +254,7 @@ func (s *Server) PostApiWebsites(w http.ResponseWriter, r *http.Request) {
 		ActiveCid:         &body.TargetHash,
 		Created:           now,
 		DnsHostingEnabled: dnsHosting,
-		Domain:            body.Domain,
+		Domain:            *body.Domain,
 		GatewayDomain:     &host,
 		Id:                s.websiteSeq,
 		IsSubdomain:       false,
@@ -266,7 +266,7 @@ func (s *Server) PostApiWebsites(w http.ResponseWriter, r *http.Request) {
 		ValidationToken:   "tok-" + strconv.Itoa(s.websiteSeq),
 		Domains:           []*websiteDomain{},
 	}
-	ws.Domains = append(ws.Domains, s.newDomainLocked(ws, body.Domain, namespace, true))
+	ws.Domains = append(ws.Domains, s.newDomainLocked(ws, *body.Domain, namespace, true))
 	s.websites[ws.Id] = ws
 	resp := ws.toResponse()
 	s.mu.Unlock()
@@ -437,6 +437,62 @@ func (s *Server) PostApiWebsitesIdValidate(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+
+// PostApiWebsitesIdDomainsDomainIdOnchain converts a bound domain to on-chain
+// managed (POST /api/websites/{id}/domains/{domain_id}/onchain). Mirrors the
+// portal's ConvertToOnChain contract: a non-HNS binding or a name whose NS
+// does not point at an external contract is refused with 422 "is not yet
+// on-chain managed"; an already on-chain binding is refused with 422 "domain
+// is already on-chain managed" (the SDK treats that as idempotent success).
+// On success the binding is re-marked onchain_managed, DNS hosting drops to
+// false, the delegation bundle is dropped, and the owning website re-arms to
+// pending_validation.
+func (s *Server) PostApiWebsitesIdDomainsDomainIdOnchain(w http.ResponseWriter, r *http.Request, id string, domainId string) {
+	if !s.authorized(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "not authenticated"})
+		return
+	}
+	ws, ok := s.websiteByID(id)
+	if !ok {
+		writeNotFound(w)
+		return
+	}
+	d, ok := s.domainByID(ws, domainId)
+	if !ok {
+		writeNotFound(w)
+		return
+	}
+
+	status := ""
+	if d.Status != nil {
+		status = *d.Status
+	}
+	if status == "onchain_managed" {
+		apiError(w, http.StatusUnprocessableEntity, "validation_failed",
+			"domain is already on-chain managed: \""+d.Domain+"\"")
+		return
+	}
+	// The fake's Inspect is deterministic: only HNS bindings are eligible.
+	if d.Namespace != "hns" {
+		apiError(w, http.StatusUnprocessableEntity, "validation_failed",
+			"domain is not yet on-chain managed: \""+d.Domain+"\"; its NS record does not point at an external contract")
+		return
+	}
+
+	s.mu.Lock()
+	now := "pending_validation"
+	onchain := "onchain_managed"
+	ws.Status = now
+	ws.Updated = time.Now().UTC()
+	d.DnsHostingEnabled = false
+	d.Delegation = nil
+	d.GatewayHost = nil
+	d.ZoneName = nil
+	d.Status = &onchain
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, d.toResponse())
+}
+
 // GetApiWebsitesIdDomains lists the domains bound to a website
 // (GET /api/websites/{id}/domains).
 func (s *Server) GetApiWebsitesIdDomains(w http.ResponseWriter, r *http.Request, id string) {
@@ -471,9 +527,9 @@ func (d *websiteDomain) toResponse() DomainResponse {
 		Domain:            d.Domain,
 		GatewayHost:       d.GatewayHost,
 		Id:                d.Id,
-		Namespace:         d.Namespace,
+		Namespace:         DomainResponseNamespace(d.Namespace),
 		Ssl:               ssl,
-		Status:            d.Status,
+		Status:            domainStatusPtr(d.Status),
 		ZoneName:          d.ZoneName,
 	}
 }
@@ -486,14 +542,47 @@ func (d *websiteDomain) toRepublishResponse() DomainDANERepublishResponse {
 		Domain:      d.Domain,
 		GatewayHost: d.GatewayHost,
 		Id:          d.Id,
-		Namespace:   d.Namespace,
+		Namespace:   DomainDANERepublishResponseNamespace(d.Namespace),
 		OwnerName:   d.OwnerName,
 		Ssl:         d.Ssl,
-		Status:      d.Status,
+		Status:      domainDANERepublishStatusPtr(d.Status),
 		TlsaRdata:   &rdata,
 		TlsaRecord:  &tlsa,
 		ZoneName:    d.ZoneName,
 	}
+}
+
+
+// domainStatusPtr converts the fake's stored *string domain status into the
+// typed DomainResponseStatus pointer the wire contract carries now that the
+// status is an enum. nil stays nil.
+func domainStatusPtr(s *string) *DomainResponseStatus {
+	if s == nil {
+		return nil
+	}
+	v := DomainResponseStatus(*s)
+	return &v
+}
+
+// domainDANERepublishStatusPtr is domainStatusPtr for the DANE-republish
+// response's enum type.
+func domainDANERepublishStatusPtr(s *string) *DomainDANERepublishResponseStatus {
+	if s == nil {
+		return nil
+	}
+	v := DomainDANERepublishResponseStatus(*s)
+	return &v
+}
+
+// apiError writes the portal's JSON error envelope ({"error":{"reason",
+// "details"}}) with the given status code.
+func apiError(w http.ResponseWriter, status int, reason, details string) {
+	writeJSON(w, status, ErrorResponse{
+		Error: ErrorDetail{
+			Reason:  reason,
+			Details: &details,
+		},
+	})
 }
 
 // PostApiWebsitesIdDomains binds a domain to a website

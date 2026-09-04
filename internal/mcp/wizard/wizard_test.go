@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
@@ -335,8 +334,8 @@ func (m *mockWebsitesSvc) BindDomain(ctx context.Context, websiteID string, req 
 	return &ipfs.DomainResponse{
 		Id:        1,
 		Domain:    req.Domain,
-		Namespace: req.Namespace,
-		Status:    lo.ToPtr("pending"),
+		Namespace: ipfs.DomainNamespace(req.Namespace),
+		Status:    new(ipfs.DomainResponseStatusRecordsGenerated),
 	}, nil
 }
 
@@ -344,8 +343,8 @@ func (m *mockWebsitesSvc) GetDomainDNSRequirements(_ context.Context, _, _ strin
 	return &ipfs.DomainResponse{
 		Id:        1,
 		Domain:    "example.com",
-		Namespace: "icann",
-		Status:    lo.ToPtr("active"),
+		Namespace: ipfs.DomainNamespaceICANN,
+		Status:    new(ipfs.DomainResponseStatusActive),
 	}, nil
 }
 
@@ -397,8 +396,8 @@ func (m *mockWebsitesSvc) VerifyDomain(_ context.Context, _, _ string) (*ipfs.Do
 	return &ipfs.DomainResponse{
 		Id:        1,
 		Domain:    "example.com",
-		Namespace: "icann",
-		Status:    lo.ToPtr("active"),
+		Namespace: ipfs.DomainNamespaceICANN,
+		Status:    new(ipfs.DomainResponseStatusActive),
 	}, nil
 }
 

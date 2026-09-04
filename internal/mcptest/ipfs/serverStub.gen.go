@@ -156,7 +156,7 @@ func (serverStub) PatchApiUploadTusId(w http.ResponseWriter, r *http.Request, id
 	http.Error(w, "not implemented", http.StatusNotImplemented)
 }
 
-func (serverStub) GetApiWebsites(w http.ResponseWriter, r *http.Request) {
+func (serverStub) GetApiWebsites(w http.ResponseWriter, r *http.Request, params GetApiWebsitesParams) {
 	http.Error(w, "not implemented", http.StatusNotImplemented)
 }
 
@@ -165,6 +165,14 @@ func (serverStub) PostApiWebsites(w http.ResponseWriter, r *http.Request) {
 }
 
 func (serverStub) GetApiWebsitesConfig(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "not implemented", http.StatusNotImplemented)
+}
+
+func (serverStub) GetApiWebsitesPlatformDomains(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "not implemented", http.StatusNotImplemented)
+}
+
+func (serverStub) GetApiWebsitesPlatformDomainsAvailability(w http.ResponseWriter, r *http.Request, params GetApiWebsitesPlatformDomainsAvailabilityParams) {
 	http.Error(w, "not implemented", http.StatusNotImplemented)
 }
 
@@ -208,6 +216,10 @@ func (serverStub) GetApiWebsitesIdDomainsDomainIdDnsRequirements(w http.Response
 	http.Error(w, "not implemented", http.StatusNotImplemented)
 }
 
+func (serverStub) PostApiWebsitesIdDomainsDomainIdOnchain(w http.ResponseWriter, r *http.Request, id string, domainId string) {
+	http.Error(w, "not implemented", http.StatusNotImplemented)
+}
+
 func (serverStub) PostApiWebsitesIdDomainsDomainIdVerify(w http.ResponseWriter, r *http.Request, id string, domainId string) {
 	http.Error(w, "not implemented", http.StatusNotImplemented)
 }
@@ -229,6 +241,10 @@ func (serverStub) PostInternalDnsTlsa(w http.ResponseWriter, r *http.Request) {
 }
 
 func (serverStub) GetInternalPing(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "not implemented", http.StatusNotImplemented)
+}
+
+func (serverStub) GetInternalWebsitesChanges(w http.ResponseWriter, r *http.Request, params GetInternalWebsitesChangesParams) {
 	http.Error(w, "not implemented", http.StatusNotImplemented)
 }
 

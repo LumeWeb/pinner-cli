@@ -64,7 +64,7 @@ func adminPlatformDomainsRegister(d AdminDeps) catalog.Operation {
 		Name:        OpAdminPlatformDomainsRegister,
 		Title:       "Register a platform domain",
 		Summary:     "Register a platform-owned root domain",
-		Description: "Register a platform-owned root domain that users can claim free subdomains under, e.g. pinned.site. Requires admin privileges.",
+		Description: "Register a platform-owned root domain that users can claim free subdomains under, e.g. pinned.site. The namespace defaults to hns when omitted; pass icann for a traditional DNS root. Requires admin privileges.",
 		Category:    "admin",
 		Safety:      catalog.SafetyMutate,
 		Interaction: catalog.InteractionAgentSafe,
@@ -72,7 +72,8 @@ func adminPlatformDomainsRegister(d AdminDeps) catalog.Operation {
 		Positional:  "<domain>",
 		Args: []catalog.OperationArg{
 			{Name: "domain", Type: catalog.ArgTypeString, Required: true, Help: "Platform root domain, e.g. pinned.site", PositionalOnly: true},
-			{Name: "namespace", Type: catalog.ArgTypeString, Required: true, Help: "Domain namespace: icann, hns, etc."},
+			// Optional: the backend defaults omitted namespaces to hns.
+			{Name: "namespace", Type: catalog.ArgTypeString, Required: false, Help: "Domain namespace (default hns): icann or hns", PositionalOnly: true},
 			// Nullable so an omitted flag leaves Enabled nil (backend default)
 			// rather than forcing false; an explicit --enabled=false disables.
 			{Name: "enabled", Type: catalog.ArgTypeNullableBool, Required: false, Help: "Enable the platform domain so users can claim subdomains under it"},
@@ -89,11 +90,12 @@ func adminPlatformDomainsRegister(d AdminDeps) catalog.Operation {
 			if domain == "" {
 				return nil, fmt.Errorf("admin_platform_domains_register: domain is required")
 			}
-			namespace := catalog.StrArg(input, "namespace", "")
-			if namespace == "" {
-				return nil, fmt.Errorf("admin_platform_domains_register: namespace is required")
+			req := &admin.PlatformDomainRequest{Domain: domain}
+			// Namespace is optional: the backend defaults an omitted namespace
+			// to hns, so nil is passed through unchanged when not supplied.
+			if namespace := catalog.StrArg(input, "namespace", ""); namespace != "" {
+				req.Namespace = &namespace
 			}
-			req := &admin.PlatformDomainRequest{Domain: domain, Namespace: namespace}
 			if enabled := catalog.BoolArgPtr(input, "enabled"); enabled != nil {
 				req.Enabled = enabled
 			}

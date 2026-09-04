@@ -68,7 +68,6 @@ func TestAgentGuideDescriptorIsDirectVisible(t *testing.T) {
 // only that subset so an agent is never directed to a failing mode (e.g.
 // source.mode=path from a remote HTTP host, which Kody flagged).
 func TestAgentGuideModesMatchProfile(t *testing.T) {
-	strPtr := func(p hostenv.PlatformProfile) *hostenv.PlatformProfile { return &p }
 
 	cases := []struct {
 		name      string
@@ -79,43 +78,43 @@ func TestAgentGuideModesMatchProfile(t *testing.T) {
 	}{
 		{
 			name:     "stdio generic advertises only path",
-			profile:  strPtr(hostenv.ProfileStdioGeneric),
+			profile:  new(hostenv.ProfileStdioGeneric),
 			mustHave: []string{"source.mode=path"},
 			mustNot:  []string{"source.mode=mint", "source.mode=url/data"},
 		},
 		{
 			name:     "http generic advertises only mint",
-			profile:  strPtr(hostenv.ProfileHTTPGeneric),
+			profile:  new(hostenv.ProfileHTTPGeneric),
 			mustHave: []string{"source.mode=mint"},
 			mustNot:  []string{"source.mode=path", "source.mode=url/data"},
 		},
 		{
 			name:     "grok http advertises only mint",
-			profile:  strPtr(hostenv.ProfileGrokHTTP),
+			profile:  new(hostenv.ProfileGrokHTTP),
 			mustHave: []string{"source.mode=mint"},
 			mustNot:  []string{"source.mode=path", "source.mode=url/data"},
 		},
 		{
 			name:     "openai tunnel advertises url/data fallback",
-			profile:  strPtr(hostenv.ProfileOpenAITunnel),
+			profile:  new(hostenv.ProfileOpenAITunnel),
 			mustHave: []string{"source.mode=url/data"},
 			mustNot:  []string{"source.mode=path", "source.mode=mint"},
 		},
 		{
 			name:     "openai http advertises mint fallback",
-			profile:  strPtr(hostenv.ProfileOpenAIHTTP),
+			profile:  new(hostenv.ProfileOpenAIHTTP),
 			mustHave: []string{"source.mode=mint"},
 			mustNot:  []string{"source.mode=path", "source.mode=url/data"},
 		},
 		{
 			name:     "claude web advertises mint transport source",
-			profile:  strPtr(hostenv.ProfileClaudeHTTP),
+			profile:  new(hostenv.ProfileClaudeHTTP),
 			mustHave: []string{"source.mode=mint"},
 			mustNot:  []string{"source.mode=path", "source.mode=url/data"},
 		},
 		{
 			name:     "claude desktop advertises only path",
-			profile:  strPtr(hostenv.ProfileStdioMCPApps),
+			profile:  new(hostenv.ProfileStdioMCPApps),
 			mustHave: []string{"source.mode=path"},
 			mustNot:  []string{"source.mode=mint", "source.mode=url/data"},
 		},
@@ -265,21 +264,18 @@ func flowStepsContain(f GuideFlow, s string) bool {
 	return false
 }
 
-// strPtr dereferences a profile value into a pointer for buildAgentGuide.
-func strPtr(p hostenv.PlatformProfile) *hostenv.PlatformProfile { return &p }
-
 // TestAgentGuideSummaryNeverPrefersFileForGrok regresses the shared-compiler
 // residue: a host without a `file` parameter must never see a "prefer the file
 // parameter when your host has one" clause, which previously let Grok invent a
 // {download_url, file_id} even after the schema dropped `file`. Grok's summary
 // must instead say it has no file parameter and lead with mint + PUT + poll.
 func TestAgentGuideSummaryNeverPrefersFileForGrok(t *testing.T) {
-	grok := buildAgentGuide(strPtr(hostenv.ProfileGrokHTTP))
+	grok := buildAgentGuide(new(hostenv.ProfileGrokHTTP))
 	require.NotContains(t, grok.Summary, "prefer the `file` parameter")
 	require.Contains(t, grok.Summary, "no `file` parameter")
 	require.Contains(t, grok.Summary, "upload_data", "Grok must be told not to call upload_data")
 
-	openai := buildAgentGuide(strPtr(hostenv.ProfileOpenAITunnel))
+	openai := buildAgentGuide(new(hostenv.ProfileOpenAITunnel))
 	require.Contains(t, openai.Summary, "prefer the `file` parameter")
 	require.NotContains(t, openai.Summary, "no `file` parameter")
 }
@@ -291,9 +287,9 @@ func TestAgentGuideSummaryNeverPrefersFileForGrok(t *testing.T) {
 // step their schema/flow never returns.
 func TestAgentGuideStepsAreFeatureGated(t *testing.T) {
 	mintFlows := []*hostenv.PlatformProfile{
-		strPtr(hostenv.ProfileHTTPGeneric),
-		strPtr(hostenv.ProfileGrokHTTP),
-		strPtr(hostenv.ProfileOpenAIHTTP),
+		new(hostenv.ProfileHTTPGeneric),
+		new(hostenv.ProfileGrokHTTP),
+		new(hostenv.ProfileOpenAIHTTP),
 	}
 	for _, p := range mintFlows {
 		f := guideFlowByName(t, buildAgentGuide(p), "upload")
@@ -303,8 +299,8 @@ func TestAgentGuideStepsAreFeatureGated(t *testing.T) {
 	}
 
 	nonMintFlows := []*hostenv.PlatformProfile{
-		strPtr(hostenv.ProfileStdioGeneric), // path
-		strPtr(hostenv.ProfileOpenAITunnel), // url/data relay
+		new(hostenv.ProfileStdioGeneric), // path
+		new(hostenv.ProfileOpenAITunnel), // url/data relay
 	}
 	for _, p := range nonMintFlows {
 		f := guideFlowByName(t, buildAgentGuide(p), "upload")
@@ -328,9 +324,9 @@ func TestAgentGuideStepsAreFeatureGated(t *testing.T) {
 // On non-mint transports both host PUT steps are absent.
 func TestAgentGuideNamesHostPUTOnMintSteps(t *testing.T) {
 	mintProfiles := []*hostenv.PlatformProfile{
-		strPtr(hostenv.ProfileHTTPGeneric),
-		strPtr(hostenv.ProfileGrokHTTP),
-		strPtr(hostenv.ProfileOpenAIHTTP),
+		new(hostenv.ProfileHTTPGeneric),
+		new(hostenv.ProfileGrokHTTP),
+		new(hostenv.ProfileOpenAIHTTP),
 	}
 	for _, p := range mintProfiles {
 		up := guideFlowByName(t, buildAgentGuide(p), "upload")
@@ -343,8 +339,8 @@ func TestAgentGuideNamesHostPUTOnMintSteps(t *testing.T) {
 	}
 
 	nonMintProfiles := []*hostenv.PlatformProfile{
-		strPtr(hostenv.ProfileStdioGeneric), // path
-		strPtr(hostenv.ProfileOpenAITunnel), // url/data relay
+		new(hostenv.ProfileStdioGeneric), // path
+		new(hostenv.ProfileOpenAITunnel), // url/data relay
 	}
 	for _, p := range nonMintProfiles {
 		for _, flowName := range []string{"upload", "vault_upload"} {
@@ -360,10 +356,10 @@ func TestAgentGuideNamesHostPUTOnMintSteps(t *testing.T) {
 // the generic/label/custom-domain decision a deterministic agent needs.
 func TestAgentGuidePublishBranchesPerProfile(t *testing.T) {
 	for _, p := range []*hostenv.PlatformProfile{
-		strPtr(hostenv.ProfileStdioGeneric),
-		strPtr(hostenv.ProfileHTTPGeneric),
-		strPtr(hostenv.ProfileGrokHTTP),
-		strPtr(hostenv.ProfileOpenAITunnel),
+		new(hostenv.ProfileStdioGeneric),
+		new(hostenv.ProfileHTTPGeneric),
+		new(hostenv.ProfileGrokHTTP),
+		new(hostenv.ProfileOpenAITunnel),
 	} {
 		pub := guideFlowByName(t, buildAgentGuide(p), "publish_website")
 		require.NotNil(t, pub.Decision, "publish_website must be a decision flow for %s", p.Transport)
@@ -387,10 +383,10 @@ func TestAgentGuidePublishBranchesPerProfile(t *testing.T) {
 // the user is set to expect the site to not be reachable at its URL immediately.
 func TestAgentGuideCDNDeployNotice(t *testing.T) {
 	for _, p := range []*hostenv.PlatformProfile{
-		strPtr(hostenv.ProfileStdioGeneric),
-		strPtr(hostenv.ProfileHTTPGeneric),
-		strPtr(hostenv.ProfileGrokHTTP),
-		strPtr(hostenv.ProfileOpenAITunnel),
+		new(hostenv.ProfileStdioGeneric),
+		new(hostenv.ProfileHTTPGeneric),
+		new(hostenv.ProfileGrokHTTP),
+		new(hostenv.ProfileOpenAITunnel),
 	} {
 		guide := buildAgentGuide(p)
 
@@ -414,6 +410,38 @@ func TestAgentGuideCDNDeployNotice(t *testing.T) {
 	}
 }
 
+// TestAgentGuideHNSOnchainBranches verifies the custom-domain publish branch
+// carries the Handshake namespace guidance with BOTH HNS hosting shapes: the
+// on-chain managed outcome (status onchain_managed → no records to
+// publish, never re-convert) and the native HNS delegation flow (publish
+// parent records; convert-onchain exists for migration, one-way + confirm).
+func TestAgentGuideHNSOnchainBranches(t *testing.T) {
+	for _, p := range []*hostenv.PlatformProfile{
+		new(hostenv.ProfileStdioGeneric),
+		new(hostenv.ProfileHTTPGeneric),
+	} {
+		guide := buildAgentGuide(p)
+		pub := guideFlowByName(t, guide, "publish_website")
+		require.NotNil(t, pub.Decision, "publish_website must be a decision flow for %s", p.Transport)
+		var domain *GuideDecision
+		for _, br := range pub.Decision.Branches {
+			if domain == nil && br.Next != nil {
+				domain = br.Next
+			}
+		}
+		require.NotNil(t, domain, "publish_website must nest the domain decision for %s", p.Transport)
+		custom := domain.Branches[len(domain.Branches)-1]
+		require.Contains(t, custom.Detail, "namespace\": \"hns",
+			"custom-domain branch must name the hns namespace for %s", p.Transport)
+		require.Contains(t, custom.Detail, "onchain_managed",
+			"custom-domain branch must explain the onchain_managed outcome for %s", p.Transport)
+		require.Contains(t, custom.Detail, "websites_domains_convert_onchain",
+			"custom-domain branch must name the convert-onchain operation for %s", p.Transport)
+		require.Contains(t, custom.Detail, "confirm=true",
+			"convert-onchain must be described as confirm-gated (one-way, destructive) for %s", p.Transport)
+	}
+}
+
 // TestAgentGuideSandboxFilesRouteToFileNotMint regresses audit F-002. On a host
 // with both FeatFileHostInput and mint (OpenAI HTTP, host_file_first), an
 // assistant-generated sandbox file must route to the `file` parameter; the mint
@@ -421,7 +449,7 @@ func TestAgentGuideCDNDeployNotice(t *testing.T) {
 // agent-local" files (which host_file_first requires on `file`).
 func TestAgentGuideSandboxFilesRouteToFileNotMint(t *testing.T) {
 	p := hostenv.ProfileOpenAIHTTP
-	guide := buildAgentGuide(strPtr(p))
+	guide := buildAgentGuide(new(p))
 	for _, flowName := range []string{"upload", "vault_upload"} {
 		f := guideFlowByName(t, guide, flowName)
 		require.NotNil(t, f.Decision, "%s must expose a byte-route decision", flowName)
@@ -456,10 +484,10 @@ func TestAgentGuideSandboxFilesRouteToFileNotMint(t *testing.T) {
 // agent-only hosts.
 func TestAgentGuideMCPAppsRuleScoped(t *testing.T) {
 	guiProfiles := []*hostenv.PlatformProfile{
-		strPtr(hostenv.ProfileStdioMCPApps),
-		strPtr(hostenv.ProfileClaudeHTTP),
-		strPtr(hostenv.ProfileOpenAIHTTP),
-		strPtr(hostenv.ProfileOpenAITunnel),
+		new(hostenv.ProfileStdioMCPApps),
+		new(hostenv.ProfileClaudeHTTP),
+		new(hostenv.ProfileOpenAIHTTP),
+		new(hostenv.ProfileOpenAITunnel),
 	}
 	for _, p := range guiProfiles {
 		guide := buildAgentGuide(p)
@@ -477,10 +505,10 @@ func TestAgentGuideMCPAppsRuleScoped(t *testing.T) {
 	}
 
 	agentProfiles := []*hostenv.PlatformProfile{
-		strPtr(hostenv.ProfileStdioGeneric),
-		strPtr(hostenv.ProfileHTTPGeneric),
-		strPtr(hostenv.ProfileGrokHTTP),
-		strPtr(hostenv.ProfileGrokStdio),
+		new(hostenv.ProfileStdioGeneric),
+		new(hostenv.ProfileHTTPGeneric),
+		new(hostenv.ProfileGrokHTTP),
+		new(hostenv.ProfileGrokStdio),
 	}
 	for _, p := range agentProfiles {
 		guide := buildAgentGuide(p)
@@ -500,9 +528,9 @@ func TestAgentGuideMCPAppsRuleScoped(t *testing.T) {
 // publish_website.
 func TestAgentGuideWizardGuidanceIndependentOfElicitation(t *testing.T) {
 	for _, p := range []*hostenv.PlatformProfile{
-		strPtr(hostenv.ProfileGrokHTTP),
-		strPtr(hostenv.ProfileHTTPGeneric),
-		strPtr(hostenv.ProfileStdioGeneric),
+		new(hostenv.ProfileGrokHTTP),
+		new(hostenv.ProfileHTTPGeneric),
+		new(hostenv.ProfileStdioGeneric),
 	} {
 		require.False(t, p.Has(hostenv.FeatElicitation), "%s must lack FeatElicitation for this test", p.Transport)
 		summary := buildAgentGuide(p).Summary
@@ -520,9 +548,9 @@ func TestAgentGuideWizardGuidanceIndependentOfElicitation(t *testing.T) {
 // poll). The per-flow step lists confirm the same split structurally.
 func TestAgentGuideMintSummaryScopedByTool(t *testing.T) {
 	for _, p := range []*hostenv.PlatformProfile{
-		strPtr(hostenv.ProfileOpenAIHTTP),
-		strPtr(hostenv.ProfileHTTPGeneric),
-		strPtr(hostenv.ProfileGrokHTTP),
+		new(hostenv.ProfileOpenAIHTTP),
+		new(hostenv.ProfileHTTPGeneric),
+		new(hostenv.ProfileGrokHTTP),
 	} {
 		guide := buildAgentGuide(p)
 		summary := guide.Summary

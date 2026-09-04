@@ -49,7 +49,7 @@ func TestBuildRequiredRecords(t *testing.T) {
 				ValidationToken:   "token123",
 				TargetType:        "ipfs",
 				TargetHash:        "QmXxx",
-				GatewayDomain:     strPtr("gateway.pinner.xyz"),
+				GatewayDomain:     new("gateway.pinner.xyz"),
 			},
 			want: []map[string]string{
 				{"name": "example.com", "type": "TXT", "value": "token123"},
@@ -77,7 +77,7 @@ func TestBuildRequiredRecords(t *testing.T) {
 				Domain:               "example.com",
 				DnsHostingEnabled:    false,
 				ValidationToken:      "token123",
-				ValidationRecordHost: strPtr("pinner-verify.example.com"),
+				ValidationRecordHost: new("pinner-verify.example.com"),
 				TargetType:           "ipfs",
 				TargetHash:           "QmXxx",
 			},
@@ -108,7 +108,7 @@ func TestBuildRequiredRecords(t *testing.T) {
 				ValidationToken:   "token123",
 				TargetType:        "ipfs",
 				TargetHash:        "QmXxx",
-				GatewayDomain:     strPtr(""),
+				GatewayDomain:     new(""),
 			},
 			want: []map[string]string{
 				{"name": "example.com", "type": "TXT", "value": "token123"},
@@ -121,7 +121,7 @@ func TestBuildRequiredRecords(t *testing.T) {
 				Domain:               "example.com",
 				DnsHostingEnabled:    false,
 				ValidationToken:      "token123",
-				ValidationRecordHost: strPtr(""),
+				ValidationRecordHost: new(""),
 				TargetType:           "ipfs",
 				TargetHash:           "QmXxx",
 			},
@@ -140,6 +140,3 @@ func TestBuildRequiredRecords(t *testing.T) {
 	}
 }
 
-func strPtr(s string) *string {
-	return &s
-}

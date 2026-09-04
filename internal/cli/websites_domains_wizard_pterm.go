@@ -70,13 +70,13 @@ func (ui *PTermDomainsUI) ShowCompletion() error {
 	if domain := ui.wizard.Result(); domain != nil {
 		status := ""
 		if domain.Status != nil {
-			status = *domain.Status
+			status = string(*domain.Status)
 		}
 		msg += "The domain has been bound to your website.\n\n"
 		msg += "Domain details:\n"
 		msg += "  • Website:  " + ui.wizard.WebsiteDomain() + "\n"
 		msg += "  • Domain:   " + domain.Domain + "\n"
-		msg += "  • Namespace:" + domain.Namespace + "\n"
+		msg += "  • Namespace:" + string(domain.Namespace) + "\n"
 		msg += "  • Status:   " + status + "\n\n"
 		msg += "Next steps:\n"
 		msg += "  • View delegation: pinner websites domains dns-requirements " + domain.Domain + "\n"
@@ -256,7 +256,7 @@ func (ui *PTermDomainsUI) ExecuteVerifyStep(ctx context.Context, w *DomainAddWiz
 	result := w.Result()
 	status := ""
 	if result != nil && result.Status != nil {
-		status = *result.Status
+		status = string(*result.Status)
 	}
 
 	if valid {
@@ -265,7 +265,7 @@ func (ui *PTermDomainsUI) ExecuteVerifyStep(ctx context.Context, w *DomainAddWiz
 		ui.output.PrintFields(FieldGroup{
 			Fields: []Field{
 				{"Domain", result.Domain},
-				{"Namespace", result.Namespace},
+				{"Namespace", string(result.Namespace)},
 				{"Status", status},
 			},
 		})
@@ -277,7 +277,7 @@ func (ui *PTermDomainsUI) ExecuteVerifyStep(ctx context.Context, w *DomainAddWiz
 	// bound domain for display so the retry/give-up message below never
 	// dereferences a nil result.
 	if result == nil {
-		result = &ipfs.DomainResponse{Domain: w.Domain(), Namespace: w.Namespace()}
+		result = &ipfs.DomainResponse{Domain: w.Domain(), Namespace: ipfs.DomainNamespace(w.Namespace())}
 	}
 
 	w.SetVerifyAttempts(w.VerifyAttempts() + 1)
@@ -295,11 +295,13 @@ func (ui *PTermDomainsUI) ExecuteVerifyStep(ctx context.Context, w *DomainAddWiz
 	return nil
 }
 
-// domainStatusIsValid reports whether a domain status string represents a
-// fully validated/active domain binding.
-func domainStatusIsValid(status string) bool {
+// domainStatusIsValid reports whether a domain binding status represents a
+// fully validated/active binding. On-chain managed counts: an on-chain
+// managed HNS name is verified via the namespace TXT token, so it needs no
+// delegation wait and is as valid as active.
+func domainStatusIsValid(status ipfs.DomainResponseStatus) bool {
 	switch status {
-	case "active", "validated", "verified":
+	case ipfs.DomainResponseStatusActive, ipfs.DomainResponseStatusOnchainManaged:
 		return true
 	default:
 		return false
