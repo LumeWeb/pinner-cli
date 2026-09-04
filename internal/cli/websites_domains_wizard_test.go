@@ -25,26 +25,25 @@ func TestDomainAddWizard_Run(t *testing.T) {
 		}
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
-		status := "active"
+		status := new(ipfs.DomainResponseStatusActive)
 		result := &ipfs.DomainResponse{
 			Id:        42,
 			Domain:    "staging.example.com",
-			Namespace: "icann",
-			Status:    &status,
+			Namespace: ipfs.DomainNamespaceICANN,
+			Status:    status,
 		}
-		delegStatus := "active"
 		delegResult := &ipfs.DomainResponse{
 			Id:        42,
 			Domain:    "staging.example.com",
-			Namespace: "icann",
-			Status:    &delegStatus,
+			Namespace: ipfs.DomainNamespaceICANN,
+			Status:    new(ipfs.DomainResponseStatusActive),
 		}
-		verifyStatus := "active"
+		
 		verifyResult := &ipfs.DomainResponse{
 			Id:        42,
 			Domain:    "staging.example.com",
-			Namespace: "icann",
-			Status:    &verifyStatus,
+			Namespace: ipfs.DomainNamespaceICANN,
+			Status:    new(ipfs.DomainResponseStatusActive),
 		}
 
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{
@@ -87,30 +86,29 @@ func TestDomainAddWizard_Run(t *testing.T) {
 		}
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
-		status := "active"
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{
 			BindDomainFn: func(_ context.Context, _ string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
 				return &ipfs.DomainResponse{
 					Id:        7,
 					Domain:    req.Domain,
-					Namespace: req.Namespace,
-					Status:    &status,
+					Namespace: ipfs.DomainNamespace(req.Namespace),
+					Status:    new(ipfs.DomainResponseStatusActive),
 				}, nil
 			},
 			GetDomainDNSRequirementsFn: func(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
 				return &ipfs.DomainResponse{
 					Id:        7,
 					Domain:    "mydomain",
-					Namespace: "hns",
-					Status:    &status,
+					Namespace: ipfs.DomainNamespaceHNS,
+					Status:    new(ipfs.DomainResponseStatusActive),
 				}, nil
 			},
 			VerifyDomainFn: func(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
 				return &ipfs.DomainResponse{
 					Id:        7,
 					Domain:    "mydomain",
-					Namespace: "hns",
-					Status:    &status,
+					Namespace: ipfs.DomainNamespaceHNS,
+					Status:    new(ipfs.DomainResponseStatusActive),
 				}, nil
 			},
 		}
@@ -138,16 +136,16 @@ func TestDomainAddWizard_Run(t *testing.T) {
 		}
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
-		status := "active"
+		status := new(ipfs.DomainResponseStatusActive)
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{
 			BindDomainFn: func(_ context.Context, _ string, _ ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
-				return &ipfs.DomainResponse{Id: 1, Domain: "x.com", Namespace: "icann", Status: &status}, nil
+				return &ipfs.DomainResponse{Id: 1, Domain: "x.com", Namespace: ipfs.DomainNamespaceICANN, Status: status}, nil
 			},
 			GetDomainDNSRequirementsFn: func(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
-				return &ipfs.DomainResponse{Id: 1, Domain: "x.com", Namespace: "icann", Status: &status}, nil
+				return &ipfs.DomainResponse{Id: 1, Domain: "x.com", Namespace: ipfs.DomainNamespaceICANN, Status: status}, nil
 			},
 			VerifyDomainFn: func(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
-				return &ipfs.DomainResponse{Id: 1, Domain: "x.com", Namespace: "icann", Status: &status}, nil
+				return &ipfs.DomainResponse{Id: 1, Domain: "x.com", Namespace: ipfs.DomainNamespaceICANN, Status: status}, nil
 			},
 		}
 
@@ -233,16 +231,16 @@ func TestDomainAddWizard_Run(t *testing.T) {
 		cfg := &config.Config{AuthToken: "test-token", Secure: true}
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
-		status := "active"
+		status := new(ipfs.DomainResponseStatusActive)
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{
 			BindDomainFn: func(_ context.Context, _ string, _ ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
-				return &ipfs.DomainResponse{Id: 1, Domain: "mydomain", Namespace: "hns", Status: &status}, nil
+				return &ipfs.DomainResponse{Id: 1, Domain: "mydomain", Namespace: ipfs.DomainNamespaceHNS, Status: status}, nil
 			},
 			GetDomainDNSRequirementsFn: func(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
 				return nil, nil
 			},
 			VerifyDomainFn: func(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
-				return &ipfs.DomainResponse{Id: 1, Domain: "mydomain", Namespace: "hns", Status: &status}, nil
+				return &ipfs.DomainResponse{Id: 1, Domain: "mydomain", Namespace: ipfs.DomainNamespaceHNS, Status: status}, nil
 			},
 		}
 
@@ -265,16 +263,16 @@ func TestDomainAddWizard_Run(t *testing.T) {
 		cfg := &config.Config{AuthToken: "test-token", Secure: true}
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
-		status := "active"
+		status := new(ipfs.DomainResponseStatusActive)
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{
 			BindDomainFn: func(_ context.Context, _ string, _ ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
-				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: "icann", Status: &status}, nil
+				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: ipfs.DomainNamespaceICANN, Status: status}, nil
 			},
 			GetDomainDNSRequirementsFn: func(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
-				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: "icann", Status: &status}, nil
+				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: ipfs.DomainNamespaceICANN, Status: status}, nil
 			},
 			VerifyDomainFn: func(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
-				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: "icann", Status: &status}, nil
+				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: ipfs.DomainNamespaceICANN, Status: status}, nil
 			},
 		}
 
@@ -298,13 +296,13 @@ func TestDomainAddWizard_Run(t *testing.T) {
 		cfg := &config.Config{AuthToken: "test-token", Secure: true}
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
-		status := "active"
+		status := new(ipfs.DomainResponseStatusActive)
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{
 			BindDomainFn: func(_ context.Context, _ string, _ ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
-				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: "icann", Status: &status}, nil
+				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: ipfs.DomainNamespaceICANN, Status: status}, nil
 			},
 			GetDomainDNSRequirementsFn: func(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
-				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: "icann", Status: &status}, nil
+				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: ipfs.DomainNamespaceICANN, Status: status}, nil
 			},
 			VerifyDomainFn: func(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
 				return nil, nil
@@ -376,7 +374,7 @@ func TestDomainAddWizard_Accessors(t *testing.T) {
 	w.SetWebsiteDomain("example.com")
 	w.SetDomain("staging.example.com")
 	w.SetNamespace("icann")
-	w.SetResult(&ipfs.DomainResponse{Id: 9, Domain: "staging.example.com", Namespace: "icann"})
+	w.SetResult(&ipfs.DomainResponse{Id: 9, Domain: "staging.example.com", Namespace: ipfs.DomainNamespaceICANN})
 	w.SetVerifyRetry(true)
 
 	require.Equal(t, "5", w.WebsiteID())
@@ -431,10 +429,10 @@ func TestDomainWizardPTermExecuteVerifyStep(t *testing.T) {
 
 		// BindDomain returns a valid "active" status, but VerifyDomain returns
 		// (nil, nil); a stale bind status must NOT be treated as verified.
-		active := "active"
+		active := new(ipfs.DomainResponseStatusActive)
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{
 			BindDomainFn: func(_ context.Context, _ string, _ ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
-				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: "icann", Status: &active}, nil
+				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: ipfs.DomainNamespaceICANN, Status: active}, nil
 			},
 			VerifyDomainFn: func(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
 				return nil, nil
@@ -444,7 +442,7 @@ func TestDomainWizardPTermExecuteVerifyStep(t *testing.T) {
 		ui := NewPTermDomainsUI(newOutput)
 		w := NewDomainAddWizard(mockWebsitesSvc, cfgMgr, ui, newOutput)
 		ui.SetWizard(w)
-		w.SetResult(&ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: "icann", Status: &active})
+		w.SetResult(&ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: ipfs.DomainNamespaceICANN, Status: active})
 
 		err := ui.ExecuteVerifyStep(context.Background(), w)
 
@@ -461,20 +459,20 @@ func TestDomainWizardPTermExecuteVerifyStep(t *testing.T) {
 		cfg := &config.Config{AuthToken: "test-token", Secure: true}
 		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
 
-		active := "active"
+		active := new(ipfs.DomainResponseStatusActive)
 		mockWebsitesSvc := &mockWebsitesServiceForCLI{
 			BindDomainFn: func(_ context.Context, _ string, _ ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
-				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: "icann", Status: &active}, nil
+				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: ipfs.DomainNamespaceICANN, Status: active}, nil
 			},
 			VerifyDomainFn: func(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
-				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: "icann", Status: &active}, nil
+				return &ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: ipfs.DomainNamespaceICANN, Status: active}, nil
 			},
 		}
 
 		ui := NewPTermDomainsUI(newOutput)
 		w := NewDomainAddWizard(mockWebsitesSvc, cfgMgr, ui, newOutput)
 		ui.SetWizard(w)
-		w.SetResult(&ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: "icann", Status: &active})
+		w.SetResult(&ipfs.DomainResponse{Id: 1, Domain: "s.com", Namespace: ipfs.DomainNamespaceICANN, Status: active})
 
 		err := ui.ExecuteVerifyStep(context.Background(), w)
 

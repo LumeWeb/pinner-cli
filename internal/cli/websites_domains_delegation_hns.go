@@ -17,9 +17,32 @@ type hnsDelegationDriver struct{}
 func (h *hnsDelegationDriver) Render(output Output, result *ipfs.DomainResponse, managed bool) {
 	d := result.Delegation
 
+	// On-chain managed or otherwise delegation-less HNS binding: the name's
+	// DNS is served by an external contract (its NS record points at one), so
+	// the portal provisions no zone, DNSSEC, or delegation bundle — ownership
+	// is proven via a TXT token resolved through the HNS-aware resolver. There
+	// are no parent/authoritative records for the user to publish; publishing
+	// Pinner's delegation records would be wrong here.
+	if statusOnchainManaged(result) {
+		output.Printfln("")
+		output.Printfln("%s is on-chain managed: its DNS is served by an external", result.Domain)
+		output.Printfln("contract on the Handshake chain, not by a Pinner-managed zone.")
+		output.Printfln("No delegation records must be published — ownership is verified via a")
+		output.Printfln("TXT token through the HNS resolver. Manage the zone in your HNS wallet.")
+		return
+	}
+
+	// Any other delegation-less HNS binding also has nothing to publish; the
+	// status header above already identifies the binding to the user.
+	if d == nil {
+		output.Printfln("")
+		output.Printfln("No delegation records are available for %s.", result.Domain)
+		return
+	}
+
 	parentTitle := "Parent records (publish in your HNS wallet)"
 
-	inline := d != nil && d.Mode != nil && *d.Mode == "inline"
+	inline := d.Mode != nil && *d.Mode == "inline"
 
 	// Inline mode serves the authoritative side via Pinner's synthetic
 	// nameserver names; the user only publishes the parent (SYNTH) records.

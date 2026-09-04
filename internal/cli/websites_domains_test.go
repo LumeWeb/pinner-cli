@@ -13,7 +13,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 	t.Run("renders no delegation message when nil", func(t *testing.T) {
 		output := newTestOutput()
 		renderDomainDelegation(output, &ipfs.DomainResponse{
-			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+			Id: 1, Domain: "mydomain.hns", Namespace: ipfs.DomainNamespaceHNS, Status: new(ipfs.DomainResponseStatusActive),
 		}, false)
 		// exercises the nil-delegation branch without asserting exact text
 	})
@@ -21,15 +21,15 @@ func TestRenderDomainDelegation(t *testing.T) {
 	t.Run("renders records with typed helper", func(t *testing.T) {
 		output := newTestOutput()
 		renderDomainDelegation(output, &ipfs.DomainResponse{
-			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+			Id: 1, Domain: "mydomain.hns", Namespace: ipfs.DomainNamespaceHNS, Status: new(ipfs.DomainResponseStatusActive),
 			Delegation: &ipfs.DNSDelegation{
-				Mode:   strPtr("delegated"),
-				Dnssec: strPtr("enabled"),
+				Mode:   new("delegated"),
+				Dnssec: new("enabled"),
 				ParentRecords: &[]ipfs.DNSDelegationRecord{
-					{Type: "NS", Value: strPtr("ns1.lumeweb,ns2.lumeweb")},
+					{Type: "NS", Value: new("ns1.lumeweb,ns2.lumeweb")},
 				},
 				AuthoritativeRecords: &[]ipfs.DNSDelegationRecord{
-					{Type: "TLSA", Value: strPtr("_443._tcp.mydomain. 3 1 1 <sha256>")},
+					{Type: "TLSA", Value: new("_443._tcp.mydomain. 3 1 1 <sha256>")},
 				},
 			},
 		}, false)
@@ -41,14 +41,14 @@ func TestRenderDomainDelegation(t *testing.T) {
 		output := NewOutputFormatter(false, false, false, false)
 		output.SetWriter(&buf)
 		renderDomainDelegation(output, &ipfs.DomainResponse{
-			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+			Id: 1, Domain: "mydomain.hns", Namespace: ipfs.DomainNamespaceHNS, Status: new(ipfs.DomainResponseStatusActive),
 			Delegation: &ipfs.DNSDelegation{
-				Mode: strPtr("inline"),
+				Mode: new("inline"),
 				ParentRecords: &[]ipfs.DNSDelegationRecord{
-					{Type: "SYNTH4", Value: strPtr("hns-626f7578e5.rec.ns1.lumeweb")},
+					{Type: "SYNTH4", Value: new("hns-626f7578e5.rec.ns1.lumeweb")},
 				},
 				AuthoritativeRecords: &[]ipfs.DNSDelegationRecord{
-					{Type: "NS", Value: strPtr("hns-626f7578e5.rec.ns1.lumeweb")},
+					{Type: "NS", Value: new("hns-626f7578e5.rec.ns1.lumeweb")},
 				},
 			},
 		}, false)
@@ -65,14 +65,14 @@ func TestRenderDomainDelegation(t *testing.T) {
 		output := NewOutputFormatter(false, false, false, false)
 		output.SetWriter(&buf)
 		renderDomainDelegation(output, &ipfs.DomainResponse{
-			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+			Id: 1, Domain: "mydomain.hns", Namespace: ipfs.DomainNamespaceHNS, Status: new(ipfs.DomainResponseStatusActive),
 			Delegation: &ipfs.DNSDelegation{
-				Mode: strPtr("inline"),
+				Mode: new("inline"),
 				ParentRecords: &[]ipfs.DNSDelegationRecord{
-					{Type: "SYNTH4", Value: strPtr("hns-626f7578e5.rec.ns1.lumeweb")},
+					{Type: "SYNTH4", Value: new("hns-626f7578e5.rec.ns1.lumeweb")},
 				},
 				AuthoritativeRecords: &[]ipfs.DNSDelegationRecord{
-					{Type: "NS", Value: strPtr("hns-626f7578e5.rec.ns1.lumeweb")},
+					{Type: "NS", Value: new("hns-626f7578e5.rec.ns1.lumeweb")},
 				},
 			},
 		}, true)
@@ -84,7 +84,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 	t.Run("icann driver renders registrar wording and nameservers", func(t *testing.T) {
 		output := newTestOutput()
 		renderDomainDelegation(output, &ipfs.DomainResponse{
-			Id: 1, Domain: "mydomain.com", Namespace: "icann", Status: strPtr("delegated"),
+			Id: 1, Domain: "mydomain.com", Namespace: ipfs.DomainNamespaceICANN, Status: new(ipfs.DomainResponseStatusActive),
 			Delegation: &ipfs.DNSDelegation{
 				Nameservers: &[]string{"ns1.example.com", "ns2.example.com"},
 			},
@@ -95,14 +95,14 @@ func TestRenderDomainDelegation(t *testing.T) {
 	t.Run("unknown namespace falls back to generic driver", func(t *testing.T) {
 		output := newTestOutput()
 		renderDomainDelegation(output, &ipfs.DomainResponse{
-			Id: 1, Domain: "mydomain.eth", Namespace: "ens", Status: strPtr("delegated"),
+			Id: 1, Domain: "mydomain.eth", Namespace: "ens", Status: new(ipfs.DomainResponseStatusActive),
 			Delegation: &ipfs.DNSDelegation{
-				Mode: strPtr("delegated"),
+				Mode: new("delegated"),
 				ParentRecords: &[]ipfs.DNSDelegationRecord{
-					{Type: "NS", Value: strPtr("ns1.lumeweb")},
+					{Type: "NS", Value: new("ns1.lumeweb")},
 				},
 				AuthoritativeRecords: &[]ipfs.DNSDelegationRecord{
-					{Type: "TLSA", Value: strPtr("_443._tcp.mydomain.eth. 3 1 1 <sha256>")},
+					{Type: "TLSA", Value: new("_443._tcp.mydomain.eth. 3 1 1 <sha256>")},
 				},
 			},
 		}, false)
@@ -118,13 +118,13 @@ func TestRenderDomainDelegation(t *testing.T) {
 		digest := "c35938688953467518f2a9c613b8a32da647595912a67fa9cf47e41b593831d5"
 		dsValue := "lumeweb DS 44451 13 2 " + digest
 		renderDomainDelegation(output, &ipfs.DomainResponse{
-			Id: 1, Domain: "lumeweb", Namespace: "hns", Status: strPtr("delegated"),
+			Id: 1, Domain: "lumeweb", Namespace: ipfs.DomainNamespaceHNS, Status: new(ipfs.DomainResponseStatusActive),
 			Delegation: &ipfs.DNSDelegation{
-				Mode:   strPtr("delegated"),
-				Dnssec: strPtr("enabled"),
+				Mode:   new("delegated"),
+				Dnssec: new("enabled"),
 				ParentRecords: &[]ipfs.DNSDelegationRecord{
-					{Type: "NS", Value: strPtr("ns1.pinner.xyz,ns2.pinner.xyz")},
-					{Type: "DS", Value: strPtr(dsValue)},
+					{Type: "NS", Value: new("ns1.pinner.xyz,ns2.pinner.xyz")},
+					{Type: "DS", Value: new(dsValue)},
 				},
 			},
 		}, false)
@@ -150,15 +150,15 @@ func TestRenderDomainDelegation(t *testing.T) {
 		output := NewOutputFormatter(false, false, false, false)
 		output.SetWriter(&buf)
 		renderDomainDelegation(output, &ipfs.DomainResponse{
-			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+			Id: 1, Domain: "mydomain.hns", Namespace: ipfs.DomainNamespaceHNS, Status: new(ipfs.DomainResponseStatusActive),
 			Delegation: &ipfs.DNSDelegation{
-				Mode: strPtr("delegated"),
+				Mode: new("delegated"),
 				ParentRecords: &[]ipfs.DNSDelegationRecord{
-					{Type: "NS", Value: strPtr("ns1.pinner.xyz")},
-					{Type: "DS", Value: strPtr("44451 13 2 c359")},
+					{Type: "NS", Value: new("ns1.pinner.xyz")},
+					{Type: "DS", Value: new("44451 13 2 c359")},
 				},
 				AuthoritativeRecords: &[]ipfs.DNSDelegationRecord{
-					{Type: "NS", Value: strPtr("nsx.pinner.xyz")},
+					{Type: "NS", Value: new("nsx.pinner.xyz")},
 				},
 			},
 		}, true)
@@ -180,13 +180,13 @@ func TestRenderDomainDelegation(t *testing.T) {
 		output := NewOutputFormatter(false, false, false, false)
 		output.SetWriter(&buf)
 		renderDomainDelegation(output, &ipfs.DomainResponse{
-			Id: 1, Domain: "mydomain.com", Namespace: "icann", Status: strPtr("delegated"),
+			Id: 1, Domain: "mydomain.com", Namespace: ipfs.DomainNamespaceICANN, Status: new(ipfs.DomainResponseStatusActive),
 			Delegation: &ipfs.DNSDelegation{
 				ParentRecords: &[]ipfs.DNSDelegationRecord{
-					{Type: "NS", Value: strPtr("ns1.pinner.xyz")},
+					{Type: "NS", Value: new("ns1.pinner.xyz")},
 				},
 				AuthoritativeRecords: &[]ipfs.DNSDelegationRecord{
-					{Type: "TLSA", Value: strPtr("_443._tcp.mydomain.com. 3 1 1 <sha256>")},
+					{Type: "TLSA", Value: new("_443._tcp.mydomain.com. 3 1 1 <sha256>")},
 				},
 			},
 		}, true)
@@ -197,19 +197,42 @@ func TestRenderDomainDelegation(t *testing.T) {
 		assert.NotContains(t, out, "TLSA")
 	})
 
+	t.Run("onchain managed hns explains the contract-served DNS and publishes nothing", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(false, false, false, false)
+		output.SetWriter(&buf)
+		// On-chain managed: the HNS name's DNS is served by an external
+		// contract, so the backend returns status onchain_managed with NO
+		// delegation bundle.
+		renderDomainDelegation(output, &ipfs.DomainResponse{
+			Id: 1, Domain: "mydomain", Namespace: ipfs.DomainNamespaceHNS, Status: new(ipfs.DomainResponseStatusOnchainManaged),
+		}, false)
+		out := buf.String()
+		// The driver must not crash on a nil Delegation and must explain the
+		// on-chain hosting shape instead of rendering a record table.
+		assert.Contains(t, out, "on-chain managed")
+		assert.Contains(t, out, "external")
+		assert.Contains(t, out, "TXT token")
+		// No record tables and no delegation publishing instructions: none of
+		// it applies to a contract-served name.
+		assert.NotContains(t, out, "Parent records")
+		assert.NotContains(t, out, "Authoritative records")
+		assert.NotContains(t, out, "Publish the records")
+	})
+
 	t.Run("self-managed hns shows authoritative records", func(t *testing.T) {
 		var buf bytes.Buffer
 		output := NewOutputFormatter(false, false, false, false)
 		output.SetWriter(&buf)
 		renderDomainDelegation(output, &ipfs.DomainResponse{
-			Id: 1, Domain: "mydomain.hns", Namespace: "hns", Status: strPtr("delegated"),
+			Id: 1, Domain: "mydomain.hns", Namespace: ipfs.DomainNamespaceHNS, Status: new(ipfs.DomainResponseStatusActive),
 			Delegation: &ipfs.DNSDelegation{
-				Mode: strPtr("delegated"),
+				Mode: new("delegated"),
 				ParentRecords: &[]ipfs.DNSDelegationRecord{
-					{Type: "NS", Value: strPtr("ns1.lumeweb")},
+					{Type: "NS", Value: new("ns1.lumeweb")},
 				},
 				AuthoritativeRecords: &[]ipfs.DNSDelegationRecord{
-					{Type: "NS", Value: strPtr("ns.eigen.lumeweb")},
+					{Type: "NS", Value: new("ns.eigen.lumeweb")},
 				},
 			},
 		}, false)

@@ -327,6 +327,52 @@ func websitesDomainsDANERepublish(d WebsitesDeps) catalog.Operation {
 	})
 }
 
+// websitesDomainsConvertOnChain is the `websites domains convert-onchain`
+// operation. Returns *ipfs.DomainResponse. Reclassifies the binding as
+// on-chain managed: the HNS name's DNS is served by an external contract
+// (its NS record points at one), so the portal
+// deletes its managed PowerDNS zone/DNSSEC and switches ownership verification
+// to the TXT token. One-way; DANE/SSL state is retained.
+func websitesDomainsConvertOnChain(d WebsitesDeps) catalog.Operation {
+	return catalog.NewOperation(catalog.OperationSpec{
+		Name:        "websites_domains_convert_onchain",
+		Title:       "Convert a domain to on-chain managed",
+		Summary:     "Reclassify a bound HNS domain as on-chain managed",
+		Description: "Reclassify a bound HNS domain as on-chain managed (status onchain_managed): the name's DNS is served by an external contract on the Handshake chain, so Pinner deletes its managed zone and DNSSEC and verifies ownership via a TXT token instead of delegation. DANE/SSL state is retained. ONE-WAY and irreversible as a hosting change: requires confirm=true. Only applies to HNS-namespace bindings; the backend refuses an already on-chain, ineligible, or zone-sharing binding. The domain argument can be the domain name or its numeric binding ID; the owning website is resolved automatically. Returns the updated domain object (status onchain_managed, delegation null).",
+		Category:    "core",
+		Safety:      catalog.SafetyDestructive,
+		Interaction: catalog.InteractionAgentSafe,
+		Visibility:  catalog.VisibilityBoth,
+		Positional:  "<domain>",
+		Args: []catalog.OperationArg{
+			{Name: "domain", Type: catalog.ArgTypeString, Required: true, Help: "Domain name or binding ID to convert to on-chain managed"},
+			{Name: "confirm", Type: catalog.ArgTypeBool, AgentRequired: true, Help: "Confirm the one-way conversion (deletes Pinner's managed zone/DNSSEC for the binding)", AgentHelp: "Must be true to convert the domain to on-chain managed; this drops Pinner's managed zone/DNSSEC and is one-way. Only a human sets this on confirmation; a model alone cannot confirm a destructive operation."},
+		},
+		Handler: handler(func(ctx context.Context, input map[string]any) (any, error) {
+			if !catalog.BoolArg(input, "confirm", false) {
+				return nil, fmt.Errorf("websites_domains_convert_onchain: confirmation is required — the conversion deletes Pinner's managed zone/DNSSEC for the binding and is one-way")
+			}
+			svc, svcErr := d.service(input)
+			if svcErr != nil {
+				return nil, svcErr
+			}
+			if err := svc.RequireAuthenticated(); err != nil {
+				return nil, err
+			}
+			domainArg := catalog.StrArg(input, "domain", "")
+			if domainArg == "" {
+				return nil, fmt.Errorf("websites_domains_convert_onchain: domain is required")
+			}
+			websiteID, domainID, err := websites.ResolveDomainBinding(ctx, svc, domainArg)
+			if err != nil {
+				return nil, err
+			}
+			// *ipfs.DomainResponse
+			return svc.ConvertDomainToOnChain(ctx, websiteID, domainID)
+		}),
+	})
+}
+
 // websitesDomainsUpdate is the `websites domains update` operation. Returns
 // *ipfs.DomainResponse.
 //

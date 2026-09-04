@@ -6,6 +6,21 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 )
 
+// statusOf returns the domain response's status string, "" when unset.
+func statusOf(r *ipfs.DomainResponse) ipfs.DomainResponseStatus {
+	if r == nil || r.Status == nil {
+		return ""
+	}
+	return *r.Status
+}
+
+// statusOnchainManaged reports whether an HNS domain binding is on-chain
+// managed: its DNS is served by an external contract, so there is no portal
+// delegation to publish.
+func statusOnchainManaged(r *ipfs.DomainResponse) bool {
+	return statusOf(r) == ipfs.DomainResponseStatusOnchainManaged
+}
+
 // renderDelegationNameservers prints the nameservers shortcut when present.
 func renderDelegationNameservers(output Output, d *ipfs.DNSDelegation) {
 	if d.Nameservers == nil || len(*d.Nameservers) == 0 {

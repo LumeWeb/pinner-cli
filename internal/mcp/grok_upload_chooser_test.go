@@ -201,7 +201,7 @@ func TestCapabilitiesUploadToolsListsRelayTools(t *testing.T) {
 // detail prose, so a steps-first model on Grok can produce a CID from mint
 // (upload_file), a public URL (upload_url), or raw bytes (upload_data).
 func TestAgentGuideByteRouteChooserInSteps(t *testing.T) {
-	grok := buildAgentGuide(strPtr(hostenv.ProfileGrokHTTP))
+	grok := buildAgentGuide(new(hostenv.ProfileGrokHTTP))
 
 	upload := guideFlowByName(t, grok, "upload")
 	require.Equal(t, []string{"capabilities"}, upload.Steps, "upload flow leads with capabilities")
@@ -254,7 +254,7 @@ func TestCapabilitiesLeadInNamesThreeFields(t *testing.T) {
 // agree.
 func TestVaultByteRouteTransportGated(t *testing.T) {
 	// Grok (HTTP, mint-only): only the mint vault branch; no url/data claim.
-	grok := buildAgentGuide(strPtr(hostenv.ProfileGrokHTTP))
+	grok := buildAgentGuide(new(hostenv.ProfileGrokHTTP))
 	grokVault := guideFlowByName(t, grok, "vault_upload")
 	require.NotNil(t, grokVault.Decision)
 	for _, br := range grokVault.Decision.Branches {
@@ -266,7 +266,7 @@ func TestVaultByteRouteTransportGated(t *testing.T) {
 	require.NotContains(t, grokVault.Detail, "via its own url/data source", "Grok must not claim vault_put_file url/data")
 
 	// OpenAI tunnel: vault_put_file HAS url/data source modes, so those branches exist.
-	tunnel := buildAgentGuide(strPtr(hostenv.ProfileOpenAITunnel))
+	tunnel := buildAgentGuide(new(hostenv.ProfileOpenAITunnel))
 	tunnelVault := guideFlowByName(t, tunnel, "vault_upload")
 	require.NotNil(t, tunnelVault.Decision)
 	sawURL, sawData := false, false
@@ -289,7 +289,7 @@ func TestVaultByteRouteTransportGated(t *testing.T) {
 
 	// Generic HTTP (mint-only, no relay tools): vault detail must NOT name
 	// upload_url/upload_data — those tools don't exist on this host.
-	generic := buildAgentGuide(strPtr(hostenv.ProfileHTTPGeneric))
+	generic := buildAgentGuide(new(hostenv.ProfileHTTPGeneric))
 	genericVault := guideFlowByName(t, generic, "vault_upload")
 	require.NotNil(t, genericVault.Decision)
 	require.Contains(t, genericVault.Detail, "materialize them to an agent-local file first", "generic HTTP vault detail must give the mint materialize path")
@@ -298,7 +298,7 @@ func TestVaultByteRouteTransportGated(t *testing.T) {
 
 	// Claude HTTP has FeatSourceData but NOT FeatSourceURL: vault detail must
 	// name upload_data (registered) but NOT upload_url (not registered).
-	claude := buildAgentGuide(strPtr(hostenv.ProfileClaudeHTTP))
+	claude := buildAgentGuide(new(hostenv.ProfileClaudeHTTP))
 	claudeVault := guideFlowByName(t, claude, "vault_upload")
 	require.NotNil(t, claudeVault.Decision)
 	require.NotContains(t, claudeVault.Detail, "upload_url", "Claude HTTP has no upload_url tool; vault detail must not name it")

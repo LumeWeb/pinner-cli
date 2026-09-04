@@ -22,11 +22,11 @@ func renderDomainDelegation(output Output, result *ipfs.DomainResponse, managed 
 
 	status := ""
 	if result.Status != nil {
-		status = *result.Status
+		status = string(*result.Status)
 	}
 	fields := []Field{
 		{"Domain", result.Domain},
-		{"Namespace", result.Namespace},
+		{"Namespace", string(result.Namespace)},
 		{"Status", status},
 	}
 	// Surface the explicit DNSSEC state (enabled/disabled/error) + reason so an
@@ -39,10 +39,9 @@ func renderDomainDelegation(output Output, result *ipfs.DomainResponse, managed 
 	}
 	output.PrintFields(FieldGroup{Fields: fields})
 
-	if result.Delegation == nil {
-		output.Printfln("No delegation records are available for %s.", result.Domain)
-		return
-	}
-
+	// The registry renders even without a delegation bundle: a nil Delegation is
+	// meaningful per-namespace (e.g. an HNS on-chain managed binding
+	// serves its DNS from an external contract and has no records to publish),
+	// so the driver owns the explanation instead of a generic miss here.
 	defaultDelegationDriver.Render(output, result, managed)
 }

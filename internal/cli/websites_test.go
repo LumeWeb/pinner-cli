@@ -31,6 +31,7 @@ type mockWebsitesServiceForCLI struct {
 	VerifyDomainFn              func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
 	GetDomainDNSRequirementsFn  func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
 	RepublishDANEFn             func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error)
+	ConvertDomainToOnChainFn    func(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
 	UpdateDomainFn              func(ctx context.Context, websiteID string, domainID string, req ipfs.DomainUpdateRequest) (*ipfs.DomainResponse, error)
 	CheckPlatformAvailabilityFn func(ctx context.Context, label string) (*ipfs.PlatformAvailabilityResponse, error)
 	ListPlatformDomainsFn       func(ctx context.Context) (*ipfs.PlatformDomainListResponse, error)
@@ -186,6 +187,13 @@ func (m *mockWebsitesServiceForCLI) GetDomainDNSRequirements(ctx context.Context
 func (m *mockWebsitesServiceForCLI) RepublishDANE(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error) {
 	if m.RepublishDANEFn != nil {
 		return m.RepublishDANEFn(ctx, websiteID, domainID)
+	}
+	return nil, nil
+}
+
+func (m *mockWebsitesServiceForCLI) ConvertDomainToOnChain(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
+	if m.ConvertDomainToOnChainFn != nil {
+		return m.ConvertDomainToOnChainFn(ctx, websiteID, domainID)
 	}
 	return nil, nil
 }
@@ -1464,7 +1472,7 @@ func websitesSSLStatusWithService(ctx context.Context, cmd websitesCommandGetter
 
 	headers := []string{"Field", "Value"}
 	rows := [][]string{
-		{"Status", website.Ssl.Status},
+		{"Status", string(website.Ssl.Status)},
 		{"Issued At", formatTimePtr(website.Ssl.IssuedAt)},
 		{"Last Updated", formatTimePtr(website.Ssl.LastUpdatedAt)},
 	}
@@ -1776,7 +1784,6 @@ func TestStripValidationPrefix(t *testing.T) {
 }
 
 func TestValidationRecordValue(t *testing.T) {
-	strPtr := func(s string) *string { return &s }
 
 	tests := []struct {
 		name     string
@@ -1787,7 +1794,7 @@ func TestValidationRecordValue(t *testing.T) {
 			name: "derives key from validation record host",
 			website: &ipfs.WebsiteItem{
 				Domain:               "example.com",
-				ValidationRecordHost: strPtr("pinner-verify.example.com"),
+				ValidationRecordHost: new("pinner-verify.example.com"),
 				ValidationToken:      "abc123",
 			},
 			expected: "pinner-verify=abc123",
@@ -1796,7 +1803,7 @@ func TestValidationRecordValue(t *testing.T) {
 			name: "custom server key",
 			website: &ipfs.WebsiteItem{
 				Domain:               "example.com",
-				ValidationRecordHost: strPtr("lumeweb-verify.example.com"),
+				ValidationRecordHost: new("lumeweb-verify.example.com"),
 				ValidationToken:      "abc123",
 			},
 			expected: "lumeweb-verify=abc123",
@@ -1805,7 +1812,7 @@ func TestValidationRecordValue(t *testing.T) {
 			name: "token already carries key= prefix is not doubled",
 			website: &ipfs.WebsiteItem{
 				Domain:               "example.com",
-				ValidationRecordHost: strPtr("pinner-verify.example.com"),
+				ValidationRecordHost: new("pinner-verify.example.com"),
 				ValidationToken:      "pinner-verify=abc123",
 			},
 			expected: "pinner-verify=abc123",
@@ -1814,7 +1821,7 @@ func TestValidationRecordValue(t *testing.T) {
 			name: "token with foreign prefix is preserved unchanged (no rewrite)",
 			website: &ipfs.WebsiteItem{
 				Domain:               "example.com",
-				ValidationRecordHost: strPtr("pinner-verify.example.com"),
+				ValidationRecordHost: new("pinner-verify.example.com"),
 				ValidationToken:      "lumeweb-verify=abc123",
 			},
 			expected: "pinner-verify=lumeweb-verify=abc123",
@@ -1823,7 +1830,7 @@ func TestValidationRecordValue(t *testing.T) {
 			name: "token containing equals as content is not corrupted",
 			website: &ipfs.WebsiteItem{
 				Domain:               "example.com",
-				ValidationRecordHost: strPtr("pinner-verify.example.com"),
+				ValidationRecordHost: new("pinner-verify.example.com"),
 				ValidationToken:      "abc=def==",
 			},
 			expected: "pinner-verify=abc=def==",
@@ -1832,7 +1839,7 @@ func TestValidationRecordValue(t *testing.T) {
 			name: "token matching derived key without equals is not stripped",
 			website: &ipfs.WebsiteItem{
 				Domain:               "example.com",
-				ValidationRecordHost: strPtr("pinner-verify.example.com"),
+				ValidationRecordHost: new("pinner-verify.example.com"),
 				ValidationToken:      "pinner-verifyvalue",
 			},
 			expected: "pinner-verify=pinner-verifyvalue",
@@ -1849,7 +1856,7 @@ func TestValidationRecordValue(t *testing.T) {
 			name: "empty validation record host falls back to bare token",
 			website: &ipfs.WebsiteItem{
 				Domain:               "example.com",
-				ValidationRecordHost: strPtr(""),
+				ValidationRecordHost: new(""),
 				ValidationToken:      "abc123",
 			},
 			expected: "abc123",

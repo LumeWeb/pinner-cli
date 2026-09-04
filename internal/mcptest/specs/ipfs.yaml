@@ -201,12 +201,23 @@ components:
         id:
           type: integer
         namespace:
+          enum:
+          - icann
+          - hns
           type: string
         owner_name:
           type: string
         ssl:
           $ref: '#/components/schemas/SSLStatusInfo'
         status:
+          enum:
+          - draft
+          - records_generated
+          - waiting_delegation
+          - active
+          - self_hosted
+          - error
+          - onchain_managed
           type: string
         tlsa_rdata:
           type: string
@@ -237,9 +248,19 @@ components:
       properties:
         config:
           type: object
+        dns_hosting_enabled:
+          type: boolean
         domain:
           type: string
+        generate:
+          type: boolean
+        label:
+          type: string
         namespace:
+          type: string
+        platform_domain:
+          type: string
+        platform_namespace:
           type: string
       required:
       - domain
@@ -259,10 +280,21 @@ components:
         id:
           type: integer
         namespace:
+          enum:
+          - icann
+          - hns
           type: string
         ssl:
           $ref: '#/components/schemas/SSLStatusInfo'
         status:
+          enum:
+          - draft
+          - records_generated
+          - waiting_delegation
+          - active
+          - self_hosted
+          - error
+          - onchain_managed
           type: string
         zone_name:
           type: string
@@ -629,6 +661,66 @@ components:
       required:
       - status
       type: object
+    PlatformAvailabilityResponse:
+      additionalProperties: false
+      properties:
+        label:
+          type: string
+        results:
+          items:
+            $ref: '#/components/schemas/PlatformAvailabilityResult'
+          type: array
+      required:
+      - label
+      - results
+      type: object
+    PlatformAvailabilityResult:
+      additionalProperties: false
+      properties:
+        available:
+          type: boolean
+        namespace:
+          type: string
+        platform_domain:
+          type: string
+      required:
+      - platform_domain
+      - namespace
+      - available
+      type: object
+    PlatformDomainListResponse:
+      additionalProperties: false
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/PlatformDomainResponse'
+          type: array
+        total:
+          type: integer
+      required:
+      - data
+      - total
+      type: object
+    PlatformDomainResponse:
+      additionalProperties: false
+      properties:
+        domain:
+          type: string
+        enabled:
+          type: boolean
+        id:
+          type: integer
+        namespace:
+          type: string
+        zone_id:
+          type: integer
+      required:
+      - id
+      - domain
+      - namespace
+      - zone_id
+      - enabled
+      type: object
     PostUploadResponse:
       additionalProperties: false
       properties:
@@ -637,9 +729,17 @@ components:
       required:
       - CID
       type: object
+    RecordDeleteRequest:
+      additionalProperties: false
+      properties:
+        content:
+          type: string
+      type: object
     RecordIdentifier:
       additionalProperties: false
       properties:
+        content:
+          type: string
         name:
           type: string
         type:
@@ -673,6 +773,8 @@ components:
           type: string
         disabled:
           type: boolean
+        id:
+          type: string
         name:
           type: string
         ttl:
@@ -683,6 +785,7 @@ components:
           type: integer
       required:
       - zone_id
+      - id
       - name
       - type
       - content
@@ -730,6 +833,11 @@ components:
           format: date-time
           type: string
         status:
+          enum:
+          - pending
+          - issuing
+          - ready
+          - failed
           type: string
       required:
       - status
@@ -800,6 +908,49 @@ components:
       - message
       - checked_at
       type: object
+    WebsiteChangeEvent:
+      additionalProperties: false
+      properties:
+        cid:
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        domain:
+          type: string
+        event_type:
+          enum:
+          - published
+          - removed
+          type: string
+        id:
+          type: integer
+        user_id:
+          type: integer
+        website_id:
+          type: integer
+      required:
+      - id
+      - event_type
+      - domain
+      - created_at
+      type: object
+    WebsiteChangesResponse:
+      additionalProperties: false
+      properties:
+        events:
+          items:
+            $ref: '#/components/schemas/WebsiteChangeEvent'
+          type: array
+        high_water_mark:
+          type: integer
+        truncated:
+          type: boolean
+      required:
+      - events
+      - high_water_mark
+      - truncated
+      type: object
     WebsiteConfigResponse:
       additionalProperties: false
       properties:
@@ -820,8 +971,6 @@ components:
           type: string
         dns_hosting_enabled:
           type: boolean
-        dns_zone_id:
-          type: integer
         domain:
           type: string
         expired:
@@ -855,6 +1004,8 @@ components:
           type: string
         validation_token:
           type: string
+        zone_id:
+          type: integer
       required:
       - id
       - domain
@@ -888,14 +1039,21 @@ components:
           type: boolean
         domain:
           type: string
+        generate:
+          type: boolean
+        label:
+          type: string
         namespace:
+          type: string
+        platform_domain:
+          type: string
+        platform_namespace:
           type: string
         target_hash:
           type: string
         target_type:
           type: string
       required:
-      - domain
       - target_type
       - target_hash
       type: object
@@ -909,8 +1067,6 @@ components:
           type: string
         dns_hosting_enabled:
           type: boolean
-        dns_zone_id:
-          type: integer
         domain:
           type: string
         expired:
@@ -944,6 +1100,8 @@ components:
           type: string
         validation_token:
           type: string
+        zone_id:
+          type: integer
       required:
       - id
       - domain
@@ -1753,6 +1911,14 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordDeleteRequest'
+        description: 'Optional content selector: when set, only the record with this
+          content is deleted; when the body is absent the whole RRSet is deleted,
+          and a present body with empty content is rejected'
       responses:
         "204":
           description: Record deleted
@@ -3613,6 +3779,181 @@ paths:
         Returns paginated list of website configurations with status, domain, and target information. Supports filtering by status and other criteria.
 
         See also:.*
+      parameters:
+      - description: Ending index of the items to return (exclusive). Defaults to
+          10.
+        in: query
+        name: _end
+        schema:
+          type: integer
+      - description: Comma-separated list of sort orders ('asc' or 'desc') corresponding
+          to _sort fields. Defaults to 'asc'.
+        in: query
+        name: _order
+        schema:
+          type: string
+      - description: 'Comma-separated list of fields to sort by. Available fields:
+          target_type, status'
+        in: query
+        name: _sort
+        schema:
+          type: string
+      - description: Starting index of the items to return (0-based). Defaults to
+          0.
+        in: query
+        name: _start
+        schema:
+          type: integer
+      - description: Filter by domain contains
+        in: query
+        name: domain_contains
+        schema:
+          type: string
+      - description: Filter by domain endswith
+        in: query
+        name: domain_endswith
+        schema:
+          type: string
+      - description: Filter by domain eq
+        in: query
+        name: domain_eq
+        schema:
+          type: string
+      - description: Filter by domain ne
+        in: query
+        name: domain_ne
+        schema:
+          type: string
+      - description: Filter by domain startswith
+        in: query
+        name: domain_startswith
+        schema:
+          type: string
+      - description: Filter by domain contains
+        in: query
+        name: filters[domain][contains]
+        schema:
+          type: string
+      - description: Filter by domain endswith
+        in: query
+        name: filters[domain][endswith]
+        schema:
+          type: string
+      - description: Filter by domain eq
+        in: query
+        name: filters[domain][eq]
+        schema:
+          type: string
+      - description: Filter by domain ne
+        in: query
+        name: filters[domain][ne]
+        schema:
+          type: string
+      - description: Filter by domain startswith
+        in: query
+        name: filters[domain][startswith]
+        schema:
+          type: string
+      - description: Filter by status contains
+        in: query
+        name: filters[status][contains]
+        schema:
+          type: string
+      - description: Filter by status endswith
+        in: query
+        name: filters[status][endswith]
+        schema:
+          type: string
+      - description: Filter by status eq
+        in: query
+        name: filters[status][eq]
+        schema:
+          type: string
+      - description: Filter by status ne
+        in: query
+        name: filters[status][ne]
+        schema:
+          type: string
+      - description: Filter by status startswith
+        in: query
+        name: filters[status][startswith]
+        schema:
+          type: string
+      - description: Filter by target_type contains
+        in: query
+        name: filters[target_type][contains]
+        schema:
+          type: string
+      - description: Filter by target_type endswith
+        in: query
+        name: filters[target_type][endswith]
+        schema:
+          type: string
+      - description: Filter by target_type eq
+        in: query
+        name: filters[target_type][eq]
+        schema:
+          type: string
+      - description: Filter by target_type ne
+        in: query
+        name: filters[target_type][ne]
+        schema:
+          type: string
+      - description: Filter by target_type startswith
+        in: query
+        name: filters[target_type][startswith]
+        schema:
+          type: string
+      - description: Filter by status contains
+        in: query
+        name: status_contains
+        schema:
+          type: string
+      - description: Filter by status endswith
+        in: query
+        name: status_endswith
+        schema:
+          type: string
+      - description: Filter by status eq
+        in: query
+        name: status_eq
+        schema:
+          type: string
+      - description: Filter by status ne
+        in: query
+        name: status_ne
+        schema:
+          type: string
+      - description: Filter by status startswith
+        in: query
+        name: status_startswith
+        schema:
+          type: string
+      - description: Filter by target_type contains
+        in: query
+        name: target_type_contains
+        schema:
+          type: string
+      - description: Filter by target_type endswith
+        in: query
+        name: target_type_endswith
+        schema:
+          type: string
+      - description: Filter by target_type eq
+        in: query
+        name: target_type_eq
+        schema:
+          type: string
+      - description: Filter by target_type ne
+        in: query
+        name: target_type_ne
+        schema:
+          type: string
+      - description: Filter by target_type startswith
+        in: query
+        name: target_type_startswith
+        schema:
+          type: string
       responses:
         "200":
           content:
@@ -3620,6 +3961,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/WebsiteItemResponse'
           description: List of websites
+          headers:
+            X-Total-Count:
+              description: Total number of items
+              schema:
+                type: string
         "400":
           content:
             application/json:
@@ -3944,7 +4290,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Bad request
+          description: Invalid website ID or request body
         "401":
           content:
             application/json:
@@ -3962,19 +4308,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Not found
+          description: Website not found
         "422":
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Validation failed
+          description: Invalid target (CID/IPNS) or DNS hosting value; target CID
+            not pinned (CID_NOT_PINNED) or IPNS key not found (IPNS_KEY_NOT_FOUND)
         "500":
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Internal server error
+          description: Internal server error occurred
       summary: Update website
       tags:
       - Websites
@@ -4362,6 +4709,72 @@ paths:
       tags:
       - Websites
       - Domains
+  /api/websites/{id}/domains/{domain_id}/onchain:
+    post:
+      description: Reclassifies a bound domain as on-chain managed (e.g. a Handshake
+        HIP-5 name whose NS now points at an external contract). Deletes the portal-managed
+        PowerDNS zone and DNSSEC for the binding and switches ownership verification
+        to the TXT token; DANE/SSL state is retained. One-way.
+      parameters:
+      - description: Domain ID
+        in: path
+        name: domain_id
+        required: true
+        schema:
+          type: string
+      - description: Website ID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainResponse'
+          description: Converted domain
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Validation failed
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Reclassify domain as on-chain managed
+      tags:
+      - Websites
+      - Domains
   /api/websites/{id}/domains/{domain_id}/verify:
     post:
       description: Triggers verification of domain delegation.
@@ -4454,7 +4867,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Bad request
+          description: Invalid website ID format
         "401":
           content:
             application/json:
@@ -4472,19 +4885,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Not found
+          description: Website not found
         "422":
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Validation failed
+          description: 'DNS validation failed: verification TXT record not published
+            or domain does not resolve (DNS_VALIDATION_FAILED)'
         "500":
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-          description: Internal server error
+          description: Internal server error occurred
       summary: Validate website DNS
       tags:
       - Websites
@@ -4542,6 +4956,116 @@ paths:
       summary: Get website hosting configuration
       tags:
       - Websites
+  /api/websites/platform-domains:
+    get:
+      description: Lists the platform-owned root domains that are enabled and available
+        for users to claim free subdomains under. Returns the standard paginated list
+        shape ({data, total}), ordered by domain. Only enabled roots are returned.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformDomainListResponse'
+          description: List of supported platform domains
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Validation failed
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: List supported platform domains
+      tags:
+      - Websites
+      - PlatformDomains
+  /api/websites/platform-domains/availability:
+    get:
+      description: Checks, for a candidate label, whether it is claimable on each
+        enabled platform (free-subdomain) root. Returns one result per root. Auth-required;
+        only probes platform-owned roots, never user-managed zones.
+      parameters:
+      - description: Candidate subdomain label
+        in: query
+        name: label
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformAvailabilityResponse'
+          description: Availability by root
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Bad request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Validation failed
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error
+      summary: Check platform subdomain availability
+      tags:
+      - Websites
+      - PlatformDomains
   /internal/dns/cert:
     post:
       description: Internal endpoint for Caddy to push a cert and receive computed
@@ -4972,11 +5496,73 @@ paths:
       summary: Get website status for gateway
       tags:
       - Gateway
+  /internal/websites/changes:
+    get:
+      description: |-
+        Returns durable website lifecycle changes (published, removed) after the
+        supplied cursor, in ascending durable-ID order, together with the current
+        replay high-water mark. The gateway calls this after an SSE reconnect to
+        discover domains it missed during the gap without relying on visitor traffic.
+        Requires X-Gateway-Secret header for authentication.
+      parameters:
+      - description: Durable event cursor to resume after. Returns all events with
+          id > after. Omit to start from the beginning of the retained window.
+        in: query
+        name: after
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebsiteChangesResponse'
+          description: Reconciled changes
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Invalid after cursor
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Not found
+        "422":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Validation failed
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          description: Internal server error occurred
+      summary: Reconcile website changes
+      tags:
+      - Gateway
   /internal/websites/events:
     get:
       description: |-
         Server-Sent Events endpoint for gateway-to-portal communication.
         Streams website lifecycle events (published, removed) in real time.
+        Supports Last-Event-ID replay of durable events after a reconnect.
         Requires X-Gateway-Secret header for authentication.
       responses:
         "200":

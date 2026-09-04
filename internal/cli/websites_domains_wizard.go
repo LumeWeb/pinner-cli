@@ -374,7 +374,7 @@ func runDomainsWizard(ctx context.Context, cmd *cli.Command, output Output) erro
 			output.Printfln("")
 			status := ""
 			if domain.Status != nil {
-				status = *domain.Status
+				status = string(*domain.Status)
 			}
 			zoneName := ""
 			if domain.ZoneName != nil {
@@ -385,7 +385,7 @@ func runDomainsWizard(ctx context.Context, cmd *cli.Command, output Output) erro
 					{"Website", w.WebsiteDomain()},
 					{"ID", strconv.Itoa(domain.Id)},
 					{"Domain", domain.Domain},
-					{"Namespace", domain.Namespace},
+					{"Namespace", string(domain.Namespace)},
 					{"Status", status},
 					{"Zone Name", zoneName},
 				},

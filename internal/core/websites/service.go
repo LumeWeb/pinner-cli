@@ -40,6 +40,14 @@ type Service interface {
 	GetDomainDNSRequirements(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
 	RepublishDANE(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainDANERepublishResponse, error)
 
+	// ConvertDomainToOnChain reclassifies a bound HNS domain as on-chain
+	// managed: the name's DNS is served by an external contract, so the portal
+	// deletes its managed zone/DNSSEC and switches ownership verification to
+	// the TXT token. One-way; DANE/SSL state is retained. Refused with an
+	// error when the binding is already on-chain, not eligible, or shares a
+	// zone.
+	ConvertDomainToOnChain(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error)
+
 	// UpdateDomain updates a bound domain's per-domain DNS control - whether the
 	// portal manages DNS hosting for this binding (dns_hosting_enabled) and/or
 	// promotes the binding to primary. Omitted fields are left unchanged.
@@ -410,6 +418,21 @@ func (s *service) UpdateDomain(ctx context.Context, websiteID string, domainID s
 		return nil, err
 	}
 	return svc.UpdateDomain(ctx, websiteID, domainID, req)
+}
+
+// ConvertDomainToOnChain reclassifies a bound HNS domain as on-chain managed.
+// Mirrors RepublishDANE: auth + SDK delegation only, no business
+// logic. An "already on-chain" 422 from the backend is idempotent success
+// (the SDK returns the current domain state for it).
+func (s *service) ConvertDomainToOnChain(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
+	if err := s.RequireAuthenticated(); err != nil {
+		return nil, err
+	}
+	svc, err := s.requireService()
+	if err != nil {
+		return nil, err
+	}
+	return svc.ConvertDomainToOnChain(ctx, websiteID, domainID)
 }
 
 // ListPlatformDomains lists the platform (free-subdomain) roots available

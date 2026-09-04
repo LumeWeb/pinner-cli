@@ -42,6 +42,23 @@ var reconcileNoSleep = toolforge.Static("On this host there is no sleep tool: if
 // caveat is needed. Shares the same decision (re-check rather than fail).
 var reconcilePlain = toolforge.Static("If validation is still pending or failing, treat it as reconciliation lag and re-call websites_validate after other work, without starting a new flow.")
 
+// hnsNamespaceClause is the Handshake (alt-root) namespace guidance appended to
+// custom-domain website flows whose domain may be an HNS name. It covers the
+// two HNS hosting shapes: native HNS (portal builds the delegation bundle;
+// the user publishes the parent NS/DS/GLUE records on-chain in the HNS wallet)
+// and on-chain managed (the name's NS record points at an external
+// contract, so the backend coerces the binding to status onchain_managed with
+// no delegation records at all, and ownership is proven via a TXT token).
+var hnsNamespaceClause = toolforge.Static("For a Handshake (alt-root) name such as acme/ (i.e. the user has a Handshake domain, not an ICANN TLD domain), pass {\"namespace\": \"hns\"} alongside the website so the site binds under the HNS namespace.").Then(hnsOnchainClause)
+
+// hnsOnchainClause tells the agent how to read and act on the two possible
+// HNS bind outcomes in the same domain: status onchain_managed (no
+// records to publish) versus the normal delegation flow.
+var hnsOnchainClause = toolforge.Static("Read the created/bound domain's status next:").Sentences(
+	"On status onchain_managed the HNS name's DNS is served by an external contract on the Handshake chain, so there are NO delegation records to publish and pinner://websites/<domain>/dns-requirements returns no parent/authoritative records — the site works and ownership is verified via a TXT token through the HNS resolver. Do not call websites_domains_convert_onchain (it is already on-chain managed) and do not wait for delegation.",
+	"On any other status (records_generated, waiting_delegation), read pinner://websites/<domain>/dns-requirements for the HNS delegation bundle and publish the parent NS/DS/GLUE records on-chain in the HNS wallet; with managed DNS the authoritative side is handled for you. To migrate a portal-managed HNS name whose DNS now lives in an external contract, call websites_domains_convert_onchain — it is one-way and destructive (deletes Pinner's managed zone/DNSSEC), so it requires confirm=true.",
+)
+
 // siteBundleUpload composes the "how to upload a static site bundle" guidance
 // block. The upload call self-gates on FeatFileHostInput (a host that can hand
 // over a file object uploads via the `file` argument, others must convert a

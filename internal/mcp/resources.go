@@ -42,6 +42,10 @@ type DNSRequirements struct {
 	Records           []DNSRecord `json:"records"`
 	Nameservers       []string    `json:"nameservers,omitempty"`
 	GatewayDomain     string      `json:"gateway_domain,omitempty"`
+	// Notes are advisory annotations the agent must read before acting: they
+	// point at the per-domain delegation flow (where Handshake namespace and
+	// delegation state live), which this website-level view cannot see.
+	Notes []string `json:"notes,omitempty"`
 }
 
 // ValidationStatus holds the live validation result for a website.
@@ -438,6 +442,15 @@ func buildDNSRequirements(website *ipfs.WebsiteItem) DNSRequirements {
 		Domain:            website.Domain,
 		DNSHostingEnabled: website.DnsHostingEnabled,
 	}
+
+	// Namespace-specific delegation (Handshake/HNS bundles, on-chain managed
+	// bindings that need NO records) lives on the domain binding, not the
+	// website. Point agents there instead of letting them publish website-
+	// level records against a domain the per-domain flow owns.
+	reqs.Notes = append(reqs.Notes,
+		"For a custom domain, the per-domain delegation bundle (and its namespace) is authoritative: call websites_domains_list to see the binding's status and websites_domains_dns_requirements for its records.",
+		"A Handshake (HNS) binding with status onchain_managed (DNS served by an external contract on the Handshake chain) requires NO records to be published — do not add website-level records for it.",
+	)
 
 	if website.DnsHostingEnabled {
 		// NS delegation: use gateway domain if known.

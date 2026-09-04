@@ -115,6 +115,7 @@ func WebsitesOperations(d WebsitesDeps) []catalog.Operation {
 		websitesDomainsVerify(d),
 		websitesDomainsDNSRequirements(d),
 		websitesDomainsDANERepublish(d),
+		websitesDomainsConvertOnChain(d),
 		websitesDomainsUpdate(d),
 		websitesPlatformDomainsList(d),
 		websitesPlatformDomainAvailability(d),

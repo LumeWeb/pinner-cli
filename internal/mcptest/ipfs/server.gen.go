@@ -15,6 +15,108 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for DomainDANERepublishResponseNamespace.
+const (
+	DomainDANERepublishResponseNamespaceHns   DomainDANERepublishResponseNamespace = "hns"
+	DomainDANERepublishResponseNamespaceIcann DomainDANERepublishResponseNamespace = "icann"
+)
+
+// Valid indicates whether the value is a known member of the DomainDANERepublishResponseNamespace enum.
+func (e DomainDANERepublishResponseNamespace) Valid() bool {
+	switch e {
+	case DomainDANERepublishResponseNamespaceHns:
+		return true
+	case DomainDANERepublishResponseNamespaceIcann:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DomainDANERepublishResponseStatus.
+const (
+	DomainDANERepublishResponseStatusActive            DomainDANERepublishResponseStatus = "active"
+	DomainDANERepublishResponseStatusDraft             DomainDANERepublishResponseStatus = "draft"
+	DomainDANERepublishResponseStatusError             DomainDANERepublishResponseStatus = "error"
+	DomainDANERepublishResponseStatusOnchainManaged    DomainDANERepublishResponseStatus = "onchain_managed"
+	DomainDANERepublishResponseStatusRecordsGenerated  DomainDANERepublishResponseStatus = "records_generated"
+	DomainDANERepublishResponseStatusSelfHosted        DomainDANERepublishResponseStatus = "self_hosted"
+	DomainDANERepublishResponseStatusWaitingDelegation DomainDANERepublishResponseStatus = "waiting_delegation"
+)
+
+// Valid indicates whether the value is a known member of the DomainDANERepublishResponseStatus enum.
+func (e DomainDANERepublishResponseStatus) Valid() bool {
+	switch e {
+	case DomainDANERepublishResponseStatusActive:
+		return true
+	case DomainDANERepublishResponseStatusDraft:
+		return true
+	case DomainDANERepublishResponseStatusError:
+		return true
+	case DomainDANERepublishResponseStatusOnchainManaged:
+		return true
+	case DomainDANERepublishResponseStatusRecordsGenerated:
+		return true
+	case DomainDANERepublishResponseStatusSelfHosted:
+		return true
+	case DomainDANERepublishResponseStatusWaitingDelegation:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DomainResponseNamespace.
+const (
+	DomainResponseNamespaceHns   DomainResponseNamespace = "hns"
+	DomainResponseNamespaceIcann DomainResponseNamespace = "icann"
+)
+
+// Valid indicates whether the value is a known member of the DomainResponseNamespace enum.
+func (e DomainResponseNamespace) Valid() bool {
+	switch e {
+	case DomainResponseNamespaceHns:
+		return true
+	case DomainResponseNamespaceIcann:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DomainResponseStatus.
+const (
+	DomainResponseStatusActive            DomainResponseStatus = "active"
+	DomainResponseStatusDraft             DomainResponseStatus = "draft"
+	DomainResponseStatusError             DomainResponseStatus = "error"
+	DomainResponseStatusOnchainManaged    DomainResponseStatus = "onchain_managed"
+	DomainResponseStatusRecordsGenerated  DomainResponseStatus = "records_generated"
+	DomainResponseStatusSelfHosted        DomainResponseStatus = "self_hosted"
+	DomainResponseStatusWaitingDelegation DomainResponseStatus = "waiting_delegation"
+)
+
+// Valid indicates whether the value is a known member of the DomainResponseStatus enum.
+func (e DomainResponseStatus) Valid() bool {
+	switch e {
+	case DomainResponseStatusActive:
+		return true
+	case DomainResponseStatusDraft:
+		return true
+	case DomainResponseStatusError:
+		return true
+	case DomainResponseStatusOnchainManaged:
+		return true
+	case DomainResponseStatusRecordsGenerated:
+		return true
+	case DomainResponseStatusSelfHosted:
+		return true
+	case DomainResponseStatusWaitingDelegation:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GatewayWebsiteResponseNamespace.
 const (
 	Hns   GatewayWebsiteResponseNamespace = "hns"
@@ -33,27 +135,69 @@ func (e GatewayWebsiteResponseNamespace) Valid() bool {
 	}
 }
 
+// Defines values for SSLStatusInfoStatus.
+const (
+	SSLStatusInfoStatusFailed  SSLStatusInfoStatus = "failed"
+	SSLStatusInfoStatusIssuing SSLStatusInfoStatus = "issuing"
+	SSLStatusInfoStatusPending SSLStatusInfoStatus = "pending"
+	SSLStatusInfoStatusReady   SSLStatusInfoStatus = "ready"
+)
+
+// Valid indicates whether the value is a known member of the SSLStatusInfoStatus enum.
+func (e SSLStatusInfoStatus) Valid() bool {
+	switch e {
+	case SSLStatusInfoStatusFailed:
+		return true
+	case SSLStatusInfoStatusIssuing:
+		return true
+	case SSLStatusInfoStatusPending:
+		return true
+	case SSLStatusInfoStatusReady:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UploadResultResponseStatus.
 const (
-	Completed  UploadResultResponseStatus = "completed"
-	Duplicate  UploadResultResponseStatus = "duplicate"
-	Failed     UploadResultResponseStatus = "failed"
-	Pending    UploadResultResponseStatus = "pending"
-	Processing UploadResultResponseStatus = "processing"
+	UploadResultResponseStatusCompleted  UploadResultResponseStatus = "completed"
+	UploadResultResponseStatusDuplicate  UploadResultResponseStatus = "duplicate"
+	UploadResultResponseStatusFailed     UploadResultResponseStatus = "failed"
+	UploadResultResponseStatusPending    UploadResultResponseStatus = "pending"
+	UploadResultResponseStatusProcessing UploadResultResponseStatus = "processing"
 )
 
 // Valid indicates whether the value is a known member of the UploadResultResponseStatus enum.
 func (e UploadResultResponseStatus) Valid() bool {
 	switch e {
-	case Completed:
+	case UploadResultResponseStatusCompleted:
 		return true
-	case Duplicate:
+	case UploadResultResponseStatusDuplicate:
 		return true
-	case Failed:
+	case UploadResultResponseStatusFailed:
 		return true
-	case Pending:
+	case UploadResultResponseStatusPending:
 		return true
-	case Processing:
+	case UploadResultResponseStatusProcessing:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WebsiteChangeEventEventType.
+const (
+	Published WebsiteChangeEventEventType = "published"
+	Removed   WebsiteChangeEventEventType = "removed"
+)
+
+// Valid indicates whether the value is a known member of the WebsiteChangeEventEventType enum.
+func (e WebsiteChangeEventEventType) Valid() bool {
+	switch e {
+	case Published:
+		return true
+	case Removed:
 		return true
 	default:
 		return false
@@ -152,18 +296,24 @@ type DNSDelegationRecord struct {
 
 // DomainDANERepublishResponse defines model for DomainDANERepublishResponse.
 type DomainDANERepublishResponse struct {
-	Delegation  *DNSDelegation `json:"delegation,omitempty"`
-	Domain      string         `json:"domain"`
-	GatewayHost *string        `json:"gateway_host,omitempty"`
-	Id          int            `json:"id"`
-	Namespace   string         `json:"namespace"`
-	OwnerName   *string        `json:"owner_name,omitempty"`
-	Ssl         *SSLStatusInfo `json:"ssl,omitempty"`
-	Status      *string        `json:"status,omitempty"`
-	TlsaRdata   *string        `json:"tlsa_rdata,omitempty"`
-	TlsaRecord  *string        `json:"tlsa_record,omitempty"`
-	ZoneName    *string        `json:"zone_name,omitempty"`
+	Delegation  *DNSDelegation                       `json:"delegation,omitempty"`
+	Domain      string                               `json:"domain"`
+	GatewayHost *string                              `json:"gateway_host,omitempty"`
+	Id          int                                  `json:"id"`
+	Namespace   DomainDANERepublishResponseNamespace `json:"namespace"`
+	OwnerName   *string                              `json:"owner_name,omitempty"`
+	Ssl         *SSLStatusInfo                       `json:"ssl,omitempty"`
+	Status      *DomainDANERepublishResponseStatus   `json:"status,omitempty"`
+	TlsaRdata   *string                              `json:"tlsa_rdata,omitempty"`
+	TlsaRecord  *string                              `json:"tlsa_record,omitempty"`
+	ZoneName    *string                              `json:"zone_name,omitempty"`
 }
+
+// DomainDANERepublishResponseNamespace defines model for DomainDANERepublishResponse.Namespace.
+type DomainDANERepublishResponseNamespace string
+
+// DomainDANERepublishResponseStatus defines model for DomainDANERepublishResponse.Status.
+type DomainDANERepublishResponseStatus string
 
 // DomainListResponse defines model for DomainListResponse.
 type DomainListResponse struct {
@@ -173,23 +323,34 @@ type DomainListResponse struct {
 
 // DomainRequest defines model for DomainRequest.
 type DomainRequest struct {
-	Config    *map[string]interface{} `json:"config,omitempty"`
-	Domain    string                  `json:"domain"`
-	Namespace string                  `json:"namespace"`
+	Config            *map[string]interface{} `json:"config,omitempty"`
+	DnsHostingEnabled *bool                   `json:"dns_hosting_enabled,omitempty"`
+	Domain            string                  `json:"domain"`
+	Generate          *bool                   `json:"generate,omitempty"`
+	Label             *string                 `json:"label,omitempty"`
+	Namespace         string                  `json:"namespace"`
+	PlatformDomain    *string                 `json:"platform_domain,omitempty"`
+	PlatformNamespace *string                 `json:"platform_namespace,omitempty"`
 }
 
 // DomainResponse defines model for DomainResponse.
 type DomainResponse struct {
-	Delegation        *DNSDelegation `json:"delegation,omitempty"`
-	DnsHostingEnabled bool           `json:"dns_hosting_enabled"`
-	Domain            string         `json:"domain"`
-	GatewayHost       *string        `json:"gateway_host,omitempty"`
-	Id                int            `json:"id"`
-	Namespace         string         `json:"namespace"`
-	Ssl               *SSLStatusInfo `json:"ssl,omitempty"`
-	Status            *string        `json:"status,omitempty"`
-	ZoneName          *string        `json:"zone_name,omitempty"`
+	Delegation        *DNSDelegation          `json:"delegation,omitempty"`
+	DnsHostingEnabled bool                    `json:"dns_hosting_enabled"`
+	Domain            string                  `json:"domain"`
+	GatewayHost       *string                 `json:"gateway_host,omitempty"`
+	Id                int                     `json:"id"`
+	Namespace         DomainResponseNamespace `json:"namespace"`
+	Ssl               *SSLStatusInfo          `json:"ssl,omitempty"`
+	Status            *DomainResponseStatus   `json:"status,omitempty"`
+	ZoneName          *string                 `json:"zone_name,omitempty"`
 }
+
+// DomainResponseNamespace defines model for DomainResponse.Namespace.
+type DomainResponseNamespace string
+
+// DomainResponseStatus defines model for DomainResponse.Status.
+type DomainResponseStatus string
 
 // DomainUpdateRequest defines model for DomainUpdateRequest.
 type DomainUpdateRequest struct {
@@ -358,15 +519,49 @@ type PingResponse struct {
 	Status string `json:"status"`
 }
 
+// PlatformAvailabilityResponse defines model for PlatformAvailabilityResponse.
+type PlatformAvailabilityResponse struct {
+	Label   string                       `json:"label"`
+	Results []PlatformAvailabilityResult `json:"results"`
+}
+
+// PlatformAvailabilityResult defines model for PlatformAvailabilityResult.
+type PlatformAvailabilityResult struct {
+	Available      bool   `json:"available"`
+	Namespace      string `json:"namespace"`
+	PlatformDomain string `json:"platform_domain"`
+}
+
+// PlatformDomainListResponse defines model for PlatformDomainListResponse.
+type PlatformDomainListResponse struct {
+	Data  []PlatformDomainResponse `json:"data"`
+	Total int                      `json:"total"`
+}
+
+// PlatformDomainResponse defines model for PlatformDomainResponse.
+type PlatformDomainResponse struct {
+	Domain    string `json:"domain"`
+	Enabled   bool   `json:"enabled"`
+	Id        int    `json:"id"`
+	Namespace string `json:"namespace"`
+	ZoneId    int    `json:"zone_id"`
+}
+
 // PostUploadResponse defines model for PostUploadResponse.
 type PostUploadResponse struct {
 	CID string `json:"CID"`
 }
 
+// RecordDeleteRequest defines model for RecordDeleteRequest.
+type RecordDeleteRequest struct {
+	Content *string `json:"content,omitempty"`
+}
+
 // RecordIdentifier defines model for RecordIdentifier.
 type RecordIdentifier struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
+	Content *string `json:"content,omitempty"`
+	Name    string  `json:"name"`
+	Type    string  `json:"type"`
 }
 
 // RecordRequest defines model for RecordRequest.
@@ -382,6 +577,7 @@ type RecordRequest struct {
 type RecordResponse struct {
 	Content  string `json:"content"`
 	Disabled bool   `json:"disabled"`
+	Id       string `json:"id"`
 	Name     string `json:"name"`
 	Ttl      int    `json:"ttl"`
 	Type     string `json:"type"`
@@ -404,11 +600,14 @@ type RecordResult struct {
 
 // SSLStatusInfo defines model for SSLStatusInfo.
 type SSLStatusInfo struct {
-	Error         *string    `json:"error,omitempty"`
-	IssuedAt      *time.Time `json:"issued_at,omitempty"`
-	LastUpdatedAt *time.Time `json:"last_updated_at,omitempty"`
-	Status        string     `json:"status"`
+	Error         *string             `json:"error,omitempty"`
+	IssuedAt      *time.Time          `json:"issued_at,omitempty"`
+	LastUpdatedAt *time.Time          `json:"last_updated_at,omitempty"`
+	Status        SSLStatusInfoStatus `json:"status"`
 }
+
+// SSLStatusInfoStatus defines model for SSLStatusInfo.Status.
+type SSLStatusInfoStatus string
 
 // SSLStatusUpdateRequest defines model for SSLStatusUpdateRequest.
 type SSLStatusUpdateRequest struct {
@@ -443,6 +642,27 @@ type ValidationResponse struct {
 	Valid       bool      `json:"valid"`
 }
 
+// WebsiteChangeEvent defines model for WebsiteChangeEvent.
+type WebsiteChangeEvent struct {
+	Cid       *string                     `json:"cid,omitempty"`
+	CreatedAt time.Time                   `json:"created_at"`
+	Domain    string                      `json:"domain"`
+	EventType WebsiteChangeEventEventType `json:"event_type"`
+	Id        int                         `json:"id"`
+	UserId    *int                        `json:"user_id,omitempty"`
+	WebsiteId *int                        `json:"website_id,omitempty"`
+}
+
+// WebsiteChangeEventEventType defines model for WebsiteChangeEvent.EventType.
+type WebsiteChangeEventEventType string
+
+// WebsiteChangesResponse defines model for WebsiteChangesResponse.
+type WebsiteChangesResponse struct {
+	Events        []WebsiteChangeEvent `json:"events"`
+	HighWaterMark int                  `json:"high_water_mark"`
+	Truncated     bool                 `json:"truncated"`
+}
+
 // WebsiteConfigResponse defines model for WebsiteConfigResponse.
 type WebsiteConfigResponse struct {
 	GatewayDomain *string   `json:"gateway_domain,omitempty"`
@@ -454,7 +674,6 @@ type WebsiteItem struct {
 	ActiveCid            *string        `json:"active_cid,omitempty"`
 	Created              time.Time      `json:"created"`
 	DnsHostingEnabled    bool           `json:"dns_hosting_enabled"`
-	DnsZoneId            *int           `json:"dns_zone_id,omitempty"`
 	Domain               string         `json:"domain"`
 	Expired              bool           `json:"expired"`
 	GatewayDomain        *string        `json:"gateway_domain,omitempty"`
@@ -470,6 +689,7 @@ type WebsiteItem struct {
 	ValidationExpiresAt  *time.Time     `json:"validation_expires_at,omitempty"`
 	ValidationRecordHost *string        `json:"validation_record_host,omitempty"`
 	ValidationToken      string         `json:"validation_token"`
+	ZoneId               *int           `json:"zone_id,omitempty"`
 }
 
 // WebsiteItemResponse defines model for WebsiteItemResponse.
@@ -481,8 +701,12 @@ type WebsiteItemResponse struct {
 // WebsiteRequest defines model for WebsiteRequest.
 type WebsiteRequest struct {
 	DnsHostingEnabled *bool   `json:"dns_hosting_enabled,omitempty"`
-	Domain            string  `json:"domain"`
+	Domain            *string `json:"domain,omitempty"`
+	Generate          *bool   `json:"generate,omitempty"`
+	Label             *string `json:"label,omitempty"`
 	Namespace         *string `json:"namespace,omitempty"`
+	PlatformDomain    *string `json:"platform_domain,omitempty"`
+	PlatformNamespace *string `json:"platform_namespace,omitempty"`
 	TargetHash        string  `json:"target_hash"`
 	TargetType        string  `json:"target_type"`
 }
@@ -492,7 +716,6 @@ type WebsiteResponse struct {
 	ActiveCid            *string        `json:"active_cid,omitempty"`
 	Created              time.Time      `json:"created"`
 	DnsHostingEnabled    bool           `json:"dns_hosting_enabled"`
-	DnsZoneId            *int           `json:"dns_zone_id,omitempty"`
 	Domain               string         `json:"domain"`
 	Expired              bool           `json:"expired"`
 	GatewayDomain        *string        `json:"gateway_domain,omitempty"`
@@ -508,6 +731,7 @@ type WebsiteResponse struct {
 	ValidationExpiresAt  *time.Time     `json:"validation_expires_at,omitempty"`
 	ValidationRecordHost *string        `json:"validation_record_host,omitempty"`
 	ValidationToken      string         `json:"validation_token"`
+	ZoneId               *int           `json:"zone_id,omitempty"`
 }
 
 // WebsiteUpdateRequest defines model for WebsiteUpdateRequest.
@@ -619,10 +843,127 @@ type PatchApiUploadTusIdParams struct {
 	UploadOffset map[string]interface{} `json:"Upload-Offset"`
 }
 
+// GetApiWebsitesParams defines parameters for GetApiWebsites.
+type GetApiWebsitesParams struct {
+	// UnderscoreEnd Ending index of the items to return (exclusive). Defaults to 10.
+	UnderscoreEnd *int `form:"_end,omitempty" json:"_end,omitempty"`
+
+	// UnderscoreOrder Comma-separated list of sort orders ('asc' or 'desc') corresponding to _sort fields. Defaults to 'asc'.
+	UnderscoreOrder *string `form:"_order,omitempty" json:"_order,omitempty"`
+
+	// UnderscoreSort Comma-separated list of fields to sort by. Available fields: target_type, status
+	UnderscoreSort *string `form:"_sort,omitempty" json:"_sort,omitempty"`
+
+	// UnderscoreStart Starting index of the items to return (0-based). Defaults to 0.
+	UnderscoreStart *int `form:"_start,omitempty" json:"_start,omitempty"`
+
+	// DomainContains Filter by domain contains
+	DomainContains *string `form:"domain_contains,omitempty" json:"domain_contains,omitempty"`
+
+	// DomainEndswith Filter by domain endswith
+	DomainEndswith *string `form:"domain_endswith,omitempty" json:"domain_endswith,omitempty"`
+
+	// DomainEq Filter by domain eq
+	DomainEq *string `form:"domain_eq,omitempty" json:"domain_eq,omitempty"`
+
+	// DomainNe Filter by domain ne
+	DomainNe *string `form:"domain_ne,omitempty" json:"domain_ne,omitempty"`
+
+	// DomainStartswith Filter by domain startswith
+	DomainStartswith *string `form:"domain_startswith,omitempty" json:"domain_startswith,omitempty"`
+
+	// FiltersDomainContains Filter by domain contains
+	FiltersDomainContains *string `form:"filters[domain][contains],omitempty" json:"filters[domain][contains],omitempty"`
+
+	// FiltersDomainEndswith Filter by domain endswith
+	FiltersDomainEndswith *string `form:"filters[domain][endswith],omitempty" json:"filters[domain][endswith],omitempty"`
+
+	// FiltersDomainEq Filter by domain eq
+	FiltersDomainEq *string `form:"filters[domain][eq],omitempty" json:"filters[domain][eq],omitempty"`
+
+	// FiltersDomainNe Filter by domain ne
+	FiltersDomainNe *string `form:"filters[domain][ne],omitempty" json:"filters[domain][ne],omitempty"`
+
+	// FiltersDomainStartswith Filter by domain startswith
+	FiltersDomainStartswith *string `form:"filters[domain][startswith],omitempty" json:"filters[domain][startswith],omitempty"`
+
+	// FiltersStatusContains Filter by status contains
+	FiltersStatusContains *string `form:"filters[status][contains],omitempty" json:"filters[status][contains],omitempty"`
+
+	// FiltersStatusEndswith Filter by status endswith
+	FiltersStatusEndswith *string `form:"filters[status][endswith],omitempty" json:"filters[status][endswith],omitempty"`
+
+	// FiltersStatusEq Filter by status eq
+	FiltersStatusEq *string `form:"filters[status][eq],omitempty" json:"filters[status][eq],omitempty"`
+
+	// FiltersStatusNe Filter by status ne
+	FiltersStatusNe *string `form:"filters[status][ne],omitempty" json:"filters[status][ne],omitempty"`
+
+	// FiltersStatusStartswith Filter by status startswith
+	FiltersStatusStartswith *string `form:"filters[status][startswith],omitempty" json:"filters[status][startswith],omitempty"`
+
+	// FiltersTargetTypeContains Filter by target_type contains
+	FiltersTargetTypeContains *string `form:"filters[target_type][contains],omitempty" json:"filters[target_type][contains],omitempty"`
+
+	// FiltersTargetTypeEndswith Filter by target_type endswith
+	FiltersTargetTypeEndswith *string `form:"filters[target_type][endswith],omitempty" json:"filters[target_type][endswith],omitempty"`
+
+	// FiltersTargetTypeEq Filter by target_type eq
+	FiltersTargetTypeEq *string `form:"filters[target_type][eq],omitempty" json:"filters[target_type][eq],omitempty"`
+
+	// FiltersTargetTypeNe Filter by target_type ne
+	FiltersTargetTypeNe *string `form:"filters[target_type][ne],omitempty" json:"filters[target_type][ne],omitempty"`
+
+	// FiltersTargetTypeStartswith Filter by target_type startswith
+	FiltersTargetTypeStartswith *string `form:"filters[target_type][startswith],omitempty" json:"filters[target_type][startswith],omitempty"`
+
+	// StatusContains Filter by status contains
+	StatusContains *string `form:"status_contains,omitempty" json:"status_contains,omitempty"`
+
+	// StatusEndswith Filter by status endswith
+	StatusEndswith *string `form:"status_endswith,omitempty" json:"status_endswith,omitempty"`
+
+	// StatusEq Filter by status eq
+	StatusEq *string `form:"status_eq,omitempty" json:"status_eq,omitempty"`
+
+	// StatusNe Filter by status ne
+	StatusNe *string `form:"status_ne,omitempty" json:"status_ne,omitempty"`
+
+	// StatusStartswith Filter by status startswith
+	StatusStartswith *string `form:"status_startswith,omitempty" json:"status_startswith,omitempty"`
+
+	// TargetTypeContains Filter by target_type contains
+	TargetTypeContains *string `form:"target_type_contains,omitempty" json:"target_type_contains,omitempty"`
+
+	// TargetTypeEndswith Filter by target_type endswith
+	TargetTypeEndswith *string `form:"target_type_endswith,omitempty" json:"target_type_endswith,omitempty"`
+
+	// TargetTypeEq Filter by target_type eq
+	TargetTypeEq *string `form:"target_type_eq,omitempty" json:"target_type_eq,omitempty"`
+
+	// TargetTypeNe Filter by target_type ne
+	TargetTypeNe *string `form:"target_type_ne,omitempty" json:"target_type_ne,omitempty"`
+
+	// TargetTypeStartswith Filter by target_type startswith
+	TargetTypeStartswith *string `form:"target_type_startswith,omitempty" json:"target_type_startswith,omitempty"`
+}
+
+// GetApiWebsitesPlatformDomainsAvailabilityParams defines parameters for GetApiWebsitesPlatformDomainsAvailability.
+type GetApiWebsitesPlatformDomainsAvailabilityParams struct {
+	// Label Candidate subdomain label
+	Label *string `form:"label,omitempty" json:"label,omitempty"`
+}
+
 // GetInternalDnsCertDomainParams defines parameters for GetInternalDnsCertDomain.
 type GetInternalDnsCertDomainParams struct {
 	// Namespace Namespace: hns or icann
 	Namespace *string `form:"namespace,omitempty" json:"namespace,omitempty"`
+}
+
+// GetInternalWebsitesChangesParams defines parameters for GetInternalWebsitesChanges.
+type GetInternalWebsitesChangesParams struct {
+	// After Durable event cursor to resume after. Returns all events with id > after. Omit to start from the beginning of the retained window.
+	After *string `form:"after,omitempty" json:"after,omitempty"`
 }
 
 // GetPinsParams defines parameters for GetPins.
@@ -669,6 +1010,9 @@ type PostApiDnsZonesIdRecordsBulkJSONRequestBody = BulkRecordRequest
 
 // PostApiDnsZonesIdRecordsBulkDeleteJSONRequestBody defines body for PostApiDnsZonesIdRecordsBulkDelete for application/json ContentType.
 type PostApiDnsZonesIdRecordsBulkDeleteJSONRequestBody = BulkDeleteRequest
+
+// DeleteApiDnsZonesIdRecordsNameTypeJSONRequestBody defines body for DeleteApiDnsZonesIdRecordsNameType for application/json ContentType.
+type DeleteApiDnsZonesIdRecordsNameTypeJSONRequestBody = RecordDeleteRequest
 
 // PutApiDnsZonesIdRecordsNameTypeJSONRequestBody defines body for PutApiDnsZonesIdRecordsNameType for application/json ContentType.
 type PutApiDnsZonesIdRecordsNameTypeJSONRequestBody = RecordRequest
@@ -821,13 +1165,19 @@ type ServerInterface interface {
 	PatchApiUploadTusId(w http.ResponseWriter, r *http.Request, id string, params PatchApiUploadTusIdParams)
 	// List websites
 	// (GET /api/websites)
-	GetApiWebsites(w http.ResponseWriter, r *http.Request)
+	GetApiWebsites(w http.ResponseWriter, r *http.Request, params GetApiWebsitesParams)
 	// Create website
 	// (POST /api/websites)
 	PostApiWebsites(w http.ResponseWriter, r *http.Request)
 	// Get website hosting configuration
 	// (GET /api/websites/config)
 	GetApiWebsitesConfig(w http.ResponseWriter, r *http.Request)
+	// List supported platform domains
+	// (GET /api/websites/platform-domains)
+	GetApiWebsitesPlatformDomains(w http.ResponseWriter, r *http.Request)
+	// Check platform subdomain availability
+	// (GET /api/websites/platform-domains/availability)
+	GetApiWebsitesPlatformDomainsAvailability(w http.ResponseWriter, r *http.Request, params GetApiWebsitesPlatformDomainsAvailabilityParams)
 	// Get SSL status
 	// (GET /api/websites/{domain}/ssl-status)
 	GetApiWebsitesDomainSslStatus(w http.ResponseWriter, r *http.Request, domain string)
@@ -858,6 +1208,9 @@ type ServerInterface interface {
 	// Get domain DNS delegation requirements
 	// (GET /api/websites/{id}/domains/{domain_id}/dns-requirements)
 	GetApiWebsitesIdDomainsDomainIdDnsRequirements(w http.ResponseWriter, r *http.Request, id string, domainId string)
+	// Reclassify domain as on-chain managed
+	// (POST /api/websites/{id}/domains/{domain_id}/onchain)
+	PostApiWebsitesIdDomainsDomainIdOnchain(w http.ResponseWriter, r *http.Request, id string, domainId string)
 	// Verify domain delegation
 	// (POST /api/websites/{id}/domains/{domain_id}/verify)
 	PostApiWebsitesIdDomainsDomainIdVerify(w http.ResponseWriter, r *http.Request, id string, domainId string)
@@ -876,6 +1229,9 @@ type ServerInterface interface {
 	// Health check
 	// (GET /internal/ping)
 	GetInternalPing(w http.ResponseWriter, r *http.Request)
+	// Reconcile website changes
+	// (GET /internal/websites/changes)
+	GetInternalWebsitesChanges(w http.ResponseWriter, r *http.Request, params GetInternalWebsitesChangesParams)
 	// Stream website events via SSE
 	// (GET /internal/websites/events)
 	GetInternalWebsitesEvents(w http.ResponseWriter, r *http.Request)
@@ -2105,8 +2461,456 @@ func (siw *ServerInterfaceWrapper) PatchApiUploadTusId(w http.ResponseWriter, r 
 // GetApiWebsites operation middleware
 func (siw *ServerInterfaceWrapper) GetApiWebsites(w http.ResponseWriter, r *http.Request) {
 
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetApiWebsitesParams
+
+	// ------------- Optional query parameter "_end" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "_end", r.URL.Query(), &params.UnderscoreEnd, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "_end"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "_end", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "_order" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "_order", r.URL.Query(), &params.UnderscoreOrder, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "_order"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "_order", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "_sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "_sort", r.URL.Query(), &params.UnderscoreSort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "_sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "_sort", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "_start" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "_start", r.URL.Query(), &params.UnderscoreStart, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "_start"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "_start", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "domain_contains" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "domain_contains", r.URL.Query(), &params.DomainContains, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "domain_contains"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "domain_contains", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "domain_endswith" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "domain_endswith", r.URL.Query(), &params.DomainEndswith, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "domain_endswith"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "domain_endswith", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "domain_eq" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "domain_eq", r.URL.Query(), &params.DomainEq, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "domain_eq"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "domain_eq", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "domain_ne" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "domain_ne", r.URL.Query(), &params.DomainNe, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "domain_ne"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "domain_ne", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "domain_startswith" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "domain_startswith", r.URL.Query(), &params.DomainStartswith, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "domain_startswith"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "domain_startswith", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "filters[domain][contains]" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "filters[domain][contains]", r.URL.Query(), &params.FiltersDomainContains, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "filters[domain][contains]"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filters[domain][contains]", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "filters[domain][endswith]" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "filters[domain][endswith]", r.URL.Query(), &params.FiltersDomainEndswith, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "filters[domain][endswith]"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filters[domain][endswith]", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "filters[domain][eq]" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "filters[domain][eq]", r.URL.Query(), &params.FiltersDomainEq, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "filters[domain][eq]"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filters[domain][eq]", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "filters[domain][ne]" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "filters[domain][ne]", r.URL.Query(), &params.FiltersDomainNe, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "filters[domain][ne]"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filters[domain][ne]", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "filters[domain][startswith]" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "filters[domain][startswith]", r.URL.Query(), &params.FiltersDomainStartswith, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "filters[domain][startswith]"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filters[domain][startswith]", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "filters[status][contains]" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "filters[status][contains]", r.URL.Query(), &params.FiltersStatusContains, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "filters[status][contains]"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filters[status][contains]", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "filters[status][endswith]" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "filters[status][endswith]", r.URL.Query(), &params.FiltersStatusEndswith, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "filters[status][endswith]"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filters[status][endswith]", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "filters[status][eq]" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "filters[status][eq]", r.URL.Query(), &params.FiltersStatusEq, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "filters[status][eq]"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filters[status][eq]", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "filters[status][ne]" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "filters[status][ne]", r.URL.Query(), &params.FiltersStatusNe, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "filters[status][ne]"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filters[status][ne]", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "filters[status][startswith]" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "filters[status][startswith]", r.URL.Query(), &params.FiltersStatusStartswith, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "filters[status][startswith]"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filters[status][startswith]", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "filters[target_type][contains]" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "filters[target_type][contains]", r.URL.Query(), &params.FiltersTargetTypeContains, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "filters[target_type][contains]"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filters[target_type][contains]", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "filters[target_type][endswith]" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "filters[target_type][endswith]", r.URL.Query(), &params.FiltersTargetTypeEndswith, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "filters[target_type][endswith]"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filters[target_type][endswith]", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "filters[target_type][eq]" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "filters[target_type][eq]", r.URL.Query(), &params.FiltersTargetTypeEq, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "filters[target_type][eq]"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filters[target_type][eq]", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "filters[target_type][ne]" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "filters[target_type][ne]", r.URL.Query(), &params.FiltersTargetTypeNe, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "filters[target_type][ne]"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filters[target_type][ne]", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "filters[target_type][startswith]" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "filters[target_type][startswith]", r.URL.Query(), &params.FiltersTargetTypeStartswith, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "filters[target_type][startswith]"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filters[target_type][startswith]", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status_contains" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status_contains", r.URL.Query(), &params.StatusContains, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status_contains"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status_contains", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status_endswith" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status_endswith", r.URL.Query(), &params.StatusEndswith, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status_endswith"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status_endswith", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status_eq" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status_eq", r.URL.Query(), &params.StatusEq, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status_eq"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status_eq", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status_ne" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status_ne", r.URL.Query(), &params.StatusNe, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status_ne"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status_ne", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status_startswith" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status_startswith", r.URL.Query(), &params.StatusStartswith, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status_startswith"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status_startswith", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "target_type_contains" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "target_type_contains", r.URL.Query(), &params.TargetTypeContains, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "target_type_contains"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target_type_contains", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "target_type_endswith" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "target_type_endswith", r.URL.Query(), &params.TargetTypeEndswith, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "target_type_endswith"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target_type_endswith", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "target_type_eq" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "target_type_eq", r.URL.Query(), &params.TargetTypeEq, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "target_type_eq"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target_type_eq", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "target_type_ne" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "target_type_ne", r.URL.Query(), &params.TargetTypeNe, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "target_type_ne"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target_type_ne", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "target_type_startswith" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "target_type_startswith", r.URL.Query(), &params.TargetTypeStartswith, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "target_type_startswith"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target_type_startswith", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetApiWebsites(w, r)
+		siw.Handler.GetApiWebsites(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2135,6 +2939,53 @@ func (siw *ServerInterfaceWrapper) GetApiWebsitesConfig(w http.ResponseWriter, r
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetApiWebsitesConfig(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetApiWebsitesPlatformDomains operation middleware
+func (siw *ServerInterfaceWrapper) GetApiWebsitesPlatformDomains(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiWebsitesPlatformDomains(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetApiWebsitesPlatformDomainsAvailability operation middleware
+func (siw *ServerInterfaceWrapper) GetApiWebsitesPlatformDomainsAvailability(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetApiWebsitesPlatformDomainsAvailabilityParams
+
+	// ------------- Optional query parameter "label" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "label", r.URL.Query(), &params.Label, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "label"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "label", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiWebsitesPlatformDomainsAvailability(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2440,6 +3291,41 @@ func (siw *ServerInterfaceWrapper) GetApiWebsitesIdDomainsDomainIdDnsRequirement
 	handler.ServeHTTP(w, r)
 }
 
+// PostApiWebsitesIdDomainsDomainIdOnchain operation middleware
+func (siw *ServerInterfaceWrapper) PostApiWebsitesIdDomainsDomainIdOnchain(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "domain_id" -------------
+	var domainId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "domain_id", r.PathValue("domain_id"), &domainId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "domain_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostApiWebsitesIdDomainsDomainIdOnchain(w, r, id, domainId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PostApiWebsitesIdDomainsDomainIdVerify operation middleware
 func (siw *ServerInterfaceWrapper) PostApiWebsitesIdDomainsDomainIdVerify(w http.ResponseWriter, r *http.Request) {
 
@@ -2576,6 +3462,39 @@ func (siw *ServerInterfaceWrapper) GetInternalPing(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetInternalPing(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetInternalWebsitesChanges operation middleware
+func (siw *ServerInterfaceWrapper) GetInternalWebsitesChanges(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetInternalWebsitesChangesParams
+
+	// ------------- Optional query parameter "after" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "after", r.URL.Query(), &params.After, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "after"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "after", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetInternalWebsitesChanges(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3222,6 +4141,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/websites", wrapper.GetApiWebsites)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/websites", wrapper.PostApiWebsites)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/websites/config", wrapper.GetApiWebsitesConfig)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/websites/platform-domains", wrapper.GetApiWebsitesPlatformDomains)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/websites/platform-domains/availability", wrapper.GetApiWebsitesPlatformDomainsAvailability)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/websites/{domain}/ssl-status", wrapper.GetApiWebsitesDomainSslStatus)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/websites/{id}", wrapper.DeleteApiWebsitesId)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/websites/{id}", wrapper.GetApiWebsitesId)
@@ -3232,12 +4153,14 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/websites/{id}/domains/{domain_id}", wrapper.PatchApiWebsitesIdDomainsDomainId)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/websites/{id}/domains/{domain_id}/dane/republish", wrapper.PostApiWebsitesIdDomainsDomainIdDaneRepublish)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/websites/{id}/domains/{domain_id}/dns-requirements", wrapper.GetApiWebsitesIdDomainsDomainIdDnsRequirements)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/websites/{id}/domains/{domain_id}/onchain", wrapper.PostApiWebsitesIdDomainsDomainIdOnchain)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/websites/{id}/domains/{domain_id}/verify", wrapper.PostApiWebsitesIdDomainsDomainIdVerify)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/websites/{id}/validate", wrapper.PostApiWebsitesIdValidate)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/internal/dns/cert", wrapper.PostInternalDnsCert)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/internal/dns/cert/{domain}", wrapper.GetInternalDnsCertDomain)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/internal/dns/tlsa", wrapper.PostInternalDnsTlsa)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/internal/ping", wrapper.GetInternalPing)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/internal/websites/changes", wrapper.GetInternalWebsitesChanges)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/internal/websites/events", wrapper.GetInternalWebsitesEvents)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/internal/websites/{domain}", wrapper.GetInternalWebsitesDomain)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/internal/websites/{domain}/ssl-status", wrapper.PostInternalWebsitesDomainSslStatus)

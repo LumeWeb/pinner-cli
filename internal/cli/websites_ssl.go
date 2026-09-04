@@ -41,7 +41,7 @@ func websitesSSLStatus(ctx context.Context, cmd websitesCommandGetter, output Ou
 
 				headers := []string{"Field", "Value"}
 				rows := [][]string{
-					{"Status", website.Ssl.Status},
+					{"Status", string(website.Ssl.Status)},
 					{"Issued At", formatTimePtr(website.Ssl.IssuedAt)},
 					{"Last Updated", formatTimePtr(website.Ssl.LastUpdatedAt)},
 				}
@@ -73,7 +73,7 @@ func websitesSSLStatus(ctx context.Context, cmd websitesCommandGetter, output Ou
 
 	headers := []string{"Field", "Value"}
 	rows := [][]string{
-		{"Status", website.Ssl.Status},
+		{"Status", string(website.Ssl.Status)},
 		{"Issued At", formatTimePtr(website.Ssl.IssuedAt)},
 		{"Last Updated", formatTimePtr(website.Ssl.LastUpdatedAt)},
 	}
