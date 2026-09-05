@@ -221,8 +221,8 @@ func TestWebsitesDomainsDANERepublishTypedResult(t *testing.T) {
 		if websiteID != "7" || domainID != "3" {
 			t.Fatalf("RepublishDANE(%q, %q), want (\"7\", \"3\")", websiteID, domainID)
 		}
-		tlsa := "_443._tcp.example.test. 60 IN TLSA 3 1 1 abc123"
-		return &ipfs.DomainDANERepublishResponse{Id: 3, Domain: "example.test", TlsaRecord: &tlsa}, nil
+		rdata := "3 1 1 abc123"
+		return &ipfs.DomainDANERepublishResponse{Id: 3, Domain: "example.test", PublishedToManagedZone: true, TlsaRdata: &rdata}, nil
 	}
 
 	op := websitesDomainsDANERepublish(domainsDeps(t, fake))

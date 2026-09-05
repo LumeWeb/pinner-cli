@@ -213,11 +213,21 @@ func websitesDomainsRemove(d WebsitesDeps) catalog.Operation {
 	})
 }
 
+const (
+	// OpWebsitesDomainsVerify is the canonical name of the verify operation.
+	// Frontend wiring compares against it to switch rendering (e.g. the verify
+	// outcome renderer), so it lives here next to the definition.
+	OpWebsitesDomainsVerify = "websites_domains_verify"
+	// OpWebsitesDomainsDNSRequirements is the canonical name of the
+	// dns-requirements operation (same need).
+	OpWebsitesDomainsDNSRequirements = "websites_domains_dns_requirements"
+)
+
 // websitesDomainsVerify is the `websites domains verify` operation. Returns
 // *ipfs.DomainResponse.
 func websitesDomainsVerify(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "websites_domains_verify",
+		Name:        OpWebsitesDomainsVerify,
 		Title:       "Verify a domain binding",
 		Summary:     "Verify a domain's DNS delegation",
 		Description: "Verify that a bound domain's DNS delegation is correctly configured. The domain argument can be the domain name or its numeric binding ID; the owning website is resolved automatically. Returns the domain's status and delegation after verification.",
@@ -255,7 +265,7 @@ func websitesDomainsVerify(d WebsitesDeps) catalog.Operation {
 // operation. Returns *ipfs.DomainResponse.
 func websitesDomainsDNSRequirements(d WebsitesDeps) catalog.Operation {
 	return catalog.NewOperation(catalog.OperationSpec{
-		Name:        "websites_domains_dns_requirements",
+		Name:        OpWebsitesDomainsDNSRequirements,
 		Title:       "DNS requirements for a domain",
 		Summary:     "Show DNS records needed to complete domain delegation",
 		Description: "Show the DNS records a user must publish to complete delegation for a bound domain. For HNS namespaces this is the delegation bundle (parent NS/GLUE/DS and authoritative NS/TLSA). The domain argument can be the domain name or its numeric binding ID; the owning website is resolved automatically.",

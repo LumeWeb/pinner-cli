@@ -535,20 +535,23 @@ func (d *websiteDomain) toResponse() DomainResponse {
 }
 
 func (d *websiteDomain) toRepublishResponse() DomainDANERepublishResponse {
+	// The 0.1.96 wire contract carries the owners-style owner name
+	// ("_443._tcp.<domain>") plus the bare TLSA rdata, and always echoes
+	// whether the record actually landed in the managed zone.
 	tlsa := "_443._tcp." + d.Domain
 	rdata := "3 1 1 ab12cd34ef56"
 	return DomainDANERepublishResponse{
-		Delegation:  d.Delegation,
-		Domain:      d.Domain,
-		GatewayHost: d.GatewayHost,
-		Id:          d.Id,
-		Namespace:   DomainDANERepublishResponseNamespace(d.Namespace),
-		OwnerName:   d.OwnerName,
-		Ssl:         d.Ssl,
-		Status:      domainDANERepublishStatusPtr(d.Status),
-		TlsaRdata:   &rdata,
-		TlsaRecord:  &tlsa,
-		ZoneName:    d.ZoneName,
+		Delegation:             d.Delegation,
+		Domain:                 d.Domain,
+		GatewayHost:            d.GatewayHost,
+		Id:                     d.Id,
+		Namespace:              DomainDANERepublishResponseNamespace(d.Namespace),
+		OwnerName:              &tlsa,
+		PublishedToManagedZone: true,
+		Ssl:                    d.Ssl,
+		Status:                 domainDANERepublishStatusPtr(d.Status),
+		TlsaRdata:              &rdata,
+		ZoneName:               d.ZoneName,
 	}
 }
 

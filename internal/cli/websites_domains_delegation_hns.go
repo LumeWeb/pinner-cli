@@ -17,18 +17,16 @@ type hnsDelegationDriver struct{}
 func (h *hnsDelegationDriver) Render(output Output, result *ipfs.DomainResponse, managed bool) {
 	d := result.Delegation
 
-	// On-chain managed or otherwise delegation-less HNS binding: the name's
-	// DNS is served by an external contract (its NS record points at one), so
-	// the portal provisions no zone, DNSSEC, or delegation bundle — ownership
-	// is proven via a TXT token resolved through the HNS-aware resolver. There
-	// are no parent/authoritative records for the user to publish; publishing
-	// Pinner's delegation records would be wrong here.
+	// On-chain managed or otherwise delegation-less HNS binding: the domain is
+	// held on-chain and its DNS records are set on-chain, outside any
+	// Pinner-managed zone. The crucial record to surface here is the TLSA —
+	// without it published on-chain the site won't load over HTTPS.
 	if statusOnchainManaged(result) {
 		output.Printfln("")
-		output.Printfln("%s is on-chain managed: its DNS is served by an external", result.Domain)
-		output.Printfln("contract on the Handshake chain, not by a Pinner-managed zone.")
-		output.Printfln("No delegation records must be published — ownership is verified via a")
-		output.Printfln("TXT token through the HNS resolver. Manage the zone in your HNS wallet.")
+		output.Printfln("%s is on-chain managed: this domain is held on-chain, so its", result.Domain)
+		output.Printfln("DNS records are set on-chain rather than in a Pinner-managed zone.")
+		output.Printfln("Set up the domain's on-chain DNS wherever you manage it.")
+		renderOnchainTLSA(output, result, d)
 		return
 	}
 

@@ -737,6 +737,8 @@ go.lumeweb.com/ipfs-content v0.1.18 h1:Lq3/A+2kZcS4RK+bpdk+m4iJ95ZgpEa4DKhiH6bQW
 go.lumeweb.com/ipfs-content v0.1.18/go.mod h1:idWCsfndMDCsE5LtU0ZBNaFTBAaiuIe50dce0SDJLxw=
 go.lumeweb.com/ipfs-sdk v0.1.95 h1:4y3Oj6aTKLTWSzpdjizrQ7wJc/iXhza9MVuEhxbblyo=
 go.lumeweb.com/ipfs-sdk v0.1.95/go.mod h1:+V8YkslX65rPa83BbNYLGnhK24i75wqFtXKyltJ6jV4=
+go.lumeweb.com/ipfs-sdk v0.1.96 h1:ciXYrRYtTe2cKs+8cXTQ63GRCQVoF4AqWBWriymybkQ=
+go.lumeweb.com/ipfs-sdk v0.1.96/go.mod h1:oIMMi/yGovDqd8fAsfBYkoLV+GXcN0hNVmQXQv0ngDA=
 go.lumeweb.com/ipfs-sdk/dnsname v0.1.64 h1:RTBD+zoXHOYYKreNRoQhyLLKKWp/VgYfr7qojCzKjww=
 go.lumeweb.com/ipfs-sdk/dnsname v0.1.64/go.mod h1:1++6EWMiG/BC5UQjlIobId2YcWDVHjHEhdsEzeISKpQ=
 go.lumeweb.com/oauth v0.1.6 h1:6c6LrXxMwx5klbq3OshzXjkGwvYVjAQhjX2FxCAgqqg=

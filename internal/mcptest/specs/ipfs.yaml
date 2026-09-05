@@ -207,6 +207,8 @@ components:
           type: string
         owner_name:
           type: string
+        published_to_managed_zone:
+          type: boolean
         ssl:
           $ref: '#/components/schemas/SSLStatusInfo'
         status:
@@ -221,14 +223,13 @@ components:
           type: string
         tlsa_rdata:
           type: string
-        tlsa_record:
-          type: string
         zone_name:
           type: string
       required:
       - id
       - domain
       - namespace
+      - published_to_managed_zone
       type: object
     DomainListResponse:
       additionalProperties: false
@@ -284,6 +285,8 @@ components:
           - icann
           - hns
           type: string
+        owner_name:
+          type: string
         ssl:
           $ref: '#/components/schemas/SSLStatusInfo'
         status:
@@ -295,6 +298,8 @@ components:
           - self_hosted
           - error
           - onchain_managed
+          type: string
+        tlsa_rdata:
           type: string
         zone_name:
           type: string

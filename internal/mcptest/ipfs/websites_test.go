@@ -327,8 +327,11 @@ func TestWebsitesDomainsFlow(t *testing.T) {
 	if err := json.Unmarshal(b, &dan); err != nil {
 		t.Fatal(err)
 	}
-	if dan.TlsaRecord == nil || *dan.TlsaRecord != "_443._tcp.www.seed.example.com" {
-		t.Fatalf("dane-republish should return tlsa record, got %+v", dan.TlsaRecord)
+	if dan.TlsaRdata == nil || *dan.TlsaRdata != "3 1 1 ab12cd34ef56" {
+		t.Fatalf("dane-republish should return tlsa rdata, got %+v", dan.TlsaRdata)
+	}
+	if !dan.PublishedToManagedZone {
+		t.Fatal("dane-republish should report published_to_managed_zone=true")
 	}
 
 	// patch (update) the secondary domain's dns_hosting_enabled
