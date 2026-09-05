@@ -40,7 +40,7 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2
 	go.lumeweb.com/configmanager v0.3.30
 	go.lumeweb.com/ipfs-content v0.1.18
-	go.lumeweb.com/ipfs-sdk v0.1.95
+	go.lumeweb.com/ipfs-sdk v0.1.96
 	go.lumeweb.com/ipfs-sdk/dnsname v0.1.64
 	go.lumeweb.com/oauth v0.1.6
 	go.lumeweb.com/portal-sdk v0.1.72

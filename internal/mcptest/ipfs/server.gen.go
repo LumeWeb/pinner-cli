@@ -296,17 +296,17 @@ type DNSDelegationRecord struct {
 
 // DomainDANERepublishResponse defines model for DomainDANERepublishResponse.
 type DomainDANERepublishResponse struct {
-	Delegation  *DNSDelegation                       `json:"delegation,omitempty"`
-	Domain      string                               `json:"domain"`
-	GatewayHost *string                              `json:"gateway_host,omitempty"`
-	Id          int                                  `json:"id"`
-	Namespace   DomainDANERepublishResponseNamespace `json:"namespace"`
-	OwnerName   *string                              `json:"owner_name,omitempty"`
-	Ssl         *SSLStatusInfo                       `json:"ssl,omitempty"`
-	Status      *DomainDANERepublishResponseStatus   `json:"status,omitempty"`
-	TlsaRdata   *string                              `json:"tlsa_rdata,omitempty"`
-	TlsaRecord  *string                              `json:"tlsa_record,omitempty"`
-	ZoneName    *string                              `json:"zone_name,omitempty"`
+	Delegation             *DNSDelegation                       `json:"delegation,omitempty"`
+	Domain                 string                               `json:"domain"`
+	GatewayHost            *string                              `json:"gateway_host,omitempty"`
+	Id                     int                                  `json:"id"`
+	Namespace              DomainDANERepublishResponseNamespace `json:"namespace"`
+	OwnerName              *string                              `json:"owner_name,omitempty"`
+	PublishedToManagedZone bool                                 `json:"published_to_managed_zone"`
+	Ssl                    *SSLStatusInfo                       `json:"ssl,omitempty"`
+	Status                 *DomainDANERepublishResponseStatus   `json:"status,omitempty"`
+	TlsaRdata              *string                              `json:"tlsa_rdata,omitempty"`
+	ZoneName               *string                              `json:"zone_name,omitempty"`
 }
 
 // DomainDANERepublishResponseNamespace defines model for DomainDANERepublishResponse.Namespace.
@@ -341,8 +341,10 @@ type DomainResponse struct {
 	GatewayHost       *string                 `json:"gateway_host,omitempty"`
 	Id                int                     `json:"id"`
 	Namespace         DomainResponseNamespace `json:"namespace"`
+	OwnerName         *string                 `json:"owner_name,omitempty"`
 	Ssl               *SSLStatusInfo          `json:"ssl,omitempty"`
 	Status            *DomainResponseStatus   `json:"status,omitempty"`
+	TlsaRdata         *string                 `json:"tlsa_rdata,omitempty"`
 	ZoneName          *string                 `json:"zone_name,omitempty"`
 }
 

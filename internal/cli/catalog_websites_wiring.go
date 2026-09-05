@@ -619,20 +619,21 @@ func renderDomainDANEResponse(output Output, r *ipfs.DomainDANERepublishResponse
 	if r.OwnerName != nil {
 		ownerName = *r.OwnerName
 	}
-	tlsaRecord := ""
-	if r.TlsaRecord != nil {
-		tlsaRecord = *r.TlsaRecord
+	fields := []Field{
+		{"ID", fmt.Sprintf("%d", r.Id)},
+		{"Domain", r.Domain},
+		{"Namespace", string(r.Namespace)},
+		{"Status", status},
+		{"Owner Name", ownerName},
+		// published_to_managed_zone is a required field and always echoed; a
+		// false value means the republished TLSA is NOT live in the managed
+		// zone yet, so the user must not treat the command as a success.
+		{"TLSA Published", fmt.Sprintf("%t", r.PublishedToManagedZone)},
 	}
-	output.PrintFields(FieldGroup{
-		Fields: []Field{
-			{"ID", fmt.Sprintf("%d", r.Id)},
-			{"Domain", r.Domain},
-			{"Namespace", string(r.Namespace)},
-			{"Status", status},
-			{"Owner Name", ownerName},
-			{"TLSA Record", tlsaRecord},
-		},
-	})
+	if r.TlsaRdata != nil && *r.TlsaRdata != "" {
+		fields = append(fields, Field{"TLSA Record", *r.TlsaRdata})
+	}
+	output.PrintFields(FieldGroup{Fields: fields})
 }
 
 // renderWebsiteItemHuman renders the fields of a single website (used by get,

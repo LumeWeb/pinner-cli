@@ -225,6 +225,23 @@ func TestRenderDomainDelegation(t *testing.T) {
 		assert.NotContains(t, out, "Authoritative records")
 	})
 
+	t.Run("onchain managed hns falls back to the response's tlsa_rdata", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(false, false, false, false)
+		output.SetWriter(&buf)
+		// Schema v0.1.96 carries tlsa_rdata directly on the response; the
+		// fallback must use it when the bundle has no TLSA record.
+		rdata := "3 1 1 abcdef"
+		renderDomainDelegation(output, &ipfs.DomainResponse{
+			Id: 1, Domain: "mydomain", Namespace: ipfs.DomainNamespaceHNS, Status: new(ipfs.DomainResponseStatusOnchainManaged),
+			TlsaRdata: &rdata,
+		}, false)
+		out := buf.String()
+		assert.Contains(t, out, "TLSA")
+		assert.Contains(t, out, "3 1 1 abcdef")
+		assert.NotContains(t, out, "dane republish")
+	})
+
 	t.Run("onchain managed hns without a TLSA still tells the user one is needed", func(t *testing.T) {
 		var buf bytes.Buffer
 		output := NewOutputFormatter(false, false, false, false)

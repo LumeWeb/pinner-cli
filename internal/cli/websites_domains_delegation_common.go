@@ -71,13 +71,19 @@ func tlsaRecords(d *ipfs.DNSDelegation) []ipfs.DNSDelegationRecord {
 // renderOnchainTLSA renders the TLSA record the user must publish alongside
 // their on-chain records — browsers use it to verify the gateway's HTTPS
 // certificate for on-chain names, so without it the site won't load over
-// HTTPS. The TLSA only exists on the response when the backend supplies it;
-// TLSA-bearing groups are rendered wherever they appear, but on-chain
-// domains get it called out explicitly so it is never missed.
-func renderOnchainTLSA(output Output, d *ipfs.DNSDelegation) {
+// HTTPS. The record comes from the delegation bundle's TLSA entries, falling
+// back to the response's tlsa_rdata field (schema v0.1.96). TLSA-bearing
+// groups are rendered wherever they appear; on-chain domains get the record
+// called out explicitly so it is never missed.
+func renderOnchainTLSA(output Output, result *ipfs.DomainResponse, d *ipfs.DNSDelegation) {
 	records := tlsaRecords(d)
+	// The bundle frequently comes back nil on on-chain Managed bindings, so
+	// the response-level tlsa_rdata (schema v0.1.96) is the usual source here.
+	if len(records) == 0 && result != nil && result.TlsaRdata != nil && *result.TlsaRdata != "" {
+		records = []ipfs.DNSDelegationRecord{{Type: tlsaRecordType, Value: result.TlsaRdata}}
+	}
 	if len(records) == 0 {
-		// TODO: backend - return the TLSA record on on-chain bindings so the
+		// TODO: backend - return tlsa_rdata on on-chain bindings so the
 		// onboarding story is complete. Until then, point the user at the
 		// DANE republish command instead of leaving a silent gap.
 		output.Printfln("")

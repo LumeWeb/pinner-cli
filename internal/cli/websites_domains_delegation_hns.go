@@ -26,7 +26,7 @@ func (h *hnsDelegationDriver) Render(output Output, result *ipfs.DomainResponse,
 		output.Printfln("%s is on-chain managed: this domain is held on-chain, so its", result.Domain)
 		output.Printfln("DNS records are set on-chain rather than in a Pinner-managed zone.")
 		output.Printfln("Set up the domain's on-chain DNS wherever you manage it.")
-		renderOnchainTLSA(output, d)
+		renderOnchainTLSA(output, result, d)
 		return
 	}
 
