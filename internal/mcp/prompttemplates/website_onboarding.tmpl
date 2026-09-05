@@ -97,9 +97,11 @@ Determine how the user wants to address the website:
     If it is a Handshake (alt-root) name (e.g. acme/), also pass
     {"namespace": "hns"}; otherwise omit namespace (defaults to icann).
     After create, check the created domain's status first (websites_domains_list):
-    status onchain_managed means the HNS name's DNS is served by an external
-    contract on the Handshake chain — there are NO delegation records to publish
-    and the site needs no DNS setup. Any other status: read
+    status onchain_managed means the domain is held on-chain, so its DNS
+    records are set on-chain — there are NO delegation records to publish;
+    read pinner://websites/<domain>/dns-requirements and make sure the TLSA
+    record reaches the user (it is what makes the site load over HTTPS).
+    Status anything else: read
     pinner://websites/<domain>/dns-requirements — for HNS it renders the records
     to publish on-chain in the HNS wallet (parent NS/DS/GLUE).
 {{end}}

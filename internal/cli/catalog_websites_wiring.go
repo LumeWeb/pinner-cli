@@ -350,7 +350,7 @@ func websitesActionAdapter(op catalog.Operation) cli.ActionFunc {
 // human (non-JSON) output — in --json mode the error document stays machine
 // clean, and it no-ops for every non-verify operation.
 func renderVerifyGuidance(output Output, op catalog.Operation, err error) {
-	if op.Name() == "websites_domains_verify" && !output.IsJSON() {
+	if op.Name() == catalogops.OpWebsitesDomainsVerify && !output.IsJSON() {
 		renderDNSSelfServiceGuidance(output, err)
 	}
 }
@@ -380,7 +380,13 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operatio
 	// Slices/maps are excluded — a nil slice legitimately means an empty
 	// result set (e.g. `websites domains list` with no domains) and is handled
 	// by the renderer's empty-state branches.
+	// A verify returning (nil, nil) is meaningful: DNS is not resolvable yet,
+	// so render the not-verified outcome rather than bailing out.
 	if result != nil && isNilPointerResult(result) {
+		if op.Name() == catalogops.OpWebsitesDomainsVerify {
+			renderDomainVerifyResult(output, nil)
+			return nil
+		}
 		return fmt.Errorf("%s returned no result", op.Name())
 	}
 
@@ -491,8 +497,12 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operatio
 		if output.IsJSON() {
 			return output.PrintJSON(r)
 		}
-		if op.Name() == "websites_domains_dns_requirements" {
+		if op.Name() == catalogops.OpWebsitesDomainsDNSRequirements {
 			renderDomainDelegation(output, r, r.DnsHostingEnabled)
+			return nil
+		}
+		if op.Name() == catalogops.OpWebsitesDomainsVerify {
+			renderDomainVerifyResult(output, r)
 			return nil
 		}
 		renderDomainResponse(output, r)

@@ -11,6 +11,48 @@ import (
 // websites_domains_wizard.go). This file retains the domain rendering helper
 // shared by the domains feature.
 
+// renderDomainVerifyResult turns a `websites domains verify` response into an
+// outcome the user can act on, instead of the generic binding field table.
+// valid mirrors the wizard's notion of a fully validated binding (active, or
+// on-chain managed via the namespace TXT token). A nil response means the
+// backend could not resolve the domain's DNS yet — still not verified.
+func renderDomainVerifyResult(output Output, r *ipfs.DomainResponse) {
+	if r == nil {
+		output.Printfln("⏳ not verified yet")
+		output.Printfln("  The domain's DNS could not be resolved, so validation didn't run.")
+		output.Printfln("  DNS can take a while to propagate. Re-check with:")
+		output.Printfln("    pinner websites domains verify <domain>")
+		return
+	}
+
+	status := ""
+	if r.Status != nil {
+		status = string(*r.Status)
+	}
+
+	if domainStatusIsValid(statusOf(r)) {
+		output.Printfln("✅ %s verified", r.Domain)
+		output.Printfln("  Status: %s", status)
+		output.Printfln("  Your site will be served at https://%s", r.Domain)
+		if statusOnchainManaged(r) {
+			// Verification only proves ownership through the on-chain TXT
+			// token — it does not confirm the TLSA was published, and the
+			// site won't load over HTTPS without it.
+			output.Printfln("  Make sure the TLSA record is published so the site loads")
+			output.Printfln("  over HTTPS:")
+			output.Printfln("    pinner websites domains dns-requirements %s", r.Domain)
+		}
+		return
+	}
+
+	output.Printfln("⏳ %s is not verified yet", r.Domain)
+	output.Printfln("  Status: %s", status)
+	output.Printfln("  DNS can take a while to propagate. Re-check with:")
+	output.Printfln("    pinner websites domains verify %s", r.Domain)
+	output.Printfln("  Check the records the domain needs:")
+	output.Printfln("    pinner websites domains dns-requirements %s", r.Domain)
+}
+
 // renderDomainDelegation prints the DNS delegation bundle the server computes
 // for a domain. Rendering is driver-based: the namespace selects a
 // context-specific driver (HNS, ICANN, ...) with a neutral generic fallback,

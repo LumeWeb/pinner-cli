@@ -449,7 +449,7 @@ func buildDNSRequirements(website *ipfs.WebsiteItem) DNSRequirements {
 	// level records against a domain the per-domain flow owns.
 	reqs.Notes = append(reqs.Notes,
 		"For a custom domain, the per-domain delegation bundle (and its namespace) is authoritative: call websites_domains_list to see the binding's status and websites_domains_dns_requirements for its records.",
-		"A Handshake (HNS) binding with status onchain_managed (DNS served by an external contract on the Handshake chain) requires NO records to be published — do not add website-level records for it.",
+		"A binding with status onchain_managed is held on-chain and its DNS records are set on-chain — no Pinner delegation to publish. Its TLSA record (surface it for the user) is what makes the site load over HTTPS.",
 	)
 
 	if website.DnsHostingEnabled {
