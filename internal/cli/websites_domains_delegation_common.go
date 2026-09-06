@@ -118,13 +118,28 @@ func tlsaRecords(d *ipfs.DNSDelegation) []ipfs.DNSDelegationRecord {
 	return out
 }
 
+// tlsaOwnerName is the record name a DANE TLSA record for HTTPS lives under:
+// the TCP port 443 service on the domain ("_443._tcp.<domain>"). Passing the
+// bare rdata alone leaves the user to guess this; TLSA is never published at
+// the domain apex.
+func tlsaOwnerName(result *ipfs.DomainResponse) string {
+	if result != nil && result.OwnerName != nil && *result.OwnerName != "" {
+		return *result.OwnerName
+	}
+	if result != nil {
+		return "_443._tcp." + result.Domain
+	}
+	return "_443._tcp."
+}
+
 // renderOnchainTLSA renders the TLSA record the user must publish alongside
 // their on-chain records — browsers use it to verify the gateway's HTTPS
 // certificate for on-chain names, so without it the site won't load over
 // HTTPS. The record comes from the delegation bundle's TLSA entries, falling
-// back to the response's tlsa_rdata field (schema v0.1.96). TLSA-bearing
-// groups are rendered wherever they appear; on-chain domains get the record
-// called out explicitly so it is never missed.
+// back to the response's owner_name/tlsa_rdata fields (schema v0.1.96+). The
+// owner name (where the record goes) is always shown: bare rdata like
+// "3 1 1 <digest>" is not publishable without knowing it belongs at
+// _443._tcp.<domain>.
 func renderOnchainTLSA(output Output, result *ipfs.DomainResponse, d *ipfs.DNSDelegation) {
 	records := tlsaRecords(d)
 	// The bundle frequently comes back nil on on-chain Managed bindings, so
@@ -143,9 +158,14 @@ func renderOnchainTLSA(output Output, result *ipfs.DomainResponse, d *ipfs.DNSDe
 		output.Printfln("  pinner websites domains dane republish <domain>")
 		return
 	}
+	owner := tlsaOwnerName(result)
 	output.Printfln("")
-	output.Printfln("TLSA — publish this alongside your on-chain records so your site")
-	output.Printfln("loads over HTTPS:")
+	output.Printfln("TLSA — publish this record at %s (the TCP port 443 service", owner)
+	output.Printfln("of your domain) so your site loads over HTTPS:")
+	// TYPE/VALUE table (never NAME/TYPE/VALUE): the no-wrap rule for long
+	// record values keys off TYPE sitting in the first column, and the owner
+	// name is already in the copy line above — a NAME column would push the
+	// digest into a hard wrap.
 	rows := make([][]string, 0, len(records))
 	for _, r := range records {
 		value := ""
