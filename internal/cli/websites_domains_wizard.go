@@ -179,6 +179,15 @@ func (w *DomainAddWizard) executeDelegationSetup(ctx context.Context) error {
 		return nil
 	}
 
+	// A nil Delegation is still worth routing through the renderer: on-chain
+	// managed bindings carry none, and the on-chain branch renders the
+	// derived records (dnslink, TLSA) instead of a delegation bundle. Only a
+	// nil overall response is "nothing available".
+	if delegResult == nil {
+		w.output.Printfln("No delegation records are available for %s.", result.Domain)
+		return nil
+	}
+
 	// Whether Pinner manages this website's DNS, derived from the cached
 	// website list fetched during the selection step.
 	managed := false
