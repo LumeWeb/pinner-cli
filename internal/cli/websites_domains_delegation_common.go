@@ -31,6 +31,56 @@ func renderDelegationNameservers(output Output, d *ipfs.DNSDelegation) {
 	output.PrintList(*d.Nameservers)
 }
 
+// renderValidationChecks turns the per-record checks the backend computes for
+// a domain or website (validation token, dnslink, TLSA, delegation...) into
+// an actionable to-do list: a short summary of how many are fine, then the
+// ones needing attention with the exact record value to publish. Passing
+// checks are summarized rather than listed — a wall of green rows does not
+// help the user act; the missing/incorrect records do.
+func renderValidationChecks(output Output, checks *[]ipfs.ValidationCheck) {
+	if checks == nil || len(*checks) == 0 {
+		return
+	}
+	var failing []ipfs.ValidationCheck
+	passing := 0
+	for _, c := range *checks {
+		if c.Ok {
+			passing++
+			continue
+		}
+		failing = append(failing, c)
+	}
+	switch {
+	case len(failing) == 0:
+		output.Printfln("")
+		output.Printfln("All %d record checks passed.", len(*checks))
+		return
+	case passing > 0:
+		output.Printfln("")
+		output.Printfln("%d of %d record checks passed. Fix the %d below:", passing, len(*checks), len(failing))
+	default:
+		output.Printfln("")
+		output.Printfln("%d records need attention:", len(failing))
+	}
+	// Deliberately NOT a table: expected record values (dnslink, TLSA...) can
+	// exceed the table wrap width, and a hard-wrapped value is neither
+	// copyable nor honest. The expected value is printed on its own line,
+	// verbatim, so it can be copied straight into the user's DNS.
+	for _, c := range failing {
+		output.Printfln("  • %s", c.Name)
+		if c.Message != nil && *c.Message != "" {
+			output.Printfln("      %s", *c.Message)
+		}
+		if c.Expected != nil && *c.Expected != "" {
+			output.Printfln("      Publish this record:")
+			output.Printfln("        %s", *c.Expected)
+		}
+		if c.Found != nil && *c.Found != "" {
+			output.Printfln("      Found instead: %s", *c.Found)
+		}
+	}
+}
+
 // tlsaRecordType is the DNS resource-record type of the DANE TLSA record.
 // The SDK models delegation record types as plain strings, so the constant
 // lives here next to the only logic that filters on it.

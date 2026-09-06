@@ -270,6 +270,10 @@ components:
     DomainResponse:
       additionalProperties: false
       properties:
+        checks:
+          items:
+            $ref: '#/components/schemas/ValidationCheck'
+          type: array
         delegation:
           $ref: '#/components/schemas/DNSDelegation'
         dns_hosting_enabled:
@@ -894,6 +898,23 @@ components:
       required:
       - status
       type: object
+    ValidationCheck:
+      additionalProperties: false
+      properties:
+        expected:
+          type: string
+        found:
+          type: string
+        message:
+          type: string
+        name:
+          type: string
+        ok:
+          type: boolean
+      required:
+      - name
+      - ok
+      type: object
     ValidationResponse:
       additionalProperties: false
       properties:
@@ -1137,6 +1158,10 @@ components:
     WebsiteValidateResponse:
       additionalProperties: false
       properties:
+        checks:
+          items:
+            $ref: '#/components/schemas/ValidationCheck'
+          type: array
         domain:
           type: string
         id:

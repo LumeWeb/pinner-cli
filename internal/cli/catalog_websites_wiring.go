@@ -427,6 +427,7 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operatio
 				{"Message", r.Message},
 			},
 		})
+		renderValidationChecks(output, r.Checks)
 		return nil
 
 	case *ipfs.WebsiteConfigResponse:

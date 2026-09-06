@@ -225,6 +225,58 @@ func TestRenderDomainDelegation(t *testing.T) {
 		assert.NotContains(t, out, "Authoritative records")
 	})
 
+	t.Run("dns-requirements renders the backend record checks incl. dnslink", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(false, false, false, false)
+		output.SetWriter(&buf)
+		// The checks slice is the record-level truth for a managed HNS
+		// binding: the dnslink value the authoritative side needs, the
+		// validation token, the TLSA. It must reach the user, not be dropped.
+		renderDomainDelegation(output, &ipfs.DomainResponse{
+			Id: 1, Domain: "mydomain.hns", Namespace: ipfs.DomainNamespaceHNS, Status: new(ipfs.DomainResponseStatusWaitingDelegation),
+			Delegation: &ipfs.DNSDelegation{
+				ParentRecords: &[]ipfs.DNSDelegationRecord{
+					{Type: "NS", Value: new("ns1.lumeweb")},
+					{Type: "DS", Value: new("11068 13 2 c7af")},
+				},
+			},
+			Checks: &[]ipfs.ValidationCheck{
+				{Name: "dnslink record", Ok: false, Expected: new("_dnslink.mydomain.hns. 60 IN TXT \"dnslink=/ipfs/QmXyz\"")},
+				{Name: "validation token", Ok: true},
+			},
+		}, true)
+		out := buf.String()
+		assert.Contains(t, out, "Parent records (publish in your HNS wallet)")
+		assert.Contains(t, out, "11068 13 2 c7af")
+		// The dnslink record the site needs is surfaced as an actionable
+		// to-do with the exact value to publish — passing checks are only
+		// summarized, not row-walled.
+		assert.Contains(t, out, "1 of 2 record checks passed. Fix the 1 below:")
+		assert.Contains(t, out, "dnslink record")
+		assert.Contains(t, out, "Publish this record:")
+		assert.Contains(t, out, `_dnslink.mydomain.hns. 60 IN TXT "dnslink=/ipfs/QmXyz"`)
+	})
+
+	t.Run("verify renders failing record checks next to the not-verified outcome", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(false, false, false, false)
+		output.SetWriter(&buf)
+		renderDomainVerifyResult(output, &ipfs.DomainResponse{
+			Id: 1, Domain: "pending.com", Namespace: ipfs.DomainNamespaceICANN, Status: new(ipfs.DomainResponseStatusWaitingDelegation),
+			Checks: &[]ipfs.ValidationCheck{
+				{Name: "dnslink record", Ok: false, Message: new("record not found"), Expected: new("dnslink=/ipfs/Qm")},
+			},
+		})
+		out := buf.String()
+		assert.Contains(t, out, "⏳ pending.com is not verified yet")
+		assert.Contains(t, out, "1 records need attention:")
+		// Expected record values must render contiguous (never hard-wrapped)
+		// so they stay copy-into-DNS safe.
+		assert.Contains(t, out, "Publish this record:")
+		assert.Contains(t, out, "dnslink=/ipfs/Qm")
+		assert.Contains(t, out, "record not found")
+	})
+
 	t.Run("onchain managed hns falls back to the response's tlsa_rdata", func(t *testing.T) {
 		var buf bytes.Buffer
 		output := NewOutputFormatter(false, false, false, false)

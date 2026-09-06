@@ -42,6 +42,7 @@ func renderDomainVerifyResult(output Output, r *ipfs.DomainResponse) {
 			output.Printfln("  over HTTPS:")
 			output.Printfln("    pinner websites domains dns-requirements %s", r.Domain)
 		}
+		renderValidationChecks(output, r.Checks)
 		return
 	}
 
@@ -51,6 +52,7 @@ func renderDomainVerifyResult(output Output, r *ipfs.DomainResponse) {
 	output.Printfln("    pinner websites domains verify %s", r.Domain)
 	output.Printfln("  Check the records the domain needs:")
 	output.Printfln("    pinner websites domains dns-requirements %s", r.Domain)
+	renderValidationChecks(output, r.Checks)
 }
 
 // renderDomainDelegation prints the DNS delegation bundle the server computes
@@ -86,4 +88,9 @@ func renderDomainDelegation(output Output, result *ipfs.DomainResponse, managed 
 	// serves its DNS from an external contract and has no records to publish),
 	// so the driver owns the explanation instead of a generic miss here.
 	defaultDelegationDriver.Render(output, result, managed)
+
+	// The backend computes per-record checks (validation token, dnslink,
+	// TLSA...) on every requirements response; they are the record-level truth
+	// the user needs to act on, so they render regardless of namespace.
+	renderValidationChecks(output, result.Checks)
 }
