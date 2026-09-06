@@ -14,7 +14,7 @@ import (
 // records are therefore shown only in the last case.
 type hnsDelegationDriver struct{}
 
-func (h *hnsDelegationDriver) Render(output Output, result *ipfs.DomainResponse, managed bool) {
+func (h *hnsDelegationDriver) Render(output Output, result *ipfs.DomainResponse, managed bool, website *ipfs.WebsiteItem) {
 	d := result.Delegation
 
 	// On-chain managed or otherwise delegation-less HNS binding: the domain is
@@ -26,6 +26,17 @@ func (h *hnsDelegationDriver) Render(output Output, result *ipfs.DomainResponse,
 		output.Printfln("%s is on-chain managed: this domain is held on-chain, so its", result.Domain)
 		output.Printfln("DNS records are set on-chain rather than in a Pinner-managed zone.")
 		output.Printfln("Set up the domain's on-chain DNS wherever you manage it.")
+		// The backend no longer returns an authoritative record set for
+		// on-chain bindings; the record the site needs is derivable from the
+		// owning website's target.
+		if website != nil && website.TargetHash != "" {
+			rows := [][]string{
+				{"_dnslink." + result.Domain, "TXT", "dnslink=/" + website.TargetType + "/" + website.TargetHash},
+			}
+			output.Printfln("")
+			output.Printfln("records to publish on-chain (they wire the name to the site's content):")
+			output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, rows)
+		}
 		renderOnchainTLSA(output, result, d)
 		return
 	}

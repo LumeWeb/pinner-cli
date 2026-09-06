@@ -60,8 +60,10 @@ func renderDomainVerifyResult(output Output, r *ipfs.DomainResponse) {
 // context-specific driver (HNS, ICANN, ...) with a neutral generic fallback,
 // matching the server's per-namespace DomainProvider design. managed indicates
 // whether Pinner manages the domain's DNS, so drivers can omit authoritative
-// records the user does not need to configure.
-func renderDomainDelegation(output Output, result *ipfs.DomainResponse, managed bool) {
+// records the user does not need to configure. website is the owning website
+// when the caller has it; on-chain drivers use its target to derive the
+// authoritative records the backend no longer returns.
+func renderDomainDelegation(output Output, result *ipfs.DomainResponse, managed bool, website *ipfs.WebsiteItem) {
 	output.Printfln("DNS requirements for %s", result.Domain)
 
 	status := ""
@@ -87,7 +89,7 @@ func renderDomainDelegation(output Output, result *ipfs.DomainResponse, managed 
 	// meaningful per-namespace (e.g. an HNS on-chain managed binding
 	// serves its DNS from an external contract and has no records to publish),
 	// so the driver owns the explanation instead of a generic miss here.
-	defaultDelegationDriver.Render(output, result, managed)
+	defaultDelegationDriver.Render(output, result, managed, website)
 
 	// The backend computes per-record checks (validation token, dnslink,
 	// TLSA...) on every requirements response; they are the record-level truth

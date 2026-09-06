@@ -14,7 +14,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 		output := newTestOutput()
 		renderDomainDelegation(output, &ipfs.DomainResponse{
 			Id: 1, Domain: "mydomain.hns", Namespace: ipfs.DomainNamespaceHNS, Status: new(ipfs.DomainResponseStatusActive),
-		}, false)
+		}, false, nil)
 		// exercises the nil-delegation branch without asserting exact text
 	})
 
@@ -32,7 +32,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 					{Type: "TLSA", Value: new("_443._tcp.mydomain. 3 1 1 <sha256>")},
 				},
 			},
-		}, false)
+		}, false, nil)
 		// exercises the non-nil typed-helper path
 	})
 
@@ -51,7 +51,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 					{Type: "NS", Value: new("hns-626f7578e5.rec.ns1.lumeweb")},
 				},
 			},
-		}, false)
+		}, false, nil)
 		out := buf.String()
 		// In inline mode the authoritative side is served via Pinner's
 		// synthetic nameservers; it is not user-configured, so it is omitted.
@@ -75,7 +75,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 					{Type: "NS", Value: new("hns-626f7578e5.rec.ns1.lumeweb")},
 				},
 			},
-		}, true)
+		}, true, nil)
 		out := buf.String()
 		assert.Contains(t, out, "synthetic nameservers")
 		assert.NotContains(t, out, "Authoritative records")
@@ -88,7 +88,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 			Delegation: &ipfs.DNSDelegation{
 				Nameservers: &[]string{"ns1.example.com", "ns2.example.com"},
 			},
-		}, false)
+		}, false, nil)
 		// exercises the icann driver path (registrar wording, nameservers list)
 	})
 
@@ -105,7 +105,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 					{Type: "TLSA", Value: new("_443._tcp.mydomain.eth. 3 1 1 <sha256>")},
 				},
 			},
-		}, false)
+		}, false, nil)
 		// exercises the generic fallback path for an unrecognized namespace
 	})
 
@@ -127,7 +127,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 					{Type: "DS", Value: new(dsValue)},
 				},
 			},
-		}, false)
+		}, false, nil)
 		out := buf.String()
 		// The DS record is communicated once, as a parent record in the
 		// parent-records table, not re-decoded into a redundant block.
@@ -161,7 +161,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 					{Type: "NS", Value: new("nsx.pinner.xyz")},
 				},
 			},
-		}, true)
+		}, true, nil)
 		out := buf.String()
 		// Pinner manages DNS, so only the parent records (for the HNS wallet)
 		// are shown; the authoritative side is handled for the user.
@@ -189,7 +189,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 					{Type: "TLSA", Value: new("_443._tcp.mydomain.com. 3 1 1 <sha256>")},
 				},
 			},
-		}, true)
+		}, true, nil)
 		out := buf.String()
 		assert.Contains(t, out, "Point your registrar's nameservers")
 		assert.Contains(t, out, "Pinner manages your DNS")
@@ -211,7 +211,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 					{Type: "TLSA", Value: new("_443._tcp.mydomain.hns. 60 IN TLSA 3 1 1 abcdef")},
 				},
 			},
-		}, false)
+		}, false, nil)
 		out := buf.String()
 		// The driver must not crash and must explain the on-chain hosting
 		// shape in user-friendly terms, and the TLSA must reach the user —
@@ -244,7 +244,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 				{Name: "dnslink record", Ok: false, Expected: new("_dnslink.mydomain.hns. 60 IN TXT \"dnslink=/ipfs/QmXyz\"")},
 				{Name: "validation token", Ok: true},
 			},
-		}, true)
+		}, true, nil)
 		out := buf.String()
 		assert.Contains(t, out, "Parent records (publish in your HNS wallet)")
 		assert.Contains(t, out, "11068 13 2 c7af")
@@ -287,11 +287,34 @@ func TestRenderDomainDelegation(t *testing.T) {
 		renderDomainDelegation(output, &ipfs.DomainResponse{
 			Id: 1, Domain: "mydomain", Namespace: ipfs.DomainNamespaceHNS, Status: new(ipfs.DomainResponseStatusOnchainManaged),
 			TlsaRdata: &rdata,
-		}, false)
+		}, false, nil)
 		out := buf.String()
 		assert.Contains(t, out, "TLSA")
 		assert.Contains(t, out, "3 1 1 abcdef")
 		assert.NotContains(t, out, "dane republish")
+	})
+
+	t.Run("onchain managed hns derives the dnslink row from the owning website", func(t *testing.T) {
+		var buf bytes.Buffer
+		output := NewOutputFormatter(false, false, false, false)
+		output.SetWriter(&buf)
+		// The backend no longer returns an authoritative record set for
+		// on-chain bindings; the CLI derives the _dnslink TXT from the
+		// website's target.
+		rdata := "3 1 1 abcdef"
+		renderDomainDelegation(output, &ipfs.DomainResponse{
+			Id:        1,
+			Domain:    "mydomain.hns",
+			Namespace: ipfs.DomainNamespaceHNS,
+			Status:    new(ipfs.DomainResponseStatusOnchainManaged),
+			TlsaRdata: &rdata,
+		}, false, &ipfs.WebsiteItem{Id: 7, Domain: "mydomain.hns", TargetType: "ipfs", TargetHash: "QmFoo"})
+		out := buf.String()
+		assert.Contains(t, out, "_dnslink.mydomain.hns")
+		assert.Contains(t, out, "TXT")
+		assert.Contains(t, out, "dnslink=/ipfs/QmFoo")
+		// The server-served TLSA rides in the same checklist.
+		assert.Contains(t, out, "3 1 1 abcdef")
 	})
 
 	t.Run("onchain managed hns without a TLSA still tells the user one is needed", func(t *testing.T) {
@@ -302,7 +325,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 		// the gap must not pass silently.
 		renderDomainDelegation(output, &ipfs.DomainResponse{
 			Id: 1, Domain: "mydomain", Namespace: ipfs.DomainNamespaceHNS, Status: new(ipfs.DomainResponseStatusOnchainManaged),
-		}, false)
+		}, false, nil)
 		out := buf.String()
 		assert.Contains(t, out, "on-chain managed")
 		assert.Contains(t, out, "TLSA record")
@@ -375,7 +398,7 @@ func TestRenderDomainDelegation(t *testing.T) {
 					{Type: "NS", Value: new("ns.eigen.lumeweb")},
 				},
 			},
-		}, false)
+		}, false, nil)
 		out := buf.String()
 		assert.Contains(t, out, "point your own DNS server")
 		assert.Contains(t, out, "Authoritative records (configure on your DNS server)")

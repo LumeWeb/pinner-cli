@@ -10,7 +10,7 @@ import (
 // the parent (registrar) records are shown.
 type icannDelegationDriver struct{}
 
-func (i *icannDelegationDriver) Render(output Output, result *ipfs.DomainResponse, managed bool) {
+func (i *icannDelegationDriver) Render(output Output, result *ipfs.DomainResponse, managed bool, website *ipfs.WebsiteItem) {
 	d := result.Delegation
 	if d == nil {
 		// An ICANN binding with no bundle means Pinner holds nothing for this

@@ -20,6 +20,7 @@ type domainsService struct {
 
 	authErr                error
 	listFn                 func(ctx context.Context) ([]ipfs.WebsiteItem, error)
+	getFn                  func(ctx context.Context, websiteID string) (*ipfs.WebsiteItem, error)
 	listDomainsFn          func(ctx context.Context, websiteID string) ([]ipfs.DomainResponse, error)
 	bindDomainFn           func(ctx context.Context, websiteID string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error)
 	unbindDomainFn         func(ctx context.Context, websiteID string, domainID string) error
@@ -63,6 +64,13 @@ func (f *domainsService) UnbindDomain(ctx context.Context, websiteID string, dom
 func (f *domainsService) VerifyDomain(ctx context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
 	if f.verifyDomainFn != nil {
 		return f.verifyDomainFn(ctx, websiteID, domainID)
+	}
+	return nil, nil
+}
+
+func (f *domainsService) Get(ctx context.Context, websiteID string) (*ipfs.WebsiteItem, error) {
+	if f.getFn != nil {
+		return f.getFn(ctx, websiteID)
 	}
 	return nil, nil
 }
@@ -138,6 +146,38 @@ func TestWebsitesDomainsListResolvesWebsite(t *testing.T) {
 	}
 	if len(domains) != 1 || domains[0].Id != 3 || domains[0].Domain != "example.test" {
 		t.Fatalf("unexpected domains: %+v", domains)
+	}
+}
+
+func TestWebsitesDomainsDNSRequirementsAttachesWebsite(t *testing.T) {
+	// On-chain bindings no longer carry a delegation bundle; the handler must
+	// attach the owning website so frontends can derive the authoritative
+	// records (the _dnslink TXT) from its target.
+	fake := singleWebsiteFixture()
+	fake.dnsRequirementsFn = func(_ context.Context, websiteID string, domainID string) (*ipfs.DomainResponse, error) {
+		return &ipfs.DomainResponse{
+			Id: 3, Domain: "example.test", Namespace: ipfs.DomainNamespaceHNS,
+			Status: new(ipfs.DomainResponseStatusOnchainManaged),
+		}, nil
+	}
+	fake.getFn = func(_ context.Context, websiteID string) (*ipfs.WebsiteItem, error) {
+		return &ipfs.WebsiteItem{Id: 7, Domain: "example.test", TargetType: "ipfs", TargetHash: "QmFoo"}, nil
+	}
+
+	op := websitesDomainsDNSRequirements(domainsDeps(t, fake))
+	res, err := op.Handler().Execute(context.Background(), map[string]any{"domain": "example.test"})
+	if err != nil {
+		t.Fatalf("dns-requirements handler: %v", err)
+	}
+	result, ok := res.(*DomainDNSRequirements)
+	if !ok {
+		t.Fatalf("result type = %T, want *DomainDNSRequirements", res)
+	}
+	if result.Domain == nil || result.Domain.Id != 3 {
+		t.Fatalf("unexpected domain response: %+v", result.Domain)
+	}
+	if result.Website == nil || result.Website.TargetHash != "QmFoo" {
+		t.Fatalf("website not attached: %+v", result.Website)
 	}
 }
 

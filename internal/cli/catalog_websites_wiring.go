@@ -457,6 +457,20 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operatio
 		output.Printfln("Website deleted successfully")
 		return nil
 
+	case *catalogops.DomainDNSRequirements:
+		// websites domains dns-requirements: the domain response plus the
+		// owning website, from which the renderer derives the authoritative
+		// records the backend no longer returns for on-chain bindings.
+		// --json keeps the historical domain-response shape.
+		if r.Domain == nil {
+			return fmt.Errorf("no result returned for %s", op.Name())
+		}
+		if output.IsJSON() {
+			return output.PrintJSON(r.Domain)
+		}
+		renderDomainDelegation(output, r.Domain, r.Domain.DnsHostingEnabled, r.Website)
+		return nil
+
 	case []ipfs.DomainResponse:
 		// websites domains list: a website's domain bindings.
 		if output.IsJSON() {
@@ -497,10 +511,6 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operatio
 		}
 		if output.IsJSON() {
 			return output.PrintJSON(r)
-		}
-		if op.Name() == catalogops.OpWebsitesDomainsDNSRequirements {
-			renderDomainDelegation(output, r, r.DnsHostingEnabled)
-			return nil
 		}
 		if op.Name() == catalogops.OpWebsitesDomainsVerify {
 			renderDomainVerifyResult(output, r)

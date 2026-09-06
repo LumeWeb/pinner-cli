@@ -293,10 +293,28 @@ func websitesDomainsDNSRequirements(d WebsitesDeps) catalog.Operation {
 			if err != nil {
 				return nil, err
 			}
-			// *ipfs.DomainResponse
-			return svc.GetDomainDNSRequirements(ctx, websiteID, domainID)
+			domain, err := svc.GetDomainDNSRequirements(ctx, websiteID, domainID)
+			if err != nil {
+				return nil, err
+			}
+			// On-chain bindings no longer carry a delegation bundle: the
+			// owning website is attached so frontends can derive the
+			// authoritative records (the _dnslink TXT) from its target.
+			// Best effort — a fetch failure only loses the derived rows.
+			website, _ := svc.Get(ctx, websiteID)
+			return &DomainDNSRequirements{Domain: domain, Website: website}, nil
 		}),
 	})
+}
+
+// DomainDNSRequirements pairs the dns-requirements response with the owning
+// website record. On-chain bindings no longer carry a delegation bundle, so
+// frontends derive the authoritative record set (the _dnslink TXT) from the
+// website's target. CLI --json prints only the domain response, keeping the
+// historical shape; the website is presentation data.
+type DomainDNSRequirements struct {
+	Domain  *ipfs.DomainResponse
+	Website *ipfs.WebsiteItem
 }
 
 // websitesDomainsDANERepublish is the `websites domains dane republish`
