@@ -162,19 +162,18 @@ func renderOnchainTLSA(output Output, result *ipfs.DomainResponse, d *ipfs.DNSDe
 	output.Printfln("")
 	output.Printfln("TLSA — publish this record at %s (the TCP port 443 service", owner)
 	output.Printfln("of your domain) so your site loads over HTTPS:")
-	// TYPE/VALUE table (never NAME/TYPE/VALUE): the no-wrap rule for long
-	// record values keys off TYPE sitting in the first column, and the owner
-	// name is already in the copy line above — a NAME column would push the
-	// digest into a hard wrap.
+	// NAME/TYPE/VALUE so the owner name (_443._tcp.<domain>) is part of the
+	// copyable record itself; keepWholeValue treats the digest in the VALUE
+	// column of this layout as whole-token so it is never hard-wrapped.
 	rows := make([][]string, 0, len(records))
 	for _, r := range records {
 		value := ""
 		if r.Value != nil {
 			value = *r.Value
 		}
-		rows = append(rows, []string{tlsaRecordType, value})
+		rows = append(rows, []string{owner, tlsaRecordType, value})
 	}
-	output.PrintTable([]string{"TYPE", "VALUE"}, rows)
+	output.PrintTable([]string{"NAME", "TYPE", "VALUE"}, rows)
 }
 
 // printDelegationRecords renders a group of DNS records as a TYPE/VALUE table.
