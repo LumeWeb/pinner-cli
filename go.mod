@@ -35,6 +35,7 @@ require (
 	github.com/tidwall/sjson v1.2.5
 	github.com/tus/tusd/v2 v2.10.0
 	github.com/urfave/cli/v3 v3.11.0
+	go.lumeweb.com/canimcp v0.0.0-20260907101331-ba497f0bb72a
 	go.lumeweb.com/fieldcraft v0.0.0-20260907095025-2a7bfdd040cb
 	go.lumeweb.com/ipfs-content v0.1.18
 	go.lumeweb.com/ipfs-sdk v0.1.97
@@ -254,7 +255,6 @@ require (
 	go.etcd.io/etcd/api/v3 v3.7.1 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.7.1 // indirect
 	go.etcd.io/etcd/client/v3 v3.7.1 // indirect
-	go.lumeweb.com/canimcp v0.0.0-20260907101331-ba497f0bb72a // indirect
 	go.lumeweb.com/configmanager v0.3.30 // indirect
 	go.lumeweb.com/event/v2 v2.1.0 // indirect
 	go.lumeweb.com/gswagger v0.20.12 // indirect
