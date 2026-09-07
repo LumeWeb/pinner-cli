@@ -14,8 +14,12 @@
 //   error   — the load failed; the error is surfaced and the human can retry.
 
 import { createMachine, invoke, reduce, state, transition } from "robot3";
-import type { CallTool, ToolResult } from "./flow";
-import { rejectToError, toolError } from "./flow";
+import {
+  rejectToError,
+  toolError,
+  type CallTool,
+  type ToolResult,
+} from "@lumeweb/mcpcanvas";
 
 export interface AuthStatusConfig {
   /** MCP tool returning the auth status envelope ({status:"ok", value:Status}). */

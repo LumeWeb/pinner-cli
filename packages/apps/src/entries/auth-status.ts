@@ -1,4 +1,4 @@
-import { entryBoot, boot } from "@/loader";
+import { entryBoot, boot } from "@lumeweb/mcpcanvas";
 // Account (auth status) MCP App — entrypoint bundle.
 //
 // The account strip is a read-only surface: it loads the authentication status

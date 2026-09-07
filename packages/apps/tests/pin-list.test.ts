@@ -19,7 +19,7 @@ import {
   shortCid,
   type PinListElements,
 } from "@/pin-list-bootstrap";
-import type { CallTool, ToolResult } from "@/flow";
+import type { CallTool, ToolResult } from "@lumeweb/mcpcanvas";
 import { until, untilState } from "./helpers";
 
 const baseConfig: PinListConfig = {

@@ -12,7 +12,7 @@
 //                then surface the fetch_url (drop) or output_path (local).
 
 import { createMachine, guard, invoke, reduce, state, transition } from "robot3";
-import type { CallTool, ToolResult } from "./flow";
+import type { CallTool, ToolResult } from "@lumeweb/mcpcanvas";
 
 export interface DownloadConfig {
   /** the sink-aware download tool to call (download_file or vault_get_file). */

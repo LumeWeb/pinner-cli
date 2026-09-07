@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { interpret, type Service } from "robot3";
 import { createPinMachine, type PinConfig, type PinContext, PinState } from "@/pin";
 import { renderPin, currentPinState } from "@/pin-bootstrap";
-import type { CallTool, ToolResult } from "@/flow";
+import type { CallTool, ToolResult } from "@lumeweb/mcpcanvas";
 import { until, untilState } from "./helpers";
 
 const baseConfig: PinConfig = {

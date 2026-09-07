@@ -30,7 +30,7 @@
 //     by the pollError flag so the bootstrap can pick the right message copy).
 
 import { createMachine, guard, invoke, reduce, state, transition } from "robot3";
-import type { CallTool, ToolResult } from "./flow";
+import type { CallTool, ToolResult } from "@lumeweb/mcpcanvas";
 
 export interface PinConfig {
   /** Name of the MCP tool that adds the pin (pins_add). */

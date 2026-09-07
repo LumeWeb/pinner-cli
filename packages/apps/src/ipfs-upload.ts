@@ -18,7 +18,7 @@
 //              terminal failed/cancelled state, within a bounded budget.
 
 import { createMachine, guard, invoke, reduce, state, transition } from "robot3";
-import type { CallTool, ToolResult } from "./flow";
+import type { CallTool, ToolResult } from "@lumeweb/mcpcanvas";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 

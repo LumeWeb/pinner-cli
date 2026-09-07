@@ -16,8 +16,12 @@
 // vault_* catalog tools; this view only re-renders their output for a human.
 
 import { createMachine, invoke, reduce, state, transition } from "robot3";
-import type { CallTool, ToolResult } from "./flow";
-import { rejectToError, toolError } from "./flow";
+import {
+  rejectToError,
+  toolError,
+  type CallTool,
+  type ToolResult,
+} from "@lumeweb/mcpcanvas";
 
 export interface VaultBrowserConfig {
   /** MCP tool returning the vault status envelope ({status:"ok", value:Status}). */

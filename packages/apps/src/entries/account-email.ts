@@ -1,12 +1,12 @@
-import { entryBoot, boot } from "@/loader";
+import { entryBoot, boot } from "@lumeweb/mcpcanvas";
 // Account email change MCP App — one-shot deep-link entrypoint.
 //
 // The account_email_change tool mints a one-time browser page where the human
 // enters their new email + current password; the change runs synchronously in
 // that page via authenticated UpdateEmail. There is nothing to poll, so this
 // app uses the link (one-shot) mount: click -> mint -> show the page URL.
-import { mountLinkApp } from "@/app-entry";
-import type { LinkAppEntry } from "@/app-entry";
+import { mountLinkApp } from "@lumeweb/mcpcanvas";
+import type { LinkAppEntry } from "@lumeweb/mcpcanvas";
 
 export const def: LinkAppEntry = {
   name: "AccountEmail",

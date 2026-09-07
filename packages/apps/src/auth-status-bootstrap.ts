@@ -16,10 +16,15 @@ import {
   type AuthStatusContext,
   type AuthStatusData,
 } from "@/auth-status";
-import type { CallTool } from "@/flow";
-import type { AppDefinition, MachineCurrent } from "@/app-entry";
-import { mountApp } from "@/boot";
-import { byId, setStatus, StatusClass } from "@/dom";
+import {
+  byId,
+  mountApp,
+  setStatus,
+  type AppDefinition,
+  type CallTool,
+  type MachineCurrent,
+  StatusClass,
+} from "@lumeweb/mcpcanvas";
 
 /** Read the current state of a robot3 service as the typed AuthStatusState union. */
 export function currentAuthStatusState(service: MachineCurrent): AuthStatusState {
