@@ -1,65 +1,34 @@
 //go:build !no_tunnel
 
+// Package tunnel is the pinner-cli compatibility shim over the extracted
+// tunnel library (go.lumeweb.com/tunneler). The generic tunnel machinery
+// (Tunnel contract, ngrok and cloudflared providers, credential resolution,
+// shared helpers) now lives in the library; this package keeps its original
+// public surface so in-repo callers compile unchanged, re-exporting the moved
+// functionality and retaining only the pinner-specific pieces (OpenAI Secure
+// MCP Tunnel, deep links, config-manager-backed credential plumbing).
 package tunnel
 
 import (
-	"context"
-	"fmt"
-	"os/exec"
-	"strconv"
-	"strings"
-	"sync"
-
 	"go.uber.org/zap"
+
+	tunneler "go.lumeweb.com/tunneler"
 )
 
-// log is the package-level zap logger for the tunnel package. It is a settable
-// variable so the mcp command's user-configured logger (built from its
-// --log-level/--log-format flags) replaces the default, keeping tunnel debug
-// output consistent with the rest of the server. Logs go to stderr so they
-// never corrupt the stdio JSON-RPC transport.
-var log = zap.Must(zap.NewProduction())
-
-// SetLogger installs a user-configured logger as the shared tunnel package
-// logger.
+// SetLogger installs a user-configured logger as the shared tunnel logger,
+// delegating to the extracted tunneler library so its packages emit debug
+// output consistent with the rest of the server.
 func SetLogger(l *zap.Logger) {
-	log = l
+	tunneler.SetLogger(l)
 }
 
 // Tunnel exposes a locally bound MCP HTTP server to the public internet via a
 // third-party tunnel provider (currently ngrok and Cloudflare). The CLI runs
 // and manages the tunnel process for the lifetime of the mcp server.
 //
-// All providers follow the same contract: Start launches the tunnel
-// subprocess and blocks until the public URL is live (or returns an error).
-// URL returns the public endpoint once Start has succeeded. Stop tears the
-// tunnel down and reaps the subprocess.
-type Tunnel interface {
-	// Name returns the provider name used to select the tunnel (ngrok,
-	// cloudflared).
-	Name() string
-	// URL returns the public endpoint once the tunnel is live. Calling it
-	// before Start succeeds is an error.
-	URL() (string, error)
-	// Start launches the tunnel subprocess and waits until it accepts
-	// traffic over the public URL, or returns an error if it cannot.
-	Start(ctx context.Context, localAddr string) error
-	// Stop terminates the tunnel and waits for the subprocess to exit.
-	Stop(ctx context.Context) error
-	// SupportsCustomDomain reports whether the provider can bind a custom
-	// hostname (as opposed to only a provider-assigned subdomain).
-	SupportsCustomDomain() bool
-	// RequiresToken reports whether the provider needs an account token
-	// (e.g. an ngrok authtoken) before it can start.
-	RequiresToken() bool
-	// MissingTokenError returns the provider-specific error to surface when
-	// RequiresToken() is true. Each provider owns how it guides the operator to
-	// obtain or provision the credential; the caller (e.g. serveHTTP) just
-	// returns it instead of branching per provider.
-	MissingTokenError() error
-	// OAuthBaseURL returns the externally reachable base URL for OAuth discovery.
-	OAuthBaseURL(explicitURL, tunnelURL string) (string, error)
-}
+// It aliases the core Tunnel interface of the extracted tunneler library, so
+// the library's provider implementations satisfy it directly.
+type Tunnel = tunneler.Tunnel
 
 // AccountChecker is implemented by tunnels whose provider account login can be
 // verified before the tunnel is started. It lets the runtime fail fast with an
@@ -67,82 +36,7 @@ type Tunnel interface {
 // credential is invalid (ngrok's session retries a bad authtoken until its
 // connect deadline). Providers without a distinct pre-flight check simply do
 // not implement it.
-type AccountChecker interface {
-	// CheckAccount verifies the provider account is usable (the credential
-	// authenticates) without starting the tunnel. It returns a clear error when
-	// the operator is not logged in or the credential is rejected.
-	CheckAccount(ctx context.Context) error
-}
-
-// tunnelBase holds the shared bookkeeping for all tunnel providers.
-type tunnelBase struct {
-	mu        sync.Mutex
-	publicURL string
-	ready     bool
-}
-
-// setReady records the live public URL and unblocks Start waiters.
-func (b *tunnelBase) setReady(publicURL string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.publicURL = publicURL
-	b.ready = true
-}
-
-// getState returns the ready flag and the public URL.
-func (b *tunnelBase) getState() (bool, string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.ready, b.publicURL
-}
-
-// errUnavailable is a sentinel returned by URL when the tunnel is not ready.
-var errUnavailable = fmt.Errorf("tunnel not ready")
-
-// missingTokenError builds the generic "account token required" error for a
-// provider, used by MissingTokenError implementations that have no additional
-// provisioning step (e.g. ngrok): the operator provides the token via --token,
-// an env var, the provider's config file, or the installer.
-func missingTokenError(name string) error {
-	return fmt.Errorf("%s tunnel requires an account token: pass --token or set the provider token (see --help)", name)
-}
-
-// waitCtx waits for a command to exit, honoring ctx cancellation.
-func waitCtx(ctx context.Context, cmd *exec.Cmd) error {
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-	select {
-	case err := <-done:
-		return err
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-// SplitHostPort splits a "host:port" address into its parts.
-func SplitHostPort(addr string) (string, string, error) {
-	if addr == "" {
-		return "", "", fmt.Errorf("empty address")
-	}
-	parts := strings.Split(addr, ":")
-	switch len(parts) {
-	case 1:
-		if _, err := strconv.Atoi(parts[0]); err != nil {
-			return "", "", fmt.Errorf("invalid port %q: %w", parts[0], err)
-		}
-		return "127.0.0.1", parts[0], nil
-	case 2:
-		if _, err := strconv.Atoi(parts[1]); err != nil {
-			return "", "", fmt.Errorf("invalid port %q: %w", parts[1], err)
-		}
-		return parts[0], parts[1], nil
-	default:
-		// IPv6 literal form [::1]:port
-		port := parts[len(parts)-1]
-		if _, err := strconv.Atoi(port); err != nil {
-			return "", "", fmt.Errorf("invalid port %q: %w", port, err)
-		}
-		host := strings.TrimPrefix(strings.TrimSuffix(strings.Join(parts[:len(parts)-1], ":"), "]"), "[")
-		return host, port, nil
-	}
-}
+//
+// It aliases the core AccountChecker interface of the extracted tunneler
+// library.
+type AccountChecker = tunneler.AccountChecker

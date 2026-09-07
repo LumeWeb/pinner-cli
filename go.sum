@@ -77,8 +77,8 @@ github.com/clipperhouse/uax29/v2 v2.7.0 h1:+gs4oBZ2gPfVrKPthwbMzWZDaAFPGYK72F0NJ
 github.com/clipperhouse/uax29/v2 v2.7.0/go.mod h1:EFJ2TJMRUaplDxHKj1qAEhCtQPW2tJSwu5BF98AuoVM=
 github.com/cloudflare/cloudflare-go v0.117.0 h1:y00E0XCvxuZGplL+gkoMRIhWpfNqIgyBFS6UUWC4s0c=
 github.com/cloudflare/cloudflare-go v0.117.0/go.mod h1:Ds6urDwn/TF2uIU24mu7H91xkKP8gSAHxQ44DSZgVmU=
-github.com/cloudflare/cloudflared v0.0.0-20260828153726-274888eb1e63 h1:Qc8jM6ZMl+Nl2dTFISlfmJwwPYgROv2j/X9zcOSo4Jk=
-github.com/cloudflare/cloudflared v0.0.0-20260828153726-274888eb1e63/go.mod h1:o49m6fKE5JPF2NEy4BURyC4Q/6tcL3K+9vCO/UJ/O9U=
+github.com/cloudflare/cloudflared v0.0.0-20260903222438-2253eeeb25a4 h1:Bk6SCwmBHfE61bHCpb+LEWZkhHzTf41h8LvkxbxcH0g=
+github.com/cloudflare/cloudflared v0.0.0-20260903222438-2253eeeb25a4/go.mod h1:o49m6fKE5JPF2NEy4BURyC4Q/6tcL3K+9vCO/UJ/O9U=
 github.com/cloudwego/base64x v0.1.7 h1:NppS+Fgzg5ovhn4NkUXaDT3x9jldgH5ToMCqzBSi2zI=
 github.com/cloudwego/base64x v0.1.7/go.mod h1:Cu1PV9zfrSf7ET2tIbWbbEy7jO7HHJ13q4X2SQ8aWYg=
 github.com/containerd/console v1.0.5 h1:R0ymNeydRqH2DmakFNdmjR2k0t7UPuiOV/N/27/qqsc=
@@ -765,6 +765,12 @@ go.lumeweb.com/portal-sdk v0.1.72 h1:MqbLlNLfjFxOjCcgg7ArxOCqD8IV5AR+KKJ3droidhs
 go.lumeweb.com/portal-sdk v0.1.72/go.mod h1:Xrm8rbyHc5QZGmn6fxZGQbtChHPbVZzX1fVkqtcw+Io=
 go.lumeweb.com/queryutil v0.3.19 h1:GV+zKsyGJ+YYPZi0mqOocDAROCQruGdizrE8Aw8cNFk=
 go.lumeweb.com/queryutil v0.3.19/go.mod h1:YPrXdEelsjJNBPXrG4IiYp4aq5YUk/l4uXw8z2cSAuw=
+go.lumeweb.com/tunneler v0.0.0-20260907123602-56944ca7aeae h1:t2jwV1pyuUJb1Xbbz63JqcWrW2Jza52AU9AKP1E9BxE=
+go.lumeweb.com/tunneler v0.0.0-20260907123602-56944ca7aeae/go.mod h1:RuZQg+fXedrAta3z6jUJxMKmKLa1c665sCgL8z2WWDk=
+go.lumeweb.com/tunneler/cloudflare v0.0.0-20260907123602-56944ca7aeae h1:pDwA/ZdQYUDdjMTIszQz+Xvvol4GaUBts0XGXWPtTFY=
+go.lumeweb.com/tunneler/cloudflare v0.0.0-20260907123602-56944ca7aeae/go.mod h1:RbfpDBS9MizWw95puSzfH1qttwcGilOEIVlJNDuwHvk=
+go.lumeweb.com/tunneler/ngrok v0.0.0-20260907123602-56944ca7aeae h1:XFfnd8c8TBGvUY+saEn7hv0hwpfmKGJxsgEH63m5H1w=
+go.lumeweb.com/tunneler/ngrok v0.0.0-20260907123602-56944ca7aeae/go.mod h1:VhvxYEVqwMb0rCBIbASG3Y/PVFUOPwwBnLRzp44nWlI=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=
 go.opentelemetry.io/auto/sdk v1.2.1/go.mod h1:KRTj+aOaElaLi+wW1kO/DZRXwkF4C5xPbEe3ZiIhN7Y=
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0 h1:3g7B90UzBltIDKq1/5mrTGxTnOFDV0ICOhLoxiZ8jlg=
