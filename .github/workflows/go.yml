@@ -67,6 +67,16 @@ jobs:
       - name: Generate templ code
         run: templ generate
 
+      - name: Generate app asset manifest
+        # The js-bundle action stages the app bundles under
+        # internal/mcpapp/appsassets/dist, but the mcpcanvas AssetSource
+        # manifest next to them is generated at build time (gitignored).
+        # Without it every binary panics at init: "mcpcanvas: invalid asset
+        # manifest: ... open manifest.json: file does not exist". Must run on
+        # the host platform before the cross-compiling Build step. Same as the
+        # `jsbuild` step chained into `make mcpembed`/`make test`.
+        run: GOFLAGS=-mod=mod go run ./build/genappmanifest
+
       - name: Build
         env:
           GOOS: ${{ matrix.goos }}
@@ -125,6 +135,15 @@ jobs:
 
       - name: Generate templ code
         run: templ generate
+
+      - name: Generate app asset manifest
+        # The js-bundle action stages the app bundles under
+        # internal/mcpapp/appsassets/dist, but the mcpcanvas AssetSource
+        # manifest next to them is generated at build time (gitignored).
+        # Without it the pinner binary panics at server assembly ("invalid
+        # asset manifest: ... open manifest.json: file does not exist").
+        # Same as the `jsbuild` step chained into `make mcpembed`/`make test`.
+        run: GOFLAGS=-mod=mod go run ./build/genappmanifest
 
       - name: Build pinner binary
         # sqlite_fts5 so the sunpeak e2e binary (exercised via `pinner mcp`)
@@ -188,6 +207,13 @@ jobs:
 
       - name: Generate templ code
         run: templ generate
+
+      - name: Generate app asset manifest
+        # The goreleaser build below embeds the app bundles + manifest; this
+        # time-generated (gitignored) manifest must exist before it or the
+        # snapshot binaries panic at init ("invalid asset manifest"). Same as
+        # the `jsbuild` step chained into `make mcpembed`/`make test`.
+        run: GOFLAGS=-mod=mod go run ./build/genappmanifest
 
       - name: Build snapshot artifacts (goreleaser-cross)
         run: |
@@ -284,6 +310,16 @@ jobs:
       - name: Generate templ code
         run: templ generate
 
+      - name: Generate app asset manifest
+        # The js-bundle action stages the app bundles under
+        # internal/mcpapp/appsassets/dist, but the mcpcanvas AssetSource
+        # manifest next to them is generated at build time (gitignored).
+        # Without it the managed pinner MCP server panics at assembly
+        # ("invalid asset manifest: ... open manifest.json: file does not
+        # exist") and never serves OAuth discovery. Same as the `jsbuild`
+        # step chained into `make mcpembed`/`make test`.
+        run: GOFLAGS=-mod=mod go run ./build/genappmanifest
+
       - name: Build pinner binary + integration test binary
         run: |
           mkdir -p dist
@@ -361,6 +397,15 @@ jobs:
 
       - name: Generate templ code
         run: templ generate
+
+      - name: Generate app asset manifest
+        # The js-bundle action stages the app bundles under
+        # internal/mcpapp/appsassets/dist, but the mcpcanvas AssetSource
+        # manifest next to them is generated at build time (gitignored).
+        # Without it the internal/mcpapp tests panic at init ("invalid asset
+        # manifest: ... open manifest.json: file does not exist"). Same as the
+        # `jsbuild` step chained into `make mcpembed`/`make test`.
+        run: GOFLAGS=-mod=mod go run ./build/genappmanifest
 
       - name: Test with coverage
         run: go test -v -race -tags "sqlite_fts5" -coverprofile=coverage.out -covermode=atomic ./...
