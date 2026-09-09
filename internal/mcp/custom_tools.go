@@ -185,15 +185,17 @@ func registerCustomTools(deps customToolDeps) error {
 		if err != nil {
 			return fmt.Errorf("failed to build pinning provider: %w", err)
 		}
-		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        apps.OpenPinCreatorToolName,
 			Title:       "Create a Pin",
 			Description: "Open the interactive Create a Pin app. This is a UI launcher: it renders an iframe for a human to enter a CID and pin it. It is not a headless primitive; the headless equivalent is pins_add for autonomous pin creation without a rendered form.",
 			Category:    model.CategoryCore,
 			ResourceURI: apps.PinCreateAppURI,
-		}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
+		}, func(srv *sdk.Server, catalog apps.AppCatalog) error {
 			return apps.RegisterPinApp(srv, catalog, pins)
-		}))
+		}); err != nil {
+			return err
+		}
 	}
 
 	// Agent-facing out-of-band sign-in tools (start + resume) are part of the
@@ -220,15 +222,17 @@ func registerCustomTools(deps customToolDeps) error {
 
 		// auth_sso stays headless (it returns a needs_human URL+handle handoff);
 		// open_sso_signin is the ONLY tool that opens the Sign In app view.
-		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        auth.OpenSSOSigninToolName,
 			Title:       "Sign In (App)",
 			Description: "Open the interactive Sign In app. This is a UI launcher: it renders an iframe for a human to complete SSO approval. It is not a headless primitive; the headless equivalent is auth_sso, which returns the approval URL + resume handle without rendering a card.",
 			Category:    model.CategoryAccount,
 			ResourceURI: auth.AuthSSOAppURI,
-		}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
+		}, func(srv *sdk.Server, catalog apps.AppCatalog) error {
 			return auth.RegisterAuthSSOApp(srv, catalog, deps.handoffReg, deps.authHandles)
-		}))
+		}); err != nil {
+			return err
+		}
 
 		// Out-of-band account credential tools: change the password (hosted browser
 		// form -> authenticated UpdatePassword, requires an authenticated session)
@@ -245,20 +249,24 @@ func registerCustomTools(deps customToolDeps) error {
 		// account_password_update / account_email_change stay headless (they return
 		// a needs_human URL handoff); open_account_password / open_account_email
 		// are the ONLY tools that open their one-shot deep-link app views.
-		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        auth.OpenAccountPasswordToolName,
 			Title:       "Change Password (App)",
 			Description: "Open the interactive Change Password app. This is a UI launcher: it renders an iframe for a human to change their password. It is not a headless primitive; the headless equivalent is account_password_update.",
 			Category:    model.CategoryAccount,
 			ResourceURI: auth.AccountPasswordAppURI,
-		}), auth.RegisterAccountPasswordApp))
-		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+		}, auth.RegisterAccountPasswordApp); err != nil {
+			return err
+		}
+		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        auth.OpenAccountEmailToolName,
 			Title:       "Change Email (App)",
 			Description: "Open the interactive Change Email app. This is a UI launcher: it renders an iframe for a human to change their email. It is not a headless primitive; the headless equivalent is account_email_change.",
 			Category:    model.CategoryAccount,
 			ResourceURI: auth.AccountEmailAppURI,
-		}), auth.RegisterAccountEmailApp))
+		}, auth.RegisterAccountEmailApp); err != nil {
+			return err
+		}
 	} // end of CLI OOB / account-credential tool gating
 
 	// Vault create/restore OOB hand-offs ride the SAME generic handoff-resume
@@ -280,56 +288,66 @@ func registerCustomTools(deps customToolDeps) error {
 		reg.add(customToolSpec{desc: vaultCreateResume, index: true})
 		reg.add(customToolSpec{desc: vaultRestoreResume, index: true})
 
-		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        vault.OpenVaultCreateToolName,
 			Title:       "Create Vault (App)",
 			Description: "Open the interactive Create Vault app. This is a UI launcher: it renders an iframe for a human to create a vault (Sia approval + recovery seed). It is not a headless primitive; the headless equivalent is vault_create, which returns the create URL + resume handle without rendering a card.",
 			Category:    model.CategoryStorage,
 			ResourceURI: vault.VaultCreateAppURI,
-		}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
+		}, func(srv *sdk.Server, catalog apps.AppCatalog) error {
 			return vault.RegisterVaultCreateApp(srv, catalog, deps.handoffReg, deps.authHandles)
-		}))
-		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+		}); err != nil {
+			return err
+		}
+		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        vault.OpenVaultRestoreToolName,
 			Title:       "Restore Vault (App)",
 			Description: "Open the interactive Restore Vault app. This is a UI launcher: it renders an iframe for a human to restore a vault from its recovery seed. It is not a headless primitive; the headless equivalent is vault_restore, which returns the restore URL + resume handle without rendering a card.",
 			Category:    model.CategoryStorage,
 			ResourceURI: vault.VaultRestoreAppURI,
-		}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
+		}, func(srv *sdk.Server, catalog apps.AppCatalog) error {
 			return vault.RegisterVaultRestoreApp(srv, catalog, deps.handoffReg, deps.authHandles)
-		}))
+		}); err != nil {
+			return err
+		}
 
 		// vault_status stays headless (returns raw JSON); open_vault_browser
 		// is the ONLY tool that opens the Vault browser app view.
-		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        vault.OpenVaultBrowserToolName,
 			Title:       "Vault Browser (App)",
 			Description: "Open the interactive Vault browser app. This is a UI launcher: it renders an iframe for a human to browse the vault. It is not a headless primitive; the headless equivalents are vault_status / vault_ls for autonomous access.",
 			Category:    model.CategoryStorage,
 			ResourceURI: vault.VaultBrowserAppURI,
-		}), vault.RegisterVaultBrowserApp))
+		}, vault.RegisterVaultBrowserApp); err != nil {
+			return err
+		}
 	}
 
 	// pins_list stays headless (returns raw JSON); open_pin_list is the ONLY
 	// tool that opens the Pin list app view.
-	reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+	if err := reg.addLauncher(apps.OpenLauncherSpec{
 		Name:        download.OpenPinListToolName,
 		Title:       "Pin List (App)",
 		Description: "Open the interactive Pin list app. This is a UI launcher: it renders an iframe for a human to browse pins. It is not a headless primitive; the headless equivalent is pins_list for autonomous access.",
 		Category:    model.CategoryCore,
 		ResourceURI: download.PinListAppURI,
-	}), download.RegisterPinListApp))
+	}, download.RegisterPinListApp); err != nil {
+		return err
+	}
 
 	// auth_status stays headless (returns raw JSON); open_account is the ONLY
 	// tool that opens the Account app view. Gated on the account surface.
 	if accountOn {
-		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        auth.OpenAccountToolName,
 			Title:       "Account (App)",
 			Description: "Open the interactive Account app. This is a UI launcher: it renders an iframe for a human to view authentication status. It is not a headless primitive; the headless equivalent is auth_status for autonomous access.",
 			Category:    model.CategoryAccount,
 			ResourceURI: auth.AuthStatusAppURI,
-		}), auth.RegisterAuthStatusApp))
+		}, auth.RegisterAuthStatusApp); err != nil {
+			return err
+		}
 	}
 
 	// pinner:// resources and templates are built from the provider factory and
@@ -442,13 +460,15 @@ func registerCustomTools(deps customToolDeps) error {
 		dlDesc := transfer.NewDownloadFileDescriptor(opts.ipfsDownload, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
 		// download_file is headless; the app's view attaches to the explicit
 		// open_download_manager launcher.
-		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        download.OpenDownloadManagerToolName,
 			Title:       "Download from IPFS",
 			Description: "Open the interactive Download from IPFS app. This is a UI launcher: it renders an iframe for a human to initiate a download. It is not a headless primitive; the headless equivalent is download_file for autonomous downloads without a rendered form.",
 			Category:    model.CategoryCore,
 			ResourceURI: download.IPFSDownloadAppURI,
-		}), download.RegisterIPFSDownloadApp))
+		}, download.RegisterIPFSDownloadApp); err != nil {
+			return err
+		}
 		reg.add(customToolSpec{desc: dlDesc, index: true, direct: true})
 	}
 
@@ -459,13 +479,15 @@ func registerCustomTools(deps customToolDeps) error {
 		dlDesc := vault.NewVaultGetFileDescriptor(opts.vaultGet, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
 		// vault_get_file is headless; the app's view attaches to the explicit
 		// open_vault_download_manager launcher.
-		reg.add(launcherSpec(apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        download.OpenVaultDownloadManagerToolName,
 			Title:       "Download from Vault",
 			Description: "Open the interactive Download from Vault app. This is a UI launcher: it renders an iframe for a human to initiate a vault download. It is not a headless primitive; the headless equivalent is vault_get_file for autonomous vault downloads without a rendered form.",
 			Category:    model.CategoryStorage,
 			ResourceURI: download.VaultDownloadAppURI,
-		}), download.RegisterVaultDownloadApp))
+		}, download.RegisterVaultDownloadApp); err != nil {
+			return err
+		}
 		reg.add(customToolSpec{desc: dlDesc, index: true, direct: true})
 	}
 

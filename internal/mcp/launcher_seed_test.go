@@ -42,13 +42,16 @@ func requireHeadlessNoUI(t *testing.T, tool *mcp.Tool) {
 // tool must already exist in the catalog).
 func seedLauncherForTest(t *testing.T, srv *sdk.Server, catalog *ToolCatalog, launcher, uri string, category model.ToolCategory) {
 	t.Helper()
-	desc := apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
+	desc, err := apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{
 		Name:        launcher,
 		Title:       launcher + " (test)",
 		Description: "Test launcher for " + uri,
 		Category:    category,
 		ResourceURI: uri,
 	})
+	if err != nil {
+		t.Fatalf("seed launcher %q: %v", launcher, err)
+	}
 	if err := registerOpenLauncher(customToolDeps{srv: srv, catalog: catalog}, desc); err != nil {
 		t.Fatalf("seed launcher %q: %v", launcher, err)
 	}

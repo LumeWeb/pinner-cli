@@ -3,6 +3,7 @@ package apps
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/mcpplane/sdk"
@@ -42,11 +43,19 @@ type OpenLauncherSpec struct {
 // app view. The tool's handler returns a minimal structured result ("the app
 // view is open"); the operation the view represents is driven by the iframe
 // over callServerTool.
-func NewOpenLauncherDescriptor(spec OpenLauncherSpec) model.ToolDescriptor {
-	appMeta, _ := sdk.MarshalToolMeta(model.AppToolMeta{
+//
+// The error return propagates the _meta.ui marshal failure (e.g. an empty
+// ResourceURI): a launcher without its marshaled app meta would register as a
+// plain tool whose app view silently fails to render, so that is a hard
+// assembly error, not one to swallow.
+func NewOpenLauncherDescriptor(spec OpenLauncherSpec) (model.ToolDescriptor, error) {
+	appMeta, err := sdk.MarshalToolMeta(model.AppToolMeta{
 		ResourceURI: spec.ResourceURI,
 		Visibility:  []model.ToolVisibility{model.ToolVisibilityModel, model.ToolVisibilityApp},
 	})
+	if err != nil {
+		return model.ToolDescriptor{}, fmt.Errorf("app launcher %q: %w", spec.Name, err)
+	}
 	if spec.InputSchema == nil {
 		spec.InputSchema = json.RawMessage(`{"type":"object","properties":{}}`)
 	}
@@ -77,5 +86,5 @@ func NewOpenLauncherDescriptor(spec OpenLauncherSpec) model.ToolDescriptor {
 				Text:              toolargs.ResultJSONText(sc) + " The app view is open.",
 			}, nil
 		},
-	}
+	}, nil
 }

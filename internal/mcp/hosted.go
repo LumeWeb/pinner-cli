@@ -84,27 +84,47 @@ type HostedTransfer struct {
 // Portal-hosted OAuth enforcement around it, and mounts the returned
 // HostedTransfer byte routes (if any) on its transport mux.
 func BuildHostedServer(cfg HostedServerConfig) (*sdk.Server, *ToolCatalog, *HostedTransfer, error) {
+	// The app views (ui:// widgets) must be attributed to THIS deployment's
+	// own origin for the ChatGPT app-directory surface. Resolve the exact
+	// HTTPS origin from the configured public BaseURL once, before any app
+	// registration runs; when no BaseURL is configured the window installs a
+	// no-domain resolver so views carry no domain at all — a hosted deployment
+	// without a public origin (and any self-hosted server) must never
+	// advertise a foreign domain.
+	origin := httpsOriginOf(cfg.BaseURL)
+	// Serialized resolver window: the app registry is process-global, so two
+	// assemblies with distinct deployment origins (tests, a multi-embed host)
+	// must not interleave resolver install + ui:// view registration — and the
+	// empty-origin case must be serialized too, or its views could inherit a
+	// concurrently-assembling sibling's domain. ForViewDomainResolver
+	// serializes the window for BOTH cases and its teardown is a guarded
+	// clear scoped to this assembly — see internal/mcp/apps/registrar.go for
+	// the one-server-at-a-time assembly restriction this documents.
+	var (
+		srv *sdk.Server
+		cat *ToolCatalog
+		hst *HostedTransfer
+		err error
+	)
+	werr := apps.ForViewDomainResolver(origin, func() error {
+		srv, cat, hst, err = buildHostedServer(cfg)
+		return err
+	})
+	if werr != nil {
+		return nil, nil, nil, werr
+	}
+	return srv, cat, hst, nil
+}
+
+// buildHostedServer assembles the hosted server itself (see
+// BuildHostedServer); BuildHostedServer wraps it in the deployment-origin
+// resolver window.
+func buildHostedServer(cfg HostedServerConfig) (*sdk.Server, *ToolCatalog, *HostedTransfer, error) {
 	surface := cfg.Surface
 	if surface.IsZero() {
 		surface = HostedSurface
 	}
 	var hostedTransfer *HostedTransfer
-	// The app views (ui:// widgets) must be attributed to THIS deployment's
-	// own origin for the ChatGPT app-directory surface. Resolve the exact
-	// HTTPS origin from the configured public BaseURL once, before any app
-	// registration runs; when no BaseURL is configured the resolver stays
-	// unset and views carry no domain at all — a hosted deployment without a
-	// public origin (and any self-hosted server) must never advertise a
-	// foreign domain.
-	if origin := httpsOriginOf(cfg.BaseURL); origin != "" {
-		apps.SetViewDomainResolver(func() string { return origin })
-		// Scoped to this assembly: view domains are resolved during app
-		// registration (inside BuildServer), so clearing the resolver when the
-		// assembly returns keeps any LATER assembly in the same process (tests,
-		// multi-embed hosts, a self-hosted server built after the hosted one)
-		// from attributing its views to this deployment's origin.
-		defer apps.SetViewDomainResolver(nil)
-	}
 	srv, cat, err := BuildServer(ServerConfig{
 		Hosted:      true, // hosted mode is declared here, at the one construction seam
 		Surface:     surface,
