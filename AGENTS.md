@@ -125,8 +125,9 @@ tests/sunpeak/              MCP integration tests (driver `pinner mcp` over stdi
   (internal/clicatalog) compiles operations into urfave commands; the module's
   catalogmcp compiler produces MCP JSON Schemas. Dispatch always flows
   through `Catalog.Invoke`; the discovery-only `ToolDescriptor` never carries
-  a handler. AgentRequired/AgentConfirm stay enforced at the MCP dispatch seam
-  (internal/mcp/catalogdispatch.go), never in the shared Invoke gate.
+  a handler. AgentRequired is enforced at the MCP dispatch seam
+  (internal/mcp/catalogdispatch.go); AgentConfirm is enforced by opmesh's
+  shared Invoke safety gate and mapped to needs_human at the seam.
 
 - **`go.lumeweb.com/pinner/catalogops`** — one provider per domain (`pins.go`,
   `websites.go`, `dns.go`, ...) returning `[]opmesh.Operation`. Providers
