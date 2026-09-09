@@ -98,18 +98,24 @@ jobs:
         # packages/apps pins @lumeweb/mcpcanvas via a file: spec that the root
         # pnpm-lock.yaml resolves to the sibling directory ../mcpcanvas/ui —
         # OUTSIDE $GITHUB_WORKSPACE, where actions/checkout cannot clone, so
-        # do it with plain git. Pin to the same commit go.mod requires
-        # (go.lumeweb.com/mcpcanvas v0.0.0-20260907112052-7adbd4d8dcac, the
-        # develop head) so the runtime sources pnpm links match the Go module.
+        # do it with plain git. The revision is derived from go.mod itself
+        # (single source of truth; same logic as the js-bundle composite
+        # action, and sed instead of `go list -m` because this job has no Go
+        # toolchain). An unresolvable/missing revision fails loudly.
         shell: bash
         run: |
+          sha="$(sed -n 's/.*mcpcanvas v.*-\([0-9a-f]\{12\}\)$/\1/p' go.mod | tail -n1)"
+          if [ -z "$sha" ]; then
+            echo '::error::could not derive mcpcanvas checkout sha from go.mod (no go.lumeweb.com/mcpcanvas pseudo-version)' >&2
+            exit 1
+          fi
           target="$GITHUB_WORKSPACE/../mcpcanvas"
           if [ -d "$target/.git" ]; then
             git -C "$target" fetch --quiet origin
           else
             git clone --quiet https://github.com/LumeWeb/mcpcanvas "$target"
           fi
-          git -C "$target" checkout --quiet --force 7adbd4d8dcac9a71c596db04debb3e3e4f2e1892
+          git -C "$target" checkout --quiet --force "$sha"
 
       - uses: pnpm/action-setup@v5
         with:
