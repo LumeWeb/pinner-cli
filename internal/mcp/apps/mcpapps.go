@@ -10,7 +10,7 @@ package apps
 import (
 	"encoding/json"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 )
 
 // MCP Apps protocol constants (mirroring @modelcontextprotocol/ext-apps).

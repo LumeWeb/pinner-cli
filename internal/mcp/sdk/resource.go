@@ -7,7 +7,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/yosida95/uritemplate/v3"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 )
 
 // Resource converts a Pinner-owned resource descriptor into an official SDK

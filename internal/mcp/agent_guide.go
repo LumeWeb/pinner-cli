@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
@@ -25,11 +25,16 @@ type (
 )
 
 // profileFromRequest safely extracts the PlatformProfile from a tool request.
-// If the request has no Caps or no Profile (e.g. tests invoking handlers
-// directly), it returns a default stdio generic profile.
+// The request carries the SDK-neutral model.Profile; it is adapted to the CLI
+// PlatformProfile view (Surface zero — see hostenv.FromShared) because every
+// consumer here gates on features/transport/host, and buildAgentGuide
+// re-overlays Surface/Hosted from construction-time state. If the request has
+// no Caps or no Profile (e.g. tests invoking handlers directly), it returns a
+// default stdio generic profile.
 func profileFromRequest(request model.ToolRequest) *hostenv.PlatformProfile {
 	if request.Caps != nil && request.Caps.Profile != nil {
-		return request.Caps.Profile
+		p := hostenv.FromShared(*request.Caps.Profile)
+		return &p
 	}
 	p := hostenv.ProfileStdioGeneric
 	return &p

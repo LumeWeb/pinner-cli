@@ -8,7 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 )
 
 // RegisterToolFunc adapts a Pinner-owned tool descriptor + handler into the
@@ -16,7 +16,7 @@ import (
 // adapter (which wraps the handler with per-request capability, app, and
 // elicitation state logic); sdk is registered after that so the app-registration
 // bridge can reuse the same single registration seam.
-type RegisterToolFunc func(srv *Server, desc model.ToolDescriptor, handler model.PinnerToolHandler) error
+type RegisterToolFunc func(srv *Server, desc model.ToolDescriptor, handler model.ToolHandler) error
 
 // registerToolFn is the tool-registration adapter used by app tools. The hub
 // installs its adapter (registerTool, which routes through AdaptToolHandler
@@ -45,7 +45,7 @@ func getToolRegistrar() RegisterToolFunc {
 	registerToolMu.RLock()
 	defer registerToolMu.RUnlock()
 	if registerToolFn == nil {
-		return func(*Server, model.ToolDescriptor, model.PinnerToolHandler) error {
+		return func(*Server, model.ToolDescriptor, model.ToolHandler) error {
 			return fmt.Errorf("sdk: tool registrar not installed; call sdk.SetToolRegistrar before RegisterAppTool")
 		}
 	}

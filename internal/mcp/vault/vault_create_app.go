@@ -5,9 +5,9 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
@@ -49,7 +49,7 @@ func VaultCreateStatusDescriptor(reg *handoff.HandoffRegistry, handles *session.
 		UnknownHandleDetail: "unknown handle; start a fresh vault create with vault_create",
 		ExpiredHandleDetail: "the vault create hand-off expired before the vault was created and the seed retrieved; start a fresh vault create with vault_create",
 		DeadHandleReason:    model.ReasonCredentialEntry,
-		Category:            model.CategoryVault,
+		Category:            model.CategoryStorage,
 	}, reg, handles)
 }
 

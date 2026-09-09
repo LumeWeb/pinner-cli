@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 )
 
 // envelopeValue extracts the "value" member of a result's StructuredContent.

@@ -1,8 +1,8 @@
 package mcp
 
 import (
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 

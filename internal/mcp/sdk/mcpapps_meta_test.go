@@ -3,7 +3,7 @@ package sdk
 import (
 	"testing"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 )
 
 func TestMarshalToolMetaTyped(t *testing.T) {

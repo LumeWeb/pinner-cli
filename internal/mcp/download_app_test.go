@@ -8,8 +8,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/download"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
@@ -24,7 +24,7 @@ func buildDownloadServers(t *testing.T) *mcp.Server {
 	srv := sdk.NewServer(nil)
 	// Seed launchers; the apps' AttachTo now point at open_* launchers.
 	seedLauncherForTest(t, srv, catalog, download.OpenDownloadManagerToolName, download.IPFSDownloadAppURI, model.CategoryCore)
-	seedLauncherForTest(t, srv, catalog, download.OpenVaultDownloadManagerToolName, download.VaultDownloadAppURI, model.CategoryVault)
+	seedLauncherForTest(t, srv, catalog, download.OpenVaultDownloadManagerToolName, download.VaultDownloadAppURI, model.CategoryStorage)
 	if err := download.RegisterIPFSDownloadApp(srv, catalog); err != nil {
 		t.Fatalf("download.RegisterIPFSDownloadApp: %v", err)
 	}

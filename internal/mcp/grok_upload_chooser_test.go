@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"go.lumeweb.com/mcpplane/model"
 	mcptransfer "go.lumeweb.com/mcpplane/transfer"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
@@ -140,7 +140,7 @@ func TestUploadDataDescriptionNamesPriorTools(t *testing.T) {
 // guide's upload flow, while keeping mint as the default, adds branches that
 // point at upload_url / upload_data when the profile has them.
 func TestAgentGuideUploadDetailNamesRelayTools(t *testing.T) {
-	grokProfile := hostenv.ProfileGrokHTTP.CloneFeatures()
+	grokProfile := hostenv.ProfileGrokHTTP.CloneFeatures().Shared()
 	guide := NewAgentGuideDescriptor()
 	res, err := guide.Handler(context.Background(), model.ToolRequest{
 		Caps: &model.RequestCaps{Profile: &grokProfile},
@@ -172,7 +172,8 @@ func TestCapabilitiesUploadToolsListsRelayTools(t *testing.T) {
 	}
 
 	grokReg := hostenv.ProfileGrokHTTP.Features // dedicated Grok server registered with Grok features
-	grokReq := &model.RequestCaps{Profile: &hostenv.ProfileGrokHTTP}
+	grokShared := hostenv.ProfileGrokHTTP.Shared()
+	grokReq := &model.RequestCaps{Profile: &grokShared}
 	require.Equal(t, []UploadToolCapability{UploadToolFile, UploadToolURL, UploadToolData},
 		run(grokReg, true)(grokReq).UploadTools)
 	// Same registration features, handlers NOT wired → no relay tools advertised.
@@ -189,12 +190,14 @@ func TestCapabilitiesUploadToolsListsRelayTools(t *testing.T) {
 		"registration features (not the wire profile) gate upload_tools")
 
 	// Generic request + generic registration + wired → only upload_file.
+	genericShared := hostenv.ProfileHTTPGeneric.Shared()
 	require.Equal(t, []UploadToolCapability{UploadToolFile},
-		run(genericReg, true)(&model.RequestCaps{Profile: &hostenv.ProfileHTTPGeneric}).UploadTools)
+		run(genericReg, true)(&model.RequestCaps{Profile: &genericShared}).UploadTools)
 
 	// OpenAI tunnel registration + wired → all three relay tools.
+	tunnelShared := hostenv.ProfileOpenAITunnel.Shared()
 	require.Equal(t, []UploadToolCapability{UploadToolFile, UploadToolURL, UploadToolData},
-		run(hostenv.ProfileOpenAITunnel.Features, true)(&model.RequestCaps{Profile: &hostenv.ProfileOpenAITunnel}).UploadTools)
+		run(hostenv.ProfileOpenAITunnel.Features, true)(&model.RequestCaps{Profile: &tunnelShared}).UploadTools)
 }
 
 // TestAgentGuideByteRouteChooserInSteps locks in audit 6 items 2/3/4: the

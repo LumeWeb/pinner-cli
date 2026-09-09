@@ -12,7 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
@@ -62,7 +62,7 @@ func buildVaultUploadAppServerEx(t *testing.T, fake *fakeVaultPutHandler) (*mcp.
 	catalog.Add(model.ToolEntryFromDescriptor(vaultPutDesc))
 	// Seed the launcher exactly as registerOpenLauncher does in production;
 	// the app's AttachTo now points at open_vault_manager, not vault_put_file.
-	seedLauncherForTest(t, srv, catalog, upload.OpenVaultManagerToolName, upload.VaultUploadAppURI, model.CategoryVault)
+	seedLauncherForTest(t, srv, catalog, upload.OpenVaultManagerToolName, upload.VaultUploadAppURI, model.CategoryStorage)
 	if err := upload.RegisterVaultUploadApp(srv, catalog, vu); err != nil {
 		t.Fatalf("upload.RegisterVaultUploadApp: %v", err)
 	}

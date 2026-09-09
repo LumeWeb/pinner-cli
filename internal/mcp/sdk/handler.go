@@ -9,11 +9,11 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 )
 
 // This file owns the tool-handler adapter chain: it turns a Pinner-owned
-// model.PinnerToolHandler plus the request/response conversion into the
+// model.ToolHandler plus the request/response conversion into the
 // go-sdk mcp.ToolHandler the server registers. Keeping it here (and not in the
 // mcp package) is what makes sdk the only package that imports the SDK's mcp
 // types for production code; the hub passes its behaviors in and gets a
@@ -68,7 +68,7 @@ func ToolResult(result model.ToolResult) *CallToolResult {
 // unmarshalled into a plain map for the Pinner-owned handler. When the call is
 // a retry after an input_required elicitation, the accepted form content is
 // merged into the arguments under their elicitation id.
-func AdaptToolHandler(d HandlerDeps, handler model.PinnerToolHandler) ToolHandler {
+func AdaptToolHandler(d HandlerDeps, handler model.ToolHandler) ToolHandler {
 	return func(ctx context.Context, req *CallToolRequest) (*CallToolResult, error) {
 		args := map[string]any{}
 		if req.Params.Arguments != nil {

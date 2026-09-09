@@ -32,9 +32,9 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	oobpkg "go.lumeweb.com/pinner-cli/internal/mcp/oob"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
@@ -751,7 +751,7 @@ func buildCatalog(root *cli.Command, seedDrop *oobpkg.SeedDrop, oobRestore *oobp
 // misdescribe what these two tools actually emit. Routing them onto the
 // needs_human schema keeps each tool's declared output matching its emitted
 // StructuredContent.
-func routeVaultSetupHandlers(catalog *ToolCatalog, create, restore model.PinnerToolHandler) {
+func routeVaultSetupHandlers(catalog *ToolCatalog, create, restore model.ToolHandler) {
 	if restoreEntry, ok := catalog.Get(vault.CompiledVaultRestoreToolName); ok {
 		restoreEntry.Handler = restore
 		restoreEntry.Interaction = model.InteractionAgentSafe

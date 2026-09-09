@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 )
 
 // Prompt name constants.

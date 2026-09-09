@@ -18,7 +18,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 	corevault "go.lumeweb.com/pinner/core/vault"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 	"go.uber.org/zap"

@@ -14,10 +14,10 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/flag"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
@@ -266,7 +266,7 @@ func TestSearchHidesWizardsByDefault(t *testing.T) {
 // admin_billing_*, but an explicit category=admin browse returns them.
 func TestSearchHidesAdminByDefault(t *testing.T) {
 	c := NewToolCatalog()
-	c.Add(entry("vault_sync", "Sync vault cache with the indexer", model.CategoryVault, model.InteractionAgentSafe))
+	c.Add(entry("vault_sync", "Sync vault cache with the indexer", model.CategoryStorage, model.InteractionAgentSafe))
 	c.Add(entry("admin_billing_subscribers_cancel", "Cancel a billing subscriber", model.CategoryAdmin, model.InteractionAgentSafe))
 
 	// A vague keyword search for "cancel" must not retrieve the admin tool.
@@ -298,7 +298,7 @@ func TestSearchHidesAdminByDefault(t *testing.T) {
 // invoke it through the meta-tool path.
 func TestAdminGatedFromDescribeAndInvoke(t *testing.T) {
 	c := NewToolCatalog()
-	c.Add(entry("vault_sync", "Sync vault cache", model.CategoryVault, model.InteractionAgentSafe))
+	c.Add(entry("vault_sync", "Sync vault cache", model.CategoryStorage, model.InteractionAgentSafe))
 	c.Add(entry("admin_billing_subscribers_cancel", "Cancel a billing subscriber", model.CategoryAdmin, model.InteractionAgentSafe))
 
 	// Non-admin tool describes fine.
@@ -494,8 +494,8 @@ func TestSearchSubsequenceScopedToSegment(t *testing.T) {
 func TestSearchAuthReturnsNoVaultNoise(t *testing.T) {
 	c := NewToolCatalog()
 	c.Add(entry("auth_sso", "Start out-of-band sign-in", model.CategoryAccount, model.InteractionAgentSafe))
-	c.Add(entry("vault_share", "Share a vault path", model.CategoryVault, model.InteractionAgentSafe))
-	c.Add(entry("vault_cache_rebuild", "Rebuild the vault cache", model.CategoryVault, model.InteractionAgentSafe))
+	c.Add(entry("vault_share", "Share a vault path", model.CategoryStorage, model.InteractionAgentSafe))
+	c.Add(entry("vault_cache_rebuild", "Rebuild the vault cache", model.CategoryStorage, model.InteractionAgentSafe))
 	c.Add(entry("pins_list", "List pins", model.CategoryCore, model.InteractionAgentSafe))
 
 	summaries := c.Search("auth", "", 0)

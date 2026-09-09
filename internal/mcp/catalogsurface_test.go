@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	opmesh "go.lumeweb.com/opmesh"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 )
 
 // markerHandler is a test-only catalog Operation.Handler that returns its

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"go.lumeweb.com/mcpplane/model"
 	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"

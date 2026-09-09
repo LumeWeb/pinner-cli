@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 
 	"github.com/stretchr/testify/assert"
@@ -38,7 +38,7 @@ func TestCredentialPropagatesThroughStreamableHTTP(t *testing.T) {
 		Description: "Echo the per-request credential resolved by middleware",
 		Category:    model.CategoryCore,
 		InputSchema: json.RawMessage(`{"type":"object"}`),
-		Handler: model.PinnerToolHandler(func(ctx context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+		Handler: model.ToolHandler(func(ctx context.Context, _ model.ToolRequest) (model.ToolResult, error) {
 			got = CredentialFromContext(ctx)
 			return model.ToolResult{Text: "done"}, nil
 		}),

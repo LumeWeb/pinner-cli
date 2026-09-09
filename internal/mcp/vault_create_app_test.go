@@ -12,9 +12,9 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 	oobpkg "go.lumeweb.com/pinner-cli/internal/mcp/oob"
 
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
@@ -28,7 +28,7 @@ func TestRegisterVaultCreateAppWire(t *testing.T) {
 	srv := sdk.NewServer(nil)
 
 	// Seed the launcher; the app's AttachTo now points at open_vault_create.
-	seedLauncherForTest(t, srv, catalog, vault.OpenVaultCreateToolName, vault.VaultCreateAppURI, model.CategoryVault)
+	seedLauncherForTest(t, srv, catalog, vault.OpenVaultCreateToolName, vault.VaultCreateAppURI, model.CategoryStorage)
 	if err := vault.RegisterVaultCreateApp(srv, catalog, handoff.NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)); err != nil {
 		t.Fatalf("vault.RegisterVaultCreateApp: %v", err)
 	}

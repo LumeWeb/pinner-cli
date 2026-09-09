@@ -16,7 +16,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
@@ -1373,7 +1373,7 @@ func buildStepResponse(sess *session.Session) StepResponse {
 
 // --- MCP tool registration ---
 
-func wizardEntry(name, title, description string, schema json.RawMessage, handler model.PinnerToolHandler) *model.ToolEntry {
+func wizardEntry(name, title, description string, schema json.RawMessage, handler model.ToolHandler) *model.ToolEntry {
 	return &model.ToolEntry{
 		Name:        name,
 		Title:       title,

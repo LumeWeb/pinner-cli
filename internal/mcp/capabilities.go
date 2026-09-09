@@ -11,7 +11,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
@@ -312,9 +312,9 @@ func capabilitiesDescriptionFor(profile hostenv.PlatformProfile, uploadFile, vau
 // so it carries a single DescFunc target for uniformity.
 func capabilitiesTargets(uploadFile, vaultPutFile, downloadFile, vaultGetFile bool) []model.ToolTarget {
 	return toolforge.MCPTargets(model.ToolTarget{Visible: true,
-		DescFunc: func(p hostenv.PlatformProfile) string {
+		DescFunc: toolforge.DescResolver(func(p hostenv.PlatformProfile) string {
 			return capabilitiesDescriptionFor(p, uploadFile, vaultPutFile, downloadFile, vaultGetFile)
-		},
+		}),
 	})
 }
 

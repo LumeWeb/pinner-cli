@@ -10,9 +10,9 @@ import (
 
 	"go.lumeweb.com/pinner/catalogops"
 
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/download"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
@@ -335,7 +335,7 @@ func buildVaultBrowserServer(t *testing.T) *mcp.Server {
 
 	srv := sdk.NewServer(nil)
 	// Seed the launcher; the app's AttachTo now points at open_vault_browser.
-	seedLauncherForTest(t, srv, catalog, vault.OpenVaultBrowserToolName, vault.VaultBrowserAppURI, model.CategoryVault)
+	seedLauncherForTest(t, srv, catalog, vault.OpenVaultBrowserToolName, vault.VaultBrowserAppURI, model.CategoryStorage)
 	if err := vault.RegisterVaultBrowserApp(srv, catalog); err != nil {
 		t.Fatalf("vault.RegisterVaultBrowserApp: %v", err)
 	}

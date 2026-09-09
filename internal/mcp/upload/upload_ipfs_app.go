@@ -9,8 +9,8 @@ import (
 	planetransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/mcpplane/transfer"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"

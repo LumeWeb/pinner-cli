@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
@@ -92,7 +92,7 @@ func openAppDescriptionFor(p hostenv.PlatformProfile) string {
 func openAppTargets() []model.ToolTarget {
 	return toolforge.MCPTargets(model.ToolTarget{
 		Visible:  true,
-		DescFunc: openAppDescriptionFor,
+		DescFunc: toolforge.DescResolver(openAppDescriptionFor),
 	})
 }
 

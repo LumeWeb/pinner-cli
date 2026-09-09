@@ -9,7 +9,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
@@ -43,7 +43,7 @@ var relayURLUploadDesc = toolforge.Static(
 // exported so the server can re-resolve a dedicated per-host description.
 var RelayURLUploadTargets = toolforge.MCPTargets(model.ToolTarget{
 	Visible:  true,
-	DescFunc: relayURLUploadDesc.Resolve,
+	DescFunc: toolforge.DescResolver(relayURLUploadDesc.Resolve),
 })
 
 // RelayURLUploadDescriptor uploads a file by having the local MCP process

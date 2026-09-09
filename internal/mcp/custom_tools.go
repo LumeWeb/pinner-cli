@@ -10,10 +10,10 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/download"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
@@ -284,7 +284,7 @@ func registerCustomTools(deps customToolDeps) error {
 			Name:        vault.OpenVaultCreateToolName,
 			Title:       "Create Vault (App)",
 			Description: "Open the interactive Create Vault app. This is a UI launcher: it renders an iframe for a human to create a vault (Sia approval + recovery seed). It is not a headless primitive; the headless equivalent is vault_create, which returns the create URL + resume handle without rendering a card.",
-			Category:    model.CategoryVault,
+			Category:    model.CategoryStorage,
 			ResourceURI: vault.VaultCreateAppURI,
 		}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
 			return vault.RegisterVaultCreateApp(srv, catalog, deps.handoffReg, deps.authHandles)
@@ -293,7 +293,7 @@ func registerCustomTools(deps customToolDeps) error {
 			Name:        vault.OpenVaultRestoreToolName,
 			Title:       "Restore Vault (App)",
 			Description: "Open the interactive Restore Vault app. This is a UI launcher: it renders an iframe for a human to restore a vault from its recovery seed. It is not a headless primitive; the headless equivalent is vault_restore, which returns the restore URL + resume handle without rendering a card.",
-			Category:    model.CategoryVault,
+			Category:    model.CategoryStorage,
 			ResourceURI: vault.VaultRestoreAppURI,
 		}), func(srv *sdk.Server, catalog apps.AppCatalog) error {
 			return vault.RegisterVaultRestoreApp(srv, catalog, deps.handoffReg, deps.authHandles)
@@ -305,7 +305,7 @@ func registerCustomTools(deps customToolDeps) error {
 			Name:        vault.OpenVaultBrowserToolName,
 			Title:       "Vault Browser (App)",
 			Description: "Open the interactive Vault browser app. This is a UI launcher: it renders an iframe for a human to browse the vault. It is not a headless primitive; the headless equivalents are vault_status / vault_ls for autonomous access.",
-			Category:    model.CategoryVault,
+			Category:    model.CategoryStorage,
 			ResourceURI: vault.VaultBrowserAppURI,
 		}), vault.RegisterVaultBrowserApp))
 	}
@@ -463,7 +463,7 @@ func registerCustomTools(deps customToolDeps) error {
 			Name:        download.OpenVaultDownloadManagerToolName,
 			Title:       "Download from Vault",
 			Description: "Open the interactive Download from Vault app. This is a UI launcher: it renders an iframe for a human to initiate a vault download. It is not a headless primitive; the headless equivalent is vault_get_file for autonomous vault downloads without a rendered form.",
-			Category:    model.CategoryVault,
+			Category:    model.CategoryStorage,
 			ResourceURI: download.VaultDownloadAppURI,
 		}), download.RegisterVaultDownloadApp))
 		reg.add(customToolSpec{desc: dlDesc, index: true, direct: true})

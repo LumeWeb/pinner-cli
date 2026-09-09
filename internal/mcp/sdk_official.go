@@ -33,7 +33,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
@@ -224,7 +224,10 @@ func requestCaps(req *sdk.CallToolRequest, transportFlags transportFlags) *model
 		}
 	}
 
-	rc.Profile = &profile
+	// The request capability view carries the SDK-neutral profile; adapt the
+	// CLI-detected profile (features/host/wire signals are shared verbatim).
+	shared := profile.Shared()
+	rc.Profile = &shared
 
 	return rc
 }
@@ -285,7 +288,7 @@ func annotateAppOnHandoff(toolName string, caps *model.RequestCaps, result *mode
 // sdk.SetToolRegistrar in adapter.go). It routes app-tool registration through
 // the same handler-adaptation deps as the meta-tools, so app tools attached to
 // a ui:// view reuse the single registration path.
-func registerTool(srv *sdk.Server, desc model.ToolDescriptor, handler model.PinnerToolHandler) error {
+func registerTool(srv *sdk.Server, desc model.ToolDescriptor, handler model.ToolHandler) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
@@ -386,7 +389,7 @@ func registerOfficialSearchTools(srv *sdk.Server, catalog *ToolCatalog) error {
 		InputSchema:   schema.raw(),
 	}
 
-	desc.Handler = model.PinnerToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
+	desc.Handler = model.ToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
 		in, err := toolargs.DecodeToolArgs[searchToolsInput](request)
 		if err != nil {
 			return model.ToolResult{}, err
@@ -435,7 +438,7 @@ func registerOfficialDescribeTool(srv *sdk.Server, catalog *ToolCatalog) error {
 		InputSchema:   schema.raw(),
 	}
 
-	desc.Handler = model.PinnerToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
+	desc.Handler = model.ToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
 		in, err := toolargs.DecodeToolArgs[describeToolInput](request)
 		if err != nil {
 			return model.ToolResult{IsError: true, Text: err.Error()}, nil
@@ -573,7 +576,7 @@ func registerOfficialInvokeTools(srv *sdk.Server, catalog *ToolCatalog, stdioMod
 			InputSchema:   schema.raw(),
 		}
 
-		desc.Handler = model.PinnerToolHandler(func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
+		desc.Handler = model.ToolHandler(func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[invokeToolInput](request)
 			if err != nil {
 				return model.ToolResult{IsError: true, Text: err.Error()}, nil

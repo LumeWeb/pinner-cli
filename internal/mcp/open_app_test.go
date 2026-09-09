@@ -49,8 +49,8 @@ func TestOpenAppTargetsCarryDescFunc(t *testing.T) {
 	require.NotNil(t, targets[0].DescFunc, "open_app target must carry a DescFunc for profile-aware resolution")
 	require.Empty(t, targets[0].Description, "static Description should be empty when DescFunc is set")
 
-	guiDesc := targets[0].DescFunc(hostenv.ProfileStdioMCPApps)
+	guiDesc := targets[0].DescFunc(hostenv.ProfileStdioMCPApps.Shared())
 	require.Contains(t, guiDesc, "iframe")
-	agentDesc := targets[0].DescFunc(hostenv.ProfileStdioGeneric)
+	agentDesc := targets[0].DescFunc(hostenv.ProfileStdioGeneric.Shared())
 	require.Contains(t, agentDesc, "does not render MCP Apps")
 }

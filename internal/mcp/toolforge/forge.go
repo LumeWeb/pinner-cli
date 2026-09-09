@@ -4,7 +4,7 @@ import (
 	"strings"
 	"text/template"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 )
 
@@ -32,7 +32,7 @@ type ToolDefinition struct {
 	// Handler is the single handler shared across all targets. The
 	// handler must be capable of processing any argument shape the
 	// targets' schemas accept.
-	Handler model.PinnerToolHandler
+	Handler model.ToolHandler
 
 	// Targets are complete, self-contained presentations of this tool
 	// for specific capability contexts. The forge resolves the

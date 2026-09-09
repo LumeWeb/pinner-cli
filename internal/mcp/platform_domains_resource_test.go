@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 )
 
 // mockPlatformDomainsProvider implements wizard.WebsitesResourceProvider for
