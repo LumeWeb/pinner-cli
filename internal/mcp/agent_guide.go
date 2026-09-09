@@ -135,7 +135,7 @@ var vaultUploadDetailDesc = toolforge.Static(
 	When(hostenv.FeatSourceData,
 		"The separate upload_data tool is IPFS-only, not a vault write — do not invent a 'vault a CID' step.",
 	).
-	WhenTransportSep(toolforge.SepSentence, hostenv.TransportOpenAI,
+	WhenPredSep(toolforge.SepSentence, hostenv.TransportIs(hostenv.TransportOpenAI),
 		"The separate upload_url / upload_data tools pin to IPFS and are NOT vault writes: over this tunnel transport vault_put_file takes public-URL or raw-inline bytes via its own url/data source plus the destination vault_path. Do not invent a 'vault a CID' step.",
 	)
 
@@ -283,11 +283,11 @@ func vaultByteRouteDecision() *toolforge.GuideDecisionBuilder {
 			// transport. Gate on the transport, not FeatSourceURL: Grok declares
 			// FeatSourceURL to register upload_url, but its vault_put_file is
 			// mint-only — there is no "vault a URL" branch on Grok.
-			WhenTransport(hostenv.TransportOpenAI).
+			WhenPred(hostenv.TransportIs(hostenv.TransportOpenAI)).
 			Steps("vault_put_file").
 			Detail(toolforge.Static("vault_put_file takes the URL via its own url source on the tunnel transport; the separate upload_url tool is IPFS-only, not a vault write.")),
 		toolforge.Branch("only raw inline bytes, no file and no URL").
-			WhenTransport(hostenv.TransportOpenAI).
+			WhenPred(hostenv.TransportIs(hostenv.TransportOpenAI)).
 			Steps("vault_put_file").
 			Detail(toolforge.Static("vault_put_file takes raw inline bytes via its own data source as a last resort; never base64-encode a real or host-provided file.")),
 	)
@@ -364,7 +364,7 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 		// via Portal OAuth before the request reaches the MCP server. State that
 		// explicitly so the agent does not attempt a config-mutating
 		// auth_login/auth_logout, which are CLI/local-only surfaces absent here.
-		RuleWhenHosted(true,
+		RuleWhenPred(hostenv.HostedIs(true),
 			"Hosted instance notice: a Portal OAuth identity is already established for the current request and authenticated operations run as that user. Do NOT call auth_login or auth_logout (they are unavailable on this hosted surface); identity cannot be switched mid-session.").
 		Rule("Access policy (quota trumps a subscription): before a paid/metered action, check the user's access via account_quota (discover it with search_tools query \"quota\"). Its has_quota flag is authoritative — if true, granted quota covers the user and they need NO subscription, so proceed without asking about one. Only when has_quota is false, check account_subscription (search_tools query \"subscription\"): if subscribed, proceed; if not subscribed, surface the returned web_url deep-link so the human opens the web app to subscribe — you can neither subscribe on their behalf nor treat a subscription as a substitute when quota is available.").
 		Flow(toolforge.Flow("auth", "Authenticate").

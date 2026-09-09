@@ -25,7 +25,6 @@ require (
 	github.com/multiformats/go-multiaddr v0.16.1
 	github.com/oapi-codegen/runtime v1.7.0
 	github.com/openai/tunnel-client v0.0.13
-	github.com/pb33f/ordered-map/v2 v2.3.1
 	github.com/pressly/goose/v3 v3.28.0
 	github.com/pterm/pterm v0.12.84-0.20260430213317-32e5000d4c27
 	github.com/rs/cors v1.11.1
@@ -41,6 +40,7 @@ require (
 	go.lumeweb.com/ipfs-sdk v0.1.97
 	go.lumeweb.com/ipfs-sdk/dnsname v0.1.64
 	go.lumeweb.com/mcpcanvas v0.0.0-20260907112052-7adbd4d8dcac
+	go.lumeweb.com/mcpforge v0.0.0-20260907155938-f64f92060f4e
 	go.lumeweb.com/mcpplane v0.0.0-20260908010148-2f0b05c8e8a9
 	go.lumeweb.com/oauth v0.1.6
 	go.lumeweb.com/opmesh v0.0.0-20260907112428-ade506e64ae9
@@ -203,6 +203,7 @@ require (
 	github.com/oschwald/geoip2-golang v1.13.0 // indirect
 	github.com/oschwald/maxminddb-golang v1.13.1 // indirect
 	github.com/panjf2000/ants/v2 v2.12.1 // indirect
+	github.com/pb33f/ordered-map/v2 v2.3.1 // indirect
 	github.com/petar/GoLLRB v0.0.0-20210522233825-ae3b015fd3e9 // indirect
 	github.com/pierrec/lz4/v4 v4.1.29 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -258,7 +259,6 @@ require (
 	go.lumeweb.com/configmanager v0.3.30 // indirect
 	go.lumeweb.com/event/v2 v2.1.0 // indirect
 	go.lumeweb.com/gswagger v0.20.12 // indirect
-	go.lumeweb.com/mcpforge v0.0.0-20260907155938-f64f92060f4e // indirect
 	go.lumeweb.com/portal v0.5.1 // indirect
 	go.lumeweb.com/portal-middleware v0.3.7 // indirect
 	go.lumeweb.com/portal-router v0.7.7 // indirect

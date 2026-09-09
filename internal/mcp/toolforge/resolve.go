@@ -1,7 +1,15 @@
+// Package toolforge shim: per-profile resolution over model.ToolTarget
+// slices, delegated to mcpforge.ResolveTarget after conversion.
+// mcpforge.ResolveTarget is the deterministic extractor of the
+// pre-extraction resolveTarget: among all targets whose Require set is fully
+// satisfied by the profile's features, the one with the most required
+// features wins; ties are broken by declaration order (first wins).
 package toolforge
 
 import (
+	"go.lumeweb.com/mcpforge"
 	"go.lumeweb.com/mcpplane/model"
+
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 )
 
@@ -12,16 +20,17 @@ import (
 // and true on match; empty string and false if no target matches or the
 // target is hidden.
 func ResolveDescription(targets []model.ToolTarget, profile hostenv.PlatformProfile) (string, bool) {
-	target := resolveTarget(targets, profile)
-	if target == nil || !target.Visible {
+	matched := mcpforge.ResolveTarget(forgeTargets(targets), forgeCarrier{profile})
+	if matched == nil || !matched.Visible {
 		return "", false
 	}
-	if target.DescFunc != nil {
-		// The target's DescFunc receives the SDK-neutral profile;
-		// resolve the CLI-platform view for the module-local resolver.
-		return target.DescFunc(profile.Shared()), true
+	if matched.DescFunc != nil {
+		// The converted target adapts the model target's DescFunc to
+		// receive the SDK-neutral profile view, exactly as the
+		// pre-extraction resolver did.
+		return matched.DescFunc(forgeCarrier{profile}), true
 	}
-	return target.Description, true
+	return matched.Description, true
 }
 
 // DescResolver adapts a CLI, PlatformProfile-based description resolver (a

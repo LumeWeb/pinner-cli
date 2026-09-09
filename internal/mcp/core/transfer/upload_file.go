@@ -498,16 +498,16 @@ var archiveModeDesc = toolforge.Static(
 	WhenSentence(hostenv.FeatFileHostInput,
 		"A host-file source defaults to convert.",
 	).
-	WhenTransportSentence(hostenv.TransportStdio,
+	WhenPredSep(toolforge.SepSentence, hostenv.TransportIs(hostenv.TransportStdio),
 		"A path source defaults to convert.",
 	).
-	WhenTransportSentence(hostenv.TransportHTTP,
+	WhenPredSep(toolforge.SepSentence, hostenv.TransportIs(hostenv.TransportHTTP),
 		"The mint (presigned PUT) source defaults to preserve, converting only when archive_mode=convert is passed explicitly.",
 	).
-	WhenTransportSentence(hostenv.TransportOpenAI,
+	WhenPredSep(toolforge.SepSentence, hostenv.TransportIs(hostenv.TransportOpenAI),
 		"A url/data source defaults to convert.",
 	).
-	WhenTransportSentence(hostenv.TransportHTTP,
+	WhenPredSep(toolforge.SepSentence, hostenv.TransportIs(hostenv.TransportHTTP),
 		"A website ZIP streamed via source.mode=mint therefore needs archive_mode=convert, or it uploads as a raw single-file CID that websites_create will reject.",
 	)
 
