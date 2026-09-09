@@ -181,7 +181,7 @@ func DispatchCatalogOp(ctx context.Context, cat opmesh.Catalog, actor opmesh.Act
 	// through ValidateMCPRequired, so both refusals reach the caller with the
 	// same text.
 	if op, ok := cat.Get(name); ok {
-		if m := firstMissingAgentRequiredArg(op, args); m != "" {
+		if m := firstMissingDispatchRequiredArg(op, args); m != "" {
 			return model.ToolResult{IsError: true, Text: fmt.Sprintf("missing required argument %q", m)}, nil
 		}
 	}
@@ -220,18 +220,20 @@ func DispatchCatalogOp(ctx context.Context, cat opmesh.Catalog, actor opmesh.Act
 	return resultToToolResult(result), nil
 }
 
-// firstMissingAgentRequiredArg reports the name of the first declared
-// AgentRequired arg that the input does not satisfy, or "" when every
-// AgentRequired arg is satisfied. It replicates the pre-opmesh-seam
-// ValidateMCPRequired semantics for the AgentRequired half: an arg counts as
-// missing when its value is absent, present-but-null, or present-but-empty.
-// Required-no-default args are excluded — the opmesh Invoke gate enforces
-// those itself with the same user-visible message — so AgentRequired can
-// never leak into a non-MCP invocation while Required enforcement is not
-// duplicated.
-func firstMissingAgentRequiredArg(op opmesh.Operation, input map[string]any) string {
+// firstMissingDispatchRequiredArg reports the name of the first declared
+// MCP-dispatch-required arg that the input does not satisfy, or "" when every
+// such arg is satisfied. It replicates the pre-opmesh-seam ValidateMCPRequired
+// semantics: an arg is required here when AgentRequired (agent-surface-only
+// requiredness, deliberately absent from the shared Invoke gate so it can
+// never leak into a non-MCP invocation) or Required with no Default. An arg
+// counts as missing when its value is absent, present-but-null, or
+// present-but-empty. Required-no-default args are re-checked here (not left
+// to Invoke) so the user-visible text stays the pre-seam plain
+// `missing required argument "x"` message rather than Invoke's
+// `operation "x": missing required argument "x"` wrapper.
+func firstMissingDispatchRequiredArg(op opmesh.Operation, input map[string]any) string {
 	for _, a := range op.Args() {
-		if !a.AgentRequired {
+		if !a.AgentRequired && !isRequiredArg(a) {
 			continue
 		}
 		raw, present := lookupAgentArgInput(a, input)
@@ -280,6 +282,13 @@ func isAgentArgEmpty(a opmesh.OperationArg, raw any) bool {
 	default:
 		return false
 	}
+}
+
+// isRequiredArg mirrors the shared predicate used by Invoke and every schema
+// builder: an arg is only mandatory when Required AND has no declared default
+// (the default satisfies it before the Handler runs).
+func isRequiredArg(a opmesh.OperationArg) bool {
+	return a.Required && a.Default == ""
 }
 
 // camelCase converts a kebab-case name to camelCase (e.g. "device-name" ->
