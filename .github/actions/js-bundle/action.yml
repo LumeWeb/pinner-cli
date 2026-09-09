@@ -1,6 +1,6 @@
 # js-bundle: build the MCP App JS bundles (packages/apps) and copy them into
 # internal/mcpapp/appsassets/dist/ so Go's //go:embed picks them up. Every Go
-# build/test step embeds these bundles and the AppModuleJS seam panics if they
+# build/test step embeds these bundles and the Go build fails if they
 # are absent, so this action must run before any `go build`/`go test`.
 name: Build JS bundles
 description: Builds packages/apps self-contained bundles and stages them for Go embedding

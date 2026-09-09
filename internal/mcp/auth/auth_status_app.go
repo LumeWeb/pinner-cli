@@ -4,6 +4,7 @@ import (
 	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
+	"go.lumeweb.com/pinner/canvas"
 )
 
 // This file wires the "Account" MCP App onto the shared AppView lib layer. It
@@ -24,9 +25,9 @@ const OpenAccountToolName = "open_account"
 // renderAuthStatusAppHTML renders the complete "Account" app document
 // (ui://auth/status.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + auth-status logic) come from
-// mcpapp.RenderMcpAppDoc; only the visible body is authored in templ.
+// mcpapp.RenderAppDoc (go.lumeweb.com/pinner/canvas); the visible body is authored in templ.
 func renderAuthStatusAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Account", mcpapp.AuthStatusAppForm(), mcpapp.AppModule("auth-status"))
+	return mcpapp.RenderAppDoc(canvas.ViewAuthStatus, "Account")
 }
 
 // RegisterAuthStatusApp wires the "Account" MCP App onto the shared AppView lib

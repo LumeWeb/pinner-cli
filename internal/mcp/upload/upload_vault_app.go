@@ -15,6 +15,7 @@ import (
 	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/mcpplane/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
+	"go.lumeweb.com/pinner/canvas"
 )
 
 // This file wires the "Upload to Vault" MCP App onto the shared AppView lib
@@ -43,9 +44,9 @@ type VaultUploadSubmitInput struct {
 // renderVaultUploadAppHTML renders the complete "Upload to Vault" app document
 // (ui://uploads/vault.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + upload logic) come from
-// mcpapp.RenderMcpAppDoc; only the visible body form is authored in templ.
+// mcpapp.RenderAppDoc (go.lumeweb.com/pinner/canvas); the body form is authored in templ.
 func renderVaultUploadAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Upload to Vault", mcpapp.VaultUploadAppForm(), mcpapp.AppModule("vault-upload"))
+	return mcpapp.RenderAppDoc(canvas.ViewVaultUpload, "Upload to Vault")
 }
 
 // vaultUploadSubmitDescriptor builds the app-only mint helper for the Upload

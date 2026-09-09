@@ -4,6 +4,7 @@ import (
 	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
+	"go.lumeweb.com/pinner/canvas"
 )
 
 // This file wires the "Vault browser" MCP App onto the shared AppView lib
@@ -24,9 +25,9 @@ const OpenVaultBrowserToolName = "open_vault_browser"
 // renderVaultBrowserAppHTML renders the complete "Vault browser" app document
 // (ui://vault/browser.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + browser logic) come from
-// mcpapp.RenderMcpAppDoc; only the visible body is authored in templ.
+// mcpapp.RenderAppDoc (go.lumeweb.com/pinner/canvas); the visible body is authored in templ.
 func renderVaultBrowserAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Vault browser", mcpapp.VaultBrowserAppForm(), mcpapp.AppModule("vault-browser"))
+	return mcpapp.RenderAppDoc(canvas.ViewVaultBrowser, "Vault browser")
 }
 
 // RegisterVaultBrowserApp wires the "Vault browser" MCP App onto the shared

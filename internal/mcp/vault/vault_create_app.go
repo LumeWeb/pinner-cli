@@ -9,6 +9,7 @@ import (
 	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
+	"go.lumeweb.com/pinner/canvas"
 )
 
 // This file wires the "Create Vault" MCP App onto the shared AppView lib
@@ -30,9 +31,9 @@ const OpenVaultCreateToolName = "open_vault_create"
 // RenderVaultCreateAppHTML renders the complete "Create Vault" app document
 // (ui://vault/create.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + create logic) come from
-// mcpapp.RenderMcpAppDoc; only the visible body form is authored in templ.
+// mcpapp.RenderAppDoc (go.lumeweb.com/pinner/canvas); the body form is authored in templ.
 func RenderVaultCreateAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Create Vault", mcpapp.VaultCreateAppForm(), mcpapp.AppModule("vault-create"))
+	return mcpapp.RenderAppDoc(canvas.ViewVaultCreate, "Create Vault")
 }
 
 // VaultCreateStatusDescriptor builds the app-only vault-create status helper.

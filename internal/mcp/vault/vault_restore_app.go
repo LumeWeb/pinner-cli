@@ -9,6 +9,7 @@ import (
 	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
+	"go.lumeweb.com/pinner/canvas"
 )
 
 // This file wires the "Restore Vault" MCP App onto the shared AppView lib
@@ -30,9 +31,9 @@ const OpenVaultRestoreToolName = "open_vault_restore"
 // RenderVaultRestoreAppHTML renders the complete "Restore Vault" app document
 // (ui://vault/restore.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + restore logic) come from
-// mcpapp.RenderMcpAppDoc; only the visible body form is authored in templ.
+// mcpapp.RenderAppDoc (go.lumeweb.com/pinner/canvas); the body form is authored in templ.
 func RenderVaultRestoreAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Restore Vault", mcpapp.VaultRestoreAppForm(), mcpapp.AppModule("vault-restore"))
+	return mcpapp.RenderAppDoc(canvas.ViewVaultRestore, "Restore Vault")
 }
 
 // VaultRestoreStatusDescriptor builds the app-only vault-restore status helper.

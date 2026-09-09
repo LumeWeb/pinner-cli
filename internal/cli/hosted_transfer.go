@@ -15,10 +15,10 @@ import (
 // streamUploadHandler is the shared IPFS stream→upload executor used by both
 // the CLI MCP command and a hosted (Portal-embedded) server. The temp-buffer →
 // wrap-sniff → archive-convert → upload mechanics live in
-// ptransfer.StreamUpload (extracted verbatim from this package in Stage
+// transfer.StreamUpload (extracted verbatim from this package in Stage
 // 5); this wrapper only supplies the live config value:
 //
-//	ptransfer.StreamUpload freezes maxBytes at construction, while
+//	transfer.StreamUpload freezes maxBytes at construction, while
 //	cfgMgr reads max_mcp_upload_size live on disk edits (config watcher).
 //	Rebuilding the module executor per call preserves the per-request
 //	live-reload semantics of the previous inline implementation.
@@ -32,7 +32,7 @@ func streamUploadHandler(cfgMgr config.Manager, output Output, uploadSvc UploadS
 // ipfsDownloadHandler is the shared IPFS download executor used by the
 // download_file sink: it streams a single IPFS node (CID or CID/path) to w via
 // the authenticated download service. The Cat→io.Copy mechanics live in
-// ptransfer.StreamDownload; this wrapper only builds the concrete
+// transfer.StreamDownload; this wrapper only builds the concrete
 // download.Service from the config manager. There is no
 // RequireAuthenticated pre-check here — the auth gate lives in
 // Cat → newSDKDownloadService, which is ctx-aware (a hosted transfer carries

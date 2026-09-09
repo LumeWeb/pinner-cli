@@ -15,6 +15,7 @@ import (
 	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/mcpplane/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
+	"go.lumeweb.com/pinner/canvas"
 )
 
 // This file wires the "Upload to IPFS" MCP App onto the shared AppView lib
@@ -58,9 +59,9 @@ type IPFSUploadSubmitInput struct {
 // renderIPFSUploadAppHTML renders the complete "Upload to IPFS" app document
 // (ui://uploads/ipfs.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + upload logic) come from
-// mcpapp.RenderMcpAppDoc; only the visible body form is authored in templ.
+// mcpapp.RenderAppDoc (go.lumeweb.com/pinner/canvas); the body form is authored in templ.
 func renderIPFSUploadAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Upload to IPFS", mcpapp.IPFSUploadAppForm(), mcpapp.AppModule("ipfs-upload"))
+	return mcpapp.RenderAppDoc(canvas.ViewIPFSUpload, "Upload to IPFS")
 }
 
 // ipfsUploadSubmitDescriptor builds the app-only prepare/continue helper for

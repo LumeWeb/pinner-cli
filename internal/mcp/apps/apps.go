@@ -9,6 +9,7 @@ import (
 
 	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/mcpplane/sdk"
+	"go.lumeweb.com/pinner/canvas"
 )
 
 // MCP Apps (ext-apps) product views. Each App pairs one or more existing tools
@@ -44,10 +45,10 @@ type PinStatusView struct {
 // renderPinCreateAppHTML renders the full "Create a Pin" app document
 // (ui://pins/create.html). The shared shell (doctype/<head>/inline theme) and
 // the ESM module (shared ext-apps bootstrap + pin logic) come from
-// mcpapp.RenderMcpAppDoc; only the visible body form is authored in templ. Served
+// mcpapp.RenderAppDoc (go.lumeweb.com/pinner/canvas); only the visible body
 // verbatim so the sandboxed iframe needs no network request.
 func RenderPinCreateAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Create a Pin", mcpapp.PinCreateAppForm(), mcpapp.AppModule("pin"))
+	return mcpapp.RenderAppDoc(canvas.ViewPin, "Create a Pin")
 }
 
 // pinStatusDescriptor builds the app-only pin status helper. It is visible to

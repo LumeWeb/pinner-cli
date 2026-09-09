@@ -4,6 +4,7 @@ import (
 	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
+	"go.lumeweb.com/pinner/canvas"
 )
 
 // This file wires the "Pin list" MCP App onto the shared AppView lib layer. It
@@ -24,9 +25,9 @@ const OpenPinListToolName = "open_pin_list"
 // renderPinListAppHTML renders the complete "Pin list" app document
 // (ui://pins/list.html). The shared shell (doctype/<head>/inline theme) and the
 // ESM module (shared ext-apps bootstrap + pin-list logic) come from
-// mcpapp.RenderMcpAppDoc; only the visible body is authored in templ.
+// mcpapp.RenderAppDoc (go.lumeweb.com/pinner/canvas); the visible body is authored in templ.
 func renderPinListAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Pins", mcpapp.PinListAppForm(), mcpapp.AppModule("pin-list"))
+	return mcpapp.RenderAppDoc(canvas.ViewPinList, "Pins")
 }
 
 // RegisterPinListApp wires the "Pin list" MCP App onto the shared AppView lib

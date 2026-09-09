@@ -9,15 +9,16 @@ import type { FrameLocator } from '@playwright/test';
  * "@uppy/core"` throws "Failed to resolve module specifier" and kills the app
  * before it boots (a real regression that hit a host's sandbox runtime). These tests
  * render the upload apps in the real browser and assert the module actually
- * EXECUTED: the shell injects `window.__PINNER_CLI_VERSION__` as the first
+ * EXECUTED: the canvas renderer (mcpcanvas.VersionGlobal via the render
+ * delegate) injects `window.__MCPCANVAS_VERSION__` as the first
  * statement of the same module script, and ES module instantiation resolves
  * every import before running any statement. If an import could not resolve,
  * the version global would never be set and the app body stays inert — which
  * is exactly the failure mode we guard against.
  */
 
-/** The version global the shell injects as the first statement of each app's module. */
-const VERSION_GLOBAL = '__PINNER_CLI_VERSION__';
+/** The version global the canvas renderer injects as the first statement of each app's module. */
+const VERSION_GLOBAL = '__MCPCANVAS_VERSION__';
 
 // bootedVersion reads the version global in the app (sandboxed iframe) window,
 // evaluating inside that frame. A non-empty string proves the module graph
@@ -66,7 +67,7 @@ test('auth_sso app renders its sign-in view inside the host iframe', async ({ in
 // assertUploadAppBoots renders an upload tool's ui:// view and verifies the app
 // actually booted: the static HTML shell is server-rendered (it would render
 // even if the module failed), so the real signal is that the inline module ran
-// (window.__PINNER_CLI_VERSION__ is set). A leaked bare import — e.g. Uppy
+// (window.__MCPCANVAS_VERSION__ is set). A leaked bare import — e.g. Uppy
 // left external as `import ... from "@uppy/core"` — fails module instantiation,
 // leaving the global unset and the app's wiring inert.
 async function assertUploadAppBoots(tool: string, heading: string, inspector: { renderTool: (n: string, i: unknown) => Promise<{ app(): FrameLocator }> }) {
