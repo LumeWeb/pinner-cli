@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -166,4 +167,57 @@ func TestResolveNgrokPublicURLPreferDomain(t *testing.T) {
 	url, _, err = ResolveNgrokPublicURL(context.Background(), "ngrok_key", "")
 	require.NoError(t, err)
 	require.Equal(t, "https://you.ngrok-free.dev", url)
+}
+
+// TestResolveNgrokPublicURLConcurrentCallsCorruptionFree guards Kody finding
+// (unsynchronized read-modify-write of the tunneler package-level
+// ngrok.NgrokAPIHTTPClient): N goroutines resolve concurrently against a stub
+// transport while the shim swaps and restores the library's HTTP client global.
+// The shim's swap now holds a mutex for the whole delegated call, so (a) -race
+// sees no unsynchronized access to the tunneler global and (b) requests never
+// interleave across concurrent resolves (max in-flight == 1).
+func TestResolveNgrokPublicURLConcurrentCallsCorruptionFree(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"reserved_domains":[{"id":"rd_1","domain":"you.ngrok-free.dev","cname_target":null}],"next_page_uri":null}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	rewriter := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		u := *r.URL
+		u.Scheme = "http"
+		u.Host = srv.Listener.Addr().String()
+		r2 := r.Clone(r.Context())
+		r2.URL = &u
+		return http.DefaultTransport.RoundTrip(r2)
+	})
+
+	orig := NgrokAPIHTTPClient
+	NgrokAPIHTTPClient = &http.Client{Transport: rewriter}
+	t.Cleanup(func() { NgrokAPIHTTPClient = orig })
+
+	const n = 8
+	type result struct {
+		url string
+		typ NgrokAccountType
+		err error
+	}
+	results := make(chan result, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			url, typ, err := ResolveNgrokPublicURL(context.Background(), "ngrok_key", "")
+			results <- result{url, typ, err}
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	for res := range results {
+		require.NoError(t, res.err)
+		require.Equal(t, "https://you.ngrok-free.dev", res.url)
+		require.Equal(t, NgrokAccountFree, res.typ)
+	}
 }
