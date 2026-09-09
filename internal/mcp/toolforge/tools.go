@@ -1,3 +1,7 @@
+// Package toolforge shim: pinner-domain tool descriptions and target sets.
+// This is content, not machinery — the DSL (Static/When*/List) is provided by
+// go.lumeweb.com/mcpforge, and gating that no single Feature expresses uses
+// the hostenv predicate constructors via mcpforge's WhenPred.
 package toolforge
 
 import (
@@ -22,7 +26,7 @@ var uploadFileDesc = Static(
 	When(hostenv.FeatSourcePath,
 		"Use source.mode=path with a host-side file/directory/archive path.",
 	).
-	WhenTransport(hostenv.TransportOpenAI,
+	WhenPred(hostenv.TransportIs(hostenv.TransportOpenAI),
 		"Use source.mode=url (server-fetchable HTTPS URL) or source.mode=data (RFC 2397 data: URI) — the server fetches/decodes and uploads them.",
 	).
 	When(hostenv.FeatFileHostInput,
@@ -34,7 +38,7 @@ var uploadFileDesc = Static(
 	When(hostenv.FeatSourceMint,
 		"Website ZIPs: call upload_file with source.mode=mint and archive_mode=convert — the entire directory tree becomes one directory DAG whose CID you can publish directly to websites_create/update.",
 	).
-	WhenTransport(hostenv.TransportOpenAI,
+	WhenPred(hostenv.TransportIs(hostenv.TransportOpenAI),
 		"If the upload fails with 'context canceled', retry with the same parameters — this is a transient host-side cancellation, not a file rejection. Poll upload_status with the returned handle.",
 	)
 
@@ -57,7 +61,7 @@ var vaultPutFileDesc = Static(
 	When(hostenv.FeatSourcePath,
 		"In this co-located stdio mode you may instead set source.mode=path and source.path to a host-side file/directory/archive path; the server reads it directly.",
 	).
-	WhenTransport(hostenv.TransportOpenAI,
+	WhenPred(hostenv.TransportIs(hostenv.TransportOpenAI),
 		"Over this transport you may instead set source.mode=url (a server-fetchable HTTPS download URL) or source.mode=data (an RFC 2397 data: URI).",
 	).
 	Static("vault_path may be any vault file path (e.g. vault:/docs/f.pdf).")
