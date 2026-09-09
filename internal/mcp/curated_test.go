@@ -12,7 +12,7 @@ import (
 
 func TestMarkCuratedStampsDirectVisible(t *testing.T) {
 	catalog := NewToolCatalog()
-	for _, name := range compiledCuratedToolNames {
+	for _, name := range curatedToolNamesFor(FullSurface) {
 		catalog.Add(&model.ToolEntry{Name: name, Handler: func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
 			return model.ToolResult{Text: "ok"}, nil
 		}})
@@ -26,7 +26,7 @@ func TestMarkCuratedStampsDirectVisible(t *testing.T) {
 
 	markCurated(catalog)
 
-	for _, name := range compiledCuratedToolNames {
+	for _, name := range curatedToolNamesFor(FullSurface) {
 		entry, ok := catalog.Get(name)
 		require.True(t, ok, name)
 		require.True(t, entry.DirectVisible, name)
@@ -70,7 +70,7 @@ func TestRegisterOfficialCuratedToolsRegistersOnlyDirectVisible(t *testing.T) {
 // so the front door stays small. The agent_guide publish_website flow names it
 // in the labelled-domain branch so a guided agent still discovers it.
 func TestPlatformDomainAvailabilityNotCurated(t *testing.T) {
-	for _, name := range compiledCuratedToolNames {
+	for _, name := range curatedToolNamesFor(FullSurface) {
 		require.NotEqual(t, "websites_platform_domain_availability", name, "site domain availability must stay search-only, not on tools/list")
 	}
 }
@@ -79,7 +79,7 @@ func TestPlatformDomainAvailabilityNotCurated(t *testing.T) {
 // websites_platform_domains_list op is likewise search-only, not on the direct
 // tools/list surface.
 func TestPlatformDomainsListNotCurated(t *testing.T) {
-	for _, name := range compiledCuratedToolNames {
+	for _, name := range curatedToolNamesFor(FullSurface) {
 		require.NotEqual(t, "websites_platform_domains_list", name, "website platform domains list must stay search-only, not on tools/list")
 	}
 }

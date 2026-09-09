@@ -11,12 +11,33 @@ import (
 	"go.lumeweb.com/mcpplane/model"
 )
 
+// The prompt surface (descriptors, embedded templates, handlers) is owned by
+// the module's mcp package; the CLI's local duplicate prompt handlers
+// were removed (prompts.go now delegates to mcp.PromptDescriptorsForSurface).
+// These tests re-point the same characterizations onto the module-owned
+// descriptors, resolved through the CLI's surface gate, so the behavioral
+// contract stays pinned here where the CLI registers the prompts.
+
+// promptHandlerByName resolves the handler of the named prompt from the
+// surface-gated prompt descriptor set the CLI registers.
+func promptHandlerByName(t *testing.T, name string) func(context.Context, model.PromptRequest) (model.PromptResult, error) {
+	t.Helper()
+	for _, p := range PromptDescriptorsForSurface(FullSurface) {
+		if p.Name == name {
+			require.NotNil(t, p.Handler, "prompt %q must carry a handler", name)
+			return p.Handler
+		}
+	}
+	t.Fatalf("prompt %q not found in the full-surface prompt set", name)
+	return nil
+}
+
 // TestWebsiteOnboardingHandlerRendersSteps verifies the website-onboarding
 // prompt handler renders the full step sequence in order, drawn from the
 // embedded templates, with the embedded resource references at the right
 // positions.
 func TestWebsiteOnboardingHandlerRendersSteps(t *testing.T) {
-	res, err := websiteOnboardingHandler(context.Background(), model.PromptRequest{
+	res, err := promptHandlerByName(t, PromptWebsiteOnboarding)(context.Background(), model.PromptRequest{
 		Arguments: map[string]string{},
 	})
 	require.NoError(t, err)
@@ -64,7 +85,7 @@ func TestWebsiteOnboardingHandlerRendersSteps(t *testing.T) {
 // target_type, and dns_mode renders the "filled" step variants with the
 // supplied values instead of the "ask" variants.
 func TestWebsiteOnboardingPrefillVariant(t *testing.T) {
-	res, err := websiteOnboardingHandler(context.Background(), model.PromptRequest{
+	res, err := promptHandlerByName(t, PromptWebsiteOnboarding)(context.Background(), model.PromptRequest{
 		Arguments: map[string]string{
 			ArgDomain:        "example.com",
 			ArgTargetType:    "ipns",
@@ -98,7 +119,7 @@ func TestWebsiteOnboardingPrefillVariant(t *testing.T) {
 }
 
 func TestWebsiteUpdateHandlerRendersSteps(t *testing.T) {
-	res, err := websiteUpdateHandler(context.Background(), model.PromptRequest{
+	res, err := promptHandlerByName(t, PromptWebsiteUpdate)(context.Background(), model.PromptRequest{
 		Arguments: map[string]string{
 			ArgWebsite:     "example.com",
 			ArgCID:         "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
@@ -134,14 +155,14 @@ func TestWebsiteUpdateHandlerRendersSteps(t *testing.T) {
 }
 
 func TestWebsiteUpdateHandlerRequiresFields(t *testing.T) {
-	_, err := websiteUpdateHandler(context.Background(), model.PromptRequest{Arguments: map[string]string{}})
+	_, err := promptHandlerByName(t, PromptWebsiteUpdate)(context.Background(), model.PromptRequest{Arguments: map[string]string{}})
 	require.Error(t, err)
 }
 
 // TestSetupHandlerRendersSteps verifies the setup prompt handler renders all
 // its steps from the embedded templates.
 func TestSetupHandlerRendersSteps(t *testing.T) {
-	res, err := setupHandler(context.Background(), model.PromptRequest{Arguments: map[string]string{}})
+	res, err := promptHandlerByName(t, PromptSetup)(context.Background(), model.PromptRequest{Arguments: map[string]string{}})
 	require.NoError(t, err)
 
 	var text []string
@@ -166,11 +187,25 @@ func TestSetupHandlerRendersSteps(t *testing.T) {
 // TestOOBSetupPromptDoesNotRequestCredentials verifies the setup auth prompt no
 // longer instructs the agent to collect a password/OTP: sign_in requests only an
 // email and the handler relays the out-of-band URL for browser completion, so
-// secrets never transit the MCP/LLM channel.
+// secrets never transit the MCP/LLM channel. Characterized against the rendered
+// output of the module-owned setup prompt (the templates now live in
+// mcp/prompttemplates), so the module's embedded template content is
+// pinned at the CLI's registration surface.
 func TestOOBSetupPromptDoesNotRequestCredentials(t *testing.T) {
-	// The overview rules now live in the embedded setup.tmpl template;
-	// render it the same way setupHandler does.
-	out := renderPromptTemplate("setup_overview", sitePromptData{})
+	res, err := promptHandlerByName(t, PromptSetup)(context.Background(), model.PromptRequest{Arguments: map[string]string{}})
+	require.NoError(t, err)
+
+	// Join every rendered message: the setup overview and the auth step are
+	// part of the prompt the agent actually receives.
+	var text []string
+	for _, m := range res.Messages {
+		if m.EmbeddedResource == nil {
+			text = append(text, m.Text)
+		}
+	}
+	out := strings.Join(text, "\n")
+
+	// The overview rules require the out-of-band sign-in shape.
 	require.Contains(t, out, "sign_in")
 	require.Contains(t, out, "out-of-band login URL")
 	require.Contains(t, out, "only the email")
@@ -178,18 +213,16 @@ func TestOOBSetupPromptDoesNotRequestCredentials(t *testing.T) {
 	// input field or ask for one from the user.
 	assert.NotContains(t, out, "ask for email, password")
 
-	// The setup_step_auth template carries the actual per-step collection
-	// instruction (what fields the agent asks for when sign_in is chosen).
-	// Guard it directly so a silent deletion/reintroduction of agent-side
-	// password/OTP collection fails this test rather than leaking a secret
-	// into the MCP/LLM channel.
-	authStep := renderPromptTemplate("setup_step_auth", sitePromptData{})
-	require.Contains(t, authStep, "out-of-band login URL", "sign_in must relay the browser URL")
+	// The auth step carries the actual per-step collection instruction (what
+	// fields the agent asks for when sign_in is chosen). Guard it so a silent
+	// deletion/reintroduction of agent-side password/OTP collection fails this
+	// test rather than leaking a secret into the MCP/LLM channel.
+	require.Contains(t, out, "out-of-band login URL", "sign_in must relay the browser URL")
 	// The credential-collection prohibition must remain present.
-	require.Contains(t, authStep, "NEVER ask for a password", "password collection must stay forbidden")
-	require.Contains(t, authStep, "never sent to you", "secrets must stay out of the MCP/LLM channel")
-	// The auth step's input schema must never carry a password/OTP field
-	// (no JSON key asking the agent to supply one).
-	assert.NotContains(t, authStep, `"password"`, "sign_in schema must not accept an agent-supplied password")
-	assert.NotContains(t, authStep, `"otp_code"`, "sign_in schema must not accept an agent-supplied OTP")
+	require.Contains(t, out, "NEVER ask for a password", "password collection must stay forbidden")
+	require.Contains(t, out, "never sent to you", "secrets must stay out of the MCP/LLM channel")
+	// No JSON key may ask the agent to supply a password/OTP (no quoted field
+	// name for one anywhere in the rendered prompt).
+	assert.NotContains(t, out, `"password"`, "sign_in schema must not accept an agent-supplied password")
+	assert.NotContains(t, out, `"otp_code"`, "sign_in schema must not accept an agent-supplied OTP")
 }
