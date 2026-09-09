@@ -137,3 +137,19 @@ func (r *customToolRegistry) run() error {
 func launcherSpec(desc model.ToolDescriptor, app func(srv *sdk.Server, catalog apps.AppCatalog) error) customToolSpec {
 	return customToolSpec{desc: desc, index: true, direct: false, launcher: true, app: app}
 }
+
+// addLauncher builds the open_* launcher descriptor for spec (via
+// apps.NewOpenLauncherDescriptor) and records its customToolSpec. The
+// descriptor build error (the _meta.ui marshal failure, e.g. an empty
+// ResourceURI) is a wiring bug at this assembly seam — a launcher without its
+// marshaled app meta would register as a plain tool whose app view silently
+// fails to render — so it fails the custom-tool assembly hard instead of
+// being swallowed.
+func (r *customToolRegistry) addLauncher(spec apps.OpenLauncherSpec, app func(srv *sdk.Server, catalog apps.AppCatalog) error) error {
+	desc, err := apps.NewOpenLauncherDescriptor(spec)
+	if err != nil {
+		return err
+	}
+	r.add(launcherSpec(desc, app))
+	return nil
+}

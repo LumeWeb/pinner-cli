@@ -11,6 +11,9 @@ package apps
 // which carries the CLI catalog's MCPTargets seam) remain CLI-owned.
 
 import (
+	"sync"
+	"sync/atomic"
+
 	mcpapps "go.lumeweb.com/mcpplane/apps"
 	sdk "go.lumeweb.com/mcpplane/sdk"
 )
@@ -28,7 +31,69 @@ type (
 // installed once at server assembly and app registration may happen on
 // another goroutine / server instance (tests), so the resolver lives on the
 // registry exactly as in the module.
+//
+// ASSEMBLY RESTRICTION (documented decision): the app registry is
+// process-global on purpose — one MCP server is assembled per CLI process,
+// and handler-time lookups (open_app, the needs_human annotation) read the
+// same registry. That means TWO assemblies that install DIFFERENT
+// deployment-origin resolvers (e.g. two hosted embedded servers with distinct
+// BaseURLs, in tests or a multi-embed host) must not interleave their
+// resolver install/ui://-view-registration windows: a concurrent
+// install/resolver-clear pair would attribute one assembly's views to the
+// other's origin or to none. Use ForViewDomainResolver to run such a window
+// serialized (hosted.go does); direct SetViewDomainResolver remains for
+// tests, which are responsible for their own save/restore.
 var registry = mcpapps.NewAppRegistry()
+
+// viewDomainMu serializes the resolver-scoped app-registration windows (see
+// ForViewDomainResolver). It ALSO guards the direct SetViewDomainResolver
+// wrapper: teardown's generation-check/add + registry-restore sequence and
+// the setter's generation-add + registry-set sequence are both mutated under
+// the same mutex, so they can never interleave (a setter racing teardown
+// could otherwise be clobbered by the restore, or leave a stale resolver
+// installed when teardown observes the changed generation and skips it).
+// Read access (ViewDomainResolver) stays mutex-free — the module registry
+// is internally lock-guarded.
+var viewDomainMu sync.Mutex
+
+// viewDomainGeneration increments on every resolver mutation; a serialized
+// window records the generation at install time and its GUARDED teardown
+// only restores the previous resolver when nothing has re-installed one
+// since (e.g. another assembly, or a test's save/restore, that must not be
+// clobbered).
+var viewDomainGeneration atomic.Int64
+
+// ForViewDomainResolver runs fn (the app-registration window of a server
+// assembly) with origin installed as the deployment-origin resolver for ui://
+// views, serializing concurrent windows: view domains are read at app
+// REGISTRATION time from the process-global registry, so two assemblies with
+// distinct origins must run one at a time — without the serialization, a
+// concurrent install/clear pair would attribute one assembly's views to the
+// other's origin or to none. Within the serialized window the teardown is a
+// GUARDED clear: a test (or other direct SetViewDomainResolver caller) that
+// re-installed its own resolver while this window registered is not clobbered
+// by this assembly's teardown. An empty origin ALSO runs through the window,
+// installing a resolver that resolves to NO domain: the empty case must still
+// be serialized against origin-bearing assemblies, or its views could inherit
+// a sibling's domain mid-window instead of the no-domain self-hosted default.
+func ForViewDomainResolver(origin string, fn func() error) error {
+	viewDomainMu.Lock()
+	defer viewDomainMu.Unlock()
+	prevResolver := registry.ViewDomainResolver()
+	installedAt := viewDomainGeneration.Add(1)
+	registry.SetViewDomainResolver(func() string { return origin })
+	defer func() {
+		if viewDomainGeneration.Load() == installedAt {
+			// Guarded clear: nothing re-installed a resolver over this
+			// window's — restore whatever preceded the window. (Deferred
+			// before the outer unlock, so the teardown runs serialized
+			// against other windows.)
+			viewDomainGeneration.Add(1)
+			registry.SetViewDomainResolver(prevResolver)
+		}
+	}()
+	return fn()
+}
 
 // SetViewDomainResolver installs the origin a deployment attributes its ui://
 // views to (e.g. the hosted BaseURL origin or the tunnel origin). The resolver
@@ -36,7 +101,19 @@ var registry = mcpapps.NewAppRegistry()
 // deployment. Unset (zero) — the normal case for a fully self-hosted CLI
 // server with no public origin — means views carry NO domain at all, so a
 // self-hosted server never advertises a domain that is not its own.
-func SetViewDomainResolver(f func() string) { registry.SetViewDomainResolver(f) }
+//
+// Production assemblies must go through ForViewDomainResolver instead so the
+// install/clear windows cannot interleave; this direct setter is for tests.
+// It is serialized on the same viewDomainMu as ForViewDomainResolver so the
+// generation-guarded teardown cannot interleave with it; it must therefore
+// never be called from inside ForViewDomainResolver's fn (which holds the
+// mutex) — use the registry setter directly there.
+func SetViewDomainResolver(f func() string) {
+	viewDomainMu.Lock()
+	defer viewDomainMu.Unlock()
+	viewDomainGeneration.Add(1)
+	registry.SetViewDomainResolver(f)
+}
 
 // ViewDomainResolver returns the currently installed view-domain resolver (or
 // nil). Exposed so tests can save and restore the deployment origin.
@@ -64,10 +141,6 @@ func DeleteAppViewInfo(toolName string) { registry.DeleteAppViewInfo(toolName) }
 func RegisterAppView(srv *sdk.Server, catalog AppCatalog, v AppView) error {
 	return registry.RegisterAppView(srv, catalog, v)
 }
-
-// AttachAppMeta attaches the _meta.ui resource reference onto a catalog tool
-// (module-owned implementation, re-exported for the CLI's direct attach path).
-var AttachAppMeta = mcpapps.AttachAppMeta
 
 // MCP Apps protocol constants (mirroring @modelcontextprotocol/ext-apps),
 // owned by the module and re-exported here.

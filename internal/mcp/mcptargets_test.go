@@ -47,7 +47,9 @@ func TestToolRegistrationsCarryMCPTargets(t *testing.T) {
 
 	// UI launchers (the apps.NewOpenLauncherDescriptor path covers every
 	// open_* launcher).
-	requireMCPTargets(t, apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{Name: "open_test", Description: "x"}))
+	desc, err := apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{Name: "open_test", Description: "x", ResourceURI: "ui://test/launcher.html"})
+	require.NoError(t, err)
+	requireMCPTargets(t, desc)
 
 	// Auth / resume tools. Vault + auth resumes share handoff.NewResumeTool,
 	// so exercising it once covers auth_resume / vault_create_resume /

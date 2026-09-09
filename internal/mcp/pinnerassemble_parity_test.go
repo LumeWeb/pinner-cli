@@ -1,10 +1,14 @@
 package mcp
 
 import (
+	"context"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner/catalogops"
+	"go.lumeweb.com/pinner/mcp"
+	"go.lumeweb.com/pinner/assembly"
 )
 
 // TestPinnerMcpAssemblePresentationParity pins the composition-root contract
@@ -143,6 +147,13 @@ func TestAssemblePresentationRejectsNilDeps(t *testing.T) {
 // the sampled read operation. This is the bridge assertion that keeps the
 // module's projection (catalogDescriptorToPresentation) from drifting from
 // the CLI's (catalogDescriptorToEntry) on shared fields.
+//
+// The name-set parity is checked BOTH directions:
+//   - forward: every CLI-compiled operation must appear on the module surface;
+//   - reverse: every module-assembled descriptor must be a CLI-compiled
+//     operation, so a module-only descriptor (registering a surface the CLI
+//     never compiles) is caught too. moduleOnlyAllowlist below is the explicit
+//     set of deliberate module-only descriptors (empty today).
 func TestAssemblePresentationCompiledSurfaceUsesModuleCompiler(t *testing.T) {
 	srv, err := AssemblePresentation(&CatalogDepsBundle{Pins: catalogops.PinsDeps{}}, FullSurface, false)
 	require.NoError(t, err)
@@ -167,4 +178,72 @@ func TestAssemblePresentationCompiledSurfaceUsesModuleCompiler(t *testing.T) {
 		require.Truef(t, moduleNames[name], "CLI-compiled operation %q missing from the module-assembled surface", name)
 	}
 	require.NotEmpty(t, moduleNames)
+
+	// moduleOnlyAllowlist names descriptors mcp assembles that the CLI
+	// bundle deliberately does not compile. Empty by construction: a name
+	// here is a declaration that module-only drift is INTENTIONAL, so list
+	// it explicitly instead of letting the reverse check go silent.
+	moduleOnlyAllowlist := map[string]bool{}
+	for name := range moduleNames {
+		if cliNames[name] || moduleOnlyAllowlist[name] {
+			continue
+		}
+		t.Errorf("module-assembled tool %q is absent from the CLI-compiled surface (reverse drift); if this is an intentional module-only descriptor, add it to moduleOnlyAllowlist with a justification", name)
+	}
+}
+
+// TestPinnerMcpAssembleTransferWiredParity pins the parity of the
+// TRANSFER-WIRED direct-only surface: with a transfer-enabled assembly (the
+// descriptor wiring flags on, inject function-typed executors — the same
+// injected-function boundary assembly/transfer define), the module's
+// Direct list must carry the transfer tools in registration order
+// (agent_guide, capabilities, upload_file, download_file) and their names
+// must match the transfer descriptors the CLI registers on its own server.
+func TestPinnerMcpAssembleTransferWiredParity(t *testing.T) {
+	deps := &CatalogDepsBundle{Pins: catalogops.PinsDeps{}}
+	cat, err := AssembleCatalogOps(deps, FullSurface, false)
+	require.NoError(t, err)
+
+	srv, err := mcp.Assemble(mcp.Config{
+		Surface: assembly.Surface(FullSurface),
+		Catalog: cat,
+		Transfer: mcp.TransferDeps{
+			UploadFile:   true,
+			DownloadFile: true,
+			PathUpload: func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
+				return nil, nil
+			},
+			Relay: func(ctx context.Context, r io.Reader, size int64, name string, wait bool, src string, trustHostFile bool) (any, error) {
+				return nil, nil
+			},
+			IPFSDownload: func(ctx context.Context, ipfsPath string, w io.Writer) error {
+				return nil
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	got := make([]string, 0, len(srv.Direct))
+	for _, d := range srv.Direct {
+		got = append(got, d.Name)
+	}
+	require.Equal(t, []string{"agent_guide", "capabilities", "upload_file", "download_file"}, got,
+		"transfer-wired Direct surface must be guide, capabilities, then the wired transfer tools in registration order")
+
+	// The transfer tool names the module registers must be exactly the ones
+	// the CLI registers as direct-surface transfer tools (parity both ways).
+	moduleTransfer := map[string]bool{}
+	for _, name := range got[2:] {
+		moduleTransfer[name] = true
+	}
+	cliTransfer := map[string]bool{
+		"upload_file":   true,
+		"download_file": true,
+	}
+	for name := range cliTransfer {
+		require.Truef(t, moduleTransfer[name], "CLI transfer tool %q missing from the module-assembled Direct list", name)
+	}
+	for name := range moduleTransfer {
+		require.Truef(t, cliTransfer[name], "module Direct tool %q is not a CLI-registered transfer tool (reverse drift)", name)
+	}
 }
