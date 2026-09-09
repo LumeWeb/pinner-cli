@@ -4,6 +4,7 @@ import (
 	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
+	"go.lumeweb.com/pinner/canvas"
 )
 
 // This file wires the "Change Password" and "Change Email" MCP Apps onto the
@@ -38,15 +39,15 @@ const (
 // renderAccountPasswordAppHTML renders the complete "Change Password" app
 // document (ui://account/password.html). The shell (doctype/<head>/theme) and
 // the ESM module (shared ext-apps bootstrap + account-password link logic)
-// come from mcpapp.RenderMcpAppDoc; only the visible body is authored in templ.
+// come from mcpapp.RenderAppDoc (go.lumeweb.com/pinner/canvas); the visible body is authored in templ.
 func renderAccountPasswordAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Change Password", mcpapp.AccountPasswordAppForm(), mcpapp.AppModule("account-password"))
+	return mcpapp.RenderAppDoc(canvas.ViewAccountPassword, "Change Password")
 }
 
 // renderAccountEmailAppHTML renders the complete "Change Email" app document
 // (ui://account/email.html).
 func renderAccountEmailAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Change Email", mcpapp.AccountEmailAppForm(), mcpapp.AppModule("account-email"))
+	return mcpapp.RenderAppDoc(canvas.ViewAccountEmail, "Change Email")
 }
 
 // RegisterAccountPasswordApp wires the complete "Change Password" MCP App onto

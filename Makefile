@@ -1,4 +1,4 @@
-.PHONY: build install clean generate templinstall mcpembed
+.PHONY: build install clean generate templinstall mcpembed genappmanifest
 
 # A bare `make` must produce a binary, not just regenerate templ output.
 # generate was added above build, which silently made it (not build) the
@@ -55,12 +55,23 @@ templinstall:
 
 # jsbuild builds the MCP App JS bundles (packages/apps via tsdown) into
 # self-contained ESM files and copies them to internal/mcpapp/appsassets/dist/
-# so Go embeds them. Requires pnpm on PATH. Go build/test embed these bundles,
-# so jsbuild must run before any go build/test.
+# so Go embeds them, then regenerates the mcpcanvas AssetSource manifest
+# (internal/mcpapp/appsassets/manifest.json via go run ./build/genappmanifest)
+# against the freshly copied bundles. Requires pnpm on PATH. Go build/test
+# embed these bundles (and the manifest), so jsbuild must run before any go
+# build/test.
 jsbuild:
 	cd packages/apps && CI=true pnpm install --frozen-lockfile && pnpm build && cd ../.. && \
 	mkdir -p internal/mcpapp/appsassets/dist && \
-	cp packages/apps/dist/*.js internal/mcpapp/appsassets/dist/
+	cp packages/apps/dist/*.js internal/mcpapp/appsassets/dist/ && \
+	GOFLAGS=-mod=mod go run ./build/genappmanifest
+
+# genappmanifest regenerates ONLY the mcpcanvas AssetSource manifest
+# (internal/mcpapp/appsassets/manifest.json) against the bundles already in
+# appsassets/dist/. Used by jsbuild (which is what mcpembed/CI chain);
+# usable standalone when iterating on bundles without a full JS build.
+genappmanifest:
+	GOFLAGS=-mod=mod go run ./build/genappmanifest
 
 # cssbuild compiles the MCP Apps Tailwind theme (internal/mcpapp/css/input.css)
 # into the embedded stylesheet (internal/mcpapp/css/tailwind.css) that every
@@ -75,7 +86,8 @@ cssbuild:
 # `pnpm install --frozen-lockfile` then `pnpm build`) and compiles the Tailwind
 # stylesheet (cssbuild). It is the single target that regenerates all
 # embeddable assets, and is what `go generate ./mcpembed` invokes. It is
-# declared .PHONY because a real source directory named mcpembed/ exists.
+# declared .PHONY because a real source directory named mcpembed/ exists; run
+# `go run ./build/genappmanifest` standalone to regenerate only the manifest.
 # Must run before any go build/test so the go:embed directives pick up freshly
 # built assets.
 mcpembed: templinstall generate jsbuild cssbuild

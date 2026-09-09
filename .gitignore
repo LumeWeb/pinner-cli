@@ -65,6 +65,11 @@ node_modules/
 # Compiled MCP Apps Tailwind theme (produced by `make cssbuild`; Go embeds it)
 internal/mcpapp/css/tailwind.css
 
+# Generated mcpcanvas AssetSource manifest for the embedded MCP App bundles
+# (produced by `go run ./build/genappmanifest`, wired into the jsbuild target;
+# Go embeds it, so it must exist at build time but is not committed)
+internal/mcpapp/appsassets/manifest.json
+
 # Sunpeak / Playwright MCP test artifacts
 playwright-report/
 test-results/

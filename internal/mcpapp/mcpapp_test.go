@@ -5,6 +5,9 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/a-h/templ"
+	"go.lumeweb.com/pinner/canvas"
 )
 
 // Tests for the SDK-neutral MCP Apps render/asset layer. The app JS behavioral
@@ -12,18 +15,75 @@ import (
 // source; these tests cover the Go-side seam: the shared document shell and
 // that the built per-app bundles are embedded and inlined.
 
-func TestRenderMcpAppDoc(t *testing.T) {
-	body := PinCreateAppForm()
-	doc := RenderMcpAppDoc("Test", body, "/* module */")
-	for _, want := range []string{
-		"<!doctype html>",
-		"<title>Test</title>",
-		"<script type=\"module\">",
-		"/* module */",
-		"</body></html>",
-	} {
-		if !strings.Contains(doc, want) {
-			t.Errorf("render doc missing %q", want)
+// pinAppViews maps every canvas view to the exact ui:// app title the
+// internal/mcp render functions pass (and the legacy CLI body/app used to
+// pair), so tests can render every screen through the delegation and compare
+// against the legacy path.
+var pinAppViews = []struct {
+	view  canvas.View
+	title string
+	// cliBody builds the legacy CLI templ body for the same screen.
+	cliBody func() templ.Component
+	// legacyApp is the legacy bundleNames key for the legacy AppModule.
+	legacyApp string
+}{
+	{canvas.ViewPin, "Create a Pin", PinCreateAppForm, "pin"},
+	{canvas.ViewPinList, "Pins", PinListAppForm, "pin-list"},
+	{canvas.ViewVaultBrowser, "Vault browser", VaultBrowserAppForm, "vault-browser"},
+	{canvas.ViewVaultCreate, "Create Vault", VaultCreateAppForm, "vault-create"},
+	{canvas.ViewVaultRestore, "Restore Vault", VaultRestoreAppForm, "vault-restore"},
+	{canvas.ViewVaultUpload, "Upload to Vault", VaultUploadAppForm, "vault-upload"},
+	{canvas.ViewVaultDownload, "Download from Vault", VaultDownloadAppForm, "vault-download"},
+	{canvas.ViewIPFSUpload, "Upload to IPFS", IPFSUploadAppForm, "ipfs-upload"},
+	{canvas.ViewIPFSDownload, "Download from IPFS", IPFSDownloadAppForm, "ipfs-download"},
+	{canvas.ViewAuthSSO, "Sign In", AuthSSOAppForm, "auth-sso"},
+	{canvas.ViewAuthStatus, "Account", AuthStatusAppForm, "auth-status"},
+	{canvas.ViewAccountPassword, "Change Password", AccountPasswordAppForm, "account-password"},
+	{canvas.ViewAccountEmail, "Change Email", AccountEmailAppForm, "account-email"},
+}
+
+// TestRenderAppDocShell re-points the legacy TestRenderMcpAppDoc shell
+// assertions onto the canvas delegation: RenderAppDoc produces the same
+// self-contained document shell (doctype, title, inline module script) for
+// every view, with the canvas body markup.
+func TestRenderAppDocShell(t *testing.T) {
+	for _, tc := range pinAppViews {
+		doc := RenderAppDoc(tc.view, tc.title)
+		for _, want := range []string{
+			"<!doctype html>",
+			"<title>" + tc.title + "</title>",
+			"<script type=\"module\">",
+			"window.__MCPCANVAS_VERSION__ = ",
+			"</body></html>",
+		} {
+			if !strings.Contains(doc, want) {
+				t.Errorf("view %q: render doc missing %q", tc.view, want)
+			}
+		}
+	}
+}
+
+// TestRenderAppDocParityWithLegacyShell pins the exact-parity flip: for every
+// view, the canvas delegation's document must byte-equal the legacy shell's
+// output (RenderMcpAppDoc with the legacy CLI templ body and the version-
+// stamped AppModule), with the ONLY expected difference being the version
+// handshake global's name (the bundle content, theme, body markup, title, and
+// shell are identical by construction — see pinAppViews).
+func TestRenderAppDocParityWithLegacyShell(t *testing.T) {
+	for _, tc := range pinAppViews {
+		legacy := RenderMcpAppDoc(tc.title, tc.cliBody(), AppModule(tc.legacyApp))
+		want := strings.Replace(legacy, "window.__PINNER_CLI_VERSION__", "window.__MCPCANVAS_VERSION__", 1)
+		got := RenderAppDoc(tc.view, tc.title)
+		if got != want {
+			t.Errorf("view %q: delegation output differs from legacy shell (len got=%d want=%d)", tc.view, len(got), len(want))
+			// Report the first divergence for diagnosis.
+			for i := 0; i < len(got) && i < len(want); i++ {
+				if got[i] != want[i] {
+					lo := max(0, i-80)
+					t.Errorf("view %q: first divergence at byte %d:\n  got:  %q\n  want: %q", tc.view, i, got[lo:min(i+80, len(got))], want[lo:min(i+80, len(want))])
+					break
+				}
+			}
 		}
 	}
 }
@@ -31,13 +91,24 @@ func TestRenderMcpAppDoc(t *testing.T) {
 // TestMcpAppThemeCSSEmbedded pins that the compiled Tailwind theme is embedded
 // and inlined into every app document. A missing/empty tailwind.css (CSS not
 // compiled before Go) would leave apps unstyled, so a passing test also proves
-// `make cssbuild` (pnpm build:css) ran.
+// `make cssbuild` (pnpm build:css) ran. The doc assertions run against the
+// canvas delegation, proving the theme handed to canvas.NewRenderer is the one
+// that actually lands in the served documents.
 func TestMcpAppThemeCSSEmbedded(t *testing.T) {
 	if strings.TrimSpace(McpAppThemeCSS) == "" {
 		t.Fatal("embedded app theme CSS is empty — run `make cssbuild` before building Go")
 	}
-	doc := RenderMcpAppDoc("Test", PinListAppForm(), "/* module */")
-	for _, want := range []string{"<style>", "app-shell", "text-status-ok", "text-status-error"} {
+	for _, tc := range pinAppViews {
+		doc := RenderAppDoc(tc.view, tc.title)
+		for _, want := range []string{"<style>", "app-shell"} {
+			if !strings.Contains(doc, want) {
+				t.Errorf("view %q: rendered doc missing %q (theme not inlined?)", tc.view, want)
+			}
+		}
+	}
+	// Status palette utilities are referenced by the non-flow views' bodies.
+	doc := RenderAppDoc(canvas.ViewPinList, "Pins")
+	for _, want := range []string{"text-status-ok", "text-status-error"} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("rendered doc missing %q (theme not inlined?)", want)
 		}
@@ -160,12 +231,11 @@ func TestAppModuleJSEmbedded(t *testing.T) {
 	}
 }
 
-// TestAppModuleJSRendersIntoDoc proves the embedded pin bundle flows through
-// the shared document shell (the seam the four mcp/*_app.go render functions
-// rely on).
+// TestAppModuleJSRendersIntoDoc proves the embedded pin bundle's bootstrap
+// marker flows through the canvas delegation's shared document shell (the seam
+// every internal/mcp render function relies on).
 func TestAppModuleJSRendersIntoDoc(t *testing.T) {
-	body := PinCreateAppForm()
-	doc := RenderMcpAppDoc("Create a Pin", body, AppModuleJS("pin"))
+	doc := RenderAppDoc(canvas.ViewPin, "Create a Pin")
 	for _, want := range []string{"<!doctype html>", "<script type=\"module\">", "pins_add"} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("rendered doc missing %q", want)
@@ -173,7 +243,9 @@ func TestAppModuleJSRendersIntoDoc(t *testing.T) {
 	}
 }
 
-// TestAppModuleInjectsVersionGlobal proves AppModule (the wrapper the render
+// TestAppModuleInjectsVersionGlobal proves AppModule (the legacy wrapper this
+// package keeps for compatibility until the shell/templ removal step; the
+// canvas delegation stamps the same normalized value via mcpcanvas) prefixes
 // functions actually use) prefixes the embedded bundle with the CLI version
 // global, so apps inherit the binary version instead of a hardcoded per-app
 // version during the ui/initialize handshake.

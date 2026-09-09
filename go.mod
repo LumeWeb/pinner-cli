@@ -40,6 +40,7 @@ require (
 	go.lumeweb.com/ipfs-content v0.1.18
 	go.lumeweb.com/ipfs-sdk v0.1.97
 	go.lumeweb.com/ipfs-sdk/dnsname v0.1.64
+	go.lumeweb.com/mcpcanvas v0.0.0-20260907112052-7adbd4d8dcac
 	go.lumeweb.com/mcpplane v0.0.0-20260908010148-2f0b05c8e8a9
 	go.lumeweb.com/oauth v0.1.6
 	go.lumeweb.com/opmesh v0.0.0-20260907112428-ade506e64ae9

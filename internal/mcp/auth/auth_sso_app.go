@@ -9,6 +9,7 @@ import (
 	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
+	"go.lumeweb.com/pinner/canvas"
 )
 
 // This file wires the "Sign In" (auth SSO) MCP App onto the shared AppView lib
@@ -29,9 +30,9 @@ const OpenSSOSigninToolName = "open_sso_signin"
 // RenderAuthSSOAppHTML renders the complete "Sign In" app document
 // (ui://auth/sso.html). The shared shell (doctype/<head>/inline theme) and the
 // ESM module (shared ext-apps bootstrap + SSO logic) come from
-// mcpapp.RenderMcpAppDoc; only the visible body form is authored in templ.
+// mcpapp.RenderAppDoc (go.lumeweb.com/pinner/canvas); the body form is authored in templ.
 func RenderAuthSSOAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Sign In", mcpapp.AuthSSOAppForm(), mcpapp.AppModule("auth-sso"))
+	return mcpapp.RenderAppDoc(canvas.ViewAuthSSO, "Sign In")
 }
 
 // authSSOStatusDescriptor builds the app-only auth status helper. It reuses the

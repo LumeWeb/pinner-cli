@@ -6,6 +6,7 @@ import (
 	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
+	"go.lumeweb.com/pinner/canvas"
 )
 
 // This file wires the two "Download to File" MCP Apps (IPFS and vault) onto the
@@ -39,15 +40,15 @@ const (
 // renderIPFSDownloadAppHTML renders the complete "Download from IPFS" app
 // document (ui://downloads/ipfs.html). The shared shell (doctype/<head>/inline
 // theme) and the ESM module (shared ext-apps bootstrap + download logic) come
-// from mcpapp.RenderMcpAppDoc; only the visible body form is authored in templ.
+// from mcpapp.RenderAppDoc (go.lumeweb.com/pinner/canvas); the visible body form is authored in templ.
 func renderIPFSDownloadAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Download from IPFS", mcpapp.IPFSDownloadAppForm(), mcpapp.AppModule("ipfs-download"))
+	return mcpapp.RenderAppDoc(canvas.ViewIPFSDownload, "Download from IPFS")
 }
 
 // renderVaultDownloadAppHTML renders the complete "Download from Vault" app
 // document (ui://downloads/vault.html).
 func renderVaultDownloadAppHTML() string {
-	return mcpapp.RenderMcpAppDoc("Download from Vault", mcpapp.VaultDownloadAppForm(), mcpapp.AppModule("vault-download"))
+	return mcpapp.RenderAppDoc(canvas.ViewVaultDownload, "Download from Vault")
 }
 
 // RegisterIPFSDownloadApp wires the "Download from IPFS" MCP App: attaches the
