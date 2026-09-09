@@ -11,9 +11,9 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
 	"go.lumeweb.com/mcpplane/model"
+	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 func TestCapabilitiesReportStdio(t *testing.T) {

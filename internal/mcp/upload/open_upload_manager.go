@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"go.lumeweb.com/mcpplane/model"
+	"go.lumeweb.com/mcpplane/sdk"
+	"go.lumeweb.com/mcpplane/toolargs"
 	"go.lumeweb.com/mcpplane/transfer"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 

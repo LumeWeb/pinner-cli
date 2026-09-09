@@ -19,12 +19,12 @@ import (
 	"go.lumeweb.com/pinner/catalogops"
 
 	"go.lumeweb.com/mcpplane/model"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/mcpplane/session"
 
+	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 

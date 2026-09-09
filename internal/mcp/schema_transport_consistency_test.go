@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/mcpplane/model"
+	"go.lumeweb.com/mcpplane/sdk"
 	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 

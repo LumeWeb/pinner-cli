@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/mcpplane/session"
 
 	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"

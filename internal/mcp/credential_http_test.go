@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"go.lumeweb.com/mcpplane/model"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/mcpplane/sdk"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

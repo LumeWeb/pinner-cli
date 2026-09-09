@@ -36,7 +36,6 @@ require (
 	github.com/tidwall/sjson v1.2.5
 	github.com/tus/tusd/v2 v2.10.0
 	github.com/urfave/cli/v3 v3.11.0
-	github.com/yosida95/uritemplate/v3 v3.0.2
 	go.lumeweb.com/fieldcraft v0.0.0-20260907095025-2a7bfdd040cb
 	go.lumeweb.com/ipfs-content v0.1.18
 	go.lumeweb.com/ipfs-sdk v0.1.97
@@ -248,6 +247,7 @@ require (
 	github.com/whyrusleeping/go-keyspace v0.0.0-20160322163242-5b898ac5add1 // indirect
 	github.com/xo/terminfo v1.0.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20250705151800-55b8f293f342 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.etcd.io/etcd/api/v3 v3.7.1 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.7.1 // indirect

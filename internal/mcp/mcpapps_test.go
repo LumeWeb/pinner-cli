@@ -8,8 +8,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"go.lumeweb.com/mcpplane/model"
+	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 func TestMCPAppsConstants(t *testing.T) {

@@ -20,7 +20,7 @@ import (
 
 	"go.lumeweb.com/mcpplane/model"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/mcpplane/toolargs"
 	"go.uber.org/zap"
 )
 

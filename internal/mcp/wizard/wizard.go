@@ -14,13 +14,13 @@ import (
 	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/pinner/core/websites"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/mcpplane/session"
 
 	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 
+	"go.lumeweb.com/mcpplane/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 )
 
 // --- FSM state constants ---

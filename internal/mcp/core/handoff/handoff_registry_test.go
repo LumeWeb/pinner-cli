@@ -9,11 +9,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/mcpplane/session"
 
 	"go.lumeweb.com/mcpplane/model"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/mcpplane/toolargs"
 )
 
 // requireHandoff extracts the needs_human structured content from a result,

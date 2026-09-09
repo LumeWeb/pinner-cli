@@ -25,7 +25,7 @@ import (
 	mcpauth "go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	wizard "go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/mcpplane/session"
 
 	"go.lumeweb.com/mcpplane/model"
 )

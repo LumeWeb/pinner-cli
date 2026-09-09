@@ -27,17 +27,17 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/opmesh"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/mcpplane/session"
 
 	"go.lumeweb.com/mcpplane/model"
 
+	"go.lumeweb.com/mcpplane/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
 )
 

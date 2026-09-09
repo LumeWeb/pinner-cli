@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/mcpplane/model"
+	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/download"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // buildDownloadServers constructs a catalog with the download tools and

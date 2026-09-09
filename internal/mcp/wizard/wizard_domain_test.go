@@ -13,7 +13,7 @@ import (
 
 	wizard "go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/mcpplane/session"
 )
 
 // --- Domain wizard tests ---

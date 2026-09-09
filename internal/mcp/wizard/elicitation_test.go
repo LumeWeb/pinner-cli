@@ -12,12 +12,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/mcpplane/session"
 
 	"go.lumeweb.com/mcpplane/model"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/mcpplane/sdk"
+	"go.lumeweb.com/mcpplane/toolargs"
 )
 
 func TestCallToolResultFromElicitationForm(t *testing.T) {

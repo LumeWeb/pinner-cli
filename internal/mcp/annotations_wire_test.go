@@ -31,10 +31,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/mcpplane/model"
+	"go.lumeweb.com/mcpplane/sdk"
 	opmesh "go.lumeweb.com/opmesh"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // catalogHiddenHints are the JSON keys the directory validators require to be

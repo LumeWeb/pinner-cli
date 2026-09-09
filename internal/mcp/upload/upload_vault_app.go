@@ -12,9 +12,9 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	corevault "go.lumeweb.com/pinner/core/vault"
 
+	"go.lumeweb.com/mcpplane/sdk"
+	"go.lumeweb.com/mcpplane/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // This file wires the "Upload to Vault" MCP App onto the shared AppView lib

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/mcpplane/model"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/mcpplane/sdk"
 )
 
 func TestMarkCuratedStampsDirectVisible(t *testing.T) {

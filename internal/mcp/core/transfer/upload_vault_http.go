@@ -17,7 +17,7 @@ import (
 
 	"go.lumeweb.com/pinner/core/vault"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/credctx"
+	"go.lumeweb.com/mcpplane/credctx"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transport"
 )

@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/mcpplane/toolargs"
 
 	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 )

@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/credctx"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/mcpplane/credctx"
+	"go.lumeweb.com/mcpplane/sdk"
 )
 
 // WithCredential stores the resolved Portal API JWT in the context. It is the

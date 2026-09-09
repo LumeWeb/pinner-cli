@@ -2,8 +2,8 @@ package mcp
 
 import (
 	"go.lumeweb.com/mcpplane/model"
+	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // customToolSpec is a declarative spec describing how one custom/direct tool
