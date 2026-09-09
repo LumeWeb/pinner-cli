@@ -220,7 +220,9 @@ type ResumeToolSpec struct {
 	DeadHandleReason model.HandoffReason
 	// Category is the tool category for search/filter. Defaults to CategoryCore
 	// when zero. Auth resumes use CategoryAccount; vault resumes use
-	// CategoryVault so filtering by category surfaces the OOB flow correctly.
+	// CategoryStorage ("storage"; the legacy "vault" wire value was renamed by
+	// the mcpplane model vocabulary) so filtering by category surfaces the OOB
+	// flow correctly.
 	Category model.ToolCategory
 }
 
