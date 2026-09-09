@@ -12,7 +12,7 @@
 // the Uppy XHR uploader as the uploadXhr dependency.
 
 import { createMachine, guard, invoke, reduce, state, transition } from "robot3";
-import type { CallTool, ToolResult } from "./flow";
+import type { CallTool, ToolResult } from "@lumeweb/mcpcanvas";
 
 export interface VaultUploadConfig {
   /** Name of the MCP tool that mints the presigned PUT endpoint. */

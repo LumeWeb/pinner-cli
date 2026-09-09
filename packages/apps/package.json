@@ -8,6 +8,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@lumeweb/mcpcanvas": "file:../../../mcpcanvas/ui",
     "@modelcontextprotocol/ext-apps": "catalog:",
     "@uppy/core": "^6.0.0",
     "@uppy/xhr-upload": "^6.0.0",

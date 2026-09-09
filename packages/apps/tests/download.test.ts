@@ -14,7 +14,7 @@ import {
   type DownloadContext,
   DownloadState,
 } from "@/download";
-import type { CallTool, ToolResult } from "@/flow";
+import type { CallTool, ToolResult } from "@lumeweb/mcpcanvas";
 import { untilState } from "./helpers";
 
 const baseConfig: DownloadConfig = {

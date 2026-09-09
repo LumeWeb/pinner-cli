@@ -1,4 +1,4 @@
-import { entryBoot, boot } from "@/loader";
+import { entryBoot, boot } from "@lumeweb/mcpcanvas";
 // Pin list MCP App — entrypoint bundle.
 //
 // The pin list is a read-only surface: it loads the authenticated account's

@@ -1,4 +1,4 @@
-import { entryBoot, boot } from "@/loader";
+import { entryBoot, boot } from "@lumeweb/mcpcanvas";
 // Upload to Vault MCP App — entrypoint bundle.
 //
 // Upload to Vault is a form-driven single-shot flow, so it wires the dedicated

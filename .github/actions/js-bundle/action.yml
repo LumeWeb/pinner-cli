@@ -21,6 +21,32 @@ runs:
         cache: 'pnpm'
         cache-dependency-path: pnpm-lock.yaml
 
+    - name: 'Check out mcpcanvas (file: dependency)'
+      # packages/apps pins @lumeweb/mcpcanvas via a file: spec that the root
+      # pnpm-lock.yaml resolves to the sibling directory ../mcpcanvas/ui —
+      # OUTSIDE $GITHUB_WORKSPACE, where actions/checkout cannot clone, so do
+      # it with plain git. The revision is derived from go.mod itself (single
+      # source of truth): the require line for go.lumeweb.com/mcpcanvas is a
+      # Go pseudo-version whose trailing 12 hex chars are the commit sha, so
+      # the runtime sources pnpm links always match the Go module. We parse
+      # go.mod with sed instead of `go list -m` because this action runs
+      # before actions/setup-go in every consumer job (and the js job has no
+      # Go toolchain at all). An unresolvable/missing revision fails loudly.
+      shell: bash
+      run: |
+        sha="$(sed -n 's/.*mcpcanvas v.*-\([0-9a-f]\{12\}\)$/\1/p' go.mod | tail -n1)"
+        if [ -z "$sha" ]; then
+          echo '::error::could not derive mcpcanvas checkout sha from go.mod (no go.lumeweb.com/mcpcanvas pseudo-version)' >&2
+          exit 1
+        fi
+        target="$GITHUB_WORKSPACE/../mcpcanvas"
+        if [ -d "$target/.git" ]; then
+          git -C "$target" fetch --quiet origin
+        else
+          git clone --quiet https://github.com/LumeWeb/mcpcanvas "$target"
+        fi
+        git -C "$target" checkout --quiet --force "$sha"
+
     - name: Install JS deps
       run: pnpm install --frozen-lockfile
       shell: bash

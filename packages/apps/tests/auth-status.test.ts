@@ -18,7 +18,7 @@ import {
   currentAuthStatusState,
   type AuthStatusElements,
 } from "@/auth-status-bootstrap";
-import type { CallTool, ToolResult } from "@/flow";
+import type { CallTool, ToolResult } from "@lumeweb/mcpcanvas";
 import { until, untilState } from "./helpers";
 
 const baseConfig: AuthStatusConfig = {

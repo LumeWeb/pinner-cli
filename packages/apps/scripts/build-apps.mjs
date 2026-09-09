@@ -33,6 +33,7 @@ for (const app of APPS) {
       // module specifier"). Always keep this list in sync with the runtime
       // dependencies in package.json.
       alwaysBundle: [
+        "@lumeweb/mcpcanvas",
         "@modelcontextprotocol/ext-apps",
         "@modelcontextprotocol/sdk",
         "zod",

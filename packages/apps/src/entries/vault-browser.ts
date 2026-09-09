@@ -1,4 +1,4 @@
-import { entryBoot, boot } from "@/loader";
+import { entryBoot, boot } from "@lumeweb/mcpcanvas";
 // Vault browser MCP App — entrypoint bundle.
 //
 // The vault browser is a read-only surface: it loads the vault status and the

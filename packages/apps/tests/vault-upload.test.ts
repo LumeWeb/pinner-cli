@@ -15,7 +15,7 @@ import {
   type VaultUploadXhr,
   VaultUploadState,
 } from "@/vault-upload";
-import type { CallTool, ToolResult } from "@/flow";
+import type { CallTool, ToolResult } from "@lumeweb/mcpcanvas";
 import { until, untilState } from "./helpers";
 
 const baseConfig: VaultUploadConfig = {

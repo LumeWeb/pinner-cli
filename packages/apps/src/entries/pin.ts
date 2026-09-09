@@ -1,4 +1,4 @@
-import { entryBoot, boot } from "@/loader";
+import { entryBoot, boot } from "@lumeweb/mcpcanvas";
 // Create Pin MCP App — entrypoint bundle.
 //
 // Create Pin is a form-driven flow, so it wires the dedicated pin machine

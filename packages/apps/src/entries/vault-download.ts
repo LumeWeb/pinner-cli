@@ -1,4 +1,4 @@
-import { entryBoot, boot } from "@/loader";
+import { entryBoot, boot } from "@lumeweb/mcpcanvas";
 // Download from Vault MCP App — entrypoint bundle.
 //
 // Download from Vault is a single submit -> callServerTool flow: the form

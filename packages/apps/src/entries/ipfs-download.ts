@@ -1,4 +1,4 @@
-import { entryBoot, boot } from "@/loader";
+import { entryBoot, boot } from "@lumeweb/mcpcanvas";
 // Download from IPFS MCP App — entrypoint bundle.
 //
 // Download from IPFS is a single submit -> callServerTool flow: the form

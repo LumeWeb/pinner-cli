@@ -1,4 +1,4 @@
-import { entryBoot, boot } from "@/loader";
+import { entryBoot, boot } from "@lumeweb/mcpcanvas";
 // Upload to IPFS MCP App — entrypoint bundle.
 //
 // Upload to IPFS is a mint -> Uppy-XHR -> poll flow, so it wires the dedicated

@@ -14,7 +14,7 @@ import {
   currentBrowserState,
   type VaultBrowserElements,
 } from "@/vault-browser-bootstrap";
-import type { CallTool, ToolResult } from "@/flow";
+import type { CallTool, ToolResult } from "@lumeweb/mcpcanvas";
 import { until, untilState } from "./helpers";
 
 const baseConfig: VaultBrowserConfig = {

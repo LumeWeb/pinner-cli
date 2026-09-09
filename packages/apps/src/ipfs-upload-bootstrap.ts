@@ -35,10 +35,15 @@ import {
   type UploadXhr,
   IPFSUploadState,
 } from "@/ipfs-upload";
-import type { CallTool } from "@/flow";
-import type { AppDefinition, MachineCurrent } from "@/app-entry";
-import { mountApp } from "@/boot";
-import { byId, setStatus, StatusClass } from "@/dom";
+import {
+  byId,
+  mountApp,
+  setStatus,
+  type AppDefinition,
+  type CallTool,
+  type MachineCurrent,
+  StatusClass,
+} from "@lumeweb/mcpcanvas";
 
 /** Element ids referenced by the Go-rendered Upload to IPFS HTML shell. */
 export type IPFSUploadElementIds = {

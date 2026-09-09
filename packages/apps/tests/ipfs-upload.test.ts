@@ -14,7 +14,7 @@ import {
   type UploadXhr,
   IPFSUploadState,
 } from "@/ipfs-upload";
-import type { CallTool, ToolResult } from "@/flow";
+import type { CallTool, ToolResult } from "@lumeweb/mcpcanvas";
 import { until, untilState } from "./helpers";
 
 const baseConfig: IPFSUploadConfig = {

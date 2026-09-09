@@ -1,7 +1,7 @@
-import { entryBoot, boot } from "@/loader";
+import { entryBoot, boot } from "@lumeweb/mcpcanvas";
 // Create Vault MCP App — entrypoint bundle.
-import { mountFlowApp } from "@/app-entry";
-import type { FlowAppEntry } from "./common";
+import { mountFlowApp } from "@lumeweb/mcpcanvas";
+import type { FlowAppEntry } from "@lumeweb/mcpcanvas";
 
 export const def: FlowAppEntry = {
   name: "VaultCreate",
