@@ -1,8 +1,8 @@
 package cli
 
 import (
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/dns"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/dns"
 )
 
 // DNSService is re-exported from core for CLI consumers and handler signatures.

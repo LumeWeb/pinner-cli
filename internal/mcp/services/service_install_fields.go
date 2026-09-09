@@ -7,7 +7,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/fieldform"
-	"go.lumeweb.com/pinner-cli/internal/service"
+	"go.lumeweb.com/pinner/services"
 )
 
 // The MCP service-install fields are declared declaratively through the shared
@@ -210,7 +210,7 @@ func (v *serviceInstallValueSource) EnvFile(key string) (string, bool) {
 	if v.envFile == "" {
 		return "", false
 	}
-	env, err := service.LoadEnvironment(v.envFile)
+	env, err := services.LoadEnvironment(v.envFile)
 	if err != nil {
 		return "", false
 	}

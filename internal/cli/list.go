@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/pinning"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/pinning"
 )
 
 func newListCommand() *cli.Command {

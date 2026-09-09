@@ -10,8 +10,8 @@ import (
 	"strconv"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/pinning"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/pinning"
 )
 
 // PinsDeps are the dependencies the pins operations need at construction time.

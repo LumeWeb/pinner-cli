@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/vault"
+	"go.lumeweb.com/pinner/core/vault"
 )
 
 // vaultDepsFor builds VaultDeps that serve msvc for a resolved profile. The

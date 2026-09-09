@@ -8,7 +8,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
-	corevault "go.lumeweb.com/pinner-cli/internal/core/vault"
+	corevault "go.lumeweb.com/pinner/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 

@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/operations"
+	"go.lumeweb.com/pinner/core/operations"
 )
 
 // OperationsDeps injects an OperationsService. The concrete implementation

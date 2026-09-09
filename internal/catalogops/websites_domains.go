@@ -10,7 +10,7 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/websites"
+	"go.lumeweb.com/pinner/core/websites"
 )
 
 // websitesDomainsList is the `websites domains list` operation. Returns

@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	websitecore "go.lumeweb.com/pinner-cli/internal/core/websites"
+	websitecore "go.lumeweb.com/pinner/core/websites"
 )
 
 // mockWebsitesServiceForCLI is a mock implementation of the CLI WebsitesService interface for testing

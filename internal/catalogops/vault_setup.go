@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/vault"
+	"go.lumeweb.com/pinner/core/vault"
 )
 
 // This file holds the vault provisioning setup operations (vault.create and

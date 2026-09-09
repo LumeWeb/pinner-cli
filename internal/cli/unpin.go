@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 func newUnpinCommand() *cli.Command {

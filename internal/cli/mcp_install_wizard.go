@@ -13,7 +13,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp/services"
-	"go.lumeweb.com/pinner-cli/internal/service"
+	"go.lumeweb.com/pinner/services"
 )
 
 // defaultServerName is the server entry name written for pinner.
@@ -559,7 +559,7 @@ func (w *InstallWizard) persistAuthToken(ctx context.Context, s *InstallState, p
 		return nil
 	}
 
-	env, err := service.LoadEnvironment(s.Service.EnvFile)
+	env, err := services.LoadEnvironment(s.Service.EnvFile)
 	if err != nil {
 		return fmt.Errorf("load MCP service environment %q to persist the MCP password: %w", s.Service.EnvFile, err)
 	}
@@ -571,7 +571,7 @@ func (w *InstallWizard) persistAuthToken(ctx context.Context, s *InstallState, p
 	// the token the still-running endpoint enforces so disk and memory agree
 	// with what is actually live.
 	env["MCP_AUTH_TOKEN"] = pw
-	if err := service.WriteEnvironment(s.Service.EnvFile, env); err != nil {
+	if err := services.WriteEnvironment(s.Service.EnvFile, env); err != nil {
 		return fmt.Errorf("persist MCP password to %q: %w", s.Service.EnvFile, err)
 	}
 
@@ -589,7 +589,7 @@ func (w *InstallWizard) persistAuthToken(ctx context.Context, s *InstallState, p
 			// persisted, disk still holds the uncommitted new password while
 			// state/endpoint use the old one — that disagreement must not be
 			// silently masked.
-			if werr := service.WriteEnvironment(s.Service.EnvFile, env); werr != nil {
+			if werr := services.WriteEnvironment(s.Service.EnvFile, env); werr != nil {
 				return fmt.Errorf("restore MCP password after failed restart: %v (restart: %w)", werr, rerr)
 			}
 			return fmt.Errorf("restart MCP service to load the new MCP password: %w", rerr)

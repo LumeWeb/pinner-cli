@@ -3,7 +3,7 @@ package wizard
 import (
 	"fmt"
 
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // The setup wizard's base_endpoint / secure config pair is the one step input

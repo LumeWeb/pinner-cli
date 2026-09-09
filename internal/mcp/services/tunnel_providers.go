@@ -6,9 +6,9 @@ import (
 	"context"
 	"fmt"
 
-	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // Provider registration. Each tunnel provider self-registers here, so the

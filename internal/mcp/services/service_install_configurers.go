@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"os"
 
-	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // The provider install configuration lives here as declarative fieldform field

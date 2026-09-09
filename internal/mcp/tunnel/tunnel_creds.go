@@ -10,7 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // ResolveCredential returns the first non-empty value produced by the given

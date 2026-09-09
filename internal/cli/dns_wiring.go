@@ -10,8 +10,8 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/dns"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/dns"
 )
 
 // dns_wiring.go adapts the DNS catalog operations

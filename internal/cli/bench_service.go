@@ -17,7 +17,7 @@ import (
 	"github.com/avast/retry-go/v5"
 	"github.com/docker/go-units"
 	benchpkg "go.lumeweb.com/pinner-cli/internal/core/bench"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/config"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	"go.lumeweb.com/queryutil/filter"
 	"testing/fstest"

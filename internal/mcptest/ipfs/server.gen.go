@@ -305,7 +305,6 @@ type DomainDANERepublishResponse struct {
 	Ssl         *SSLStatusInfo                       `json:"ssl,omitempty"`
 	Status      *DomainDANERepublishResponseStatus   `json:"status,omitempty"`
 	TlsaRdata   *string                              `json:"tlsa_rdata,omitempty"`
-	TlsaRecord  *string                              `json:"tlsa_record,omitempty"`
 	ZoneName    *string                              `json:"zone_name,omitempty"`
 }
 

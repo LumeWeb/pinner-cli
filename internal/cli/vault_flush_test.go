@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	"go.lumeweb.com/pinner-cli/internal/core/vault"
+	"go.lumeweb.com/pinner/core/vault"
 )
 
 // flushCmdStub is a scripted VaultService for exercising the CLI `vault flush`

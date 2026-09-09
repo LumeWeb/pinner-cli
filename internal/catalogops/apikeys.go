@@ -9,7 +9,7 @@ import (
 	portalsdk "go.lumeweb.com/portal-sdk"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/apikeys"
+	"go.lumeweb.com/pinner/core/apikeys"
 )
 
 // APIKeysDeps injects the dependencies for building an apikeys.Service.

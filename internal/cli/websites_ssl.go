@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/config"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
 )

@@ -7,9 +7,9 @@ import (
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
-	"go.lumeweb.com/pinner-cli/internal/core/websites"
+	"go.lumeweb.com/pinner/core/config"
+	configmocks "go.lumeweb.com/pinner/core/config/mocks"
+	"go.lumeweb.com/pinner/core/websites"
 )
 
 // domainsService mocks websites.Service for the websites_domains_* handlers,
@@ -222,7 +222,7 @@ func TestWebsitesDomainsDANERepublishTypedResult(t *testing.T) {
 			t.Fatalf("RepublishDANE(%q, %q), want (\"7\", \"3\")", websiteID, domainID)
 		}
 		tlsa := "_443._tcp.example.test. 60 IN TLSA 3 1 1 abc123"
-		return &ipfs.DomainDANERepublishResponse{Id: 3, Domain: "example.test", TlsaRecord: &tlsa}, nil
+		return &ipfs.DomainDANERepublishResponse{Id: 3, Domain: "example.test", TlsaRdata: &tlsa}, nil
 	}
 
 	op := websitesDomainsDANERepublish(domainsDeps(t, fake))

@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/auth"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/auth"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // AccountDeps injects the dependencies the account operations need at

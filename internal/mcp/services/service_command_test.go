@@ -15,19 +15,19 @@ import (
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
-	"go.lumeweb.com/pinner-cli/internal/service"
+	"go.lumeweb.com/pinner/services"
 )
 
 // requireServiceBackend skips the test when the running platform has no service
 // backend compiled yet. The systemd (linux), launchd (darwin), and SCM
 // (windows) backends each register into the service registry; until a platform's
 // backend lands, tests that construct a live backend through newManagedService
-// (which calls service.New) cannot run there. This lets the backend-construction
+// (which calls services.New) cannot run there. This lets the backend-construction
 // tests run on every platform as its backend arrives without a per-OS skip.
 func requireServiceBackend(t *testing.T) {
 	t.Helper()
-	var zero service.Config
-	if _, err := service.New(zero); err != nil {
+	var zero services.Config
+	if _, err := services.New(zero); err != nil {
 		t.Skipf("no service backend for this platform: %v", err)
 	}
 }
@@ -115,7 +115,7 @@ func TestInstallBootstrapsMissingEnvFile(t *testing.T) {
 		require.Equal(t, os.FileMode(0600), info.Mode().Perm(), "env file must be 0600")
 	}
 
-	env, err := service.LoadEnvironment(path)
+	env, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "cloudflared", env["MCP_TUNNEL_PROVIDER"])
 	require.Equal(t, "mcp.example.com", env["MCP_DOMAIN"])
@@ -159,7 +159,7 @@ func TestInstallBootstrapPersistsDevTools(t *testing.T) {
 
 			require.NoError(t, bootstrapServiceEnvironment(cmd, path, nil))
 
-			env, err := service.LoadEnvironment(path)
+			env, err := services.LoadEnvironment(path)
 			require.NoError(t, err)
 			if tc.want == "" {
 				require.NotContains(t, env, "MCP_DEV_TOOLS", "unset --dev-tools must not write MCP_DEV_TOOLS")
@@ -183,7 +183,7 @@ func TestInstallBootstrapHonorsExplicitOAuthFalse(t *testing.T) {
 
 	require.NoError(t, bootstrapServiceEnvironment(cmd, path, nil))
 
-	env, err := service.LoadEnvironment(path)
+	env, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	// An explicit --oauth=false must be persisted as MCP_OAUTH=false (not the
 	// secure default true, and not silently dropped).
@@ -201,7 +201,7 @@ func TestReconcileExplicitOAuthFlagOverExistingFile(t *testing.T) {
 	path := filepath.Join(dir, "mcp.env")
 	// Existing complete file from a prior run: OAuth ON, full URL so the skip
 	// path is taken.
-	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+	require.NoError(t, services.WriteEnvironment(path, services.Environment{
 		"MCP_TUNNEL_PROVIDER": "cloudflared",
 		"MCP_AUTH_TOKEN":      "saved-token",
 		"MCP_PUBLIC_URL":      "https://mcp.example.com",
@@ -214,7 +214,7 @@ func TestReconcileExplicitOAuthFlagOverExistingFile(t *testing.T) {
 
 	require.NoError(t, ReconcileServiceEnvironmentFromFlags(cmd, path))
 
-	env, err := service.LoadEnvironment(path)
+	env, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "false", env["MCP_OAUTH"], "explicit --oauth=false on a re-run must override the persisted MCP_OAUTH=true")
 	// Keys the operator did not touch must be preserved.
@@ -229,7 +229,7 @@ func TestReconcileExplicitOAuthFlagOverExistingFile(t *testing.T) {
 func TestReconcilePreservesPersistedOAuthWhenFlagUnset(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")
-	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+	require.NoError(t, services.WriteEnvironment(path, services.Environment{
 		"MCP_TUNNEL_PROVIDER": "cloudflared",
 		"MCP_PUBLIC_URL":      "https://mcp.example.com",
 		"MCP_OAUTH":           "false",
@@ -239,7 +239,7 @@ func TestReconcilePreservesPersistedOAuthWhenFlagUnset(t *testing.T) {
 
 	// No explicit --oauth: nothing to overlay, file must be byte-identical.
 	require.NoError(t, ReconcileServiceEnvironmentFromFlags(cmd, path))
-	env, err := service.LoadEnvironment(path)
+	env, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "false", env["MCP_OAUTH"], "re-run without --oauth must preserve the persisted MCP_OAUTH=false")
 }
@@ -251,7 +251,7 @@ func TestReconcilePreservesPersistedOAuthWhenFlagUnset(t *testing.T) {
 func TestReconcileDoesNotClobberWithExplicitEmpty(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")
-	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+	require.NoError(t, services.WriteEnvironment(path, services.Environment{
 		"MCP_TUNNEL_PROVIDER": "cloudflared",
 		"MCP_AUTH_TOKEN":      "saved-token",
 		"MCP_PUBLIC_URL":      "https://mcp.example.com",
@@ -263,7 +263,7 @@ func TestReconcileDoesNotClobberWithExplicitEmpty(t *testing.T) {
 	require.NoError(t, cmd.Set(serviceAuthTokenFlag, "   ")) // whitespace-only
 
 	require.NoError(t, ReconcileServiceEnvironmentFromFlags(cmd, path))
-	env, err := service.LoadEnvironment(path)
+	env, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "https://mcp.example.com", env["MCP_PUBLIC_URL"], "explicit empty --public-url must not clobber the saved URL")
 	require.Equal(t, "saved-token", env["MCP_AUTH_TOKEN"], "whitespace-only --auth-token must not clobber the saved token")
@@ -277,7 +277,7 @@ func TestReconcileDoesNotClobberWithExplicitEmpty(t *testing.T) {
 func TestReconcileFromInstallStateOverlaysPromptedTunnelValues(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")
-	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+	require.NoError(t, services.WriteEnvironment(path, services.Environment{
 		"MCP_TUNNEL_PROVIDER": "cloudflared",
 		"MCP_AUTH_TOKEN":      "saved-token",
 		"MCP_PUBLIC_URL":      "https://old.example.com",
@@ -295,7 +295,7 @@ func TestReconcileFromInstallStateOverlaysPromptedTunnelValues(t *testing.T) {
 	}, tunnel.TunnelProviderCloudflared, false)
 	require.NoError(t, err)
 
-	env, err := service.LoadEnvironment(path)
+	env, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "cloudflared", env["MCP_TUNNEL_PROVIDER"], "provider must be preserved")
 	require.Equal(t, "new.example.com", env["MCP_DOMAIN"], "changed domain must be persisted")
@@ -310,7 +310,7 @@ func TestReconcileFromInstallStateOverlaysPromptedTunnelValues(t *testing.T) {
 func TestReconcileFromInstallStateEmptyDoesNotClobber(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")
-	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+	require.NoError(t, services.WriteEnvironment(path, services.Environment{
 		"MCP_TUNNEL_PROVIDER": "cloudflared",
 		"MCP_PUBLIC_URL":      "https://mcp.example.com",
 	}))
@@ -333,7 +333,7 @@ func TestReconcileFromInstallStatePurgesStaleURLOnSwitch(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")
 	// Existing ngrok install with its resolved URL.
-	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+	require.NoError(t, services.WriteEnvironment(path, services.Environment{
 		"MCP_TUNNEL_PROVIDER": "ngrok",
 		"MCP_TUNNEL_TOKEN":    "old-tok",
 		"MCP_AUTH_TOKEN":      "saved-token",
@@ -350,7 +350,7 @@ func TestReconcileFromInstallStatePurgesStaleURLOnSwitch(t *testing.T) {
 	}, tunnel.TunnelProviderNgrok, false)
 	require.NoError(t, err)
 
-	env, err := service.LoadEnvironment(path)
+	env, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "cloudflared", env["MCP_TUNNEL_PROVIDER"])
 	_, hasOldURL := env["MCP_PUBLIC_URL"]
@@ -371,7 +371,7 @@ func TestReconcileFromInstallStatePurgesStaleURLOnSwitch(t *testing.T) {
 func TestReconcileFromInstallStatePurgesOldProviderViaPassedPrev(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")
-	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+	require.NoError(t, services.WriteEnvironment(path, services.Environment{
 		"MCP_TUNNEL_PROVIDER": "cloudflared",
 		"MCP_DOMAIN":          "old.example.com",
 		"MCP_TUNNEL_NAME":     "pin-mcp",
@@ -385,7 +385,7 @@ func TestReconcileFromInstallStatePurgesOldProviderViaPassedPrev(t *testing.T) {
 	fc := &cli.Command{Flags: managedServiceFlags()}
 	require.NoError(t, fc.Set(serviceTunnelFlag, "ngrok"))
 	require.NoError(t, ReconcileServiceEnvironmentFromFlags(fc, path))
-	onDisk, err := service.LoadEnvironment(path)
+	onDisk, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "ngrok", onDisk["MCP_TUNNEL_PROVIDER"], "precondition: flags reconcile set the provider to ngrok")
 
@@ -400,7 +400,7 @@ func TestReconcileFromInstallStatePurgesOldProviderViaPassedPrev(t *testing.T) {
 	}, tunnel.TunnelProviderCloudflared, false)
 	require.NoError(t, err)
 
-	env, err := service.LoadEnvironment(path)
+	env, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "ngrok", env["MCP_TUNNEL_PROVIDER"])
 	_, hasDomain := env["MCP_DOMAIN"]
@@ -420,7 +420,7 @@ func TestReconcileFromInstallStatePurgesOldProviderViaPassedPrev(t *testing.T) {
 func TestReconcileFromInstallStateDowngradesLocalhost(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")
-	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+	require.NoError(t, services.WriteEnvironment(path, services.Environment{
 		"MCP_TUNNEL_PROVIDER": "ngrok",
 		"MCP_TUNNEL_TOKEN":    "old-tok",
 		"MCP_AUTH_TOKEN":      "saved-token",
@@ -436,7 +436,7 @@ func TestReconcileFromInstallStateDowngradesLocalhost(t *testing.T) {
 	}, tunnel.TunnelProviderNgrok, false)
 	require.NoError(t, err)
 
-	env, err := service.LoadEnvironment(path)
+	env, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	_, hasProvider := env["MCP_TUNNEL_PROVIDER"]
 	require.False(t, hasProvider, "MCP_TUNNEL_PROVIDER must be removed when switching to localhost")
@@ -457,7 +457,7 @@ func TestReconcileFromInstallStateDowngradesLocalhost(t *testing.T) {
 func TestReconcileFromInstallStateLocalhostUndecidedIsNoop(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")
-	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+	require.NoError(t, services.WriteEnvironment(path, services.Environment{
 		"MCP_TUNNEL_PROVIDER": "ngrok",
 		"MCP_TUNNEL_TOKEN":    "old-tok",
 		"MCP_PUBLIC_URL":      "https://ngrok-free.dev",
@@ -469,7 +469,7 @@ func TestReconcileFromInstallStateLocalhostUndecidedIsNoop(t *testing.T) {
 	}, tunnel.TunnelProviderNgrok, false)
 	require.NoError(t, err)
 
-	env, err := service.LoadEnvironment(path)
+	env, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "ngrok", env["MCP_TUNNEL_PROVIDER"], "an undecided empty provider must NOT purge the existing provider")
 	require.Equal(t, "old-tok", env["MCP_TUNNEL_TOKEN"], "an undecided empty provider must NOT purge the existing credential")
@@ -482,7 +482,7 @@ func TestReconcileFromInstallStateLocalhostUndecidedIsNoop(t *testing.T) {
 func TestReconcileFromInstallStatePreservesExplicitPublicURLOnSwitch(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")
-	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+	require.NoError(t, services.WriteEnvironment(path, services.Environment{
 		"MCP_TUNNEL_PROVIDER": "ngrok",
 		"MCP_TUNNEL_TOKEN":    "old-tok",
 		"MCP_AUTH_TOKEN":      "saved-token",
@@ -498,7 +498,7 @@ func TestReconcileFromInstallStatePreservesExplicitPublicURLOnSwitch(t *testing.
 	}, tunnel.TunnelProviderNgrok, true)
 	require.NoError(t, err)
 
-	env, err := service.LoadEnvironment(path)
+	env, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "cloudflared", env["MCP_TUNNEL_PROVIDER"])
 	require.Equal(t, "https://operator.example.com", env["MCP_PUBLIC_URL"], "an explicit --public-url must survive a provider switch")
@@ -515,7 +515,7 @@ func TestReconcileFromInstallStatePreservesExplicitPublicURLOnSwitch(t *testing.
 func TestReconcileFromInstallStatePurgesAlternateTokenAlias(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")
-	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+	require.NoError(t, services.WriteEnvironment(path, services.Environment{
 		"MCP_TUNNEL_PROVIDER": "ngrok",
 		"NGROK_AUTHTOKEN":     "old-alias-token",
 		"NGROK_API_KEY":       "live-api-key",
@@ -532,7 +532,7 @@ func TestReconcileFromInstallStatePurgesAlternateTokenAlias(t *testing.T) {
 	}, tunnel.TunnelProviderNgrok, false)
 	require.NoError(t, err)
 
-	env, err := service.LoadEnvironment(path)
+	env, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "new-tok", env["MCP_TUNNEL_TOKEN"])
 	_, hasAlias := env["NGROK_AUTHTOKEN"]
@@ -548,7 +548,7 @@ func TestReconcileFromInstallStatePurgesAlternateTokenAlias(t *testing.T) {
 func TestReconcileFromInstallStatePreservesLegacyOnlyToken(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")
-	require.NoError(t, service.WriteEnvironment(path, service.Environment{
+	require.NoError(t, services.WriteEnvironment(path, services.Environment{
 		"MCP_TUNNEL_PROVIDER": "ngrok",
 		"NGROK_AUTHTOKEN":     "legacy-token",
 		"MCP_AUTH_TOKEN":      "saved-token",
@@ -562,7 +562,7 @@ func TestReconcileFromInstallStatePreservesLegacyOnlyToken(t *testing.T) {
 	}, tunnel.TunnelProviderNgrok, false)
 	require.NoError(t, err)
 
-	env, err := service.LoadEnvironment(path)
+	env, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "legacy-token", env["NGROK_AUTHTOKEN"], "a legacy-only NGROK_AUTHTOKEN must not be cleared without a canonical MCP_TUNNEL_TOKEN replacement")
 	_, hasCanonical := env["MCP_TUNNEL_TOKEN"]
@@ -968,7 +968,7 @@ func TestInstallBootstrapOpenAIPassesProvider(t *testing.T) {
 
 	// The bootstrap must have persisted the API key into the file the service
 	// will actually read.
-	env, err := service.LoadEnvironment(path)
+	env, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "test-cp-api-key-abc123", env["CONTROL_PLANE_API_KEY"])
 }

@@ -5,10 +5,10 @@ import (
 	"testing"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/auth"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
-	"go.lumeweb.com/pinner-cli/internal/core/pinning"
+	"go.lumeweb.com/pinner/core/auth"
+	"go.lumeweb.com/pinner/core/config"
+	configmocks "go.lumeweb.com/pinner/core/config/mocks"
+	"go.lumeweb.com/pinner/core/pinning"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 

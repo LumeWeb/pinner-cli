@@ -11,8 +11,8 @@ import (
 	"fmt"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/admin"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/admin"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // AdminDeps are the dependencies the admin operations need at construction

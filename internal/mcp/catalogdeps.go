@@ -2,7 +2,7 @@ package mcp
 
 import (
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // CatalogDepsBundle carries the concrete dependency graph the operation-catalog

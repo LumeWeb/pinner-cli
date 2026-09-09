@@ -9,8 +9,8 @@ import (
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/ipns"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/ipns"
 )
 
 // IPNSDeps are the dependencies the IPNS operations need at construction time.

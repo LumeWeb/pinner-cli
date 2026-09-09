@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // IPFSDownloadHandler streams a single IPFS node (CID or CID/path) to dest.

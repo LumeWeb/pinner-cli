@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
+	"go.lumeweb.com/pinner/core/config"
+	configmocks "go.lumeweb.com/pinner/core/config/mocks"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"github.com/stretchr/testify/require"
 )

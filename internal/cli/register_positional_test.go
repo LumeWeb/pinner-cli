@@ -1,14 +1,14 @@
 package cli
 
 import (
-	"go.lumeweb.com/pinner-cli/internal/core/auth"
+	"go.lumeweb.com/pinner/core/auth"
 	"context"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // testArgs is a test cli.Args implementation that returns preset values.

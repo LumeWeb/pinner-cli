@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"go.lumeweb.com/pinner-cli/internal/core/apikeys"
+	"go.lumeweb.com/pinner/core/apikeys"
 )
 
 // APIKeyService is re-exported from core for CLI consumers and handler signatures.

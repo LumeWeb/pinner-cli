@@ -7,9 +7,9 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"github.com/stretchr/testify/require"
 
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
-	"go.lumeweb.com/pinner-cli/internal/core/websites"
+	"go.lumeweb.com/pinner/core/config"
+	configmocks "go.lumeweb.com/pinner/core/config/mocks"
+	"go.lumeweb.com/pinner/core/websites"
 )
 
 // namespaceCaptureService records the last create/update request so tests can

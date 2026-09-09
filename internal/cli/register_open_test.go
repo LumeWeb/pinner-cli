@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/internal/core/auth"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/auth"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // TestWebRegisterURL verifies the registration page URL is derived from the

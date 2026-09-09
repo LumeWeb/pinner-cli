@@ -10,7 +10,7 @@ import (
 	"os"
 	"testing"
 
-	"go.lumeweb.com/pinner-cli/internal/core/vault"
+	"go.lumeweb.com/pinner/core/vault"
 )
 
 // TestVaultForget_RequiresProfile verifies forget fails loudly when no explicit

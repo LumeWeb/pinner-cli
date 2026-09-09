@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/internal/core/vault"
+	"go.lumeweb.com/pinner/core/vault"
 )
 
 // NopVaultService is a vault.VaultService whose every method is a no-op, so a

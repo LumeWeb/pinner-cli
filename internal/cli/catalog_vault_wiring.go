@@ -9,7 +9,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
-	"go.lumeweb.com/pinner-cli/internal/core/vault"
+	"go.lumeweb.com/pinner/core/vault"
 )
 
 // catalog_vault_wiring.go adapts the vault domain operations in

@@ -14,7 +14,7 @@ import (
 	"github.com/urfave/cli/v3"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
-	"go.lumeweb.com/pinner-cli/internal/service"
+	"go.lumeweb.com/pinner/services"
 )
 
 // defaultLocalhostPort is the deterministic port a no-tunnel (localhost) HTTP
@@ -128,7 +128,7 @@ func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 		return nil, false, err
 	}
 
-	env, err = service.LoadEnvironment(envFile)
+	env, err = services.LoadEnvironment(envFile)
 	if err != nil {
 		return nil, false, err
 	}
@@ -175,7 +175,7 @@ func collectHTTPInstall(ctx context.Context, cmd *cli.Command, envFile string, w
 // reporting the service installed; it is a no-op on a service that is not
 // installed or is installed but already inactive, so the sequence is safe on
 // both a fresh install and a re-run.
-func installManagedService(ctx context.Context, svc service.Service) error {
+func installManagedService(ctx context.Context, svc services.Service) error {
 	status, err := svc.Status(ctx)
 	if err != nil {
 		return fmt.Errorf("query managed service status before install: %w", err)
@@ -194,7 +194,7 @@ func installManagedService(ctx context.Context, svc service.Service) error {
 		// up so its endpoint stays reachable rather than failing with the unit
 		// left stopped. systemd and launchd reinstall idempotently and never
 		// hit this branch.
-		if errors.Is(err, service.ErrServiceAlreadyExists) && stopped {
+		if errors.Is(err, services.ErrServiceAlreadyExists) && stopped {
 			if sErr := svc.Start(ctx); sErr != nil {
 				return fmt.Errorf("restart already-installed service: %v (install: %w)", sErr, err)
 			}
@@ -260,7 +260,7 @@ func resolveServicePublicURL(envFile string, env ServiceEnvironment) {
 	} else {
 		env["MCP_PUBLIC_URL"] = "https://" + host
 	}
-	if err := service.WriteEnvironment(envFile, env); err != nil {
+	if err := services.WriteEnvironment(envFile, env); err != nil {
 		// Non-fatal: the resolved env is still returned to the caller even if
 		// persisting it back fails; a stale file is recovered on the next run.
 		return

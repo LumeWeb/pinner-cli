@@ -12,9 +12,9 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/dns"
-	"go.lumeweb.com/pinner-cli/internal/dnsutil"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/dns"
+	"go.lumeweb.com/pinner/dnsutil"
 )
 
 // DNSDeps are the dependencies the DNS operations need at construction time.

@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/ipns"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/ipns"
 )
 
 func newIPNSCommand() *cli.Command {

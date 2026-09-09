@@ -4,7 +4,7 @@ import (
 	"context"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner-cli/internal/core/websites"
+	"go.lumeweb.com/pinner/core/websites"
 )
 
 // WebsitesService is the subset of cli.WebsitesService used by the MCP wizard.

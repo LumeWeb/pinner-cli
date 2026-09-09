@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"testing"
 
-	"go.lumeweb.com/pinner-cli/internal/core/vault"
+	"go.lumeweb.com/pinner/core/vault"
 )
 
 // statusStubVaultService is a minimal VaultService whose Status returns a

@@ -11,9 +11,9 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
-	"go.lumeweb.com/pinner-cli/internal/core/ipns"
+	"go.lumeweb.com/pinner/core/config"
+	configmocks "go.lumeweb.com/pinner/core/config/mocks"
+	"go.lumeweb.com/pinner/core/ipns"
 )
 
 // mockENSIPNSService is a minimal in-package ipns.Service fake for the ENS

@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
-	"go.lumeweb.com/pinner-cli/internal/core/auth"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
+	"go.lumeweb.com/pinner/core/auth"
+	"go.lumeweb.com/pinner/core/config"
+	configmocks "go.lumeweb.com/pinner/core/config/mocks"
 )
 
 func TestAccountOTPEnable(t *testing.T) {

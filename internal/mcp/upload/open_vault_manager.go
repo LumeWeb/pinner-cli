@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	corevault "go.lumeweb.com/pinner-cli/internal/core/vault"
+	corevault "go.lumeweb.com/pinner/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"

@@ -18,7 +18,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
-	"go.lumeweb.com/pinner-cli/internal/service"
+	"go.lumeweb.com/pinner/services"
 )
 
 // stubNgrokAPI returns an *http.Client that routes api.ngrok.com requests to a
@@ -288,9 +288,9 @@ func TestResolveServicePublicURLFillsCloudflaredDomain(t *testing.T) {
 		"MCP_DOMAIN":          "https://mcp.example.com",
 		"MCP_AUTH_TOKEN":      "test-token",
 	}
-	require.NoError(t, service.WriteEnvironment(path, env))
+	require.NoError(t, services.WriteEnvironment(path, env))
 
-	loaded, err := service.LoadEnvironment(path)
+	loaded, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "", loaded["MCP_PUBLIC_URL"], "precondition: MCP_PUBLIC_URL unset")
 
@@ -298,7 +298,7 @@ func TestResolveServicePublicURLFillsCloudflaredDomain(t *testing.T) {
 	require.Equal(t, "https://mcp.example.com", loaded["MCP_PUBLIC_URL"])
 
 	// And it must be persisted back so later runs see it.
-	reloaded, err := service.LoadEnvironment(path)
+	reloaded, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "https://mcp.example.com", reloaded["MCP_PUBLIC_URL"])
 }
@@ -311,9 +311,9 @@ func TestResolveServicePublicURLLeavesDynamicTunnelUnset(t *testing.T) {
 	path := filepath.Join(dir, "mcp.env")
 
 	env := ServiceEnvironment{"MCP_TUNNEL_PROVIDER": string(tunnel.TunnelProviderNgrok)}
-	require.NoError(t, service.WriteEnvironment(path, env))
+	require.NoError(t, services.WriteEnvironment(path, env))
 
-	loaded, err := service.LoadEnvironment(path)
+	loaded, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	resolveServicePublicURL(path, loaded)
 	require.Equal(t, "", loaded["MCP_PUBLIC_URL"], "no domain -> no derived URL")
@@ -331,9 +331,9 @@ func TestResolveServicePublicURLFillsLocalhost(t *testing.T) {
 	env := ServiceEnvironment{
 		"MCP_AUTH_TOKEN": "test-token", // no MCP_TUNNEL_PROVIDER => localhost
 	}
-	require.NoError(t, service.WriteEnvironment(path, env))
+	require.NoError(t, services.WriteEnvironment(path, env))
 
-	loaded, err := service.LoadEnvironment(path)
+	loaded, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "", loaded["MCP_PUBLIC_URL"], "precondition: MCP_PUBLIC_URL unset")
 
@@ -343,7 +343,7 @@ func TestResolveServicePublicURLFillsLocalhost(t *testing.T) {
 
 	// And both must be persisted back so later runs (and the running service)
 	// see them.
-	reloaded, err := service.LoadEnvironment(path)
+	reloaded, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "http://127.0.0.1:38550", reloaded["MCP_PUBLIC_URL"])
 	require.Equal(t, "38550", reloaded["MCP_PORT"])
@@ -359,9 +359,9 @@ func TestResolveServicePublicURLFillsLocalhostCustomPort(t *testing.T) {
 		"MCP_HOST": "localhost",
 		"MCP_PORT": "43047",
 	}
-	require.NoError(t, service.WriteEnvironment(path, env))
+	require.NoError(t, services.WriteEnvironment(path, env))
 
-	loaded, err := service.LoadEnvironment(path)
+	loaded, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	resolveServicePublicURL(path, loaded)
 	require.Equal(t, "http://localhost:43047", loaded["MCP_PUBLIC_URL"])
@@ -402,7 +402,7 @@ func TestCollectHTTPInstallOneShotResolvesNamedDomainURL(t *testing.T) {
 		"one-shot install should derive the named-tunnel public URL")
 
 	// And it must be persisted so later runs/install reads see it.
-	reloaded, err := service.LoadEnvironment(path)
+	reloaded, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "https://mcp.example.com", reloaded["MCP_PUBLIC_URL"])
 }
@@ -419,9 +419,9 @@ func TestResolveServicePublicURLPinsDefaultOnZeroPort(t *testing.T) {
 		"MCP_HOST": "127.0.0.1",
 		"MCP_PORT": "0",
 	}
-	require.NoError(t, service.WriteEnvironment(path, env))
+	require.NoError(t, services.WriteEnvironment(path, env))
 
-	loaded, err := service.LoadEnvironment(path)
+	loaded, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	resolveServicePublicURL(path, loaded)
 	require.Equal(t, "38550", loaded["MCP_PORT"], "explicit --port 0 must pin the default port")
@@ -439,7 +439,7 @@ func TestCollectHTTPInstallOneShotResolvesLocalhostURL(t *testing.T) {
 	// Pre-create the env file so the one-shot collector treats it as an existing
 	// localhost config (no tunnel provider) instead of launching the interactive
 	// wizard, which would block on a prompt.
-	require.NoError(t, service.WriteEnvironment(path, ServiceEnvironment{"MCP_AUTH_TOKEN": "test"}))
+	require.NoError(t, services.WriteEnvironment(path, ServiceEnvironment{"MCP_AUTH_TOKEN": "test"}))
 	cmd := &cli.Command{Flags: managedServiceFlags()}
 	require.NoError(t, cmd.Set(serviceEnvFileFlag, path))
 	// No MCP_TUNNEL_PROVIDER flag => localhost mode; no tunnel credentials.
@@ -451,7 +451,7 @@ func TestCollectHTTPInstallOneShotResolvesLocalhostURL(t *testing.T) {
 
 	// And the pinned port + URL must be persisted so the running service binds
 	// the same port the agent config references.
-	reloaded, err := service.LoadEnvironment(path)
+	reloaded, err := services.LoadEnvironment(path)
 	require.NoError(t, err)
 	require.Equal(t, "38550", reloaded["MCP_PORT"])
 	require.Equal(t, "http://127.0.0.1:38550", reloaded["MCP_PUBLIC_URL"])
@@ -536,7 +536,7 @@ func TestFlattenedNgrokWritesPublicURL(t *testing.T) {
 
 	// And loading it back must yield a non-empty MCP_PUBLIC_URL (the collector's
 	// precondition), not the reported "no MCP_PUBLIC_URL" failure.
-	env, err := service.LoadEnvironment(envFile)
+	env, err := services.LoadEnvironment(envFile)
 	require.NoError(t, err)
 	require.Equal(t, "https://you.ngrok-free.dev", env["MCP_PUBLIC_URL"])
 	require.Equal(t, "true", env["MCP_OAUTH"], "OAuth choice must be written")
@@ -636,11 +636,11 @@ func TestIsServiceInstallSeeded(t *testing.T) {
 
 // fakeManagedService records lifecycle calls so installManagedService's
 // stop-if-installed → install → start sequence can be asserted without a live
-// init system. It embeds service.Service so unimplemented methods panic rather
+// init system. It embeds services.Service so unimplemented methods panic rather
 // than silently succeed.
 type fakeManagedService struct {
-	service.Service
-	status      service.Status
+	services.Service
+	status      services.Status
 	statusErr   error
 	stopErr     error
 	installErr  error
@@ -649,16 +649,18 @@ type fakeManagedService struct {
 	calledStart bool
 }
 
-func (f *fakeManagedService) Status(_ context.Context) (service.Status, error) { return f.status, f.statusErr }
-func (f *fakeManagedService) Stop(_ context.Context) error                     { f.calledStop = true; return f.stopErr }
-func (f *fakeManagedService) Install(_ context.Context) error                  { return f.installErr }
-func (f *fakeManagedService) Start(_ context.Context) error                    { f.calledStart = true; return f.startErr }
+func (f *fakeManagedService) Status(_ context.Context) (services.Status, error) {
+	return f.status, f.statusErr
+}
+func (f *fakeManagedService) Stop(_ context.Context) error    { f.calledStop = true; return f.stopErr }
+func (f *fakeManagedService) Install(_ context.Context) error { return f.installErr }
+func (f *fakeManagedService) Start(_ context.Context) error   { f.calledStart = true; return f.startErr }
 
 func TestStopManagedServiceIfInstalled(t *testing.T) {
 	t.Run("not installed is a no-op", func(t *testing.T) {
 		fake := &fakeManagedService{} // Status returns zero: not installed
 		orig := newServiceForControl
-		newServiceForControl = func() (service.Service, error) { return fake, nil }
+		newServiceForControl = func() (services.Service, error) { return fake, nil }
 		defer func() { newServiceForControl = orig }()
 
 		stopped, err := StopManagedServiceIfInstalled(context.Background())
@@ -668,9 +670,9 @@ func TestStopManagedServiceIfInstalled(t *testing.T) {
 	})
 
 	t.Run("installed service is stopped", func(t *testing.T) {
-		fake := &fakeManagedService{status: service.Status{Installed: true}}
+		fake := &fakeManagedService{status: services.Status{Installed: true}}
 		orig := newServiceForControl
-		newServiceForControl = func() (service.Service, error) { return fake, nil }
+		newServiceForControl = func() (services.Service, error) { return fake, nil }
 		defer func() { newServiceForControl = orig }()
 
 		stopped, err := StopManagedServiceIfInstalled(context.Background())
@@ -682,7 +684,7 @@ func TestStopManagedServiceIfInstalled(t *testing.T) {
 	t.Run("status error propagates", func(t *testing.T) {
 		fake := &fakeManagedService{statusErr: errors.New("probe failed")}
 		orig := newServiceForControl
-		newServiceForControl = func() (service.Service, error) { return fake, nil }
+		newServiceForControl = func() (services.Service, error) { return fake, nil }
 		defer func() { newServiceForControl = orig }()
 
 		stopped, err := StopManagedServiceIfInstalled(context.Background())
@@ -693,11 +695,11 @@ func TestStopManagedServiceIfInstalled(t *testing.T) {
 
 	t.Run("stop error propagates", func(t *testing.T) {
 		fake := &fakeManagedService{
-			status:  service.Status{Installed: true},
+			status:  services.Status{Installed: true},
 			stopErr: errors.New("stop failed"),
 		}
 		orig := newServiceForControl
-		newServiceForControl = func() (service.Service, error) { return fake, nil }
+		newServiceForControl = func() (services.Service, error) { return fake, nil }
 		defer func() { newServiceForControl = orig }()
 
 		stopped, err := StopManagedServiceIfInstalled(context.Background())
@@ -711,7 +713,7 @@ func TestStartManagedServiceIfInstalled(t *testing.T) {
 	t.Run("not installed is a no-op", func(t *testing.T) {
 		fake := &fakeManagedService{}
 		orig := newServiceForControl
-		newServiceForControl = func() (service.Service, error) { return fake, nil }
+		newServiceForControl = func() (services.Service, error) { return fake, nil }
 		defer func() { newServiceForControl = orig }()
 
 		err := StartManagedServiceIfInstalled(context.Background())
@@ -720,9 +722,9 @@ func TestStartManagedServiceIfInstalled(t *testing.T) {
 	})
 
 	t.Run("installed service is started", func(t *testing.T) {
-		fake := &fakeManagedService{status: service.Status{Installed: true}}
+		fake := &fakeManagedService{status: services.Status{Installed: true}}
 		orig := newServiceForControl
-		newServiceForControl = func() (service.Service, error) { return fake, nil }
+		newServiceForControl = func() (services.Service, error) { return fake, nil }
 		defer func() { newServiceForControl = orig }()
 
 		err := StartManagedServiceIfInstalled(context.Background())
@@ -733,7 +735,7 @@ func TestStartManagedServiceIfInstalled(t *testing.T) {
 	t.Run("status error propagates", func(t *testing.T) {
 		fake := &fakeManagedService{statusErr: errors.New("probe failed")}
 		orig := newServiceForControl
-		newServiceForControl = func() (service.Service, error) { return fake, nil }
+		newServiceForControl = func() (services.Service, error) { return fake, nil }
 		defer func() { newServiceForControl = orig }()
 
 		err := StartManagedServiceIfInstalled(context.Background())
@@ -752,7 +754,7 @@ func TestInstallManagedService(t *testing.T) {
 	})
 
 	t.Run("installed service is stopped before reinstall then started", func(t *testing.T) {
-		svc := &fakeManagedService{status: service.Status{Installed: true}}
+		svc := &fakeManagedService{status: services.Status{Installed: true}}
 		err := installManagedService(context.Background(), svc)
 		require.NoError(t, err)
 		require.True(t, svc.calledStop, "an installed service must be stopped before reinstall")
@@ -768,7 +770,7 @@ func TestInstallManagedService(t *testing.T) {
 	})
 
 	t.Run("stop error propagates and aborts install", func(t *testing.T) {
-		svc := &fakeManagedService{status: service.Status{Installed: true}, stopErr: errors.New("stop failed")}
+		svc := &fakeManagedService{status: services.Status{Installed: true}, stopErr: errors.New("stop failed")}
 		err := installManagedService(context.Background(), svc)
 		require.Error(t, err)
 		require.True(t, svc.calledStop)
@@ -783,7 +785,7 @@ func TestInstallManagedService(t *testing.T) {
 	})
 
 	t.Run("already-installed install error restarts the stopped service", func(t *testing.T) {
-		svc := &fakeManagedService{status: service.Status{Installed: true}, installErr: service.ErrServiceAlreadyExists}
+		svc := &fakeManagedService{status: services.Status{Installed: true}, installErr: services.ErrServiceAlreadyExists}
 		err := installManagedService(context.Background(), svc)
 		require.NoError(t, err)
 		require.True(t, svc.calledStop, "the installed service must be stopped before the failed reinstall")
@@ -793,7 +795,7 @@ func TestInstallManagedService(t *testing.T) {
 	t.Run("already-installed install error without stop propagates", func(t *testing.T) {
 		// A backend that reports ErrServiceAlreadyExists without the caller
 		// having stopped anything must not silently succeed.
-		svc := &fakeManagedService{installErr: service.ErrServiceAlreadyExists}
+		svc := &fakeManagedService{installErr: services.ErrServiceAlreadyExists}
 		err := installManagedService(context.Background(), svc)
 		require.Error(t, err)
 		require.False(t, svc.calledStart)

@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 const testTunnelID = "tunnel_0123456789abcdef0123456789abcdef"

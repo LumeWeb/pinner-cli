@@ -13,7 +13,7 @@ import (
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/ipns"
+	"go.lumeweb.com/pinner/core/ipns"
 )
 
 // Contenthash/verify identity constants shared by the ENS operations and their

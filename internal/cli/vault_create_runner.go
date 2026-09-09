@@ -3,7 +3,7 @@ package cli
 import (
 	"context"
 
-	"go.lumeweb.com/pinner-cli/internal/core/vault"
+	"go.lumeweb.com/pinner/core/vault"
 	mcpwizard "go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 )
 

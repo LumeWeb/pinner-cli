@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner-cli/internal/core/websites"
+	"go.lumeweb.com/pinner/core/websites"
 )
 
 func TestWebsitesService_List(t *testing.T) {

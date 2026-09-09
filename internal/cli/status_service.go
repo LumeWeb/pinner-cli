@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/config"
 	statuspkg "go.lumeweb.com/pinner-cli/internal/core/status"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )

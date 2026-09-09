@@ -8,8 +8,8 @@ import (
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/websites"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/websites"
 )
 
 // maxVerifyAttempts bounds how many times the validation/verify step may be

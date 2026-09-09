@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	corevault "go.lumeweb.com/pinner-cli/internal/core/vault"
+	corevault "go.lumeweb.com/pinner/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"

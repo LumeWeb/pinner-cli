@@ -1,8 +1,8 @@
 package cli
 
 import (
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/ipns"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/ipns"
 )
 
 // IPNSService is re-exported from core for CLI consumers and handler signatures.

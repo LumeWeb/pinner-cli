@@ -12,8 +12,8 @@ import (
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
-	coreadmin "go.lumeweb.com/pinner-cli/internal/core/admin"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	coreadmin "go.lumeweb.com/pinner/core/admin"
+	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/portal-sdk/admin"
 )
 

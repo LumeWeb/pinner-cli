@@ -5,7 +5,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
-	"go.lumeweb.com/pinner-cli/internal/core/vault"
+	"go.lumeweb.com/pinner/core/vault"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 

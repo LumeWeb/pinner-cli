@@ -11,8 +11,8 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/pinning"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/pinning"
 )
 
 // catalog_wiring.go adapts the operation catalog (internal/catalog) and its

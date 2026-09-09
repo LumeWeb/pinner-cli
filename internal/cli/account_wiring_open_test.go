@@ -11,8 +11,8 @@ import (
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
-	"go.lumeweb.com/pinner-cli/internal/core/auth"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/auth"
+	"go.lumeweb.com/pinner/core/config"
 	account "go.lumeweb.com/portal-sdk"
 )
 

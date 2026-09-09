@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
+	configmocks "go.lumeweb.com/pinner/core/config/mocks"
 )
 
 // TestApplySetupConfigDefaults guards the use_defaults branch: it resets the

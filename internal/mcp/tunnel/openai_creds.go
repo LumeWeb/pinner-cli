@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // ResolveOpenAICredentials returns the OpenAI Secure MCP Tunnel ID and

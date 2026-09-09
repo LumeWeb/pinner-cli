@@ -23,7 +23,7 @@ import (
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/build"
 	opcat "go.lumeweb.com/pinner-cli/internal/catalog"
-	corevault "go.lumeweb.com/pinner-cli/internal/core/vault"
+	corevault "go.lumeweb.com/pinner/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"

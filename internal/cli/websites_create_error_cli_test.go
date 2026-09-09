@@ -10,8 +10,8 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/websites"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/websites"
 )
 
 // cliErrWebsitesService is a websites.Service fake whose CreateWithOptions

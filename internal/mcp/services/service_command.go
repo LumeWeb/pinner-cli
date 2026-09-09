@@ -14,9 +14,9 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
-	"go.lumeweb.com/pinner-cli/internal/service"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/services"
 )
 
 // defaultMCPServiceName is the systemd unit / service identifier (without the
@@ -261,7 +261,7 @@ func validateServiceEnvironment(envFile string, nonInteractive bool) (tunnel.Tun
 	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
 		return "", fmt.Errorf("MCP service environment file %q is group/world-readable; run chmod 600 %s", envFile, envFile)
 	}
-	env, err := service.LoadEnvironment(envFile)
+	env, err := services.LoadEnvironment(envFile)
 	if err != nil {
 		return "", err
 	}
@@ -323,7 +323,7 @@ func validateServiceEnvironment(envFile string, nonInteractive bool) (tunnel.Tun
 	return provider, nil
 }
 
-func resolveManagedService(_ context.Context, cmd *cli.Command, validate, nonInteractive bool) (service.Service, error) {
+func resolveManagedService(_ context.Context, cmd *cli.Command, validate, nonInteractive bool) (services.Service, error) {
 	envFile, err := resolveServiceEnvFile(cmd)
 	if err != nil {
 		return nil, err
@@ -341,7 +341,7 @@ func resolveManagedService(_ context.Context, cmd *cli.Command, validate, nonInt
 // resolveManagedServiceForInstall bootstraps the env file (from flags when a
 // --tunnel flag is given, or via the interactive wizard otherwise) when it does
 // not yet exist, then resolves the managed service with validation.
-func resolveManagedServiceForInstall(ctx context.Context, cmd *cli.Command) (string, service.Service, error) {
+func resolveManagedServiceForInstall(ctx context.Context, cmd *cli.Command) (string, services.Service, error) {
 	envFile, err := resolveServiceEnvFile(cmd)
 	if err != nil {
 		return "", nil, err
@@ -393,14 +393,14 @@ func resolveManagedServiceForInstall(ctx context.Context, cmd *cli.Command) (str
 // OAuth is deliberately NOT defaulted here: the secure default-on is applied
 // only when creating a fresh file (see bootstrapServiceEnvironment). On a
 // re-run, an unset --oauth must leave whatever MCP_OAUTH the file already has.
-func explicitServiceEnvFromFlags(cmd *cli.Command) (service.Environment, error) {
+func explicitServiceEnvFromFlags(cmd *cli.Command) (services.Environment, error) {
 	provider, err := parseTunnelProvider(cmd.String(serviceTunnelFlag))
 	if err != nil && provider == "" {
 		provider = ""
 	} else if err != nil {
 		return nil, err
 	}
-	env := service.Environment{}
+	env := services.Environment{}
 	setIf := func(key, flag string) {
 		// Persist only non-empty values. A flag that IsSet but evaluates empty
 		// (e.g. --public-url "" ) must NOT overwrite a saved non-empty value in
@@ -453,14 +453,14 @@ func ReconcileServiceEnvironmentFromFlags(cmd *cli.Command, envFile string) erro
 	if len(overlay) == 0 {
 		return nil
 	}
-	env, err := service.LoadEnvironment(envFile)
+	env, err := services.LoadEnvironment(envFile)
 	if err != nil {
 		return fmt.Errorf("load service environment %q for reconcile: %w", envFile, err)
 	}
 	for k, v := range overlay {
 		env[k] = v
 	}
-	if err := service.WriteEnvironment(envFile, env); err != nil {
+	if err := services.WriteEnvironment(envFile, env); err != nil {
 		return fmt.Errorf("reconcile MCP service environment file: %w", err)
 	}
 	return nil
@@ -506,7 +506,7 @@ func ReconcileServiceEnvironmentFromInstallState(envFile string, s *ServiceInsta
 		// even require the env file to exist.
 		return nil
 	}
-	env, err := service.LoadEnvironment(envFile)
+	env, err := services.LoadEnvironment(envFile)
 	if err != nil {
 		return fmt.Errorf("load service environment %q for reconcile: %w", envFile, err)
 	}
@@ -580,7 +580,7 @@ func ReconcileServiceEnvironmentFromInstallState(envFile string, s *ServiceInsta
 	for k, v := range overlay {
 		env[k] = v
 	}
-	if err := service.WriteEnvironment(envFile, env); err != nil {
+	if err := services.WriteEnvironment(envFile, env); err != nil {
 		return fmt.Errorf("reconcile MCP service environment file: %w", err)
 	}
 	return nil
@@ -613,7 +613,7 @@ func bootstrapServiceEnvironment(cmd *cli.Command, envFile string, cfgMgr config
 		env["MCP_OAUTH"] = "true"
 	}
 
-	if err := service.WriteEnvironment(envFile, env); err != nil {
+	if err := services.WriteEnvironment(envFile, env); err != nil {
 		return fmt.Errorf("bootstrap MCP service environment file: %w", err)
 	}
 	fmt.Printf("Created MCP service environment file %s (0600).\n", envFile)
@@ -633,14 +633,14 @@ func bootstrapServiceEnvironment(cmd *cli.Command, envFile string, cfgMgr config
 // Env handling is entirely per-backend: the config carries only the env file
 // path, and each platform file consumes it (systemd: EnvironmentFile, launchd:
 // sources it via a wrapper, Windows SCM: loads it into the service registry).
-func newManagedService(cmd *cli.Command, envFile string, provider tunnel.TunnelProvider) (service.Service, error) {
+func newManagedService(cmd *cli.Command, envFile string, provider tunnel.TunnelProvider) (services.Service, error) {
 	cfg, err := serviceConfigForInstall(cmd, envFile, provider)
 	if err != nil {
 		return nil, err
 	}
-	// service.New auto-detects the host's init system from the per-platform
+	// services.New auto-detects the host's init system from the per-platform
 	// backend registry (systemd on Linux, launchd on macOS, SCM on Windows).
-	return service.New(cfg)
+	return services.New(cfg)
 }
 
 // RestartManagedService restarts the managed MCP service so a freshly written
@@ -664,15 +664,15 @@ func RestartManagedService(ctx context.Context, cmd *cli.Command, s *ServiceInst
 // for Stop/Status-only operations (no env file or provider needed). It is a
 // package-level seam so tests can substitute a fake without touching the live
 // init system (mirrors the ResolveNgrokSDKURL pattern).
-var newServiceForControl = func() (service.Service, error) {
-	return service.New(service.Config{
+var newServiceForControl = func() (services.Service, error) {
+	return services.New(services.Config{
 		Name:     defaultMCPServiceName,
 		UserMode: true,
 	})
 }
 
 // StopManagedServiceIfInstalled stops the managed MCP service when it is
-// already installed. It builds a minimal service.Config (only Name and
+// already installed. It builds a minimal services.Config (only Name and
 // UserMode are needed for Stop/Status), so it works before the env file or
 // tunnel provider is known. Callers use this to free resources the running
 // service holds (e.g. an ngrok tunnel endpoint) before the install wizard
@@ -718,7 +718,7 @@ func StartManagedServiceIfInstalled(ctx context.Context) error {
 	return svc.Start(ctx)
 }
 
-// serviceConfigForInstall builds the service.Config for the managed MCP
+// serviceConfigForInstall builds the services.Config for the managed MCP
 // service: the pinner executable run as `pinner mcp`, referencing the tunnel
 // credentials via envFile (a path). Each platform backend chooses its own
 // service-file path (systemd user unit on Linux, LaunchAgent plist on macOS,
@@ -728,10 +728,10 @@ func StartManagedServiceIfInstalled(ctx context.Context) error {
 // OpenAI tunnel speaks the MCP transport directly and must not add --http.
 // Returns the pure config so tests can assert the ExecStart arguments without
 // touching a live service backend.
-func serviceConfigForInstall(cmd *cli.Command, envFile string, provider tunnel.TunnelProvider) (service.Config, error) {
+func serviceConfigForInstall(cmd *cli.Command, envFile string, provider tunnel.TunnelProvider) (services.Config, error) {
 	execPath, err := os.Executable()
 	if err != nil {
-		return service.Config{}, fmt.Errorf("resolve pinner executable: %w", err)
+		return services.Config{}, fmt.Errorf("resolve pinner executable: %w", err)
 	}
 	args := []string{"mcp"}
 	// Localhost (empty provider) and public HTTP tunnel providers (ngrok,
@@ -740,7 +740,7 @@ func serviceConfigForInstall(cmd *cli.Command, envFile string, provider tunnel.T
 	if provider != tunnel.TunnelProviderOpenAI {
 		args = append(args, "--http")
 	}
-	return service.Config{
+	return services.Config{
 		Name:        defaultMCPServiceName,
 		Description: "Pinner MCP service",
 		ExecPath:    execPath,

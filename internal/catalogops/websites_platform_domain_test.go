@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
-	"go.lumeweb.com/pinner-cli/internal/core/websites"
+	"go.lumeweb.com/pinner/core/config"
+	configmocks "go.lumeweb.com/pinner/core/config/mocks"
+	"go.lumeweb.com/pinner/core/websites"
 )
 
 // platformDomainService fakes websites.Service for the platform-domain

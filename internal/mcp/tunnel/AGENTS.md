@@ -39,7 +39,7 @@ package directly via `tunnel.*` (the parent no longer carries a re-export shim).
   Verify: `go list -deps go.lumeweb.com/pinner-cli/internal/mcp/tunnel | grep -E 'pinner-cli/internal/mcp($|/)' | grep -v 'internal/mcp/tunnel'` → must print nothing.
 - Allowed imports: stdlib, urfave/cli/v3, `github.com/modelcontextprotocol/go-sdk/mcp`,
   ngrok SDK, cloudflare libs, openai tunnel-client, pterm,
-  `go.lumeweb.com/pinner-cli/internal/core/config`, `internal/cli/wizard`, `internal/urlopen`.
+  `go.lumeweb.com/pinner/core/config`, `internal/cli/wizard`, `internal/urlopen`.
 
 ## Boundary
 

@@ -9,8 +9,8 @@ import (
 
 	mock "github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/internal/core/apikeys"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/apikeys"
+	"go.lumeweb.com/pinner/core/config"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
 )
@@ -263,7 +263,7 @@ func TestAPIKeyService_GetCurrentAPIKeyUUID(t *testing.T) {
 		wantUUID  string
 	}{
 		{
-			name:      "api key jwt returns subject",
+			name:      "api key jwt returns id claim",
 			authToken: makeAPIKeyJWT("test-uuid-123", "api"),
 			wantUUID:  "test-uuid-123",
 		},
@@ -596,6 +596,6 @@ func TestAccountAPIKeysDelete_WithForce(t *testing.T) {
 // makeAPIKeyJWT creates a minimal JWT string with the given subject and audience.
 func makeAPIKeyJWT(sub, aud string) string {
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
-	payload := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(`{"sub":"%s","aud":"%s"}`, sub, aud)))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf(`{"sub":"%s","aud":"%s","jti":"%s"}`, sub, aud, sub)))
 	return header + "." + payload + ".fake-signature"
 }
