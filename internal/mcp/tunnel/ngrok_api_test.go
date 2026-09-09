@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -13,7 +14,7 @@ import (
 
 // stubNgrokAPI returns an *http.Client that routes api.ngrok.com requests to a
 // handler scripted by handler, letting tests exercise the reserved_domains
-// client without network access.
+// client through the shim's ResolveNgrokPublicURL without network access.
 func stubNgrokAPI(t *testing.T, handler http.HandlerFunc) *http.Client {
 	t.Helper()
 	srv := httptest.NewServer(handler)
@@ -38,9 +39,10 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-// TestNgrokReservedDomainsParsesList guards the reserved_domains client: a
-// well-formed list response must decode into domains and pass the API key
-// through as a Bearer token.
+// TestNgrokReservedDomainsParsesList guards the reserved_domains client path
+// (exercised through the shim's delegated ResolveNgrokPublicURL): a well-formed
+// list response must pass the API key through as a Bearer token and yield the
+// free dev domain of the account.
 func TestNgrokReservedDomainsParsesList(t *testing.T) {
 	var gotAuth string
 	stubNgrokAPI(t, func(w http.ResponseWriter, r *http.Request) {
@@ -52,13 +54,13 @@ func TestNgrokReservedDomainsParsesList(t *testing.T) {
 			{"id":"rd_2","domain":"app.example.com","cname_target":"cname.example.com"}
 		],"next_page_uri":null}`))
 	})
-	domains, err := ngrokReservedDomains(context.Background(), "ngrok_api_key_123")
+	url, typ, err := ResolveNgrokPublicURL(context.Background(), "ngrok_api_key_123", "")
 	require.NoError(t, err)
 	require.Equal(t, "Bearer ngrok_api_key_123", gotAuth)
-	require.Len(t, domains, 2)
-	require.Equal(t, "you.ngrok-free.dev", domains[0].Domain)
-	require.Nil(t, domains[0].CNAMETarget)
-	require.NotNil(t, domains[1].CNAMETarget)
+	// The custom hostname marks the account paid; the free dev domain is still
+	// preferred as the stable public host.
+	require.Equal(t, NgrokAccountPaid, typ)
+	require.Equal(t, "https://you.ngrok-free.dev", url)
 }
 
 // TestNgrokReservedDomainsSurfacesAPIError guards that a rejected/invalid API
@@ -68,58 +70,63 @@ func TestNgrokReservedDomainsSurfacesAPIError(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 		w.Write([]byte(`{"error_code":"ERR_NGROK_200","msg":"requires authorization"}`))
 	})
-	_, err := ngrokReservedDomains(context.Background(), "bad_key")
+	_, _, err := ResolveNgrokPublicURL(context.Background(), "bad_key", "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "ERR_NGROK_200")
 }
 
 // TestClassifyNgrokAccountAndResolve guards account identification + URL
-// derivation: a free account's single *.ngrok-free.* dev domain yields the free
-// type and that dev URL; a named/custom domain marks a paid account; an empty
-// set is unknown with no URL.
+// derivation through the delegated resolver: a free account's single
+// *.ngrok-free.* dev domain yields the free type and that dev URL; a
+// named/custom domain marks a paid account; an empty set is unknown with no
+// URL.
 func TestClassifyNgrokAccountAndResolve(t *testing.T) {
 	cases := []struct {
 		name    string
-		domains []ngrokReservedDomain
+		body    string
 		wantT   NgrokAccountType
 		wantURL string
 	}{
 		{
 			name:    "free dev domain",
-			domains: []ngrokReservedDomain{{Domain: "you.ngrok-free.dev"}},
+			body:    `{"reserved_domains":[{"id":"rd_1","domain":"you.ngrok-free.dev","cname_target":null}],"next_page_uri":null}`,
 			wantT:   NgrokAccountFree,
 			wantURL: "https://you.ngrok-free.dev",
 		},
 		{
 			name:    "named ngrok domain is paid",
-			domains: []ngrokReservedDomain{{Domain: "my-app.ngrok.app", CNAMETarget: str("tunnel.ngrok.io")}},
+			body:    `{"reserved_domains":[{"id":"rd_1","domain":"my-app.ngrok.app","cname_target":"tunnel.ngrok.io"}],"next_page_uri":null}`,
 			wantT:   NgrokAccountPaid,
 			wantURL: "https://my-app.ngrok.app",
 		},
 		{
 			name:    "custom hostname is paid",
-			domains: []ngrokReservedDomain{{Domain: "app.example.com", CNAMETarget: str("cname.example.com")}},
+			body:    `{"reserved_domains":[{"id":"rd_1","domain":"app.example.com","cname_target":"cname.example.com"}],"next_page_uri":null}`,
 			wantT:   NgrokAccountPaid,
 			wantURL: "https://app.example.com",
 		},
 		{
 			name:    "free dev preferred over named when both present",
-			domains: []ngrokReservedDomain{{Domain: "custom.ngrok.app", CNAMETarget: str("x")}, {Domain: "you.ngrok-free.dev"}},
+			body:    `{"reserved_domains":[{"id":"rd_1","domain":"custom.ngrok.app","cname_target":"x"},{"id":"rd_2","domain":"you.ngrok-free.dev","cname_target":null}],"next_page_uri":null}`,
 			wantT:   NgrokAccountPaid, // presence of a named domain -> paid account
 			wantURL: "https://you.ngrok-free.dev",
 		},
 		{
 			name:    "empty set",
-			domains: []ngrokReservedDomain{},
+			body:    `{"reserved_domains":[],"next_page_uri":null}`,
 			wantT:   NgrokAccountUnknown,
 			wantURL: "",
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			typ := classifyNgrokAccount(c.domains)
+			stubNgrokAPI(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(c.body))
+			})
+			url, typ, err := ResolveNgrokPublicURL(context.Background(), "ngrok_key", "")
+			require.NoError(t, err)
 			require.Equal(t, c.wantT, typ, "account classification")
-			url, _ := resolveNgrokPublicURLFromDomains(c.domains, "")
 			require.Equal(t, c.wantURL, url, "resolved public URL")
 		})
 	}
@@ -162,4 +169,55 @@ func TestResolveNgrokPublicURLPreferDomain(t *testing.T) {
 	require.Equal(t, "https://you.ngrok-free.dev", url)
 }
 
-func str(s string) *string { return &s }
+// TestResolveNgrokPublicURLConcurrentCallsCorruptionFree guards Kody finding
+// (unsynchronized read-modify-write of the tunneler package-level
+// ngrok.NgrokAPIHTTPClient): N goroutines resolve concurrently against a stub
+// transport while the shim swaps and restores the library's HTTP client global.
+// The shim's swap now holds a mutex for the whole delegated call, so (a) -race
+// sees no unsynchronized access to the tunneler global and (b) requests never
+// interleave across concurrent resolves (max in-flight == 1).
+func TestResolveNgrokPublicURLConcurrentCallsCorruptionFree(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"reserved_domains":[{"id":"rd_1","domain":"you.ngrok-free.dev","cname_target":null}],"next_page_uri":null}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	rewriter := roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		u := *r.URL
+		u.Scheme = "http"
+		u.Host = srv.Listener.Addr().String()
+		r2 := r.Clone(r.Context())
+		r2.URL = &u
+		return http.DefaultTransport.RoundTrip(r2)
+	})
+
+	orig := NgrokAPIHTTPClient
+	NgrokAPIHTTPClient = &http.Client{Transport: rewriter}
+	t.Cleanup(func() { NgrokAPIHTTPClient = orig })
+
+	const n = 8
+	type result struct {
+		url string
+		typ NgrokAccountType
+		err error
+	}
+	results := make(chan result, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			url, typ, err := ResolveNgrokPublicURL(context.Background(), "ngrok_key", "")
+			results <- result{url, typ, err}
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	for res := range results {
+		require.NoError(t, res.err)
+		require.Equal(t, "https://you.ngrok-free.dev", res.url)
+		require.Equal(t, NgrokAccountFree, res.typ)
+	}
+}

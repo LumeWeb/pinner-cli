@@ -3,7 +3,21 @@
 package tunnel
 
 import (
+	tunneler "go.lumeweb.com/tunneler"
+
 	"go.lumeweb.com/pinner/core/config"
+)
+
+// TunnelProvider identifies the tunnel backend used to expose the MCP server.
+// It deliberately remains a pinner-specific type (NOT an alias of
+// tunneler.TunnelProvider): the provider registry and its tests key off this
+// distinct type, and it includes the pinner-only openai provider.
+type TunnelProvider string
+
+const (
+	TunnelProviderOpenAI      TunnelProvider = "openai"
+	TunnelProviderNgrok       TunnelProvider = "ngrok"
+	TunnelProviderCloudflared TunnelProvider = "cloudflared"
 )
 
 // TunnelConfig is the set of tunnel/account parameters shared by every tunnel
@@ -37,11 +51,46 @@ type TunnelConfig struct {
 	ConfigMgr config.Manager
 }
 
-// TunnelProvider identifies the tunnel backend used to expose the MCP server.
-type TunnelProvider string
+// configStore adapts a pinner config.Manager to the tunneler library's
+// TunnelCredentialStore interface, so the library can consult the manager as
+// the last-resort credential source. A nil manager degrades to an empty,
+// write-ignoring store, mirroring the previous TunnelCfgCredential semantics.
+type configStore struct {
+	mgr config.Manager
+}
 
-const (
-	TunnelProviderOpenAI      TunnelProvider = "openai"
-	TunnelProviderNgrok       TunnelProvider = "ngrok"
-	TunnelProviderCloudflared TunnelProvider = "cloudflared"
-)
+// TunnelCredential implements tunneler.TunnelCredentialStore.
+func (s configStore) TunnelCredential(provider, key string) string {
+	if s.mgr == nil {
+		return ""
+	}
+	return s.mgr.TunnelCredential(provider, key)
+}
+
+// SetTunnelCredential implements tunneler.TunnelCredentialStore.
+func (s configStore) SetTunnelCredential(provider, key, value string) error {
+	if s.mgr == nil {
+		return nil
+	}
+	return s.mgr.SetTunnelCredential(provider, key, value)
+}
+
+// credentialStore returns the tunneler credential-store view of cfgMgr. A nil
+// manager yields no store (the adapter still works, but callers can skip it).
+func storeFrom(cfgMgr config.Manager) tunneler.TunnelCredentialStore {
+	return configStore{mgr: cfgMgr}
+}
+
+// toTunneler converts the shim config into the tunneler library's config
+// shape. APIKey is pinner-specific (OpenAI) and has no library counterpart, so
+// it is dropped; ConfigMgr becomes the library's credential store.
+func (t TunnelConfig) toTunneler() tunneler.TunnelConfig {
+	return tunneler.TunnelConfig{
+		Domain:    t.Domain,
+		Token:     t.Token,
+		Name:      t.Name,
+		TunnelID:  t.TunnelID,
+		StatePath: t.StatePath,
+		Store:     storeFrom(t.ConfigMgr),
+	}
+}

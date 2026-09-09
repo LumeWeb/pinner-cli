@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+
+	tunneler "go.lumeweb.com/tunneler"
+	cloudflare "go.lumeweb.com/tunneler/cloudflare"
 )
 
 // tunnelStateFileName is the JSON file the tunnel installer / service install
@@ -43,7 +45,11 @@ type CloudflareTunnelState struct {
 
 // TunnelStatePath returns the per-user path to the tunnel state file, under
 // the same config directory used for the MCP service env file. It is a package
-// variable so tests can redirect it to a temp dir.
+// variable so tests can redirect it to a temp dir. The default preserves the
+// pinner layout (<UserConfigDir>/pinner/tunnel-state.json): the library
+// genericized the parent directory, so the shim pins it back, and it also
+// installs this function into the library so delegated Load/Save (and the
+// cloudflared runtime) read the same location as this package's callers.
 var TunnelStatePath = func() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
@@ -52,18 +58,65 @@ var TunnelStatePath = func() (string, error) {
 	return filepath.Join(dir, "pinner", tunnelStateFileName), nil
 }
 
+// init wires the library's cloudflare package onto this package's
+// TunnelStatePath var: every library-side tunnel-state lookup (including the
+// embedded cloudflared daemon's state loading) redirects through it, so
+// tests/callers reassigning tunnel.TunnelStatePath keep full effect.
+func init() {
+	cloudflare.TunnelStatePath = func() (string, error) {
+		return TunnelStatePath()
+	}
+}
+
+// toLibrary converts the pinner tunnel state into the library's state shape.
+// The fields are identical in name and JSON tags; only the Provider type
+// differs (pinner TunnelProvider vs. tunneler.TunnelProvider), so it is
+// converted by string.
+func (s *CloudflareTunnelState) toLibrary() *cloudflare.CloudflareTunnelState {
+	if s == nil {
+		return nil
+	}
+	return &cloudflare.CloudflareTunnelState{
+		Provider:    tunneler.TunnelProvider(string(s.Provider)),
+		AccountID:   s.AccountID,
+		TunnelID:    s.TunnelID,
+		TunnelName:  s.TunnelName,
+		Secret:      s.Secret,
+		Token:       s.Token,
+		Hostname:    s.Hostname,
+		ZoneID:      s.ZoneID,
+		DNSRecordID: s.DNSRecordID,
+	}
+}
+
+// cloudflareStateFrom converts a library state back into its pinner shape.
+func cloudflareStateFrom(s *cloudflare.CloudflareTunnelState) *CloudflareTunnelState {
+	if s == nil {
+		return nil
+	}
+	return &CloudflareTunnelState{
+		Provider:    TunnelProvider(string(s.Provider)),
+		AccountID:   s.AccountID,
+		TunnelID:    s.TunnelID,
+		TunnelName:  s.TunnelName,
+		Secret:      s.Secret,
+		Token:       s.Token,
+		Hostname:    s.Hostname,
+		ZoneID:      s.ZoneID,
+		DNSRecordID: s.DNSRecordID,
+	}
+}
+
 // LoadCloudflareTunnelState loads the provisioned tunnel state, returning
-// os.ErrNotExist if none has been provisioned.
+// os.ErrNotExist if none has been provisioned. It delegates the file IO to the
+// extracted tunneler cloudflare package (whose path resolution redirects to
+// this package's TunnelStatePath) and converts the result to the pinner shape.
 func LoadCloudflareTunnelState() (*CloudflareTunnelState, error) {
-	path, err := TunnelStatePath()
+	st, err := cloudflare.LoadCloudflareTunnelState()
 	if err != nil {
 		return nil, err
 	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	return parseTunnelState(b)
+	return cloudflareStateFrom(st), nil
 }
 
 // parseTunnelState unmarshals a tunnel state document, yielding a clear error
@@ -78,41 +131,11 @@ func parseTunnelState(b []byte) (*CloudflareTunnelState, error) {
 
 // SaveCloudflareTunnelState persists the tunnel state as a private (0600)
 // file. The secret/token are first-class secrets and must not be world-readable.
+// It delegates the file IO to the extracted tunneler cloudflare package (whose
+// path resolution redirects to this package's TunnelStatePath).
 func SaveCloudflareTunnelState(s *CloudflareTunnelState) error {
 	if s == nil {
 		return fmt.Errorf("nil tunnel state")
 	}
-	path, err := TunnelStatePath()
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create pinner config dir: %w", err)
-	}
-	b, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, b, 0o600); err != nil {
-		return fmt.Errorf("write tunnel state %q: %w", path, err)
-	}
-	return nil
-}
-
-// BareHostname strips a leading http(s):// scheme so hostname comparisons and
-// cloudflared ingress hosts are always bare (e.g. "mcp.example.com"), never
-// scheme-qualified URLs. It also strips a trailing path/hash fragment if a
-// caller passed a full URL.
-func BareHostname(h string) string {
-	h = strings.TrimSpace(h)
-	for _, p := range []string{"https://", "http://"} {
-		if len(h) >= len(p) && strings.EqualFold(h[:len(p)], p) {
-			h = h[len(p):]
-			break
-		}
-	}
-	if i := strings.IndexAny(h, "/?#"); i >= 0 {
-		h = h[:i]
-	}
-	return h
+	return cloudflare.SaveCloudflareTunnelState(s.toLibrary())
 }
