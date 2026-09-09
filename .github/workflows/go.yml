@@ -75,7 +75,9 @@ jobs:
         # manifest: ... open manifest.json: file does not exist". Must run on
         # the host platform before the cross-compiling Build step. Same as the
         # `jsbuild` step chained into `make mcpembed`/`make test`.
-        run: GOFLAGS=-mod=mod go run ./build/genappmanifest
+        env:
+          GOFLAGS: -mod=mod
+        run: go run ./build/genappmanifest
 
       - name: Build
         env:
@@ -143,7 +145,9 @@ jobs:
         # Without it the pinner binary panics at server assembly ("invalid
         # asset manifest: ... open manifest.json: file does not exist").
         # Same as the `jsbuild` step chained into `make mcpembed`/`make test`.
-        run: GOFLAGS=-mod=mod go run ./build/genappmanifest
+        env:
+          GOFLAGS: -mod=mod
+        run: go run ./build/genappmanifest
 
       - name: Build pinner binary
         # sqlite_fts5 so the sunpeak e2e binary (exercised via `pinner mcp`)
@@ -213,7 +217,9 @@ jobs:
         # time-generated (gitignored) manifest must exist before it or the
         # snapshot binaries panic at init ("invalid asset manifest"). Same as
         # the `jsbuild` step chained into `make mcpembed`/`make test`.
-        run: GOFLAGS=-mod=mod go run ./build/genappmanifest
+        env:
+          GOFLAGS: -mod=mod
+        run: go run ./build/genappmanifest
 
       - name: Build snapshot artifacts (goreleaser-cross)
         run: |
@@ -318,7 +324,9 @@ jobs:
         # ("invalid asset manifest: ... open manifest.json: file does not
         # exist") and never serves OAuth discovery. Same as the `jsbuild`
         # step chained into `make mcpembed`/`make test`.
-        run: GOFLAGS=-mod=mod go run ./build/genappmanifest
+        env:
+          GOFLAGS: -mod=mod
+        run: go run ./build/genappmanifest
 
       - name: Build pinner binary + integration test binary
         run: |
@@ -405,7 +413,9 @@ jobs:
         # Without it the internal/mcpapp tests panic at init ("invalid asset
         # manifest: ... open manifest.json: file does not exist"). Same as the
         # `jsbuild` step chained into `make mcpembed`/`make test`.
-        run: GOFLAGS=-mod=mod go run ./build/genappmanifest
+        env:
+          GOFLAGS: -mod=mod
+        run: go run ./build/genappmanifest
 
       - name: Test with coverage
         run: go test -v -race -tags "sqlite_fts5" -coverprofile=coverage.out -covermode=atomic ./...
