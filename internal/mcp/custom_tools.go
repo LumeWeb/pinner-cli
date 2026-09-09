@@ -3,6 +3,7 @@ package mcp
 import (
 	"fmt"
 
+	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
@@ -56,7 +57,7 @@ type customToolDeps struct {
 	// Upload coordinator): it mints a one-time endpoint whose PUT body
 	// streams into the async UploadTaskManager. It feeds the consolidated
 	// upload_file tool in remote (HTTP/tunnel) mode.
-	curlUpload *transfer.Upload
+	curlUpload *mcptransfer.Upload
 	// vaultUpload, when non-nil, backs the presigned HTTP PUT vault-write route
 	// (the VaultHTTPUpload coordinator). It mints a one-time endpoint bound to
 	// a destination vault path whose PUT body streams into the authenticated
@@ -67,7 +68,7 @@ type customToolDeps struct {
 	// Download coordinator). It serves downloaded bytes out of band to a
 	// consumer that shares no disk with the server. It feeds the access
 	// download_file / vault_get_file drop branches.
-	downloadDrop *transfer.Download
+	downloadDrop *mcptransfer.Download
 	// accountOOB backs the out-of-band account credential change coordinator
 	// (hosted browser forms -> authenticated UpdatePassword/UpdateEmail). It
 	// enforces an authenticated session; the secret never transits the MCP/LLM

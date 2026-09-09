@@ -727,6 +727,8 @@ go.etcd.io/etcd/client/pkg/v3 v3.7.1 h1:rKYsj3pRkR0eK3yjT3XOgrhqfmIfj9pzNgxjh7mf
 go.etcd.io/etcd/client/pkg/v3 v3.7.1/go.mod h1:cnzZGIUzSfjEwLC6UBVsSXlEK1eepS/JUD7wE6PLRT0=
 go.etcd.io/etcd/client/v3 v3.7.1 h1:0PEMMC0KuZmVIN+RAbdqfkZ45pYTgKVtmBEbRCvZFUg=
 go.etcd.io/etcd/client/v3 v3.7.1/go.mod h1:ffNqALa8tRCYhYo1F9oR489y23K39Gz+BSR3ApAGYq0=
+go.lumeweb.com/canimcp v0.0.0-20260907101331-ba497f0bb72a h1:2uE2sJwfbtK1fbOpFcGivNSBNIy1VJyRP9uZqMcl2uA=
+go.lumeweb.com/canimcp v0.0.0-20260907101331-ba497f0bb72a/go.mod h1:tvoACdqsU7dCtnjFTjSsmYxR+dXbEHOO90E82aGprO8=
 go.lumeweb.com/configmanager v0.3.30 h1:4hCz8MOR5qFR2JK8NSmbdiZiLbE5k6a/6fx0VXB5p00=
 go.lumeweb.com/configmanager v0.3.30/go.mod h1:QBU+Qkk7ihnrn3Km6PkMt7zfVR5A2bAjt+jYXv9ZXKY=
 go.lumeweb.com/event/v2 v2.1.0 h1:pVWRzrHAkjhXa+owzhDTtaxBHbnxrsIpDHFZwEUxKoY=
@@ -743,6 +745,8 @@ go.lumeweb.com/ipfs-sdk/dnsname v0.1.64 h1:RTBD+zoXHOYYKreNRoQhyLLKKWp/VgYfr7qoj
 go.lumeweb.com/ipfs-sdk/dnsname v0.1.64/go.mod h1:1++6EWMiG/BC5UQjlIobId2YcWDVHjHEhdsEzeISKpQ=
 go.lumeweb.com/mcpforge v0.0.0-20260907155938-f64f92060f4e h1:WhMvV/09YjOymmN0+cPI1kGinVV66j+gK9gfiKfQoUw=
 go.lumeweb.com/mcpforge v0.0.0-20260907155938-f64f92060f4e/go.mod h1:qgdO7w6I7jB6BWpjA6uTp3Lv8Bgtd8VxuSZ+ZJJVCqM=
+go.lumeweb.com/mcpplane v0.0.0-20260908010148-2f0b05c8e8a9 h1:ORMDkksTgQGpH3h8foPDEPN2ULlBuaY/2Dy2w22bD2Y=
+go.lumeweb.com/mcpplane v0.0.0-20260908010148-2f0b05c8e8a9/go.mod h1:asmt9NodxeLJ8xvn1FkfqHZcD1Fe01yFXgoSE9s2pQU=
 go.lumeweb.com/oauth v0.1.6 h1:6c6LrXxMwx5klbq3OshzXjkGwvYVjAQhjX2FxCAgqqg=
 go.lumeweb.com/oauth v0.1.6/go.mod h1:Bfdxi1gkv+Ypj9yj9uOSmKnbZX8C7q7Pyn1OdPyuCbM=
 go.lumeweb.com/opmesh v0.0.0-20260907112428-ade506e64ae9 h1:kb2adBZ8Ed11yuXoQw2I8LfmbPjpPkc0NPwyShKJ5KE=

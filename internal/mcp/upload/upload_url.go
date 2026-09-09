@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 
@@ -49,7 +50,7 @@ var RelayURLUploadTargets = toolforge.MCPTargets(model.ToolTarget{
 // fetch a caller-supplied HTTPS URL, then stream it through the existing
 // authenticated TUS path. This is the generic relay fallback for HTTP-mode
 // clients that are not co-located with Pinner and cannot pass a host path.
-func RelayURLUploadDescriptor(handler transfer.RelayURLUploadHandler, allowedHosts []string, maxBytes int64) model.ToolDescriptor {
+func RelayURLUploadDescriptor(handler mcptransfer.RelayURLUploadHandler, allowedHosts []string, maxBytes int64) model.ToolDescriptor {
 	maxBytes = ieo.EffectiveRelayMaxBytes(maxBytes)
 	return model.ToolDescriptor{
 		Name:          "upload_url",
@@ -82,7 +83,7 @@ func RelayURLUploadDescriptor(handler transfer.RelayURLUploadHandler, allowedHos
 			// Bound the upload itself: the MCP request ctx may carry no
 			// deadline, so a hung TUS/network operation must not run
 			// indefinitely. Budget scales with size; see SyncUploadBudget.
-			transferCtx, cancel := context.WithTimeout(ctx, transfer.SyncUploadBudget(size))
+			transferCtx, cancel := context.WithTimeout(ctx, mcptransfer.SyncUploadBudget(size))
 			defer cancel()
 			// Relay URL input exposes no archive_mode field, so the upload must
 			// always stay single-file. Pass an explicit "preserve" so

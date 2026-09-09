@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 )
 
@@ -73,7 +74,7 @@ func TestRelayURLName(t *testing.T) {
 }
 
 func TestSourceResolverMintURL(t *testing.T) {
-	cu := transfer.NewHTTPUpload(nil, 0)
+	cu := mcptransfer.NewHTTPUpload(nil, 0)
 	defer cu.Stop(context.Background())
 	res := &transfer.SourceResolver{Transport: transfer.TransportHTTP, HTTPUpload: cu}
 

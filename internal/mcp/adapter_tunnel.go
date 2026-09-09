@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
+	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	oauthlib "go.lumeweb.com/oauth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
@@ -151,9 +152,9 @@ adapter.`,
 			// it must exist here (before registerCustomTools and serveHTTP) so
 			// both the tool descriptor and the transport-mounted PUT route can be
 			// registered against the same instance.
-			var curlUpload *transfer.Upload
+			var curlUpload *mcptransfer.Upload
 			if mcpOpts.uploadTasks != nil {
-				curlUpload = transfer.NewHTTPUpload(mcpOpts.uploadTasks, ieo.EffectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
+				curlUpload = mcptransfer.NewHTTPUpload(mcpOpts.uploadTasks, ieo.EffectiveRelayMaxBytes(mcpOpts.maxRelayBytes))
 				// Allow configured MCP-host origins to PUT across origins (the
 				// ui:// app iframe can be served from a host origin that is not
 				// the Pinner server origin); the endpoint's own origin is
@@ -186,9 +187,9 @@ adapter.`,
 			// here (before registerCustomTools and serveHTTP) so both the tool
 			// descriptor's drop branch and the transport-mounted GET route can be
 			// registered against the same instance.
-			var dl *transfer.Download
+			var dl *mcptransfer.Download
 			if mcpOpts.ipfsDownload != nil || mcpOpts.vaultGet != nil {
-				dl = transfer.NewHTTPDownload()
+				dl = mcptransfer.NewHTTPDownload()
 				dl.AddTrustedOrigins(mcpOpts.downloadTrustedOrigins...)
 			}
 
@@ -326,7 +327,7 @@ adapter.`,
 	}
 }
 
-func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth.OutOfBandLogin, seedDrop *oobpkg.SeedDrop, oobRestore *oobpkg.OOBRestore, oobCreate *oobpkg.OOBCreate, accountOOB *auth.OOBAccountChange, curlUpload *transfer.Upload, vaultUpload *transfer.VaultHTTPUpload, dl *transfer.Download, cfgMgr config.Manager, hostServerFactory func(hostenv.PlatformProfile) *sdk.Server) error {
+func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth.OutOfBandLogin, seedDrop *oobpkg.SeedDrop, oobRestore *oobpkg.OOBRestore, oobCreate *oobpkg.OOBCreate, accountOOB *auth.OOBAccountChange, curlUpload *mcptransfer.Upload, vaultUpload *transfer.VaultHTTPUpload, dl *mcptransfer.Download, cfgMgr config.Manager, hostServerFactory func(hostenv.PlatformProfile) *sdk.Server) error {
 	provider := cmd.String("tunnel")
 	domain := cmd.String("domain")
 	token := cmd.String("token")

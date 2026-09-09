@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
@@ -60,7 +61,7 @@ func TestBuildHostedServerWiresIPFSTransfer(t *testing.T) {
 	uploadExec := func(ctx context.Context, r io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 		return map[string]any{"cid": "QmTest"}, nil
 	}
-	tasks := transfer.NewUploadTaskManager(uploadExec, 0)
+	tasks := mcptransfer.NewUploadTaskManager(uploadExec, 0)
 	downloadExec := func(ctx context.Context, ipfsPath string, w io.Writer) error { return nil }
 
 	_, cat, ht, err := BuildHostedServer(HostedServerConfig{
@@ -97,7 +98,7 @@ func TestBuildHostedServerWiresIPFSTransfer(t *testing.T) {
 // origin and the sandbox CSP would block the cross-origin presigned PUT to the
 // real origin.
 func TestBuildHostedServerBaseURLConnectOrigins(t *testing.T) {
-	tasks := transfer.NewUploadTaskManager(func(context.Context, io.Reader, int64, string, bool, string, bool) (any, error) {
+	tasks := mcptransfer.NewUploadTaskManager(func(context.Context, io.Reader, int64, string, bool, string, bool) (any, error) {
 		return map[string]any{"cid": "QmTest"}, nil
 	}, 0)
 
@@ -129,7 +130,7 @@ func TestBuildHostedServerViewDomainScopedToAssembly(t *testing.T) {
 	apps.SetViewDomainResolver(nil)
 	t.Cleanup(func() { apps.SetViewDomainResolver(previous) })
 
-	tasks := transfer.NewUploadTaskManager(func(context.Context, io.Reader, int64, string, bool, string, bool) (any, error) {
+	tasks := mcptransfer.NewUploadTaskManager(func(context.Context, io.Reader, int64, string, bool, string, bool) (any, error) {
 		return map[string]any{"cid": "QmTest"}, nil
 	}, 0)
 

@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"time"
 
+	planetransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
+	"go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
@@ -158,7 +159,9 @@ func ipfsUploadSubmitDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 			// be polled via ipfs_upload_status.
 			name := in.Name
 			if name == "" {
-				name = transfer.DefaultUploadName
+				// Module constant (go.lumeweb.com/mcpplane/transfer) — the
+				// same "upload" default the extracted library executors apply.
+				name = planetransfer.DefaultUploadName
 			}
 			url, handle := hp.Prepare(ctx, name, ttl)
 			if url == "" || handle == "" {

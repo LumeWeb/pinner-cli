@@ -21,6 +21,7 @@ import (
 
 	"github.com/rs/cors"
 	"github.com/urfave/cli/v3"
+	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	opmesh "go.lumeweb.com/opmesh"
 	"go.lumeweb.com/pinner-cli/build"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
@@ -405,13 +406,13 @@ func corsHandler(next http.Handler) http.Handler {
 type mcpServerOptions struct {
 	// prompts enables registration of the prompt templates.
 	prompts           bool
-	uploadHandler     transfer.UploadHandler
+	uploadHandler     mcptransfer.UploadHandler
 	vaultPutHandler   vault.VaultPutHandler
-	uploadTasks       *transfer.UploadTaskManager
-	relayURLUpload    transfer.RelayURLUploadHandler
+	uploadTasks       *mcptransfer.UploadTaskManager
+	relayURLUpload    mcptransfer.RelayURLUploadHandler
 	relayAllowedHosts []string
-	dataURIUpload     transfer.DataURIUploadHandler
-	localPathUpload   transfer.LocalPathUploadHandler
+	dataURIUpload     mcptransfer.DataURIUploadHandler
+	localPathUpload   mcptransfer.LocalPathUploadHandler
 	localPathVaultPut vault.LocalPathVaultPutHandler
 	// ipfsDownload is the authenticated IPFS download executor used by the
 	// download_file tool's local sink (it streams a CID's bytes to a writer).
@@ -484,7 +485,7 @@ func WithPinningProvider(provider apps.PinningProviderFactory) MCPServerOption {
 // WithUploadHandler registers the authenticated IPFS upload executor used by
 // the upload_file tool's relay/data source modes (OpenAI tunnel) and the async
 // upload manager. Passing nil disables the relay path.
-func WithUploadHandler(handler transfer.UploadHandler) MCPServerOption {
+func WithUploadHandler(handler mcptransfer.UploadHandler) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.uploadHandler = handler
 	}
@@ -528,7 +529,7 @@ func WithDownloadRoot(supplier func() string) MCPServerOption {
 
 // WithUploadTaskManager registers async upload-management tools backed by the
 // given manager. Passing nil disables them.
-func WithUploadTaskManager(mgr *transfer.UploadTaskManager) MCPServerOption {
+func WithUploadTaskManager(mgr *mcptransfer.UploadTaskManager) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.uploadTasks = mgr
 	}
@@ -551,7 +552,7 @@ func WithUploadTrustedOrigins(origins ...string) MCPServerOption {
 // WithRelayURLUpload registers the generic relay URL upload tool
 // (pinner_upload_url). allowedHosts restricts which hosts Pinner will fetch;
 // pass nil/empty to allow any HTTPS host (subject to the SSRF dial guard).
-func WithRelayURLUpload(handler transfer.RelayURLUploadHandler, allowedHosts []string) MCPServerOption {
+func WithRelayURLUpload(handler mcptransfer.RelayURLUploadHandler, allowedHosts []string) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.relayURLUpload = handler
 		o.relayAllowedHosts = allowedHosts
@@ -560,7 +561,7 @@ func WithRelayURLUpload(handler transfer.RelayURLUploadHandler, allowedHosts []s
 
 // WithDataURIUpload registers the draft SEP-2356 data: URI upload tool
 // (pinner_upload_data). Passing nil disables it.
-func WithDataURIUpload(handler transfer.DataURIUploadHandler) MCPServerOption {
+func WithDataURIUpload(handler mcptransfer.DataURIUploadHandler) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.dataURIUpload = handler
 	}
@@ -570,7 +571,7 @@ func WithDataURIUpload(handler transfer.DataURIUploadHandler) MCPServerOption {
 // backs the consolidated upload_file tool's co-located branch.
 // which uploads a host-side file/directory/archive directly. It is only
 // meaningful when the MCP server is co-located with the caller's files.
-func WithLocalPathUpload(handler transfer.LocalPathUploadHandler) MCPServerOption {
+func WithLocalPathUpload(handler mcptransfer.LocalPathUploadHandler) MCPServerOption {
 	return func(o *mcpServerOptions) {
 		o.localPathUpload = handler
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
+	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
@@ -50,7 +51,7 @@ func uploadDescriptorFor(coLocated, tunnelOpenAI bool) model.ToolDescriptor {
 		func(ctx context.Context, path, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 			return map[string]any{"cid": "QmTest"}, nil
 		},
-		transfer.NewHTTPUpload(nil, 0),
+		mcptransfer.NewHTTPUpload(nil, 0),
 		func(ctx context.Context, r io.Reader, sz int64, name string, wait bool, _ string, _ bool) (any, error) {
 			return map[string]any{"cid": "QmTest"}, nil
 		},

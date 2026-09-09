@@ -13,6 +13,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
@@ -23,15 +24,15 @@ import (
 // does: the upload_file descriptor is indexed in the catalog, the app view
 // attaches _meta.ui to it, that meta is copied onto the descriptor served
 // directly via RegisterOfficialDescriptor (the production surface), and a real
-// presigned transfer.Upload coordinator backs the mint/poll helpers.
-func buildIPFSUploadAppServer(t *testing.T) (*mcp.Server, *transfer.Upload) {
+// presigned mcptransfer.Upload coordinator backs the mint/poll helpers.
+func buildIPFSUploadAppServer(t *testing.T) (*mcp.Server, *mcptransfer.Upload) {
 	t.Helper()
 
-	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool, _ string, _ bool) (any, error) {
+	mgr := mcptransfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool, _ string, _ bool) (any, error) {
 		_, _ = io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmApp", "name": name}, nil
 	}, 0)
-	cu := transfer.NewHTTPUpload(mgr, 1<<20)
+	cu := mcptransfer.NewHTTPUpload(mgr, 1<<20)
 	t.Cleanup(func() { cu.Stop(context.Background()) })
 
 	catalog := NewToolCatalog()
@@ -235,7 +236,7 @@ func TestIPFSUploadPollHelper(t *testing.T) {
 		if err != nil {
 			t.Fatalf("poll: %v", err)
 		}
-		if s, ok := taskStateOf(pollRes); ok && s == transfer.UploadStateCompleted {
+		if s, ok := taskStateOf(pollRes); ok && s == mcptransfer.UploadStateCompleted {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -456,16 +457,16 @@ func TestIPFSUploadCORSOpaqueNull(t *testing.T) {
 // surface a single process serves, which is exactly what lets the model path
 // (upload_file → upload_status) and the App path (ipfs_upload_submit →
 // ipfs_upload_status) converge on one canonical handle.
-func buildIPFSUploadSharedServer(t *testing.T) (*mcp.Server, *transfer.Upload, *transfer.UploadTaskManager) {
+func buildIPFSUploadSharedServer(t *testing.T) (*mcp.Server, *mcptransfer.Upload, *mcptransfer.UploadTaskManager) {
 	t.Helper()
 
 	var gotBytes atomic.Value
-	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool, _ string, _ bool) (any, error) {
+	mgr := mcptransfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool, _ string, _ bool) (any, error) {
 		b, _ := io.ReadAll(reader)
 		gotBytes.Store(string(b))
 		return map[string]any{"cid": "QmShared", "name": name}, nil
 	}, 0)
-	cu := transfer.NewHTTPUpload(mgr, 1<<20)
+	cu := mcptransfer.NewHTTPUpload(mgr, 1<<20)
 	t.Cleanup(func() { cu.Stop(context.Background()) })
 
 	catalog := NewToolCatalog()
@@ -567,7 +568,7 @@ func TestIPFSUploadSharedOperation(t *testing.T) {
 	if appHandle, _ := appSC["upload_handle"].(string); appHandle != handle {
 		t.Fatalf("app submit changed handle: want %q got %q", handle, appHandle)
 	}
-	if req2, _ := mgr.Get(handle); req2 == nil || req2.State != transfer.UploadStatePrepared {
+	if req2, _ := mgr.Get(handle); req2 == nil || req2.State != mcptransfer.UploadStatePrepared {
 		t.Fatalf("expected exactly one prepared task for the op")
 	}
 	if n := len(mgr.List()); n != 1 {
@@ -604,7 +605,7 @@ func TestIPFSUploadSharedOperation(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s: %v", tool, err)
 			}
-			if s, ok := taskStateOf(pr); ok && s == transfer.UploadStateCompleted {
+			if s, ok := taskStateOf(pr); ok && s == mcptransfer.UploadStateCompleted {
 				return pr
 			}
 			if time.Now().After(deadline) {
@@ -729,7 +730,7 @@ func TestIPFSUploadSubmitStalePreparedHandle(t *testing.T) {
 }
 
 // taskStateOf extracts the task's json "state" field from an SDK poll result.
-func taskStateOf(res *mcp.CallToolResult) (transfer.UploadTaskState, bool) {
+func taskStateOf(res *mcp.CallToolResult) (mcptransfer.UploadTaskState, bool) {
 	b, err := json.Marshal(res.StructuredContent)
 	if err != nil {
 		return "", false
@@ -739,7 +740,7 @@ func taskStateOf(res *mcp.CallToolResult) (transfer.UploadTaskState, bool) {
 		return "", false
 	}
 	s, _ := m["state"].(string)
-	return transfer.UploadTaskState(s), s != ""
+	return mcptransfer.UploadTaskState(s), s != ""
 }
 
 // TestIPFSUploadCORSConfiguredHost verifies a configured MCP-host origin and a
@@ -860,11 +861,11 @@ func TestIPFSUploadResourceAdvertisesConnectDomains(t *testing.T) {
 // (a brand-new operation, not a continuation), and ALWAYS expose a non-empty
 // presigned_url.
 func TestOpenUploadManagerStaleHandleFallsBack(t *testing.T) {
-	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool, _ string, _ bool) (any, error) {
+	mgr := mcptransfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, name string, _ bool, _ string, _ bool) (any, error) {
 		_, _ = io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmFallback", "name": name}, nil
 	}, 0)
-	cu := transfer.NewHTTPUpload(mgr, 1<<20)
+	cu := mcptransfer.NewHTTPUpload(mgr, 1<<20)
 	t.Cleanup(func() { cu.Stop(context.Background()) })
 
 	desc := upload.NewOpenUploadManagerDescriptor(cu)
@@ -877,7 +878,7 @@ func TestOpenUploadManagerStaleHandleFallsBack(t *testing.T) {
 
 	// Valid live handle: continuing succeeds with the SAME endpoint and
 	// continued=true.
-	validURL, validHandle := cu.Prepare(context.Background(), "stale.bin", transfer.DefaultHTTPUploadTTL)
+	validURL, validHandle := cu.Prepare(context.Background(), "stale.bin", mcptransfer.DefaultHTTPUploadTTL)
 	if validURL == "" || validHandle == "" {
 		t.Fatalf("Prepare failed: url=%q handle=%q", validURL, validHandle)
 	}

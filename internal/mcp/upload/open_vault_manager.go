@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
@@ -66,7 +67,7 @@ func NewOpenVaultManagerDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescr
 			if in.VaultPath == "" {
 				return model.ToolResult{}, fmt.Errorf("vault_path is required")
 			}
-			ttl := transfer.DefaultHTTPUploadTTL
+			ttl := mcptransfer.DefaultHTTPUploadTTL
 			if in.TTL != "" {
 				d, derr := time.ParseDuration(in.TTL)
 				if derr != nil {

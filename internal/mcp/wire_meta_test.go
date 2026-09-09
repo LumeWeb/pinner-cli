@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
@@ -22,7 +23,7 @@ import (
 // internal Go state, because past schema mismatches came from our internal
 // descriptor lying about its wire representation.
 func TestWireMetaHeadlessPrimitives(t *testing.T) {
-	hp := transfer.NewHTTPUpload(transfer.NewUploadTaskManager(nil, 0), 0)
+	hp := mcptransfer.NewHTTPUpload(mcptransfer.NewUploadTaskManager(nil, 0), 0)
 
 	// upload_file: headless primitive. When TransportHTTP is active (not
 	// co-located, not OpenAI tunnel), source.mode=mint.
@@ -64,7 +65,7 @@ func TestWireMetaHeadlessPrimitives(t *testing.T) {
 // TestWireMetaLaunchers asserts open_upload_manager / open_vault_manager
 // carry ui.resourceUri and the correct visibility ([model app]).
 func TestWireMetaLaunchers(t *testing.T) {
-	hp := transfer.NewHTTPUpload(transfer.NewUploadTaskManager(nil, 0), 0)
+	hp := mcptransfer.NewHTTPUpload(mcptransfer.NewUploadTaskManager(nil, 0), 0)
 
 	launcher := upload.NewOpenUploadManagerDescriptor(hp)
 	tool := sdk.Tool(launcher)

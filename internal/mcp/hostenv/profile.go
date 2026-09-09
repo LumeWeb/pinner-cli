@@ -2,11 +2,15 @@ package hostenv
 
 import (
 	"net/http"
-	"time"
+
+	"go.lumeweb.com/mcpplane/model"
 )
 
-// HostType identifies the connected MCP client platform.
-type HostType string
+// HostType identifies the connected MCP client platform. It is a type alias
+// for mcpplane/model.HostType: the host vocabulary and values are
+// byte-identical, so CLI host constants are comparable with the host type
+// carried on the shared model.Profile a request travels with.
+type HostType = model.HostType
 
 const (
 	HostUnknown       HostType = "unknown"
@@ -43,7 +47,9 @@ const (
 // transport, and the caller never picks it — registration and the resolver do.
 // The values are the same string constants used by transfer.TransportKind;
 // transfer re-exports these via a type alias so both packages agree.
-type TransportKind string
+// It is a type alias for mcpplane/model.TransportKind (identical values) so
+// CLI transports are directly comparable against the shared model.Profile.
+type TransportKind = model.TransportKind
 
 const (
 	// TransportStdio is co-located stdio/local mode.
@@ -55,8 +61,9 @@ const (
 	TransportOpenAI TransportKind = "openai"
 )
 
-// AuthMethod describes how the client authenticated.
-type AuthMethod string
+// AuthMethod describes how the client authenticated. Type alias for
+// mcpplane/model.AuthMethod (identical values).
+type AuthMethod = model.AuthMethod
 
 const (
 	AuthNone   AuthMethod = "none"
@@ -65,22 +72,14 @@ const (
 )
 
 // ClientInfo carries the MCP clientInfoImplementation fields from the
-// wire (initialize params or per-request _meta).
-type ClientInfo struct {
-	Name        string
-	Version     string
-	Title       string
-	Description string
-}
+// wire (initialize params or per-request _meta). Type alias for
+// mcpplane/model.ClientInfo (field-for-field identical).
+type ClientInfo = model.ClientInfo
 
 // TokenInfo carries the OAuth bearer token information extracted by the
-// SDK's auth middleware.
-type TokenInfo struct {
-	Scopes     []string
-	Expiration time.Time
-	UserID     string
-	Extra      map[string]any
-}
+// SDK's auth middleware. Type alias for mcpplane/model.TokenInfo
+// (field-for-field identical).
+type TokenInfo = model.TokenInfo
 
 // PlatformProfile is the resolved capability set for a specific host on
 // a specific transport. It is the "browser profile" in the caniuse
@@ -185,4 +184,57 @@ func (p PlatformProfile) IsHost(h HostType) bool {
 func (p PlatformProfile) CloneFeatures() PlatformProfile {
 	p.Features = p.Features.Clone()
 	return p
+}
+
+// Shared adapts this CLI profile to the SDK-neutral model.Profile carried
+// on model.ToolRequest / model.RequestCaps. It copies every shared field;
+// the CLI-only Surface field (which domain surfaces this server exposes) is
+// deliberately not representable there: it is a server-construction-time
+// property, only read from CLI-side PlatformProfile values, never from the
+// per-request model profile.
+func (p PlatformProfile) Shared() model.Profile {
+	return model.Profile{
+		HostType:    p.HostType,
+		Transport:   p.Transport,
+		AuthMethod:  p.AuthMethod,
+		Remote:      p.Remote,
+		Features:    p.Features,
+		Hosted:      p.Hosted,
+		ClientInfo:  p.ClientInfo,
+		ProtocolVer: p.ProtocolVer,
+		UserAgent:   p.UserAgent,
+		Headers:     p.Headers,
+		TokenInfo:   p.TokenInfo,
+	}
+}
+
+// fromShared is the inverse of Shared (SharedToModel): it reconstructs a
+// CLI PlatformProfile view from the SDK-neutral model profile. Surface is
+// zero (meaning "full surface") because the model profile cannot carry it —
+// only use this where the consumer is surface-independent (feature/
+// transport/host-gated description and schema resolution, which never gate
+// on Surface).
+func fromShared(sp model.Profile) PlatformProfile {
+	return PlatformProfile{
+		HostType:    sp.HostType,
+		Transport:   sp.Transport,
+		AuthMethod:  sp.AuthMethod,
+		Remote:      sp.Remote,
+		Features:    sp.Features,
+		Hosted:      sp.Hosted,
+		ClientInfo:  sp.ClientInfo,
+		ProtocolVer: sp.ProtocolVer,
+		UserAgent:   sp.UserAgent,
+		Headers:     sp.Headers,
+		TokenInfo:   sp.TokenInfo,
+	}
+}
+
+// FromShared exposes fromShared for consumers across package boundaries that
+// must adapt an SDK-neutral model.Profile (e.g. a DescFunc receiving the
+// shared profile at resolution time) back to the CLI profile view. The
+// reconstructed profile has a zero Surface; callers whose gate reads Surface
+// must take a CLI PlatformProfile directly instead.
+func FromShared(sp model.Profile) PlatformProfile {
+	return fromShared(sp)
 }
