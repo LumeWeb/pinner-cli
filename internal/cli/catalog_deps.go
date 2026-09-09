@@ -5,10 +5,10 @@ import (
 	"strings"
 
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
-	"go.lumeweb.com/pinner-cli/internal/core/admin"
-	"go.lumeweb.com/pinner-cli/internal/core/auth"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/vault"
+	"go.lumeweb.com/pinner/core/admin"
+	"go.lumeweb.com/pinner/core/auth"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/vault"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 )
 

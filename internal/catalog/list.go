@@ -1,6 +1,10 @@
 package catalog
 
-import "context"
+import (
+	"context"
+
+	pinner "go.lumeweb.com/pinner"
+)
 
 // List is the normalized list cursor every *-list operation receives after the
 // CLI/MCP surface resolves its page/page-size args. Start is the 0-based offset
@@ -81,31 +85,17 @@ func parseList(input map[string]any, defaultPageSize int) List {
 // the scan at item; returning an error aborts the scan.
 type MatchPredicate[E any] func(item E) (bool, error)
 
-// ListOptions is a paging cursor plus optional service-specific filters. The
-// Start/Limit cursor is shared by every listing; F is the per-service filter
-// struct (e.g. websites' domain/status/target-type filters) and is never
-// touched by paging. This is the single shared options type: services alias it
-// with their own filter struct instead of defining a bespoke options type.
-type ListOptions[F any] struct {
-	Start  int
-	Limit  int
-	Filter F
-}
-
-// WithPage returns a copy of o with the paging cursor set to the given start
-// offset and page size, leaving the filter untouched.
-func (o ListOptions[F]) WithPage(start, limit int) ListOptions[F] {
-	o.Start = start
-	o.Limit = limit
-	return o
-}
+// ListOptions is the paging cursor shared with the pinner library: services
+// alias it with their own filter struct instead of defining a bespoke options
+// type. Aliased to the library's definition so pinner-cli services (now
+// implemented in go.lumeweb.com/pinner/core/...) and local scan helpers
+// interoperate without conversion.
+type ListOptions[F any] = pinner.ListOptions[F]
 
 // PageLister is implemented by listing sources whose items can be filtered and
-// paged by ListOptions[F]. List applies the options server-side and returns
-// the resulting items.
-type PageLister[E any, F any] interface {
-	List(ctx context.Context, opts ListOptions[F]) ([]E, error)
-}
+// paged by ListOptions[F]. Aliased to the library's definition for the same
+// reason as ListOptions.
+type PageLister[E any, F any] = pinner.PageLister[E, F]
 
 // ScanPages iterates src's pages, calling pred on each item until it returns
 // true. Each page is fetched with cur.WithPage(start, pageSize), where cur is

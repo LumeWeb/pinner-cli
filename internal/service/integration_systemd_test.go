@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"go.lumeweb.com/pinner/services"
 )
 
 // TestSystemdUserServiceInstallServesOAuth proves the managed MCP service
@@ -53,14 +55,14 @@ func TestSystemdUserServiceInstallServesOAuth(t *testing.T) {
 	}
 
 	const (
-		name     = "pinner-mcp-integration-test"
-		port     = "18999"
-		authTok  = "integration-test-secret"
-		baseURL  = "http://127.0.0.1:" + port
-		envfile  = "mcp-integration.env"
+		name    = "pinner-mcp-integration-test"
+		port    = "18999"
+		authTok = "integration-test-secret"
+		baseURL = "http://127.0.0.1:" + port
+		envfile = "mcp-integration.env"
 	)
 
-	cfg := Config{
+	cfg := services.Config{
 		Name:        name,
 		Description: "pinner integration test managed MCP service",
 		ExecPath:    abs,
@@ -70,18 +72,18 @@ func TestSystemdUserServiceInstallServesOAuth(t *testing.T) {
 	}
 
 	// Hermetic env: OAuth on, loopback bind, no external tunnel needed.
-	if err := WriteEnvironment(cfg.EnvFile, map[string]string{
-		"MCP_OAUTH":     "true",
+	if err := services.WriteEnvironment(cfg.EnvFile, map[string]string{
+		"MCP_OAUTH":      "true",
 		"MCP_AUTH_TOKEN": authTok,
-		"MCP_HOST":      "127.0.0.1",
-		"MCP_PORT":      port,
+		"MCP_HOST":       "127.0.0.1",
+		"MCP_PORT":       port,
 	}); err != nil {
 		t.Fatalf("write env file: %v", err)
 	}
 
-	svc, err := New(cfg)
+	svc, err := services.New(cfg)
 	if err != nil {
-		t.Fatalf("service.New: %v", err)
+		t.Fatalf("services.New: %v", err)
 	}
 	ctx := context.Background()
 

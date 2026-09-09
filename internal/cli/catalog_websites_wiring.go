@@ -12,9 +12,9 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/download"
-	"go.lumeweb.com/pinner-cli/internal/core/websites"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/download"
+	"go.lumeweb.com/pinner/core/websites"
 )
 
 // catalog_websites_wiring.go adapts the websites domain operations in
@@ -610,8 +610,8 @@ func renderDomainDANEResponse(output Output, r *ipfs.DomainDANERepublishResponse
 		ownerName = *r.OwnerName
 	}
 	tlsaRecord := ""
-	if r.TlsaRecord != nil {
-		tlsaRecord = *r.TlsaRecord
+	if r.TlsaRdata != nil {
+		tlsaRecord = *r.TlsaRdata
 	}
 	output.PrintFields(FieldGroup{
 		Fields: []Field{

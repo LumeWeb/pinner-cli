@@ -9,7 +9,7 @@ import (
 	"io"
 
 	mock "github.com/stretchr/testify/mock"
-	"go.lumeweb.com/pinner-cli/internal/core/download"
+	"go.lumeweb.com/pinner/core/download"
 )
 
 // NewMockDownloadService creates a new instance of MockDownloadService. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

@@ -11,7 +11,7 @@ import (
 
 	"github.com/invopop/jsonschema"
 
-	corevault "go.lumeweb.com/pinner-cli/internal/core/vault"
+	corevault "go.lumeweb.com/pinner/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"

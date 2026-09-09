@@ -536,7 +536,6 @@ func (d *websiteDomain) toResponse() DomainResponse {
 
 func (d *websiteDomain) toRepublishResponse() DomainDANERepublishResponse {
 	tlsa := "_443._tcp." + d.Domain
-	rdata := "3 1 1 ab12cd34ef56"
 	return DomainDANERepublishResponse{
 		Delegation:  d.Delegation,
 		Domain:      d.Domain,
@@ -546,8 +545,7 @@ func (d *websiteDomain) toRepublishResponse() DomainDANERepublishResponse {
 		OwnerName:   d.OwnerName,
 		Ssl:         d.Ssl,
 		Status:      domainDANERepublishStatusPtr(d.Status),
-		TlsaRdata:   &rdata,
-		TlsaRecord:  &tlsa,
+		TlsaRdata:  &tlsa,
 		ZoneName:    d.ZoneName,
 	}
 }

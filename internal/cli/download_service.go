@@ -1,9 +1,9 @@
 package cli
 
 import (
-	"go.lumeweb.com/pinner-cli/internal/core/auth"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/download"
+	"go.lumeweb.com/pinner/core/auth"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/download"
 )
 
 // DownloadService, result models and the option type are re-exported from core

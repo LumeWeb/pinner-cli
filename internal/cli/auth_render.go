@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 
-	"go.lumeweb.com/pinner-cli/internal/core/auth"
+	"go.lumeweb.com/pinner/core/auth"
 )
 
 // renderLoginComplete renders a successful authentication result. It supports

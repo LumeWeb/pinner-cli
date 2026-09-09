@@ -17,9 +17,9 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	servicemocks "go.lumeweb.com/ipfs-sdk/mocks/services"
 	climocks "go.lumeweb.com/pinner-cli/internal/cli/internal/mocks"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
-	"go.lumeweb.com/pinner-cli/internal/core/pinning"
+	"go.lumeweb.com/pinner/core/config"
+	configmocks "go.lumeweb.com/pinner/core/config/mocks"
+	"go.lumeweb.com/pinner/core/pinning"
 )
 
 const testAuthToken = "test-token"

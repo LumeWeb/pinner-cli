@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"sync"
 
-	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // TunnelProviderSpec describes one tunnel provider's runtime + installation

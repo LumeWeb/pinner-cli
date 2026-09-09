@@ -11,7 +11,7 @@ import (
 	"os"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/config"
 	"go.uber.org/zap"
 	"golang.ngrok.com/ngrok/v2"
 )

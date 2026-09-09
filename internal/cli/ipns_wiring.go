@@ -10,8 +10,8 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/ipns"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/ipns"
 )
 
 // ipns_wiring.go adapts the IPNS catalog operations

@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/config"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 )
 

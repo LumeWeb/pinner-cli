@@ -17,7 +17,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp/services"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
-	"go.lumeweb.com/pinner-cli/internal/service"
+	"go.lumeweb.com/pinner/services"
 )
 
 // installFlags returns the flag surface for `pinner mcp install`: the base
@@ -222,7 +222,7 @@ func RunMcpInstallWizard(ctx context.Context, cmd mcpInstallFlagGetter, ui Insta
 				// switch against a different provider still purges the old
 				// provider's orphaned keys in the install-state reconcile.
 				var prevProvider tunnel.TunnelProvider
-				if prev, lerr := service.LoadEnvironment(ef); lerr == nil {
+				if prev, lerr := services.LoadEnvironment(ef); lerr == nil {
 					prevProvider = tunnel.TunnelProvider(prev["MCP_TUNNEL_PROVIDER"])
 				}
 				if err := mcpadapter.ReconcileServiceEnvironmentFromFlags(realCmd, ef); err != nil {
@@ -300,7 +300,7 @@ func RunMcpInstallWizard(ctx context.Context, cmd mcpInstallFlagGetter, ui Insta
 			}
 
 			if snapshot != nil {
-				merged, lerr := service.LoadEnvironment(ef)
+				merged, lerr := services.LoadEnvironment(ef)
 				if lerr != nil {
 					_ = os.WriteFile(ef, snapshot, 0o600)
 					return fmt.Errorf("re-read reconciled service environment %q: %w", ef, lerr)
@@ -749,7 +749,7 @@ func seedServiceFromEnvFile(envFile string, s *mcpadapter.ServiceInstallState) {
 	if s == nil {
 		return
 	}
-	env, err := service.LoadEnvironment(envFile)
+	env, err := services.LoadEnvironment(envFile)
 	if err != nil {
 		return
 	}

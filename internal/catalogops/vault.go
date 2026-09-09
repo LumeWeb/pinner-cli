@@ -22,7 +22,7 @@ import (
 	"github.com/samber/lo"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/vault"
+	"go.lumeweb.com/pinner/core/vault"
 )
 
 // VaultDeps are the dependencies the vault operations need at construction

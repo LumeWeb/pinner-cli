@@ -7,8 +7,9 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/ipfs-sdk/dnsname"
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/websites"
 )
 
 // quotaStatusMap converts a quota dimension's primitive fields into a JSON map
@@ -126,10 +127,12 @@ type websitesResourceAdapter struct {
 }
 
 func (w *websitesResourceAdapter) GetByDomain(ctx context.Context, domain string) (*ipfs.WebsiteItem, error) {
-	item, ok, err := catalog.ScanPages(ctx, w.ws,
+	item, ok, err := catalog.ScanPagesWithOptions(ctx, w.ws,
 		func(item ipfs.WebsiteItem) (bool, error) {
 			return dnsname.Equal(item.Domain, domain), nil
 		},
+		&catalog.ListOptions[websites.ListFilter]{},
+		0,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list websites: %w", err)

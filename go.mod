@@ -6,7 +6,6 @@ require (
 	atomicgo.dev/keyboard v0.2.10
 	github.com/BurntSushi/toml v1.6.0
 	github.com/LumeWeb/cli-docs v0.0.0-20260613190900-4a7a99d4f66c
-	github.com/Oudwins/zog v0.22.2
 	github.com/a-h/templ v0.3.1020
 	github.com/avast/retry-go/v5 v5.0.0
 	github.com/cloudflare/cloudflare-go v0.117.0
@@ -28,7 +27,7 @@ require (
 	github.com/oapi-codegen/runtime v1.7.0
 	github.com/openai/tunnel-client v0.0.13
 	github.com/pb33f/ordered-map/v2 v2.3.1
-	github.com/pressly/goose/v3 v3.27.3
+	github.com/pressly/goose/v3 v3.28.0
 	github.com/pterm/pterm v0.12.84-0.20260430213317-32e5000d4c27
 	github.com/rs/cors v1.11.1
 	github.com/samber/lo v1.53.0
@@ -38,22 +37,18 @@ require (
 	github.com/tus/tusd/v2 v2.10.0
 	github.com/urfave/cli/v3 v3.11.0
 	github.com/yosida95/uritemplate/v3 v3.0.2
-	go.lumeweb.com/configmanager v0.3.30
 	go.lumeweb.com/ipfs-content v0.1.18
-	go.lumeweb.com/ipfs-sdk v0.1.95
+	go.lumeweb.com/ipfs-sdk v0.1.97
 	go.lumeweb.com/ipfs-sdk/dnsname v0.1.64
 	go.lumeweb.com/oauth v0.1.6
+	go.lumeweb.com/pinner v0.0.0-20260909064307-78707cb2baf3
 	go.lumeweb.com/portal-sdk v0.1.72
 	go.lumeweb.com/queryutil v0.3.19
 	go.sia.tech/core v0.21.7
-	go.sia.tech/indexd v0.4.4
-	go.sia.tech/siastorage v0.2.1
 	go.uber.org/zap v1.28.0
 	golang.ngrok.com/ngrok/v2 v2.2.0
-	golang.org/x/sync v0.22.0
 	golang.org/x/sys v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
-	gorm.io/datatypes v1.2.7
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.2
 )
@@ -63,6 +58,7 @@ require (
 	atomicgo.dev/schedule v0.1.0 // indirect
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/Jorropo/jsync v1.0.1 // indirect
+	github.com/Oudwins/zog v0.23.0 // indirect
 	github.com/STARRY-S/zip v0.2.3 // indirect
 	github.com/andybalholm/brotli v1.2.3 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
@@ -253,6 +249,7 @@ require (
 	go.etcd.io/etcd/api/v3 v3.7.1 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.7.1 // indirect
 	go.etcd.io/etcd/client/v3 v3.7.1 // indirect
+	go.lumeweb.com/configmanager v0.3.30 // indirect
 	go.lumeweb.com/event/v2 v2.1.0 // indirect
 	go.lumeweb.com/gswagger v0.20.12 // indirect
 	go.lumeweb.com/portal v0.5.1 // indirect
@@ -270,8 +267,10 @@ require (
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.sia.tech/coreutils v0.24.0 // indirect
+	go.sia.tech/indexd v0.4.4 // indirect
 	go.sia.tech/jape v0.14.2 // indirect
 	go.sia.tech/mux v1.5.3 // indirect
+	go.sia.tech/siastorage v0.2.1 // indirect
 	go.uber.org/dig v1.19.0 // indirect
 	go.uber.org/fx v1.24.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
@@ -285,6 +284,7 @@ require (
 	golang.org/x/mod v0.40.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
@@ -292,11 +292,12 @@ require (
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	gonum.org/v1/gonum v0.17.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260825221802-da73d73af1c5 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260825221802-da73d73af1c5 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260831171406-18b4a7587f8a // indirect
 	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
+	gorm.io/datatypes v1.2.7 // indirect
 	gorm.io/driver/mysql v1.6.0 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 	lukechampine.com/frand v1.5.1 // indirect

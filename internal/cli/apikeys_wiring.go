@@ -9,8 +9,8 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
-	"go.lumeweb.com/pinner-cli/internal/core/apikeys"
-	"go.lumeweb.com/pinner-cli/internal/core/auth"
+	"go.lumeweb.com/pinner/core/apikeys"
+	"go.lumeweb.com/pinner/core/auth"
 )
 
 // apikeys_wiring.go adapts the api-keys catalog operations

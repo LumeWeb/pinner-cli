@@ -15,8 +15,8 @@ import (
 	"github.com/samber/lo"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/cli/internal"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/pinning"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/pinning"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 

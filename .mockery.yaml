@@ -3,13 +3,13 @@ template-data:
   unroll-variadic: true
 filename: "{{.InterfaceName}}.go"
 packages:
-  go.lumeweb.com/pinner-cli/internal/core/config:
+  go.lumeweb.com/pinner/core/config:
     config:
       dir: ./internal/core/config/mocks
       pkgname: "mocks"
     interfaces:
       Manager: {}
-  go.lumeweb.com/pinner-cli/internal/core/auth:
+  go.lumeweb.com/pinner/core/auth:
     config:
       dir: ./internal/cli
       pkgname: "cli"
@@ -17,7 +17,7 @@ packages:
       AuthService:
         config:
           filename: "mock_AuthService.go"
-  go.lumeweb.com/pinner-cli/internal/core/uploads:
+  go.lumeweb.com/pinner/core/uploads:
     config:
       dir: ./internal/cli
       pkgname: "cli"
@@ -26,7 +26,7 @@ packages:
         config:
           structname: "MockUploadService"
           filename: "mock_UploadService.go"
-  go.lumeweb.com/pinner-cli/internal/core/download:
+  go.lumeweb.com/pinner/core/download:
     config:
       dir: ./internal/cli
       pkgname: "cli"
@@ -35,7 +35,7 @@ packages:
         config:
           structname: "MockDownloadService"
           filename: "mock_DownloadService.go"
-  go.lumeweb.com/pinner-cli/internal/core/operations:
+  go.lumeweb.com/pinner/core/operations:
     config:
       dir: ./internal/cli
       pkgname: "cli"
@@ -44,7 +44,7 @@ packages:
         config:
           structname: "MockOperationsService"
           filename: "mock_OperationsService.go"
-  go.lumeweb.com/pinner-cli/internal/core/apikeys:
+  go.lumeweb.com/pinner/core/apikeys:
     config:
       dir: ./internal/cli
       pkgname: "cli"
@@ -53,7 +53,7 @@ packages:
         config:
           structname: "MockAPIKeyService"
           filename: "mock_APIKeyService.go"
-  go.lumeweb.com/pinner-cli/internal/core/pinning:
+  go.lumeweb.com/pinner/core/pinning:
     config:
       dir: ./internal/cli
       pkgname: "cli"
@@ -64,7 +64,7 @@ packages:
       StatusService:
         config:
           filename: "mock_StatusService.go"
-  go.lumeweb.com/pinner-cli/internal/core/admin:
+  go.lumeweb.com/pinner/core/admin:
     config:
       dir: ./internal/cli
       pkgname: "cli"

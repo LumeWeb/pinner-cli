@@ -10,7 +10,7 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/catalogops"
-	"go.lumeweb.com/pinner-cli/internal/core/operations"
+	"go.lumeweb.com/pinner/core/operations"
 )
 
 // operations_wiring.go adapts the operations catalog operations

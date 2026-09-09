@@ -8,7 +8,7 @@ import (
 	"context"
 
 	mock "github.com/stretchr/testify/mock"
-	"go.lumeweb.com/pinner-cli/internal/core/auth"
+	"go.lumeweb.com/pinner/core/auth"
 	"go.lumeweb.com/portal-sdk"
 )
 

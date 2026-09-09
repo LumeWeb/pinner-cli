@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/internal/core/vault"
+	"go.lumeweb.com/pinner/core/vault"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/credctx"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"

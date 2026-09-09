@@ -1,8 +1,8 @@
 package cli
 
 import (
-	"go.lumeweb.com/pinner-cli/internal/core/admin"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/admin"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // The admin service interfaces are re-exported from core. The concrete impls

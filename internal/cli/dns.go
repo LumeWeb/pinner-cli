@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner-cli/internal/dnsutil"
+	"go.lumeweb.com/pinner/dnsutil"
 )
 
 // NOTE: the DNS command tree (newDNSCommand) is catalog-driven and lives in

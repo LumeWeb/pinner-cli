@@ -3,7 +3,7 @@ package auth
 import (
 	"context"
 
-	"go.lumeweb.com/pinner-cli/internal/core/auth"
+	"go.lumeweb.com/pinner/core/auth"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 

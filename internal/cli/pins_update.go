@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 func pinsUpdate(ctx context.Context, cmd interface {

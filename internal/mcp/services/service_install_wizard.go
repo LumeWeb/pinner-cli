@@ -12,10 +12,10 @@ import (
 
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
 	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
-	"go.lumeweb.com/pinner-cli/internal/service"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/services"
 )
 
 // ServiceInstallState accumulates the tunnel configuration collected by the
@@ -348,7 +348,7 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 			ExecuteFunc: func(_ context.Context, s *ServiceInstallState) error {
 				seedServiceFromFlagsAndEnv(cmd, s, envFile)
 				env := serviceInstallStateToEnv(s)
-				if err := service.WriteEnvironment(s.EnvFile, env); err != nil {
+				if err := services.WriteEnvironment(s.EnvFile, env); err != nil {
 					return fmt.Errorf("write MCP service environment file: %w", err)
 				}
 				return nil

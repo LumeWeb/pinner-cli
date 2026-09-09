@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"go.lumeweb.com/pinner-cli/internal/core/pinning"
+	"go.lumeweb.com/pinner/core/pinning"
 )
 
 // The pinning domain's interfaces, models, and factory live in

@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"go.lumeweb.com/pinner-cli/internal/core/ipfsbase"
+	"go.lumeweb.com/pinner/core/ipfsbase"
 )
 
 // ipfsServiceBase is the CLI-local alias for the shared IPFS-content-network

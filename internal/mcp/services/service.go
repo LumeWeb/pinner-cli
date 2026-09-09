@@ -3,10 +3,10 @@
 package services
 
 // This file defines the mcp↔service bridge surface. The lifecycle backend
-// lives in internal/service (Service interface, System registry, per-platform
-// backends, status); this package consumes it via service.New. The install
+// lives in go.lumeweb.com/pinner/services (Service interface, System registry, per-platform
+// backends, status); this package consumes it via services.New. The install
 // command, env-file collection, tunnel wizard, and provider validation stay in
 // this package.
 //
-// service.Service is the lifecycle seam formerly known as ManagedService.
-// service.Status is the backend-independent state (Installed/Active/Ready/Summary).
+// services.Service is the lifecycle seam formerly known as ManagedService.
+// services.Status is the backend-independent state (Installed/Active/Ready/Summary).

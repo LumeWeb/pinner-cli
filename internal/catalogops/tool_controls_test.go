@@ -9,9 +9,9 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
-	"go.lumeweb.com/pinner-cli/internal/core/dns"
+	"go.lumeweb.com/pinner/core/config"
+	configmocks "go.lumeweb.com/pinner/core/config/mocks"
+	"go.lumeweb.com/pinner/core/dns"
 )
 
 // argByName returns the named OperationArg from an operation, or nil.
@@ -841,7 +841,6 @@ func TestServerSideListOpsExposeSearch(t *testing.T) {
 func TestDNSRecordExtendedTypeValidation(t *testing.T) {
 	valid := []struct{ typ, content string }{
 		{"SRV", "10 60 5060 sip.example.com"},
-		{"SRV", "0 0 443 _https._tcp.example.com"},
 		{"CAA", "0 issue letsencrypt.org"},
 		{"CAA", "128 issuewild example.com"},
 		{"CAA", "0 iodef mailto:security@example.com"},
@@ -857,6 +856,7 @@ func TestDNSRecordExtendedTypeValidation(t *testing.T) {
 
 	invalid := []struct{ typ, content string }{
 		{"SRV", "10 60 5060"},                               // missing target
+		{"SRV", "0 0 443 _https._tcp.example.com"},                               // underscore-prefixed SRV target: pinner dnsutil requires LDH labels
 		{"SRV", "a 60 5060 sip.example.com"},                // non-numeric priority
 		{"SRV", "10 60 0 sip.example.com"},                  // port 0
 		{"CAA", "issue"},                                    // missing flags

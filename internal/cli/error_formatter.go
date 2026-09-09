@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	coreerrors "go.lumeweb.com/pinner-cli/internal/core/errors"
+	coreerrors "go.lumeweb.com/pinner/core/errors"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 

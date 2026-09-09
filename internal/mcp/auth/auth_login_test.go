@@ -18,7 +18,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/internal/core/auth"
+	"go.lumeweb.com/pinner/core/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )

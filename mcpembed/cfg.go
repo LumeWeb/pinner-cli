@@ -1,7 +1,7 @@
 package mcpembed
 
 import (
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/pinner-cli/internal/mcp"
 )
 

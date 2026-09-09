@@ -12,9 +12,9 @@ import (
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/download"
-	"go.lumeweb.com/pinner-cli/internal/core/websites"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/download"
+	"go.lumeweb.com/pinner/core/websites"
 )
 
 // Target type constants for website operations. These mirror the gateway's

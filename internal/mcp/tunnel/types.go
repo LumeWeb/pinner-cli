@@ -3,7 +3,7 @@
 package tunnel
 
 import (
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // TunnelConfig is the set of tunnel/account parameters shared by every tunnel

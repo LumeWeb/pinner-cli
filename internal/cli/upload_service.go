@@ -1,8 +1,8 @@
 package cli
 
 import (
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	"go.lumeweb.com/pinner-cli/internal/core/uploads"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/uploads"
 )
 
 // UploadService and UploadResult are re-exported from core for CLI consumers

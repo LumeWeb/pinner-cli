@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go.lumeweb.com/pinner-cli/internal/core/vault"
+	"go.lumeweb.com/pinner/core/vault"
 )
 
 // cpFakeVaultService is a VaultService that records Get/Put traffic so a vault

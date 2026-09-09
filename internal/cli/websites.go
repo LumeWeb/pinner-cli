@@ -8,8 +8,8 @@ import (
 
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	websitecore "go.lumeweb.com/pinner-cli/internal/core/websites"
+	"go.lumeweb.com/pinner/core/config"
+	websitecore "go.lumeweb.com/pinner/core/websites"
 )
 
 // validationRecordValue returns the full DNS TXT record value the server

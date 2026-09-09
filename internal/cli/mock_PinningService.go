@@ -8,7 +8,7 @@ import (
 	"context"
 
 	mock "github.com/stretchr/testify/mock"
-	"go.lumeweb.com/pinner-cli/internal/core/pinning"
+	"go.lumeweb.com/pinner/core/pinning"
 )
 
 // NewMockPinningService creates a new instance of MockPinningService. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

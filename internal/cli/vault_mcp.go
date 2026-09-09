@@ -4,8 +4,8 @@ import (
 	"context"
 	"os"
 
-	"go.lumeweb.com/pinner-cli/internal/core/vault"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/vault"
+	"go.lumeweb.com/pinner/core/config"
 	"gorm.io/gorm"
 )
 

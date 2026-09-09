@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
-	"go.lumeweb.com/pinner-cli/internal/core/dns"
-	"go.lumeweb.com/pinner-cli/internal/core/websites"
+	"go.lumeweb.com/pinner/core/config"
+	configmocks "go.lumeweb.com/pinner/core/config/mocks"
+	"go.lumeweb.com/pinner/core/dns"
+	"go.lumeweb.com/pinner/core/websites"
 )
 
 // TestWebsitesServiceAuthTokenPrecedence covers the websites domain, which

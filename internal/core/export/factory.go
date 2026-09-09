@@ -1,7 +1,7 @@
 package export
 
 import (
-	"go.lumeweb.com/pinner-cli/internal/core/config"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // ServiceFactoryFunc creates a Service with dependencies.

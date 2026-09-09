@@ -20,7 +20,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/install"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp/services"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
-	"go.lumeweb.com/pinner-cli/internal/service"
+	"go.lumeweb.com/pinner/services"
 )
 
 // mcpInstallFlagFake is a test fake implementing mcpInstallFlagGetter.
@@ -67,12 +67,12 @@ type MockInstallUI struct {
 	SetMCPPasswordResult  string
 	SetMCPPasswordErr     error
 
-	ReportWrittenCalls  []writtenReport
-	ReportBuildCalls    []buildReport
+	ReportWrittenCalls     []writtenReport
+	ReportBuildCalls       []buildReport
 	ReportMCPURLCalls      []string // endpoint urls passed to each call
 	ReportMCPURLOAuthCalls []string // oauth urls passed to each call
-	SetMCPPasswordCalls []string // current values passed to each call
-	ConfirmOAuthCalls   []bool   // assumed values passed to each call
+	SetMCPPasswordCalls    []string // current values passed to each call
+	ConfirmOAuthCalls      []bool   // assumed values passed to each call
 }
 
 type writtenReport struct {
@@ -841,7 +841,7 @@ func TestMcpInstallTunnelWriteStepIsAtomicOnEnvFailure(t *testing.T) {
 	envFile := filepath.Join(t.TempDir(), "mcp.env")
 	// A newline in a value forces WriteEnvironment to reject the write after
 	// creating its temp file, exercising the atomic path.
-	if err := service.WriteEnvironment(envFile, service.Environment{
+	if err := services.WriteEnvironment(envFile, services.Environment{
 		"MCP_TUNNEL_PROVIDER": "ngrok\nMCP_SHOULD_NOT_WRITE=1",
 	}); err == nil {
 		t.Fatal("expected WriteEnvironment to reject a newline-containing value")
@@ -1959,9 +1959,9 @@ func TestMcpInstallHTTPReportsOAuthURL(t *testing.T) {
 		Transport:  install.TransportHTTP,
 		UseService: true,
 		Service: &mcpadapter.ServiceInstallState{
-			Provider: tunnel.TunnelProviderNgrok,
+			Provider:  tunnel.TunnelProviderNgrok,
 			AuthToken: "tok",
-			OAuth:    new(true),
+			OAuth:     new(true),
 		},
 	}
 	ui.SetMCPPasswordResult = "tok"

@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"go.lumeweb.com/pinner-cli/internal/catalog"
-	coreadmin "go.lumeweb.com/pinner-cli/internal/core/admin"
-	"go.lumeweb.com/pinner-cli/internal/core/config"
-	configmocks "go.lumeweb.com/pinner-cli/internal/core/config/mocks"
+	coreadmin "go.lumeweb.com/pinner/core/admin"
+	"go.lumeweb.com/pinner/core/config"
+	configmocks "go.lumeweb.com/pinner/core/config/mocks"
 	"go.lumeweb.com/portal-sdk/admin"
 )
 
