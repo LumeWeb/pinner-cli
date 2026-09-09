@@ -1,58 +1,81 @@
 package mcpapp
 
 import (
+	"io/fs"
 	"regexp"
 	"sort"
 	"strings"
 	"testing"
 
-	"github.com/a-h/templ"
 	"go.lumeweb.com/pinner/canvas"
 )
 
 // Tests for the SDK-neutral MCP Apps render/asset layer. The app JS behavioral
 // logic is tested by the packages/apps vitest suite against the real TS
-// source; these tests cover the Go-side seam: the shared document shell and
-// that the built per-app bundles are embedded and inlined.
+// source; these tests cover the Go-side seam: the canvas-delegated document
+// shell, the embedded theme and bundles, and that every view renders its own
+// body markup and exactly its own bundle.
 
 // pinAppViews maps every canvas view to the exact ui:// app title the
-// internal/mcp render functions pass (and the legacy CLI body/app used to
-// pair), so tests can render every screen through the delegation and compare
-// against the legacy path.
+// internal/mcp render functions pass, plus a marker element id unique to that
+// view's body. The view slug equals the bundleNames key (canvas view slugs and
+// bundle names are the same inventory), so tests can pin per-view bundle
+// selection while rendering through the delegation only.
 var pinAppViews = []struct {
-	view  canvas.View
-	title string
-	// cliBody builds the legacy CLI templ body for the same screen.
-	cliBody func() templ.Component
-	// legacyApp is the legacy bundleNames key for the legacy AppModule.
-	legacyApp string
+	view   canvas.View
+	title  string
+	bodyID string // marker element id unique to this view's body
 }{
-	{canvas.ViewPin, "Create a Pin", PinCreateAppForm, "pin"},
-	{canvas.ViewPinList, "Pins", PinListAppForm, "pin-list"},
-	{canvas.ViewVaultBrowser, "Vault browser", VaultBrowserAppForm, "vault-browser"},
-	{canvas.ViewVaultCreate, "Create Vault", VaultCreateAppForm, "vault-create"},
-	{canvas.ViewVaultRestore, "Restore Vault", VaultRestoreAppForm, "vault-restore"},
-	{canvas.ViewVaultUpload, "Upload to Vault", VaultUploadAppForm, "vault-upload"},
-	{canvas.ViewVaultDownload, "Download from Vault", VaultDownloadAppForm, "vault-download"},
-	{canvas.ViewIPFSUpload, "Upload to IPFS", IPFSUploadAppForm, "ipfs-upload"},
-	{canvas.ViewIPFSDownload, "Download from IPFS", IPFSDownloadAppForm, "ipfs-download"},
-	{canvas.ViewAuthSSO, "Sign In", AuthSSOAppForm, "auth-sso"},
-	{canvas.ViewAuthStatus, "Account", AuthStatusAppForm, "auth-status"},
-	{canvas.ViewAccountPassword, "Change Password", AccountPasswordAppForm, "account-password"},
-	{canvas.ViewAccountEmail, "Change Email", AccountEmailAppForm, "account-email"},
+	{canvas.ViewPin, "Create a Pin", "pin-form"},
+	{canvas.ViewPinList, "Pins", "pinlist-table"},
+	{canvas.ViewVaultBrowser, "Vault browser", "vault-list"},
+	{canvas.ViewVaultCreate, "Create Vault", "vault-create-start"},
+	{canvas.ViewVaultRestore, "Restore Vault", "vault-restore-start"},
+	{canvas.ViewVaultUpload, "Upload to Vault", "vault-upload-form"},
+	{canvas.ViewVaultDownload, "Download from Vault", "vault-download-form"},
+	{canvas.ViewIPFSUpload, "Upload to IPFS", "ipfs-upload-form"},
+	{canvas.ViewIPFSDownload, "Download from IPFS", "ipfs-download-form"},
+	{canvas.ViewAuthSSO, "Sign In", "sso-start"},
+	{canvas.ViewAuthStatus, "Account", "authstatus-status"},
+	{canvas.ViewAccountPassword, "Change Password", "pw-start"},
+	{canvas.ViewAccountEmail, "Change Email", "em-start"},
 }
 
-// TestRenderAppDocShell re-points the legacy TestRenderMcpAppDoc shell
-// assertions onto the canvas delegation: RenderAppDoc produces the same
-// self-contained document shell (doctype, title, inline module script) for
-// every view, with the canvas body markup.
+// docScriptOpen/docTail delimit the inline module script inside a rendered
+// document: the shell always ends with <script type="module">{ModuleJS}</
+// script></body></html>, so the module script is exactly
+// doc[start : len(doc)-len(docTail)].
+const docScriptOpen = `<script type="module">`
+const docTail = `</script></body></html>`
+
+// docVersionGlobalPrefix is the handshake global injected ahead of every
+// bundle by mcpcanvas.VersionGlobal.
+const docVersionGlobalPrefix = "window.__MCPCANVAS_VERSION__ = "
+
+// extractModuleScript returns the inline module script of a rendered app
+// document, failing the test if the shell shape is off.
+func extractModuleScript(t *testing.T, view canvas.View, doc string) string {
+	t.Helper()
+	if !strings.HasSuffix(doc, docTail) {
+		t.Fatalf("view %q: rendered doc does not end with %q", view, docTail)
+	}
+	i := strings.LastIndex(doc, docScriptOpen)
+	if i < 0 {
+		t.Fatalf("view %q: rendered doc missing %q", view, docScriptOpen)
+	}
+	return doc[i+len(docScriptOpen) : len(doc)-len(docTail)]
+}
+
+// TestRenderAppDocShell pins that RenderAppDoc produces the self-contained
+// document shell for every view: doctype, title, inline module script, the
+// canvas version handshake global, and a closed document.
 func TestRenderAppDocShell(t *testing.T) {
 	for _, tc := range pinAppViews {
 		doc := RenderAppDoc(tc.view, tc.title)
 		for _, want := range []string{
 			"<!doctype html>",
 			"<title>" + tc.title + "</title>",
-			"<script type=\"module\">",
+			docScriptOpen,
 			"window.__MCPCANVAS_VERSION__ = ",
 			"</body></html>",
 		} {
@@ -63,27 +86,53 @@ func TestRenderAppDocShell(t *testing.T) {
 	}
 }
 
-// TestRenderAppDocParityWithLegacyShell pins the exact-parity flip: for every
-// view, the canvas delegation's document must byte-equal the legacy shell's
-// output (RenderMcpAppDoc with the legacy CLI templ body and the version-
-// stamped AppModule), with the ONLY expected difference being the version
-// handshake global's name (the bundle content, theme, body markup, title, and
-// shell are identical by construction — see pinAppViews).
-func TestRenderAppDocParityWithLegacyShell(t *testing.T) {
+// TestRenderAppDocViewStructure structurally pins every ui:// view document —
+// the direct successor of the removed legacy-shell parity test, restated
+// against the public API now that the legacy shell is gone. For every view it
+// verifies: the exact title, the shared shell fragments, the inline theme,
+// the view's marker body id, and that the document's module script is exactly
+// the canvas version global followed byte-for-byte by that view's own
+// embedded bundle (per-view bundle selection).
+func TestRenderAppDocViewStructure(t *testing.T) {
 	for _, tc := range pinAppViews {
-		legacy := RenderMcpAppDoc(tc.title, tc.cliBody(), AppModule(tc.legacyApp))
-		want := strings.Replace(legacy, "window.__PINNER_CLI_VERSION__", "window.__MCPCANVAS_VERSION__", 1)
-		got := RenderAppDoc(tc.view, tc.title)
-		if got != want {
-			t.Errorf("view %q: delegation output differs from legacy shell (len got=%d want=%d)", tc.view, len(got), len(want))
-			// Report the first divergence for diagnosis.
-			for i := 0; i < len(got) && i < len(want); i++ {
-				if got[i] != want[i] {
-					lo := max(0, i-80)
-					t.Errorf("view %q: first divergence at byte %d:\n  got:  %q\n  want: %q", tc.view, i, got[lo:min(i+80, len(got))], want[lo:min(i+80, len(want))])
-					break
-				}
+		doc := RenderAppDoc(tc.view, tc.title)
+		for _, want := range []string{
+			"<!doctype html>",
+			"<title>" + tc.title + "</title>",
+			"<style>",
+			".app-shell",
+			"id=\"" + tc.bodyID + "\"",
+			docScriptOpen,
+			docVersionGlobalPrefix,
+			docTail,
+		} {
+			if !strings.Contains(doc, want) {
+				t.Errorf("view %q: rendered doc missing %q", tc.view, want)
 			}
+		}
+		// The module script must be exactly the canvas version global
+		// (window.__MCPCANVAS_VERSION__ = "<semver>";) followed byte-for-byte
+		// by this view's own embedded bundle — the same property the parity
+		// test used to prove against the legacy shell (bundles and body
+		// markup unchanged).
+		module := extractModuleScript(t, tc.view, doc)
+		bundle, err := fs.ReadFile(AppsAssets, bundleNames[string(tc.view)])
+		if err != nil {
+			t.Fatalf("view %q: read embedded bundle %s: %v (run `make jsbuild`)", tc.view, bundleNames[string(tc.view)], err)
+		}
+		globalEnd := strings.Index(module, `";`)
+		if globalEnd < 0 {
+			t.Errorf("view %q: module script missing a terminated version global", tc.view)
+			continue
+		}
+		globalEnd += len(`";`)
+		if !strings.HasPrefix(module, docVersionGlobalPrefix) {
+			t.Errorf("view %q: module script does not start with the version global", tc.view)
+		}
+		if got := module[globalEnd:]; len(got) != len(bundle) {
+			t.Errorf("view %q: module script payload is %d bytes, want %d (bundle %s)", tc.view, len(got), len(bundle), bundleNames[string(tc.view)])
+		} else if string(got) != string(bundle) {
+			t.Errorf("view %q: module script is not byte-equal to its own bundle %s (wrong bundle selected)", tc.view, bundleNames[string(tc.view)])
 		}
 	}
 }
@@ -179,7 +228,7 @@ func TestBareModuleSpecifiers(t *testing.T) {
 		`import x from "https://cdn.example/lib.js";`,
 	}
 	bad := []string{
-		`import e from"@uppy/core";`,
+		`import e from "@uppy/core";`,
 		`import t from "@uppy/xhr-upload";`,
 		`import "zod";`,
 		`import { x } from "@modelcontextprotocol/sdk/client.js";`,
@@ -199,105 +248,86 @@ func TestBareModuleSpecifiers(t *testing.T) {
 	}
 }
 
-// TestAppModuleJSEmbedded pins that EVERY app's self-contained bundle is
-// embedded and inlines into the served document with zero bare module imports.
-// A missing/empty bundle (JS not built before Go) panics, so a passing test
-// also proves `pnpm build` ran; a residual bare import (e.g. "@uppy/core" or
+// TestAppBundlesEmbedded pins that EVERY app's self-contained bundle is
+// embedded and inline-module-ready with zero bare module imports, read through
+// the public AppsAssets FS (the successor of TestAppModuleJSEmbedded after the
+// legacy AppModuleJS seam was deleted; delivery into the served document is
+// pinned by TestRenderAppDocViewStructure instead). A missing/empty bundle
+// (JS not built before Go) fails hard, so a passing test also proves the
+// `pnpm build`/jsbuild step ran; a residual bare import (e.g. "@uppy/core" or
 // "@uppy/xhr-upload" leaking out of the tsdown build) fails self-containment
 // and would crash every app that ships it in a browser host.
-func TestAppModuleJSEmbedded(t *testing.T) {
-	for app, file := range bundleNames {
-		_ = app // key used only for diagnostic clarity below
-		_ = file
-	}
-	// Cover every app the Go layer embeds, not just a subset. Historically two
-	// upload bundles shipped `import ... from "@uppy/*"` bare imports while the
-	// subset of apps tested here passed, so the upload apps were the last thing
-	// you'd expect to catch this.
+func TestAppBundlesEmbedded(t *testing.T) {
 	apps := make([]string, 0, len(bundleNames))
 	for app := range bundleNames {
 		apps = append(apps, app)
 	}
 	sort.Strings(apps)
 	for _, app := range apps {
-		src := AppModuleJS(app)
-		if strings.TrimSpace(src) == "" {
+		src, err := fs.ReadFile(AppsAssets, bundleNames[app])
+		if err != nil {
+			t.Fatalf("app bundle %q missing from embed FS at %s (run `make jsbuild`): %v", app, bundleNames[app], err)
+		}
+		if strings.TrimSpace(string(src)) == "" {
 			t.Fatalf("app bundle %q is empty", app)
 		}
-		if bare := bareModuleSpecifiers(src); len(bare) > 0 {
+		if bare := bareModuleSpecifiers(string(src)); len(bare) > 0 {
 			t.Errorf("app bundle %q is not inline-module-ready (bare imports the browser cannot resolve: %v). "+
 				"Run `pnpm build` (packages/apps) — a dependency missing from alwaysBundle stays external.", app, bare)
 		}
 	}
 }
 
-// TestAppModuleJSRendersIntoDoc proves the embedded pin bundle's bootstrap
-// marker flows through the canvas delegation's shared document shell (the seam
-// every internal/mcp render function relies on).
-func TestAppModuleJSRendersIntoDoc(t *testing.T) {
+// TestBundleRendersIntoDoc proves the pin bundle's bootstrap marker flows
+// through the canvas delegation's shared document shell (the seam every
+// internal/mcp render function relies on).
+func TestBundleRendersIntoDoc(t *testing.T) {
 	doc := RenderAppDoc(canvas.ViewPin, "Create a Pin")
-	for _, want := range []string{"<!doctype html>", "<script type=\"module\">", "pins_add"} {
+	for _, want := range []string{"<!doctype html>", docScriptOpen, "pins_add"} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("rendered doc missing %q", want)
 		}
 	}
 }
 
-// TestAppModuleInjectsVersionGlobal proves AppModule (the legacy wrapper this
-// package keeps for compatibility until the shell/templ removal step; the
-// canvas delegation stamps the same normalized value via mcpcanvas) prefixes
-// functions actually use) prefixes the embedded bundle with the CLI version
-// global, so apps inherit the binary version instead of a hardcoded per-app
-// version during the ui/initialize handshake.
-func TestAppModuleInjectsVersionGlobal(t *testing.T) {
-	module := AppModule("pin")
-	if !strings.Contains(module, "window.__PINNER_CLI_VERSION__") {
-		t.Fatalf("AppModule did not inject the version global")
-	}
-	// The version value must be non-empty and quoted.
-	idx := strings.Index(module, "window.__PINNER_CLI_VERSION__ = ")
+// versionGlobalSemverRe matches the normalized, v-stripped semver core the
+// handshake global must advertise (MAJOR.MINOR.PATCH with optional
+// -prerelease/+build suffix).
+var versionGlobalSemverRe = regexp.MustCompile(`^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)
+
+// TestRenderAppDocVersionGlobal restates the deleted AppModule/AppVersionGlobal
+// coverage via the public API: every rendered document injects the
+// window.__MCPCANVAS_VERSION__ handshake global with a non-empty, quoted,
+// normalized-semver value, so the ext-apps host never rejects the
+// ui/initialize handshake on an un-stamped build (the raw-value normalization
+// table is pinned in mcpcanvas's own tests; this pins the rendered end of the
+// same seam, where the version comes from build.Default.GetVersion).
+func TestRenderAppDocVersionGlobal(t *testing.T) {
+	doc := RenderAppDoc(canvas.ViewPin, "Create a Pin")
+	idx := strings.Index(doc, docVersionGlobalPrefix)
 	if idx < 0 {
-		t.Fatalf("version global not found")
+		t.Fatalf("rendered doc does not inject %s", docVersionGlobalPrefix)
 	}
-	rest := module[idx+len("window.__PINNER_CLI_VERSION__ = "):]
+	rest := doc[idx+len(docVersionGlobalPrefix):]
 	end := strings.IndexByte(rest, ';')
 	if end <= 0 {
-		t.Fatalf("version assignment unterminated")
+		t.Fatalf("version global assignment unterminated")
 	}
 	quoted := rest[:end]
 	if len(quoted) < 3 || quoted[0] != '"' || quoted[len(quoted)-1] != '"' {
 		t.Fatalf("version not a quoted string literal: %q", quoted)
 	}
-	if val := strings.Trim(quoted, `"`); val == "" {
+	val := strings.Trim(quoted, `"`)
+	if val == "" {
 		t.Fatalf("version global is empty")
 	}
-	// The bundle must still be inline-module-ready after the prefix.
-	if strings.Contains(module, "\nimport ") {
-		t.Errorf("AppModule output is not self-contained")
+	if !versionGlobalSemverRe.MatchString(val) {
+		t.Fatalf("version global %q is not normalized semver — the ext-apps host would reject the handshake", val)
 	}
-}
-
-// TestSemverNormalize pins that advertised app versions are always valid semver
-// (the ext-apps host rejects non-semver), passing through real build versions
-// and falling back to "1.0.0" for un-stamped/non-semver values like "develop".
-func TestSemverNormalize(t *testing.T) {
-	cases := []struct {
-		in   string
-		want string
-	}{
-		{"v0.2.1", "0.2.1"},
-		{"0.2.1", "0.2.1"},
-		{"1.0.0", "1.0.0"},
-		{"v1.2.3-rc.1", "1.2.3-rc.1"},
-		{"v1.2.3+build.5", "1.2.3+build.5"},
-		{"develop", "1.0.0"},
-		{"", "1.0.0"},
-		{"abcdef1234567890", "1.0.0"}, // un-stamped dev/commit-ish value
-		{"master", "1.0.0"},
-	}
-	for _, c := range cases {
-		if got := semverNormalize(c.in); got != c.want {
-			t.Errorf("semverNormalize(%q) = %q, want %q", c.in, got, c.want)
-		}
+	// The global must sit ahead of (not inside) the bundle source, so the
+	// handshake is present before any app code runs.
+	module := extractModuleScript(t, canvas.ViewPin, doc)
+	if !strings.HasPrefix(module, docVersionGlobalPrefix) {
+		t.Fatalf("version global is not the module script's prefix")
 	}
 }

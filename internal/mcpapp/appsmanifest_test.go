@@ -119,7 +119,9 @@ func TestAppsManifestEmbedSourceAcceptsRoot(t *testing.T) {
 			t.Errorf("open view %q: %v", view, err)
 			continue
 		}
-		if seeker, ok := r.(interface{ Seek(int64, int) (int64, error) }); !ok {
+		if seeker, ok := r.(interface {
+			Seek(int64, int) (int64, error)
+		}); !ok {
 			t.Errorf("view %q: content is not seekable", view)
 		} else {
 			if _, err := seeker.Seek(0, 0); err != nil {

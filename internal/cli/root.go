@@ -201,9 +201,9 @@ For more help on any command: pinner <command> --help`,
 				}
 			})
 			// uploadHandler delegates the stream→upload executor to
-			// ptransfer.StreamUpload, the module-extracted implementation
+			// transfer.StreamUpload, the module-extracted implementation
 			// of the temp-buffer → wrap-sniff → archive-convert → upload
-			// contract (Stage 5). ptransfer.StreamUpload freezes maxBytes
+			// contract (Stage 5). transfer.StreamUpload freezes maxBytes
 			// at handler construction, while cfgMgr reads max_mcp_upload_size
 			// live on disk edits — so the module executor is rebuilt per call,
 			// preserving the per-request live-reload semantics the inline
