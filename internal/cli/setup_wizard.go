@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"go.lumeweb.com/fieldcraft"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	"go.lumeweb.com/pinner/core/config"
-	"go.lumeweb.com/pinner-cli/internal/fieldform"
 )
 
 // SetupOptions configures the wizard behavior.
@@ -141,14 +141,14 @@ func (w *SetupWizard) getSteps() []wizard.Step[*SetupWizard] {
 // executeMcpInstallStep offers to install the pinner MCP server for coding
 // agents, then delegates to the composed mcp install flow if the operator opts
 // in. The confirm prompt runs through the shared wizard channel
-// (fieldform.PrompterFrom(ctx)) — the same channel the installer's nested
+// (fieldcraft.PrompterFrom(ctx)) — the same channel the installer's nested
 // sub-wizard uses — and defaults to NO, so setup never installs anything
 // without an affirmative choice.
 func (w *SetupWizard) executeMcpInstallStep(ctx context.Context, _ *SetupWizard) error {
 	if w.mcpInstaller == nil {
 		return nil
 	}
-	p := fieldform.PrompterFrom(ctx)
+	p := fieldcraft.PrompterFrom(ctx)
 	if p == nil {
 		return fmt.Errorf("no interactive prompter available to ask about MCP installation")
 	}

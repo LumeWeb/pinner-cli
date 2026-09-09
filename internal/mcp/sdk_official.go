@@ -27,7 +27,7 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/catalog"
+	"go.lumeweb.com/opmesh"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 
@@ -86,7 +86,7 @@ var sdkHandlerDeps = sdk.HandlerDeps{
 	RequestCaps: func(req *sdk.CallToolRequest) *model.RequestCaps {
 		return requestCaps(req, transportFlagsVar)
 	},
-	ReservedRequestStateKey: catalog.ReservedRequestStateKey,
+	ReservedRequestStateKey: opmesh.ReservedRequestStateKey,
 	LogStart:                func(name string, args map[string]any) { logToolCallStart(log, name, args) },
 	LogEnd: func(name string, startedAt time.Time, result model.ToolResult, err error) {
 		logToolCallEnd(log, name, startedAt, result, err)

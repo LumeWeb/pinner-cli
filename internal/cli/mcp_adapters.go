@@ -6,7 +6,6 @@ import (
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/ipfs-sdk/dnsname"
-	"go.lumeweb.com/pinner-cli/internal/catalog"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/pinner/core/websites"
@@ -127,20 +126,29 @@ type websitesResourceAdapter struct {
 }
 
 func (w *websitesResourceAdapter) GetByDomain(ctx context.Context, domain string) (*ipfs.WebsiteItem, error) {
-	item, ok, err := catalog.ScanPagesWithOptions(ctx, w.ws,
-		func(item ipfs.WebsiteItem) (bool, error) {
-			return dnsname.Equal(item.Domain, domain), nil
-		},
-		&catalog.ListOptions[websites.ListFilter]{},
-		0,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("list websites: %w", err)
+	// Page through the service directly with the module domain's own paging
+	// type (opmesh carries no domain-specific page scanner). Same contract as
+	// the former fork ScanPagesWithOptions: default page size 10, scan until a
+	// match, stop at a short page.
+	const pageSize = 10
+	start := 0
+	for {
+		items, err := w.ws.List(ctx, websites.ListOptions{}.WithPage(start, pageSize))
+		if err != nil {
+			return nil, fmt.Errorf("list websites: %w", err)
+		}
+		for _, item := range items {
+			if dnsname.Equal(item.Domain, domain) {
+				found := item
+				return &found, nil
+			}
+		}
+		if len(items) < pageSize {
+			break
+		}
+		start += len(items)
 	}
-	if !ok {
-		return nil, fmt.Errorf("website not found for domain %q", domain)
-	}
-	return &item, nil
+	return nil, fmt.Errorf("website not found for domain %q", domain)
 }
 
 func (w *websitesResourceAdapter) GetByID(ctx context.Context, id string) (*ipfs.WebsiteItem, error) {

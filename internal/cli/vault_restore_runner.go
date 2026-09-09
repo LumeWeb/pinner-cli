@@ -4,8 +4,8 @@ import (
 	"context"
 	"os"
 
-	"go.lumeweb.com/pinner/core/vault"
 	mcpwizard "go.lumeweb.com/pinner-cli/internal/mcp/wizard"
+	"go.lumeweb.com/pinner/core/vault"
 )
 
 // vaultRestoreRunner implements mcpwizard.RestoreRunner so the MCP layer can

@@ -10,8 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/pinner-cli/internal/io"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 func TestResolveUploadInput_Stdin(t *testing.T) {

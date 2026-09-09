@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
+	opmesh "go.lumeweb.com/opmesh"
 )
 
 // TestPinsRmSelectorGateEndToEnd verifies the cids|all SelectionGroup is
@@ -32,7 +32,7 @@ func TestPinsRmSelectorGateEndToEnd(t *testing.T) {
 	if err == nil {
 		t.Fatalf("pins rm --all --force with an explicit CID: expected selector error, got nil")
 	}
-	if !errors.Is(err, catalog.ErrSelector) {
+	if !errors.Is(err, opmesh.ErrSelector) {
 		t.Fatalf("pins rm --all --force <cid>: expected ErrSelector, got %v", err)
 	}
 
@@ -43,7 +43,7 @@ func TestPinsRmSelectorGateEndToEnd(t *testing.T) {
 	err = Run(context.Background(), []string{
 		"pinner", "pins", "rm", "--all", "--force",
 	})
-	if errors.Is(err, catalog.ErrSelector) {
+	if errors.Is(err, opmesh.ErrSelector) {
 		t.Fatalf("bare pins rm --all --force: unexpected selector error %v", err)
 	}
 	// It may still fail on auth/service, but that must NOT be an ErrSelector.

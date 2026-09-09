@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/fieldform"
+	"go.lumeweb.com/fieldcraft"
 	"go.lumeweb.com/pinner/services"
 )
 
@@ -26,9 +26,9 @@ import (
 // the Operational channel; the private decisions map (keyed by Name) carries the
 // Decided channel. The old tunnelFieldKey enum + seven parallel switch/map
 // tables are replaced by one ordered registry (installFieldByNameKey built from
-// fieldform.Str); adding a field is one entry.
+// fieldcraft.Str); adding a field is one entry.
 //
-// decisions channel: a single fieldform.Decided binding over the name-keyed map,
+// decisions channel: a single fieldcraft.Decided binding over the name-keyed map,
 // reused by every Str field so env-fold stays undecided while a switched or
 // prompted value is decided.
 
@@ -94,7 +94,7 @@ func (s *ServiceInstallState) MarkAuthTokenCollected(v string) {
 // decisionsBinding is the shared Decided channel for all install fields: a
 // name-keyed map on the state. Write records only the decision map; the field's
 // Str Commit applies the value write via its own Setter.
-var decisionsBinding = fieldform.Decided[*ServiceInstallState, string]{
+var decisionsBinding = fieldcraft.Decided[*ServiceInstallState, string]{
 	Read:  func(s *ServiceInstallState, name string) *string { return s.decidedFor(name) },
 	Write: func(s *ServiceInstallState, name, v string) { s.decidedFor(name); s.commitDecidedMap(name, v) },
 }
@@ -116,18 +116,18 @@ func (s *ServiceInstallState) commitDecidedMap(name, v string) {
 
 // installField is the per-field functional factory: the caller declares only the
 // typed Operational accessors (get/set), the Name, and the declarative Meta;
-// fieldform.Str derives Parse, Decide (via decisionsBinding), Commit, Prompt and
+// fieldcraft.Str derives Parse, Decide (via decisionsBinding), Commit, Prompt and
 // the JSON-schema entry. It returns the already-erased AnyField.
-func installField(get func(*ServiceInstallState) string, set func(*ServiceInstallState, string), name, flag, envKey string, reDerives bool) fieldform.AnyField[*ServiceInstallState] {
-	return fieldform.Str(decisionsBinding, name, get, set, fieldform.Meta{
+func installField(get func(*ServiceInstallState) string, set func(*ServiceInstallState, string), name, flag, envKey string, reDerives bool) fieldcraft.AnyField[*ServiceInstallState] {
+	return fieldcraft.Str(decisionsBinding, name, get, set, fieldcraft.Meta{
 		Flag: flag, EnvFileKey: envKey, ReDerives: reDerives,
 	})
 }
 
 // installFieldEntries is the single source of truth: the ordered, declarative
 // field set. Adding a field is one installField call here.
-func installFieldEntries() []fieldform.AnyField[*ServiceInstallState] {
-	return []fieldform.AnyField[*ServiceInstallState]{
+func installFieldEntries() []fieldcraft.AnyField[*ServiceInstallState] {
+	return []fieldcraft.AnyField[*ServiceInstallState]{
 		installField(func(s *ServiceInstallState) string { return s.TunnelID }, func(s *ServiceInstallState, v string) { s.TunnelID = v }, "TunnelID", serviceTunnelIDFlag, "MCP_TUNNEL_ID", false),
 		installField(func(s *ServiceInstallState) string { return s.ApiKey }, func(s *ServiceInstallState, v string) { s.ApiKey = v }, "ApiKey", serviceApiKeyFlag, "CONTROL_PLANE_API_KEY", false),
 		installField(func(s *ServiceInstallState) string { return s.Domain }, func(s *ServiceInstallState, v string) { s.Domain = v }, "Domain", serviceDomainFlag, "MCP_DOMAIN", false),
@@ -142,10 +142,10 @@ func installFieldEntries() []fieldform.AnyField[*ServiceInstallState] {
 
 // installFieldByNameKey resolves the typed *Field for a named install field via
 // the exported AnyField.Declared() path. nil for an unknown name.
-var installFieldByNameKey = func() map[string]*fieldform.Field[*ServiceInstallState, string] {
-	m := make(map[string]*fieldform.Field[*ServiceInstallState, string], len(installFieldEntries()))
+var installFieldByNameKey = func() map[string]*fieldcraft.Field[*ServiceInstallState, string] {
+	m := make(map[string]*fieldcraft.Field[*ServiceInstallState, string], len(installFieldEntries()))
 	for _, anyf := range installFieldEntries() {
-		if f, ok := anyf.Declared().(*fieldform.Field[*ServiceInstallState, string]); ok {
+		if f, ok := anyf.Declared().(*fieldcraft.Field[*ServiceInstallState, string]); ok {
 			m[anyf.FieldName()] = f
 		}
 	}
@@ -155,7 +155,7 @@ var installFieldByNameKey = func() map[string]*fieldform.Field[*ServiceInstallSt
 // installFieldByName returns the typed *Field for a named install field
 // (used by configurers that attach a provider-specific Prompt/Validate). Returns
 // nil for an unknown name.
-func installFieldByName(name string) *fieldform.Field[*ServiceInstallState, string] {
+func installFieldByName(name string) *fieldcraft.Field[*ServiceInstallState, string] {
 	return installFieldByNameKey[name]
 }
 
@@ -192,7 +192,7 @@ func (s *ServiceInstallState) ClearReDerivedForProvider() bool {
 }
 
 // serviceInstallValueSource adapts the host's CLI flags and persisted env file
-// to the fieldform.ValueSource interface so fieldform.GatherAny can fold both
+// to the fieldcraft.ValueSource interface so fieldcraft.GatherAny can fold both
 // into the two-channel state. A nil envFile (or empty env) yields no env fold.
 type serviceInstallValueSource struct {
 	envFile string
@@ -224,7 +224,7 @@ func (v *serviceInstallValueSource) EnvFile(key string) (string, bool) {
 // serviceInstallFlags adapts the host's urfave/cli command into the
 // serviceInstallValueSource Flag accessor: a flag is present when it was
 // explicitly set OR its (possibly process-env-sourced) value is non-empty. A
-// present flag is an operator decision for fieldform.GatherAny precedence 1.
+// present flag is an operator decision for fieldcraft.GatherAny precedence 1.
 func serviceInstallFlags(cmd *cli.Command) func(name string) (string, bool) {
 	return func(name string) (string, bool) {
 		if cmd == nil {
@@ -238,7 +238,7 @@ func serviceInstallFlags(cmd *cli.Command) func(name string) (string, bool) {
 	}
 }
 
-// newServiceInstallValueSource builds the install flow's fieldform.ValueSource
+// newServiceInstallValueSource builds the install flow's fieldcraft.ValueSource
 // from the host command (its flags, incl. process-env Sources) and the persisted
 // env file.
 func newServiceInstallValueSource(cmd *cli.Command, envFile string) *serviceInstallValueSource {

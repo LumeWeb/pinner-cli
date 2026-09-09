@@ -7,9 +7,9 @@ import (
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
+	mcpwizard "go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/pinner/core/websites"
-	mcpwizard "go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 )
 
 // WebsitesWizard manages the website creation wizard.

@@ -7,12 +7,13 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
-	"go.lumeweb.com/pinner/core/auth"
-	"go.lumeweb.com/pinner/core/config"
+	opmesh "go.lumeweb.com/opmesh"
+	"go.lumeweb.com/pinner-cli/internal/clicatalog"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/flag"
 	"go.lumeweb.com/pinner-cli/internal/urlopen"
+	"go.lumeweb.com/pinner/catalogops"
+	"go.lumeweb.com/pinner/core/auth"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // account_wiring.go adapts the account catalog operations
@@ -62,7 +63,7 @@ var accountCatalogDepsVar = catalogops.AccountDeps(accountCatalogDeps())
 // AccountOTPDisableResult) just like the account operations, while the op is
 // NOT emitted as a flat top-level `otp-disable` under the account parent.
 func accountOTPDisableWired() *cli.Command {
-	var op catalog.Operation
+	var op opmesh.Operation
 	for _, cand := range catalogops.AccountOperations(accountCatalogDepsVar) {
 		if cand.Name() == "account_otp_disable" {
 			op = cand
@@ -97,12 +98,12 @@ WARNING: This reduces your account security. Consider re-enabling 2FA.`,
 // parent (info, email, password, subscription, portal). newAccountCommand
 // merges these with the existing hand-written otp/api-keys subcommands.
 func accountWiringParent() []*cli.Command {
-	cat := catalog.NewCatalog()
+	cat := opmesh.NewCatalog()
 	for _, op := range catalogops.AccountOperations(accountCatalogDepsVar) {
 		_ = cat.Add(op)
 	}
 
-	compiler := catalog.NewCLICompiler()
+	compiler := clicatalog.NewCLICompiler()
 	compiled, err := compiler.Compile(cat)
 	if err != nil {
 		panic(fmt.Sprintf("catalog compile account: %v", err))
@@ -126,7 +127,7 @@ func accountWiringParent() []*cli.Command {
 		c.Category = "Management"
 		relaxFlagRequired(c)
 
-		var op catalog.Operation
+		var op opmesh.Operation
 		for _, cand := range catalogops.AccountOperations(accountCatalogDepsVar) {
 			if cand.Name() == canonical {
 				op = cand
@@ -161,9 +162,9 @@ func accountWiringParent() []*cli.Command {
 // positional <email> / password flags into the operation input, threads the
 // --auth-token override, and renders the typed result. It also handles the
 // `--open` convenience on read commands that return a web URL.
-func accountActionAdapter(op catalog.Operation) cli.ActionFunc {
+func accountActionAdapter(op opmesh.Operation) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
-		input := catalog.FlagsToInput(c, op)
+		input := clicatalog.FlagsToInput(c, op)
 
 		// Per-invocation --auth-token override.
 		if tok := c.String(FlagAuthToken); tok != "" {
@@ -172,7 +173,7 @@ func accountActionAdapter(op catalog.Operation) cli.ActionFunc {
 
 		// Map the positional <email> into the "email" arg when empty.
 		if c.Args().Len() > 0 {
-			if hasArg(op, "email") && catalog.StrArg(input, "email", "") == "" {
+			if hasArg(op, "email") && opmesh.StrArg(input, "email", "") == "" {
 				input["email"] = c.Args().First()
 			}
 		}
@@ -230,7 +231,7 @@ func accountResultURL(result any) string {
 
 // renderAccountResult renders an account handler's typed DATA through the CLI
 // Output formatter.
-func renderAccountResult(_ context.Context, c *cli.Command, op catalog.Operation, result any) error {
+func renderAccountResult(_ context.Context, c *cli.Command, op opmesh.Operation, result any) error {
 	output := setupOutput(c)
 
 	switch r := result.(type) {

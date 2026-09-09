@@ -9,7 +9,7 @@ import (
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
+	opmesh "go.lumeweb.com/opmesh"
 )
 
 // TestRenderIPNSRepublishResult verifies renderIPNSResult handles the
@@ -18,7 +18,7 @@ import (
 // making every `pinner ipns republish <key>` fail at render time.
 func TestRenderIPNSRepublishResult(t *testing.T) {
 	var buf bytes.Buffer
-	op := catalog.NewOperation(catalog.OperationSpec{Name: "ipns_republish"})
+	op := opmesh.NewOperation(opmesh.OperationSpec{Name: "ipns_republish"})
 	resp := &ipfs.IPNSRepublishResponse{Count: 3, Message: "record refreshed"}
 
 	cmd := &cli.Command{

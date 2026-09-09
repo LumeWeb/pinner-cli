@@ -7,8 +7,8 @@ package export
 import (
 	"context"
 
-	coreerrors "go.lumeweb.com/pinner/core/errors"
 	"go.lumeweb.com/pinner/core/config"
+	coreerrors "go.lumeweb.com/pinner/core/errors"
 	"go.lumeweb.com/pinner/core/ipfsbase"
 	meta "go.lumeweb.com/portal-sdk/meta"
 	"go.uber.org/zap"

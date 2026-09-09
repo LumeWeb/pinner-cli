@@ -14,13 +14,13 @@ type MockWebsitesUI struct {
 
 	mu sync.Mutex
 
-	ContentChoice    ContentSourceChoice
-	DNSChoice        DNSModeChoice
-	TargetChoice     TargetTypeChoice
-	NamespaceChoice  string // "icann" or "hns"
-	CIDInput         string
-	DomainInput      string
-	PromptError      error
+	ContentChoice   ContentSourceChoice
+	DNSChoice       DNSModeChoice
+	TargetChoice    TargetTypeChoice
+	NamespaceChoice string // "icann" or "hns"
+	CIDInput        string
+	DomainInput     string
+	PromptError     error
 
 	ContinueError error
 

@@ -8,8 +8,9 @@ import (
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	opmesh "go.lumeweb.com/opmesh"
+	"go.lumeweb.com/pinner-cli/internal/clicatalog"
+	"go.lumeweb.com/pinner/catalogops"
 	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/pinner/core/dns"
 )
@@ -23,7 +24,7 @@ import (
 //
 // The DNS operations are canonically dotted ("dns.zones.list",
 // "dns.records.create", ...). The CLI nests them as "dns" -> ("zones" |
-// "records") -> leaf. That nesting lives here, not in internal/catalog.
+// "records") -> leaf. That nesting lives here, not in the catalog model.
 //
 // The catalog compiler builds its input map from flags only. Commands that
 // take a <domain> positionally (zones get/delete/validate, records
@@ -81,12 +82,12 @@ var dnsCatalogDeps = catalogops.DNSDeps(catalogDNSDeps())
 // DNS operations via the catalog's CLI compiler and nests the resulting leaf
 // commands under "dns" -> ("zones" | "records").
 func newDNSCommand() *cli.Command {
-	cat := catalog.NewCatalog()
+	cat := opmesh.NewCatalog()
 	for _, op := range catalogops.DNSOperations(dnsCatalogDeps) {
 		_ = cat.Add(op)
 	}
 
-	compiler := catalog.NewCLICompiler()
+	compiler := clicatalog.NewCLICompiler()
 	compiled, err := compiler.Compile(cat)
 	if err != nil {
 		panic(fmt.Sprintf("catalog compile dns: %v", err))
@@ -155,7 +156,7 @@ func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc 
 	return func(ctx context.Context, cmd *cli.Command) error {
 		// Build the input map from the compiler-declared flags plus the
 		// resolved positional <domain> in the "zone" input.
-		var op catalog.Operation
+		var op opmesh.Operation
 		for _, cand := range catalogops.DNSOperations(dnsCatalogDeps) {
 			if cand.Name() == canonicalName {
 				op = cand
@@ -166,7 +167,7 @@ func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc 
 			return fmt.Errorf("catalog command %q not found", canonicalName)
 		}
 
-		input := catalog.FlagsToInput(cmd, op)
+		input := clicatalog.FlagsToInput(cmd, op)
 
 		// dns_records_update: disabled is an omitempty field on the wire, and
 		// omitting it must leave the record's current disabled state unchanged.
@@ -194,13 +195,13 @@ func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc 
 		// Destructive gate (zones delete, records delete). The catalog compiler
 		// injects a --force flag; since we replace the Action we enforce it
 		// ourselves, honoring both --force and the hidden --confirm alias.
-		if op.Safety() == catalog.SafetyDestructive {
+		if op.Safety() == opmesh.SafetyDestructive {
 			confirm := cmd.Bool(FlagForce) || cmd.Bool(FlagConfirm)
 			input["confirm"] = confirm
 			// With a target zone and no --force, refuse loudly (non-zero exit)
 			// rather than silently succeeding; with no zone, fall through so the
 			// handler's required-argument validation produces a non-zero exit.
-			if !confirm && catalog.StrArg(input, "zone", "") != "" {
+			if !confirm && opmesh.StrArg(input, "zone", "") != "" {
 				return fmt.Errorf("dns %s: pass --force to confirm this destructive operation", leaf)
 			}
 		}
@@ -222,7 +223,7 @@ func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc 
 // operation would have done (used by the --force guard hint).
 func describeDNSAction(group, leaf string, input map[string]any) string {
 	what := "the " + group + " " + leaf + " operation"
-	if z := catalog.StrArg(input, "zone", ""); z != "" {
+	if z := opmesh.StrArg(input, "zone", ""); z != "" {
 		what = fmt.Sprintf("%s on %s", what, z)
 	}
 	return what
@@ -231,7 +232,7 @@ func describeDNSAction(group, leaf string, input map[string]any) string {
 // renderDNSResult is the catalog.RenderFunc that renders a DNS handler's typed
 // DATA result through the CLI Output formatter. It is the single rendering
 // home for catalog-driven DNS commands and never touches core services.
-func renderDNSResult(_ context.Context, c *cli.Command, op catalog.Operation, result any) error {
+func renderDNSResult(_ context.Context, c *cli.Command, op opmesh.Operation, result any) error {
 	output := setupOutput(c)
 
 	switch r := result.(type) {

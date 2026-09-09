@@ -235,4 +235,3 @@ func (u *unauthenticatedIPNSService) Resolve(ctx context.Context, name string) (
 	}
 	return u.mockIPNSServiceForCLI.Resolve(ctx, name)
 }
-

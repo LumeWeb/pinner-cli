@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 
-	"go.lumeweb.com/pinner-cli/internal/fieldform"
+	"go.lumeweb.com/fieldcraft"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.lumeweb.com/pinner/services"
 )
@@ -93,9 +93,9 @@ func TestServiceInstallStepsShape(t *testing.T) {
 	// (which would block/fail in a non-TTY test), proving the seeded-path is
 	// taken. (Interactive re-runs DO re-prompt with the current provider as an
 	// editable default, so the operator can change it.)
-	prior := fieldform.NonInteractive
-	fieldform.NonInteractive = true
-	defer func() { fieldform.NonInteractive = prior }()
+	prior := fieldcraft.NonInteractive
+	fieldcraft.NonInteractive = true
+	defer func() { fieldcraft.NonInteractive = prior }()
 	state.Provider = tunnel.TunnelProviderCloudflared
 	require.NoError(t, steps[0].Execute(context.Background(), state), "provider step should no-op when provider is already set")
 	require.Equal(t, tunnel.TunnelProviderCloudflared, state.Provider, "provider must not be overwritten")
@@ -141,7 +141,7 @@ func TestServiceInstallStepsPromptsThroughChannel(t *testing.T) {
 	steps := ServiceInstallSteps(state, cmd, envFile, nil)
 
 	p := &recordingPrompter{provider: string(tunnel.TunnelProviderNgrok) + " - ngrok (free and easiest)"}
-	ctx := fieldform.WithPrompter(context.Background(), p)
+	ctx := fieldcraft.WithPrompter(context.Background(), p)
 
 	// Execute ONLY the tunnel provider step (steps[0]) so the test is hermetic:
 	// the token/config steps (which resolve the public URL, hitting the ngrok
@@ -180,9 +180,9 @@ func TestTunnelConfigStepSkipsNgrokTokenPromptWhenConfigured(t *testing.T) {
 	state := &ServiceInstallState{EnvFile: envFile, Provider: tunnel.TunnelProviderNgrok, TunnelName: "test", PublicURL: "https://you.ngrok-free.dev"}
 	steps := ServiceInstallSteps(state, cmd, envFile, nil)
 
-	prior := fieldform.NonInteractive
-	fieldform.NonInteractive = true
-	defer func() { fieldform.NonInteractive = prior }()
+	prior := fieldcraft.NonInteractive
+	fieldcraft.NonInteractive = true
+	defer func() { fieldcraft.NonInteractive = prior }()
 
 	require.NoError(t, steps[1].Execute(context.Background(), state),
 		"tunnel-config step must not prompt for a token the ngrok config file already provides")
@@ -203,9 +203,9 @@ func TestTunnelConfigStepStillPromptsNgrokTokenWithoutConfig(t *testing.T) {
 	state := &ServiceInstallState{EnvFile: envFile, Provider: tunnel.TunnelProviderNgrok, TunnelName: "test"}
 	steps := ServiceInstallSteps(state, cmd, envFile, nil)
 
-	prior := fieldform.NonInteractive
-	fieldform.NonInteractive = true
-	defer func() { fieldform.NonInteractive = prior }()
+	prior := fieldcraft.NonInteractive
+	fieldcraft.NonInteractive = true
+	defer func() { fieldcraft.NonInteractive = prior }()
 
 	require.Error(t, steps[1].Execute(context.Background(), state),
 		"without any existing ngrok credential the step must require an interactive prompt")
@@ -509,9 +509,9 @@ func TestFlattenedNgrokWritesPublicURL(t *testing.T) {
 
 	// Non-interactive so the URL-resolution API path (which needs no prompt) is
 	// the only path exercised; the API key is supplied via the seeded state.
-	prior := fieldform.NonInteractive
-	fieldform.NonInteractive = true
-	defer func() { fieldform.NonInteractive = prior }()
+	prior := fieldcraft.NonInteractive
+	fieldcraft.NonInteractive = true
+	defer func() { fieldcraft.NonInteractive = prior }()
 
 	state := &ServiceInstallState{
 		EnvFile:     envFile,
@@ -575,9 +575,9 @@ func TestFlattenedNgrokCollectorHandoff(t *testing.T) {
 	envFile, err := ResolveServiceEnvFile(realCmd)
 	require.NoError(t, err)
 
-	prior := fieldform.NonInteractive
-	fieldform.NonInteractive = true
-	defer func() { fieldform.NonInteractive = prior }()
+	prior := fieldcraft.NonInteractive
+	fieldcraft.NonInteractive = true
+	defer func() { fieldcraft.NonInteractive = prior }()
 
 	// The flattened sub-steps (what w.tunnelConfigurer runs) resolve the URL
 	// from the API and write it as MCP_PUBLIC_URL.

@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"testing"
 
-	authcore "go.lumeweb.com/pinner/core/auth"
 	mcpauth "go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	authcore "go.lumeweb.com/pinner/core/auth"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 

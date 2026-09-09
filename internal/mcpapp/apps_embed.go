@@ -26,13 +26,13 @@ var AppsAssets embed.FS
 // bundleNames maps an app name to its embedded bundle filename under
 // appsassets/dist/.
 var bundleNames = map[string]string{
-	"pin":            "appsassets/dist/pin.js",
-	"vault-create":   "appsassets/dist/vault-create.js",
-	"vault-restore":  "appsassets/dist/vault-restore.js",
-	"auth-sso":       "appsassets/dist/auth-sso.js",
-	"vault-browser":  "appsassets/dist/vault-browser.js",
-	"pin-list":       "appsassets/dist/pin-list.js",
-	"auth-status":    "appsassets/dist/auth-status.js",
+	"pin":              "appsassets/dist/pin.js",
+	"vault-create":     "appsassets/dist/vault-create.js",
+	"vault-restore":    "appsassets/dist/vault-restore.js",
+	"auth-sso":         "appsassets/dist/auth-sso.js",
+	"vault-browser":    "appsassets/dist/vault-browser.js",
+	"pin-list":         "appsassets/dist/pin-list.js",
+	"auth-status":      "appsassets/dist/auth-status.js",
 	"account-password": "appsassets/dist/account-password.js",
 	"account-email":    "appsassets/dist/account-email.js",
 	"ipfs-upload":      "appsassets/dist/ipfs-upload.js",

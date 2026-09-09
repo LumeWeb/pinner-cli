@@ -13,9 +13,9 @@ import (
 	"github.com/urfave/cli/v3"
 	contentfs "go.lumeweb.com/ipfs-content/fs"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	internalio "go.lumeweb.com/pinner-cli/internal/io"
 	"go.lumeweb.com/pinner/core/auth"
 	"go.lumeweb.com/pinner/core/config"
-	internalio "go.lumeweb.com/pinner-cli/internal/io"
 )
 
 func newUploadCommand() *cli.Command {

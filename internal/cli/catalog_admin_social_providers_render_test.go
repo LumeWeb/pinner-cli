@@ -10,8 +10,8 @@ import (
 	"github.com/urfave/cli/v3"
 	"go.lumeweb.com/portal-sdk/admin"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	opmesh "go.lumeweb.com/opmesh"
+	"go.lumeweb.com/pinner/catalogops"
 )
 
 // TestRenderAdminSocialProviderResult verifies renderAdminResult handles the
@@ -29,7 +29,7 @@ func TestRenderAdminSocialProviderResult(t *testing.T) {
 	provider.ClientId = "client-abc"
 	provider.Scopes = []string{"openid", "email", "profile"}
 
-	op := catalog.NewOperation(catalog.OperationSpec{Name: catalogops.OpAdminSocialProvidersCreate})
+	op := opmesh.NewOperation(opmesh.OperationSpec{Name: catalogops.OpAdminSocialProvidersCreate})
 
 	t.Run("renders provider as a field group", func(t *testing.T) {
 		var buf bytes.Buffer
@@ -77,7 +77,7 @@ func TestRenderAdminSocialProviderResult(t *testing.T) {
 // admin_social_providers_delete.
 func TestRenderAdminSocialProvidersDeleteResult(t *testing.T) {
 	var buf bytes.Buffer
-	op := catalog.NewOperation(catalog.OperationSpec{Name: catalogops.OpAdminSocialProvidersDelete})
+	op := opmesh.NewOperation(opmesh.OperationSpec{Name: catalogops.OpAdminSocialProvidersDelete})
 
 	cmd := &cli.Command{
 		Name:   "delete",

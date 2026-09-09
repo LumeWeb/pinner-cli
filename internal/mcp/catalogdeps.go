@@ -1,8 +1,7 @@
 package mcp
 
 import (
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
-	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/assembly"
 )
 
 // CatalogDepsBundle carries the concrete dependency graph the operation-catalog
@@ -13,34 +12,11 @@ import (
 // catalogops) so a test/global override stays live and services always use fresh
 // config, never a package-init snapshot.
 //
-// The bundle deliberately spans the whole catalogops surface: auth, account,
-// vault, vault-setup, pins, websites, dns, ipns, ens, api-keys, operations, and
-// admin. A domain whose deps are nil degrades to ops that fail with a clear
-// "service unavailable" error rather than panicking, so the bundle can be added
-// incrementally.
-type CatalogDepsBundle struct {
-	// CfgMgr returns a live config manager for the current invocation.
-	CfgMgr func() config.Manager
-
-	// CredentialResolver resolves the Portal API token for the authenticated
-	// request. When nil, the CLI/local default (read the bearer token from
-	// config) is used. A hosted server sets this to map a Portal-authenticated
-	// user onto a Portal API JWT.
-	CredentialResolver CredentialResolver
-
-	Auth      catalogops.AuthDeps
-	Account   catalogops.AccountDeps
-	Vault     catalogops.VaultDeps
-	VaultSetup catalogops.VaultDeps
-	Pins      catalogops.PinsDeps
-	Websites  catalogops.WebsitesDeps
-	DNS       catalogops.DNSDeps
-	IPNS      catalogops.IPNSDeps
-	ENS       catalogops.ENSDeps
-	APIKeys   catalogops.APIKeysDeps
-	Operations catalogops.OperationsDeps
-	Admin     catalogops.AdminDeps
-}
+// The bundle is now a type alias for the module's assembly.CatalogDepsBundle:
+// the seam lives there and the CLI wiring builds the module shape directly.
+// The local CredentialResolver interface (surface.go) is structurally
+// identical (TokenForRequest), so implementations satisfy it unchanged.
+type CatalogDepsBundle = assembly.CatalogDepsBundle
 
 // buildCatalogOpt configures buildCatalog. It is a functional option so the
 // existing positional signature of buildCatalog stays intact and all current

@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go.lumeweb.com/pinner-cli/internal/fieldform"
+	"go.lumeweb.com/fieldcraft"
 )
 
 // TestDelegate_RunsNestedFlow guards the core Delegate contract: the delegated
@@ -41,7 +41,7 @@ func TestDelegate_RunsNestedFlow(t *testing.T) {
 // TestDelegate_NestedWizardSharesPromptChannel is the contract that makes
 // Delegate a composition primitive rather than a plain callback wrapper: a
 // NESTED wizard.Run invoked inside the delegate must prompt through the SAME
-// prompter the host bound via fieldform.WithPrompter — never through its own
+// prompter the host bound via fieldcraft.WithPrompter — never through its own
 // widgets. This is what lets setup compose a sub-setup (e.g. mcp install /
 // service setup) over one terminal channel.
 func TestDelegate_NestedWizardSharesPromptChannel(t *testing.T) {
@@ -62,10 +62,10 @@ func TestDelegate_NestedWizardSharesPromptChannel(t *testing.T) {
 					Name_: "SubAsk",
 					ExecuteFunc: func(ctx context.Context, _ *subState) error {
 						// Must see the HOST's prompter through flow-through-ctx.
-						if got := fieldform.PrompterFrom(ctx); got != p {
+						if got := fieldcraft.PrompterFrom(ctx); got != p {
 							t.Fatalf("nested step did not receive the host-bound prompter")
 						}
-						_, err := fieldform.PrompterFrom(ctx).Text("token", "*", "")
+						_, err := fieldcraft.PrompterFrom(ctx).Text("token", "*", "")
 						return err
 					},
 				},
@@ -76,7 +76,7 @@ func TestDelegate_NestedWizardSharesPromptChannel(t *testing.T) {
 		}),
 	}
 
-	ctx := fieldform.WithPrompter(context.Background(), p)
+	ctx := fieldcraft.WithPrompter(context.Background(), p)
 	_, err := Run[*string](ctx, hostUI, steps, &host)
 	require.NoError(t, err)
 	require.Equal(t, 1, p.texts, "nested sub-wizard must prompt through the host's channel")

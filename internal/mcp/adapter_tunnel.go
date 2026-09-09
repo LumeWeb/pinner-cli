@@ -18,7 +18,6 @@ import (
 
 	"github.com/urfave/cli/v3"
 	oauthlib "go.lumeweb.com/oauth"
-	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
@@ -31,6 +30,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
+	"go.lumeweb.com/pinner/core/config"
 	"go.uber.org/zap"
 )
 

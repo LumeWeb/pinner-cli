@@ -97,7 +97,9 @@ func newAdminPprofCmdlineCommand() *cli.Command {
 func newAdminPprofGoroutineCommand() *cli.Command {
 	return newAdminPprofProfileCommand(CmdGoroutine, "Get goroutine profile data",
 		"Get stack traces of all current goroutines.",
-		func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) { return svc.GetGoroutineProfile(ctx) })
+		func(svc ProfilingAdminService, ctx context.Context) ([]byte, error) {
+			return svc.GetGoroutineProfile(ctx)
+		})
 }
 
 func newAdminPprofHeapCommand() *cli.Command {

@@ -7,10 +7,9 @@ import (
 
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/pinner-cli/internal/core/dag"
+	"go.lumeweb.com/pinner/core/config"
 )
-
 
 // DAGService and options are re-exported from core; the impl lives in core/dag.
 type DAGService = dag.Service
@@ -31,7 +30,6 @@ func WithDAGAuthToken(token string) DAGServiceOption {
 func WithDAGClient(client *ipfs.Client) DAGServiceOption {
 	return dag.WithClient(client)
 }
-
 
 func newDagCommand() *cli.Command {
 	return &cli.Command{

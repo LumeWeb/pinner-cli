@@ -15,10 +15,6 @@ import (
 	"github.com/urfave/cli/v3"
 	contentfs "go.lumeweb.com/ipfs-content/fs"
 	"go.lumeweb.com/pinner-cli/build"
-	"go.lumeweb.com/pinner/core/auth"
-	"go.lumeweb.com/pinner/core/config"
-	"go.lumeweb.com/pinner/core/vault"
-	"go.lumeweb.com/pinner/core/websites"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	mcpauth "go.lumeweb.com/pinner-cli/internal/mcp/auth"
@@ -27,6 +23,10 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	mcpvault "go.lumeweb.com/pinner-cli/internal/mcp/vault"
 	mcpwizard "go.lumeweb.com/pinner-cli/internal/mcp/wizard"
+	"go.lumeweb.com/pinner/core/auth"
+	"go.lumeweb.com/pinner/core/config"
+	"go.lumeweb.com/pinner/core/vault"
+	"go.lumeweb.com/pinner/core/websites"
 )
 
 // Run executes the CLI application with the given context and arguments.

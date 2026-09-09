@@ -46,7 +46,6 @@ func newVaultService(profileName string) (vault.VaultService, error) {
 	return vaultServiceFactory(profileName, indexerURL)
 }
 
-
 func newVaultCommand() *cli.Command {
 	// The vault parent is catalog-driven: most subcommands are compiled from
 	// the canonical operation catalog (internal/catalogops). The commands that

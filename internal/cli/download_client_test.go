@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner/core/config"
 	configmocks "go.lumeweb.com/pinner/core/config/mocks"
-	"go.lumeweb.com/pinner-cli/internal/mcp"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
 )

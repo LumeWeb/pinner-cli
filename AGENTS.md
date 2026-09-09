@@ -79,8 +79,12 @@ compiled from a single operation catalog.
 ```
 cmd/pinner/                 Entry point. Minimal main.go -> cli.Run()
 internal/core/<domain>/     Domain logic; pure Go, no urfave/MCP/Output
-internal/catalog/           Operation-descriptor registry (single source of truth)
-internal/catalogops/        Per-domain Operation providers
+go.lumeweb.com/opmesh       Operation-descriptor model + registry (single source of truth)
+go.lumeweb.com/pinner:
+  catalogops/               Per-domain Operation providers
+  pinnerops/                Multi-domain catalog assembly + surface gating
+  catalogmcp/               MCP tool descriptions/targets compiler
+  catalogmeta/              Frontend metadata (Environment, arg PositionalOnly/AgentOnly/Sources)
 internal/cli/               urfave CLI commands, service interfaces, wiring
 internal/cli/internal/      PinningClient / BoxoPinningClient (HTTP + retry)
 internal/fieldform/         CLI-side wizard field system (Field/Gather/ValueSource)
@@ -114,16 +118,18 @@ tests/sunpeak/              MCP integration tests (driver `pinner mcp` over stdi
     `memory_limit`, `secure`, `gateway_endpoint`, `default_timeout`,
     `upload_timeout`, `sync_timeout`.
 
-- **`internal/catalog/`** — the operation registry. `Operation` descriptors
-  declare `Safety` (Read/Mutate/Destructive), `Interaction`
-  (AgentSafe/HumanOnly/NeedsHandoff), `Visibility` (Model/AppOnly/Both),
-  and `Args`. `compile_cli.go` compiles operations into urfave commands;
-  `compile_mcp.go` compiles them into MCP JSON Schemas. Dispatch always flows
+- **`go.lumeweb.com/opmesh`** — the operation model + registry (consumed, not
+  vendored into this repo). `Operation` descriptors declare `Safety`
+  (Read/Mutate/Destructive), `Interaction` (AgentSafe/HumanOnly/NeedsHandoff),
+  `Visibility` (Model/AppOnly/Both), and `Args`. This repo's CLI compiler
+  (internal/clicatalog) compiles operations into urfave commands; the module's
+  catalogmcp compiler produces MCP JSON Schemas. Dispatch always flows
   through `Catalog.Invoke`; the discovery-only `ToolDescriptor` never carries
-  a handler.
+  a handler. AgentRequired/AgentConfirm stay enforced at the MCP dispatch seam
+  (internal/mcp/catalogdispatch.go), never in the shared Invoke gate.
 
-- **`internal/catalogops/`** — one provider per domain (`pins.go`,
-  `websites.go`, `dns.go`, ...) returning `[]catalog.Operation`. Providers
+- **`go.lumeweb.com/pinner/catalogops`** — one provider per domain (`pins.go`,
+  `websites.go`, `dns.go`, ...) returning `[]opmesh.Operation`. Providers
   take per-domain deps structs of **getter functions** (resolved lazily per
   invocation, never at package init). Handlers return typed data; rendering is
   the frontend's job.
@@ -223,7 +229,7 @@ layers render it, so one handler serves both human and JSON output.
 
 **To add a new domain to both CLI and MCP (catalog path):**
 1. Core service in `internal/core/<domain>/` — pure Go, no urfave/MCP/Output.
-2. Catalog ops in `internal/catalogops/<domain>_ops.go` — `Operation` with args
+2. Catalog ops in module `catalogops` (`go.lumeweb.com/pinner/catalogops`) — `Operation` with args
    + handler.
 3. CLI wiring in `internal/cli/<domain>_wiring.go` — `CatalogOpsAdapter` impl,
    `catalogActionAdapter`.
@@ -242,7 +248,7 @@ catalog ops produces a silent half-failure (CLI works, MCP has no tools).
   (e.g. `internal/cli/wizard`) are fine.
 - Cross-cutting helpers both need live in neutral leaf packages, e.g.
   `internal/urlopen`.
-- `internal/catalogops` is presentation-free (no `internal/cli`, no `Output`).
+- module `catalogops` is presentation-free (no CLI frontend import, no `Output`).
 
 ### Testing Patterns
 
@@ -333,7 +339,7 @@ sign (it never holds the user's wallet key). The flow:
 4. **Verify** — open the returned `verify_url` after the onchain tx confirms.
 
 The shared business logic lives in
-`internal/catalogops/ens.go` (`PointENS` / `UnpointENS`); the CLI
+module `catalogops` ens.go (`PointENS` / `UnpointENS`); the CLI
 (`internal/cli/point.go`) and the MCP `ens_point` / `ens_unpoint` catalog
 operations both drive it, so the two surfaces agree. `ens_unpoint` is
 `SafetyDestructive` with an `AgentRequired` confirm — a model actor is always

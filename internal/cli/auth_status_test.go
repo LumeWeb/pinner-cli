@@ -186,7 +186,7 @@ func TestAuthService_Status_JSONOutput(t *testing.T) {
 	acc.EXPECT().Ping(mock.Anything).Return(nil)
 
 	authService := auth.NewAuthService(cfgMgr, "https://api.test.com", nil,
-			auth.WithAuthAccountClient(acc),
+		auth.WithAuthAccountClient(acc),
 		auth.WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
 			return acc
 		}),
@@ -212,7 +212,7 @@ func TestAuthService_Status_VerboseOutput(t *testing.T) {
 	acc.EXPECT().Ping(mock.Anything).Return(nil)
 
 	authService := auth.NewAuthService(cfgMgr, "https://api.test.com", nil,
-			auth.WithAuthAccountClient(acc),
+		auth.WithAuthAccountClient(acc),
 		auth.WithClientFactory(func(endpoint, jwt string) portalsdk.AccountAPI {
 			return acc
 		}),

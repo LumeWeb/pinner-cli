@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/pterm/pterm"
-	"go.lumeweb.com/pinner-cli/internal/fieldform"
+	"go.lumeweb.com/fieldcraft"
 )
 
 type PTermUI struct {
@@ -24,7 +24,7 @@ func (p *PTermUI) ShowWelcome() error {
 	// The welcome/continue confirmation is interactive-only. In non-interactive
 	// (headless) mode, skip the continue prompt entirely rather than failing,
 	// so a fully flag-driven install runs through.
-	if fieldform.NonInteractive {
+	if fieldcraft.NonInteractive {
 		return nil
 	}
 	if p.WelcomeText != "" {

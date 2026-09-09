@@ -7,8 +7,9 @@ import (
 	"github.com/urfave/cli/v3"
 	portalsdk "go.lumeweb.com/portal-sdk"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	opmesh "go.lumeweb.com/opmesh"
+	"go.lumeweb.com/pinner-cli/internal/clicatalog"
+	"go.lumeweb.com/pinner/catalogops"
 	"go.lumeweb.com/pinner/core/apikeys"
 	"go.lumeweb.com/pinner/core/auth"
 )
@@ -52,12 +53,12 @@ var apiKeysCatalogDepsVar = catalogops.APIKeysDeps(catalogAPIKeysDeps())
 // apiKeysParent builds and returns the catalog-driven "api-keys" parent.
 // newAccountAPIKeysCommand (in account_api_keys.go) delegates to this.
 func apiKeysParent() *cli.Command {
-	cat := catalog.NewCatalog()
+	cat := opmesh.NewCatalog()
 	for _, op := range catalogops.APIKeysOperations(apiKeysCatalogDepsVar) {
 		_ = cat.Add(op)
 	}
 
-	compiler := catalog.NewCLICompiler()
+	compiler := clicatalog.NewCLICompiler()
 	compiled, err := compiler.Compile(cat)
 	if err != nil {
 		panic(fmt.Sprintf("catalog compile api-keys: %v", err))
@@ -71,7 +72,7 @@ func apiKeysParent() *cli.Command {
 		c.Category = "Management"
 		relaxFlagRequired(c)
 
-		var op catalog.Operation
+		var op opmesh.Operation
 		for _, cand := range catalogops.APIKeysOperations(apiKeysCatalogDepsVar) {
 			if cand.Name() == canonical {
 				op = cand
@@ -97,9 +98,9 @@ func apiKeysParent() *cli.Command {
 // apiKeysActionAdapter wraps a catalog api-keys command's Action: maps the
 // positional <name>/<id> into the operation input, enforces the --force gate
 // for delete, then invokes the handler and renders the result.
-func apiKeysActionAdapter(op catalog.Operation) cli.ActionFunc {
+func apiKeysActionAdapter(op opmesh.Operation) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
-		input := catalog.FlagsToInput(c, op)
+		input := clicatalog.FlagsToInput(c, op)
 
 		// The per-invocation --auth-token override takes precedence over the
 		// config token. Put it in the input so the Service closure honors it;
@@ -110,10 +111,10 @@ func apiKeysActionAdapter(op catalog.Operation) cli.ActionFunc {
 
 		// Map the positional <name>/<id> into the "name"/"id" arg when empty.
 		if c.Args().Len() > 0 {
-			if hasArg(op, "name") && catalog.StrArg(input, "name", "") == "" {
+			if hasArg(op, "name") && opmesh.StrArg(input, "name", "") == "" {
 				input["name"] = c.Args().First()
 			}
-			if hasArg(op, "id") && catalog.StrArg(input, "id", "") == "" {
+			if hasArg(op, "id") && opmesh.StrArg(input, "id", "") == "" {
 				input["id"] = c.Args().First()
 			}
 		}
@@ -124,7 +125,7 @@ func apiKeysActionAdapter(op catalog.Operation) cli.ActionFunc {
 		// pass the flag through to the handler (input["confirm"]) and let the
 		// service decide. The compiler still injects --force onto the
 		// destructive command; here we just map it into the operation input.
-		if op.Safety() == catalog.SafetyDestructive {
+		if op.Safety() == opmesh.SafetyDestructive {
 			input["confirm"] = c.Bool(FlagForce)
 		}
 
@@ -142,7 +143,7 @@ func apiKeysActionAdapter(op catalog.Operation) cli.ActionFunc {
 
 // renderAPIKeysResult renders an api-keys handler's typed DATA through the CLI
 // Output formatter.
-func renderAPIKeysResult(_ context.Context, c *cli.Command, op catalog.Operation, result any) error {
+func renderAPIKeysResult(_ context.Context, c *cli.Command, op opmesh.Operation, result any) error {
 	output := setupOutput(c)
 
 	switch r := result.(type) {

@@ -8,7 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	"go.lumeweb.com/pinner/catalogops"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"

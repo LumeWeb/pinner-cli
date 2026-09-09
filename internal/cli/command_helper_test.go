@@ -27,7 +27,7 @@ func TestAgentFlagImpliesJSON(t *testing.T) {
 			args:     []string{"test", "--json"},
 			wantJSON: true,
 		},
-		}
+	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

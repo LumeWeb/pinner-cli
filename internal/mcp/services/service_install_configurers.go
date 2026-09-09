@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"go.lumeweb.com/pinner-cli/internal/fieldform"
+	"go.lumeweb.com/fieldcraft"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.lumeweb.com/pinner/core/config"
 )
@@ -25,11 +25,11 @@ import (
 // public URL deriving from the config-manager store / account API). The legacy
 // imperative Configurer path was removed once all providers migrated.
 
-// promptText builds a free-text fieldform.Prompt[T=string]. The framework passes
+// promptText builds a free-text fieldcraft.Prompt[T=string]. The framework passes
 // the field's current Operational value to CurrentString, which renders it as
 // the editable default.
-func promptText(label, mask string) *fieldform.Prompt[string] {
-	return &fieldform.Prompt[string]{
+func promptText(label, mask string) *fieldcraft.Prompt[string] {
+	return &fieldcraft.Prompt[string]{
 		Label:         label,
 		Mask:          mask,
 		CurrentString: func(cur string) string { return cur },
@@ -39,7 +39,7 @@ func promptText(label, mask string) *fieldform.Prompt[string] {
 // openAIFields returns the promptable install fields for the OpenAI provider:
 // the Secure MCP Tunnel ID (validated against the OpenAI tunnel-ID shape) and
 // the control-plane API key (masked).
-func openAIFields() []fieldform.Field[*ServiceInstallState, string] {
+func openAIFields() []fieldcraft.Field[*ServiceInstallState, string] {
 	tunnelID := *installFieldByName("TunnelID")
 	tunnelID.Prompt = promptText("OpenAI Secure MCP Tunnel ID", "")
 	tunnelID.Validate = func(v string) bool { return tunnel.OpenAITunnelID.MatchString(v) }
@@ -47,12 +47,12 @@ func openAIFields() []fieldform.Field[*ServiceInstallState, string] {
 	apiKey := *installFieldByName("ApiKey")
 	apiKey.Prompt = promptText("OpenAI Secure MCP Tunnel control-plane API key", "*")
 
-	return []fieldform.Field[*ServiceInstallState, string]{tunnelID, apiKey}
+	return []fieldcraft.Field[*ServiceInstallState, string]{tunnelID, apiKey}
 }
 
 // openAIFinalize persists the supplied credentials to the last-resort config
 // manager so later runs auto-detect them without re-prompting.
-func openAIFinalize(_ context.Context, _ fieldform.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
+func openAIFinalize(_ context.Context, _ fieldcraft.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
 	tunnel.PersistTunnelCredential(cfgMgr, "openai", "tunnel_id", s.TunnelID)
 	tunnel.PersistTunnelCredential(cfgMgr, "openai", "api_key", s.ApiKey)
 	return nil
@@ -101,7 +101,7 @@ func fireProviderDeepLinks(p tunnel.TunnelProvider, s *ServiceInstallState) {
 // channel only (never Decided), so an operator --domain / --tunnel-name switch
 // (precedence 1) always wins and an interactive run prefills the value as the
 // editable default. Direction is faithful to the legacy Configurer it replaces.
-func cloudflaredFields() []fieldform.Field[*ServiceInstallState, string] {
+func cloudflaredFields() []fieldcraft.Field[*ServiceInstallState, string] {
 	domain := *installFieldByName("Domain")
 	domain.Prompt = promptText("Tunnel domain (required)", "")
 	domain.Derived = func(s *ServiceInstallState) (string, bool) {
@@ -127,7 +127,7 @@ func cloudflaredFields() []fieldform.Field[*ServiceInstallState, string] {
 		return "pinner-mcp", true
 	}
 
-	return []fieldform.Field[*ServiceInstallState, string]{domain, name}
+	return []fieldcraft.Field[*ServiceInstallState, string]{domain, name}
 }
 
 // cloudflaredFinalize is the post-Gather hook for cloudflared. The Domain and
@@ -137,8 +137,8 @@ func cloudflaredFields() []fieldform.Field[*ServiceInstallState, string] {
 // nothing to cfgMgr. On a headless run it fails fast if the required Domain is
 // still unresolved (no flag, no provisioned state) rather than writing an env
 // file that would carry an empty MCP_DOMAIN.
-func cloudflaredFinalize(_ context.Context, _ fieldform.Prompter, s *ServiceInstallState, _ config.Manager) error {
-	if s != nil && fieldform.NonInteractive && s.Domain == "" {
+func cloudflaredFinalize(_ context.Context, _ fieldcraft.Prompter, s *ServiceInstallState, _ config.Manager) error {
+	if s != nil && fieldcraft.NonInteractive && s.Domain == "" {
 		return fmt.Errorf("cloudflared install requires a tunnel domain; supply --%s or provision a named tunnel", serviceDomainFlag)
 	}
 	return nil
@@ -158,7 +158,7 @@ func cloudflaredFinalize(_ context.Context, _ fieldform.Prompter, s *ServiceInst
 // The token derives first (field order matters): PublicURL's SDK dev-domain
 // fallback consumes s.TunnelToken, so the token field must settle before the
 // URL field is resolved.
-func ngrokFields(ctx context.Context, cfgMgr config.Manager) []fieldform.Field[*ServiceInstallState, string] {
+func ngrokFields(ctx context.Context, cfgMgr config.Manager) []fieldcraft.Field[*ServiceInstallState, string] {
 	token := *installFieldByName("TunnelToken")
 	token.Prompt = promptText("ngrok authtoken (account token from your ngrok dashboard)", "*")
 	token.Derived = func(s *ServiceInstallState) (string, bool) {
@@ -231,7 +231,7 @@ func ngrokFields(ctx context.Context, cfgMgr config.Manager) []fieldform.Field[*
 		return "", false
 	}
 
-	return []fieldform.Field[*ServiceInstallState, string]{token, publicURL}
+	return []fieldcraft.Field[*ServiceInstallState, string]{token, publicURL}
 }
 
 // ngrokFinalize persists the resolved authtoken to the last-resort config
@@ -244,10 +244,10 @@ func ngrokFields(ctx context.Context, cfgMgr config.Manager) []fieldform.Field[*
 // env file missing MCP_PUBLIC_URL. The token is NOT independently required: an
 // account-API or operator-resolved URL needs no token, and an SDK-derived URL
 // required the token to resolve at all, so it is non-empty in that path.
-func ngrokFinalize(_ context.Context, _ fieldform.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
+func ngrokFinalize(_ context.Context, _ fieldcraft.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error {
 	if s != nil {
 		tunnel.PersistTunnelCredential(cfgMgr, "ngrok", "token", s.TunnelToken)
-		if fieldform.NonInteractive && s.PublicURL == "" {
+		if fieldcraft.NonInteractive && s.PublicURL == "" {
 			return fmt.Errorf("ngrok public base URL is required and could not be resolved non-interactively; supply --%s, NGROK_API_KEY, or run interactively", servicePublicURLFlag)
 		}
 	}

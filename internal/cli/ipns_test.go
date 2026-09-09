@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner/core/config"
-	"go.lumeweb.com/pinner/core/ipns"
 	configmocks "go.lumeweb.com/pinner/core/config/mocks"
+	"go.lumeweb.com/pinner/core/ipns"
 )
 
 func setupIPNSHandlerTest(t *testing.T) (*mockIPNSServiceForCLI, *configmocks.MockManager) {

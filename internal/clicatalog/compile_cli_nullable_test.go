@@ -1,4 +1,4 @@
-package catalog
+package clicatalog
 
 import (
 	"context"

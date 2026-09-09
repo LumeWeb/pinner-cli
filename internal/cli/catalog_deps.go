@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"strings"
 
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
+	"go.lumeweb.com/pinner/catalogops"
 	"go.lumeweb.com/pinner/core/admin"
 	"go.lumeweb.com/pinner/core/auth"
 	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/pinner/core/vault"
-	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 )
 
 // buildCatalogOpsDeps assembles the production operation-catalog dependency

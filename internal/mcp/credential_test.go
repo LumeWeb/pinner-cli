@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
+	opmesh "go.lumeweb.com/opmesh"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
 	"github.com/stretchr/testify/assert"
@@ -74,7 +74,7 @@ func TestCompiledHandlerPrefersContextCredential(t *testing.T) {
 	_, err := h(WithCredential(context.Background(), ctxJWT), model.ToolRequest{Arguments: map[string]any{}})
 	require.NoError(t, err)
 	assert.False(t, resolveCalled, "resolver must not be re-called when a credential is already on the context")
-	assert.Equal(t, ctxJWT, cat.input[catalog.ReservedAuthTokenKey], "context credential must be injected into op input")
+	assert.Equal(t, ctxJWT, cat.input[opmesh.ReservedAuthTokenKey], "context credential must be injected into op input")
 }
 
 // TestCompiledHandlerFallbackResolvesAndInjects verifies the stdio path (no
@@ -88,5 +88,5 @@ func TestCompiledHandlerFallbackResolvesAndInjects(t *testing.T) {
 	h := compiledHandler(cat, "pins_list", resolveToken)
 	_, err := h(context.Background(), model.ToolRequest{Arguments: map[string]any{}})
 	require.NoError(t, err)
-	assert.Equal(t, jwt, cat.input[catalog.ReservedAuthTokenKey], "resolver token must be injected when context is empty")
+	assert.Equal(t, jwt, cat.input[opmesh.ReservedAuthTokenKey], "resolver token must be injected when context is empty")
 }

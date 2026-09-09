@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/fieldform"
+	"go.lumeweb.com/fieldcraft"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.lumeweb.com/pinner/services"
 )
@@ -641,9 +641,9 @@ func TestValidateHeadlessDoesNotSpawnBrowser(t *testing.T) {
 
 	// Force the interactive global off so the interactive-path assertion below
 	// is deterministic regardless of any other test's global mutation.
-	oldNonInteractive := fieldform.NonInteractive
-	defer func() { fieldform.NonInteractive = oldNonInteractive }()
-	fieldform.NonInteractive = false
+	oldNonInteractive := fieldcraft.NonInteractive
+	defer func() { fieldcraft.NonInteractive = oldNonInteractive }()
+	fieldcraft.NonInteractive = false
 
 	opened := false
 	origOpener := tunnel.TunnelDeepLinkOpener
@@ -829,9 +829,9 @@ func TestServiceInstallStateToEnvWritesPort(t *testing.T) {
 
 func TestServiceInstallWizardNonInteractiveErrors(t *testing.T) {
 	// In non-interactive mode (e.g. --agent), the wizard must not block on stdin.
-	old := fieldform.NonInteractive
-	fieldform.NonInteractive = true
-	defer func() { fieldform.NonInteractive = old }()
+	old := fieldcraft.NonInteractive
+	fieldcraft.NonInteractive = true
+	defer func() { fieldcraft.NonInteractive = old }()
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "mcp.env")
@@ -1018,9 +1018,9 @@ func TestRestartManagedServiceNoOp(t *testing.T) {
 	require.NoError(t, RestartManagedService(ctx, cmd, &ServiceInstallState{Provider: tunnel.TunnelProviderNgrok}))
 }
 
-// tunnelConfigScriptedPrompter is a fieldform.Prompter for tests that drive the
+// tunnelConfigScriptedPrompter is a fieldcraft.Prompter for tests that drive the
 // spliced tunnel-config install step, returning queued Text answers in order so
-// fieldform.Gather resolves without a real terminal.
+// fieldcraft.Gather resolves without a real terminal.
 type tunnelConfigScriptedPrompter struct{ texts []string }
 
 func (p *tunnelConfigScriptedPrompter) Select(string, []string, string) (int, string, error) {
@@ -1055,9 +1055,9 @@ func TestMcpInstallConfigStepDeepLinksMissingCredentials(t *testing.T) {
 	origOpener := tunnel.TunnelDeepLinkOpener
 	defer func() { tunnel.TunnelDeepLinkOpener = origOpener }()
 
-	oldNI := fieldform.NonInteractive
-	defer func() { fieldform.NonInteractive = oldNI }()
-	fieldform.NonInteractive = false
+	oldNI := fieldcraft.NonInteractive
+	defer func() { fieldcraft.NonInteractive = oldNI }()
+	fieldcraft.NonInteractive = false
 
 	// Isolate ngrok config-file reads so the token derive step cannot pick up
 	// an operator's real ~/.config/ngrok authtoken on a dev machine.
@@ -1099,7 +1099,7 @@ func TestMcpInstallConfigStepDeepLinksMissingCredentials(t *testing.T) {
 			cmd := &cli.Command{Flags: managedServiceFlags()}
 			inner := ServiceInstallSteps(state, cmd, filepath.Join(t.TempDir(), "mcp.env"), nil)
 			configStep := inner[1] // "Tunnel-specific configuration"
-			ctx := fieldform.WithPrompter(context.Background(), &tunnelConfigScriptedPrompter{texts: tc.texts})
+			ctx := fieldcraft.WithPrompter(context.Background(), &tunnelConfigScriptedPrompter{texts: tc.texts})
 
 			if err := configStep.Execute(ctx, state); err != nil {
 				t.Fatalf("config step execute: %v", err)

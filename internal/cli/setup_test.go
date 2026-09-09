@@ -9,10 +9,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/fieldcraft"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
 	"go.lumeweb.com/pinner/core/config"
 	configmocks "go.lumeweb.com/pinner/core/config/mocks"
-	"go.lumeweb.com/pinner-cli/internal/fieldform"
 )
 
 func TestSetupWizard_Run(t *testing.T) {
@@ -570,7 +570,7 @@ func TestMockSetupUI(t *testing.T) {
 	})
 }
 
-// setupMcpPrompter is a fieldform.Prompter whose Confirm returns a fixed
+// setupMcpPrompter is a fieldcraft.Prompter whose Confirm returns a fixed
 // result, so tests can drive the opt-in MCP confirm without a real terminal.
 type setupMcpPrompter struct {
 	confirmResult bool
@@ -600,7 +600,7 @@ func newSetupWizardWithMcp(t *testing.T, confirm bool) (*SetupWizard, *bool, *Mo
 			return nil
 		})
 	ctx := context.Background()
-	ctx = fieldform.WithPrompter(ctx, &setupMcpPrompter{confirmResult: confirm})
+	ctx = fieldcraft.WithPrompter(ctx, &setupMcpPrompter{confirmResult: confirm})
 	steps := w.getSteps()
 	_, err := wizard.Run[*SetupWizard](ctx, mockUI, steps, w)
 	require.NoError(t, err)
@@ -660,7 +660,7 @@ func TestSetupMcpInstallStep_InstallErrorIsNonFatal(t *testing.T) {
 			return dummyErr
 		})
 	ctx := context.Background()
-	ctx = fieldform.WithPrompter(ctx, &setupMcpPrompter{confirmResult: true})
+	ctx = fieldcraft.WithPrompter(ctx, &setupMcpPrompter{confirmResult: true})
 	steps := w.getSteps()
 	_, err := wizard.Run[*SetupWizard](ctx, mockUI, steps, w)
 	require.NoError(t, err, "an opt-in install failure must not fail setup")

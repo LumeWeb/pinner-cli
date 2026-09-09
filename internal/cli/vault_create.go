@@ -30,9 +30,9 @@ var staleSeedWarningAfter = func() time.Duration {
 
 func newVaultCreateCommand() *cli.Command {
 	return &cli.Command{
-		Name:      "create",
-		Usage:     "Create a new vault",
-		ArgsUsage: "[--profile <name>]",
+		Name:        "create",
+		Usage:       "Create a new vault",
+		ArgsUsage:   "[--profile <name>]",
 		Description: `Create a new vault identity and configure it locally under the given profile name. Generates a fresh recovery seed, connects to the Sia indexer via browser approval, and stores a device credential locally. Returns the created profile and prints the recovery seed for saving.`,
 
 		Flags: []cli.Flag{

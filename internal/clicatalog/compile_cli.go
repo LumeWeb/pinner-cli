@@ -1,22 +1,34 @@
-package catalog
+package clicatalog
 
 import (
 	"context"
 	"fmt"
 
 	"github.com/urfave/cli/v3"
+	opmesh "go.lumeweb.com/opmesh"
+	"go.lumeweb.com/pinner/catalogmeta"
 )
+
+// Package clicatalog hosts the urfave/cli/v3 frontend for the shared pinner
+// operation catalog. The catalog core model is go.lumeweb.com/opmesh
+// (frontend-neutral operations, registry, normalization/execution) and the
+// operation definitions live in the module's go.lumeweb.com/pinner/catalogops;
+// CLI presentation metadata (PositionalOnly/AgentOnly/Sources) is keyed by
+// stable operation ID in go.lumeweb.com/pinner/catalogmeta. This package
+// keeps the CLI-only compiler (and its urfave dependency) separate so the
+// shared surface never imports urfave/cli or pterm.
 
 // Compiler turns a Catalog into one frontend's native command/tool surface. T
 // is the frontend-specific element type: the CLI compiler is a
-// Compiler[*cli.Command], the MCP compiler is a Compiler[ToolDescriptor]. A
-// generic-typed Compile means callers get back a concrete []T with no `any`
-// assertion, while still sharing the one "compile a catalog" abstraction.
+// Compiler[*cli.Command], the MCP compiler (in the pinner module) is a
+// Compiler[opmesh.ToolDescriptor]. A generic-typed Compile means callers get
+// back a concrete []T with no `any` assertion, while still sharing the one
+// "compile a catalog" abstraction.
 type Compiler[T any] interface {
 	// Compile maps every operation in cat to the frontend's native shape as
 	// []T. The CLI compiler emits []*cli.Command; the MCP compiler emits
 	// []ToolDescriptor.
-	Compile(cat Catalog) ([]T, error)
+	Compile(cat opmesh.Catalog) ([]T, error)
 }
 
 // ForceFlagName is the boolean confirm flag the CLI compiler adds to every
@@ -40,13 +52,13 @@ func NewCLICompiler() Compiler[*cli.Command] { return &cliCompiler{} }
 type cliCompiler struct{}
 
 // Compile converts every operation in cat into a []*cli.Command.
-func (c *cliCompiler) Compile(cat Catalog) ([]*cli.Command, error) {
+func (c *cliCompiler) Compile(cat opmesh.Catalog) ([]*cli.Command, error) {
 	if cat == nil {
 		return nil, fmt.Errorf("catalog: cannot compile a nil catalog")
 	}
 	// VisibilityBoth is treated as unrestricted by the registry, so this
 	// returns every registered operation regardless of visibility.
-	ops := cat.Search("", "", VisibilityBoth)
+	ops := cat.Search("", "", opmesh.VisibilityBoth)
 	cmds := make([]*cli.Command, 0, len(ops))
 	for _, op := range ops {
 		cmd, err := commandFor(op)
@@ -62,8 +74,8 @@ func (c *cliCompiler) Compile(cat Catalog) ([]*cli.Command, error) {
 // returns an error if a destructive operation declares an arg whose name collides
 // with the reserved --force confirm gate, which would otherwise produce a
 // duplicate --force flag and a urfave 'flag redefined' error at runtime.
-func commandFor(op Operation) (*cli.Command, error) {
-	destructive := op.Safety() == SafetyDestructive
+func commandFor(op opmesh.Operation) (*cli.Command, error) {
+	destructive := op.Safety() == opmesh.SafetyDestructive
 
 	cmd := &cli.Command{
 		Name:        op.Name(),
@@ -92,7 +104,7 @@ func commandFor(op Operation) (*cli.Command, error) {
 	// Human-only operations remain runnable by a human at the CLI, so we do
 	// not hide them, but flag the intent for future frontends (e.g. MCP, which
 	// must refuse them for model agents) with a usage note.
-	if op.Interaction() == InteractionHumanOnly {
+	if op.Interaction() == opmesh.InteractionHumanOnly {
 		cmd.Usage = op.Summary() + " (requires interactive human input)"
 	}
 
@@ -106,24 +118,31 @@ func commandFor(op Operation) (*cli.Command, error) {
 // is skipped: it has no --flag, so no redundant flag appears in help and the
 // CLI caller is never asked for it. MCP and direct Invoke are unaffected —
 // they read op.Args() directly.
-func flagsFor(op Operation) []cli.Flag {
+//
+// The opmesh core model deliberately carries no frontend fields, so the
+// PositionalOnly/AgentOnly carve-outs (and the per-arg env-var Sources) are
+// read from the module's frontend-metadata boundary
+// (catalogmeta.ArgFrontendForArg), keyed by the stable operation ID. Absent
+// entries mean "no frontend specialization", matching the pre-migration
+// default on every operation that declared none.
+func flagsFor(op opmesh.Operation) []cli.Flag {
 	args := op.Args()
 	if len(args) == 0 {
 		return nil
 	}
 	flags := make([]cli.Flag, 0, len(args))
 	for _, a := range args {
-		if a.PositionalOnly || a.AgentOnly {
+		if meta := catalogmeta.ArgFrontendForArg(op.Name(), a.Name); meta != nil && (meta.PositionalOnly || meta.AgentOnly) {
 			continue
 		}
-		flags = append(flags, flagFor(a))
+		flags = append(flags, flagFor(op.Name(), a))
 	}
 	return flags
 }
 
 // flagFor converts a single OperationArg into its urfave flag. The ArgType to
 // flag mapping matches the JSON-Schema mapping used by the MCP layer.
-func flagFor(a OperationArg) cli.Flag {
+func flagFor(opID string, a opmesh.OperationArg) cli.Flag {
 	help := a.Help
 	// urfave/cli/v3 core has no dedicated sensitive flag; mark the usage so
 	// shell history / help output discourages passing secrets inline.
@@ -134,30 +153,30 @@ func flagFor(a OperationArg) cli.Flag {
 		help += "(sensitive)"
 	}
 	// An arg that is Required but declares a Default is satisfied by that
-	// default (normalizeInputDefaults fills it before the Handler runs), so it
+	// default (NormalizeOperationInput fills it before the Handler runs), so it
 	// must not be flagged Required in urfave or the CLI would refuse to run
 	// without an explicit value, contradicting the default. Requiredness is the
 	// single shared predicate isRequiredArg, used identically by Invoke and the
 	// JSON-Schema builder.
 	required := isRequiredArg(a)
 
-	sources := flagSources(a)
+	sources := flagSources(opID, a.Name)
 	switch a.Type {
-	case ArgTypeBool, ArgTypeNullableBool:
+	case opmesh.ArgTypeBool, opmesh.ArgTypeNullableBool:
 		return &cli.BoolFlag{Name: a.Name, Usage: help, Value: a.Default == "true", Required: required, Sources: sources}
-	case ArgTypeInt, ArgTypeNullableInt:
+	case opmesh.ArgTypeInt, opmesh.ArgTypeNullableInt:
 		return &cli.IntFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required, Sources: sources}
-	case ArgTypeFloat:
+	case opmesh.ArgTypeFloat:
 		return &cli.Float64Flag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required, Sources: sources}
-	case ArgTypeDuration:
+	case opmesh.ArgTypeDuration:
 		return &cli.DurationFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required, Sources: sources}
-	case ArgTypeStringSlice:
+	case opmesh.ArgTypeStringSlice:
 		return &cli.StringSliceFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required, Sources: sources}
-	case ArgTypeRawJSON:
+	case opmesh.ArgTypeRawJSON:
 		// A raw-JSON arg's CLI flag is a plain string carrying JSON text. The
 		// handler parses it (e.g. --where-json '[{"tag":"finance"}]').
 		return &cli.StringFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required, Sources: sources}
-	default: // ArgTypeString
+	default: // opmesh.ArgTypeString
 		return &cli.StringFlag{Name: a.Name, Usage: help, DefaultText: a.Default, Required: required, Sources: sources}
 	}
 }
@@ -165,17 +184,29 @@ func flagFor(a OperationArg) cli.Flag {
 // flagSources maps an arg's declared environment Sources onto the urfave flag's
 // value-source chain. An empty set yields an empty chain (no env source), so
 // this restores the legacy per-flag EnvVars capability for catalog ops without
-// changing flags that declare no sources.
-func flagSources(a OperationArg) cli.ValueSourceChain {
-	return cli.EnvVars(a.Sources...)
+// changing flags that declare no sources. Sources are frontend metadata
+// (catalogmeta.ArgFrontendForArg): the opmesh core model carries none.
+func flagSources(opID, argName string) cli.ValueSourceChain {
+	if meta := catalogmeta.ArgFrontendForArg(opID, argName); meta != nil {
+		return cli.EnvVars(meta.Sources...)
+	}
+	return cli.EnvVars()
+}
+
+// isRequiredArg mirrors the pinner module's unexported same-named predicate:
+// an arg is only mandatory when Required AND has no default (a declared default
+// satisfies it before the Handler runs). It is a trivial exported-field
+// predicate, so no round-trip through an unexported-module shim is needed.
+func isRequiredArg(a opmesh.OperationArg) bool {
+	return a.Required && a.Default == ""
 }
 
 // actionFor returns the urfave ActionFunc adapter that dispatches to the
 // operation's Handler. It builds an input map from the parsed flags, enforces
 // the --force confirm gate for destructive operations and the required-arg
 // contract, then prints the Handler's result.
-func actionFor(op Operation) cli.ActionFunc {
-	destructive := op.Safety() == SafetyDestructive
+func actionFor(op opmesh.Operation) cli.ActionFunc {
+	destructive := op.Safety() == opmesh.SafetyDestructive
 
 	return func(ctx context.Context, cmd *cli.Command) error {
 		// Destructive confirm gate: refuse unless --force was passed.
@@ -189,8 +220,8 @@ func actionFor(op Operation) cli.ActionFunc {
 			if !set {
 				// Requiredness uses the shared isRequiredArg predicate (same one
 				// Invoke and the schema builder use): an arg is only mandatory
-				// when Required AND has no default; otherwise normalizeInputDefaults
-				// satisfies it.
+				// when Required AND has no default; otherwise
+				// NormalizeOperationInput satisfies it.
 				if isRequiredArg(a) {
 					return fmt.Errorf("missing required argument --%s", a.Name)
 				}
@@ -201,17 +232,19 @@ func actionFor(op Operation) cli.ActionFunc {
 			}
 			input[a.Name] = value
 		}
-		// Final unified check shared with Invoke: catches a set-but-empty or nil
-		// required value that slipped past cmd.IsSet (e.g. a zero-length slice),
-		// so the CLI and Invoke reject identical inputs.
-		if missing := firstMissingRequiredArg(op.Args(), input); missing != nil {
-			return fmt.Errorf("missing required argument --%s", missing.Name)
-		}
-		// Apply declared defaults uniformly with the Invoke path, so the Handler
-		// receives identical input no matter which frontend dispatched.
-		normalized, err := normalizeInputDefaults(op.Args(), input)
+		// Final unified step shared with Invoke: coerces present values into
+		// their declared ArgType shape and applies declared defaults uniformly
+		// with the Invoke path, so the Handler receives identical input no
+		// matter which frontend dispatched. It also re-checks required args
+		// (clirRequiredArgError re-surfaces those in the CLI-facing --flag
+		// spelling). The unknown-argument and reserved-key stripping inside
+		// NormalizeOperationInput are no-ops here: the input map only ever
+		// holds declared flag names.
+		normalized, err := opmesh.NormalizeOperationInput(op, input)
 		if err != nil {
-			return err
+			// Re-surface a missing required arg with the CLI-facing --flag
+			// spelling so user-facing help stays flag-oriented.
+			return cliRequiredArgError(op, err)
 		}
 		input = normalized
 
@@ -230,6 +263,24 @@ func actionFor(op Operation) cli.ActionFunc {
 	}
 }
 
+// cliRequiredArgError rewords the module's `missing required argument "name"`
+// dispatch error into the CLI's `missing required argument --name` spelling so
+// the user is pointed at the flag to pass. Any other error passes through
+// unchanged.
+func cliRequiredArgError(op opmesh.Operation, err error) error {
+	const prefix = `missing required argument "`
+	msg := err.Error()
+	if len(msg) > len(prefix) && msg[:len(prefix)] == prefix {
+		name := msg[len(prefix) : len(msg)-1] // strip trailing closing quote
+		for _, a := range op.Args() {
+			if a.Name == name {
+				return fmt.Errorf("missing required argument --%s", a.Name)
+			}
+		}
+	}
+	return err
+}
+
 // cliArgValue is the single source of truth for how each ArgType surfaces from
 // a parsed urfave command into the operation input map. Both the compiled
 // command path (actionFor) and the wiring adapters (FlagValue) delegate to it,
@@ -243,12 +294,12 @@ func actionFor(op Operation) cli.ActionFunc {
 //   - set:   whether the flag was explicitly provided (cmd.IsSet).
 //   - empty: for required-arg validation, whether a provided value is "empty"
 //     (only meaningful for string / string-slice types).
-func cliArgValue(cmd *cli.Command, a OperationArg) (value any, set bool, empty bool) {
+func cliArgValue(cmd *cli.Command, a opmesh.OperationArg) (value any, set bool, empty bool) {
 	set = cmd.IsSet(a.Name)
 	switch a.Type {
-	case ArgTypeBool:
+	case opmesh.ArgTypeBool:
 		return cmd.Bool(a.Name), set, false
-	case ArgTypeNullableBool:
+	case opmesh.ArgTypeNullableBool:
 		// Preserve tri-state: absent flag -> nil, provided -> &bool. c.Bool
 		// alone cannot distinguish --flag=false from an absent flag, so gate
 		// on set so the Handler sees the same shape as the MCP surface.
@@ -257,11 +308,11 @@ func cliArgValue(cmd *cli.Command, a OperationArg) (value any, set bool, empty b
 		}
 		v := cmd.Bool(a.Name)
 		return &v, true, false
-	case ArgTypeInt:
+	case opmesh.ArgTypeInt:
 		// An explicit 0 is a legitimate value (e.g. --ttl 0); presence is
 		// determined by set, not by magnitude.
 		return cmd.Int(a.Name), set, false
-	case ArgTypeNullableInt:
+	case opmesh.ArgTypeNullableInt:
 		// Preserve tri-state: absent flag -> nil, provided -> *int. The int
 		// flag alone cannot distinguish --priority 0 from an absent flag, so
 		// gate on set so the Handler sees the same shape as the MCP surface.
@@ -270,18 +321,18 @@ func cliArgValue(cmd *cli.Command, a OperationArg) (value any, set bool, empty b
 		}
 		v := cmd.Int(a.Name)
 		return &v, true, false
-	case ArgTypeFloat:
+	case opmesh.ArgTypeFloat:
 		return cmd.Float(a.Name), set, false
-	case ArgTypeDuration:
+	case opmesh.ArgTypeDuration:
 		return cmd.Duration(a.Name), set, false
-	case ArgTypeStringSlice:
+	case opmesh.ArgTypeStringSlice:
 		v := cmd.StringSlice(a.Name)
 		return v, set, len(v) == 0
-	case ArgTypeRawJSON:
+	case opmesh.ArgTypeRawJSON:
 		// The CLI surface of a raw-JSON arg is a string (JSON text).
 		v := cmd.String(a.Name)
 		return v, set, v == ""
-	default: // ArgTypeString
+	default: // opmesh.ArgTypeString
 		v := cmd.String(a.Name)
 		return v, set, v == ""
 	}
@@ -291,7 +342,7 @@ func cliArgValue(cmd *cli.Command, a OperationArg) (value any, set bool, empty b
 // argument, delegating to cliArgValue. It exists for the CLI wiring adapters
 // (catalog_wiring and friends) which place a value for every declared arg into
 // the input map and do not gate on flag presence themselves.
-func FlagValue(cmd *cli.Command, a OperationArg) any {
+func FlagValue(cmd *cli.Command, a opmesh.OperationArg) any {
 	v, _, _ := cliArgValue(cmd, a)
 	return v
 }
@@ -301,7 +352,7 @@ func FlagValue(cmd *cli.Command, a OperationArg) any {
 // It is the single canonical construction used by the CLI action adapters so
 // they do not each hand-iterate over op.Args(); MCP never calls it (the MCP
 // layer reads only the flag *schema*, never flag values).
-func FlagsToInput(cmd *cli.Command, op Operation) map[string]any {
+func FlagsToInput(cmd *cli.Command, op opmesh.Operation) map[string]any {
 	args := op.Args()
 	if len(args) == 0 {
 		return nil

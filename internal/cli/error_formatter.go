@@ -53,8 +53,8 @@ var (
 	ErrConfigInvalid  = errors.New("configuration invalid")
 
 	// Operation errors
-	ErrOperationFailed    = errors.New("operation failed")
-	ErrOperationNotFound  = errors.New("operation not found")
+	ErrOperationFailed   = errors.New("operation failed")
+	ErrOperationNotFound = errors.New("operation not found")
 	// Consolidated into internal/core/errors; re-exported here for CLI consumers.
 	ErrServiceUnavailable = coreerrors.ErrServiceUnavailable
 

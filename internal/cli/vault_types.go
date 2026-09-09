@@ -88,4 +88,3 @@ type vaultStatusResponse struct {
 type vaultSyncResponse struct {
 	EventsProcessed int `json:"events_processed"`
 }
-

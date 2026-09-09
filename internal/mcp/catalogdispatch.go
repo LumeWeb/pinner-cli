@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/invopop/jsonschema"
-	"go.lumeweb.com/pinner-cli/internal/catalog"
-
+	"go.lumeweb.com/opmesh"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
@@ -167,15 +167,22 @@ func SetInvokeTimeout(fn func() time.Duration) {
 //
 // On any other error the result is a plain ToolResult{IsError:true} with a
 // cleaned message.
-func DispatchCatalogOp(ctx context.Context, cat catalog.Catalog, actor catalog.Actor, name string, args map[string]any, resumeTool string) (model.ToolResult, error) {
+func DispatchCatalogOp(ctx context.Context, cat opmesh.Catalog, actor opmesh.Actor, name string, args map[string]any, resumeTool string) (model.ToolResult, error) {
 	// AgentRequired args are enforced here, in the MCP dispatch layer, not in
 	// Catalog.Invoke / NormalizeOperationInput — those are shared normalization
 	// seams that the CLI and other non-MCP callers use, and AgentRequired must
-	// never leak into a non-MCP invocation. So the AgentRequired check belongs
-	// at the MCP surface, just before the op runs.
+	// never leak into a non-MCP invocation (opmesh deliberately reserves
+	// AgentRequired for "required on the agent surface only" and its Invoke
+	// gate enforces only Required). So the AgentRequired check belongs at the
+	// MCP surface, just before the op runs. Required-no-default args are NOT
+	// re-checked here: opmesh Invoke's own required-arg gate (via
+	// NormalizeOperationInput) refuses with the identical
+	// `missing required argument "name"` message this layer used to produce
+	// through ValidateMCPRequired, so both refusals reach the caller with the
+	// same text.
 	if op, ok := cat.Get(name); ok {
-		if err := catalog.ValidateMCPRequired(op, args); err != nil {
-			return model.ToolResult{IsError: true, Text: cleanMessage(err)}, nil
+		if m := firstMissingAgentRequiredArg(op, args); m != "" {
+			return model.ToolResult{IsError: true, Text: fmt.Sprintf("missing required argument %q", m)}, nil
 		}
 	}
 
@@ -191,7 +198,7 @@ func DispatchCatalogOp(ctx context.Context, cat catalog.Catalog, actor catalog.A
 	if err != nil {
 		// A destructive op invoked by a model needs explicit human
 		// confirmation. Surface it as a confirm hand-off, not an error.
-		if errors.Is(err, catalog.ErrConfirmRequired) {
+		if errors.Is(err, opmesh.ErrConfirmRequired) {
 			return model.NeedsHumanResult(model.NeedsHuman{
 				Reason:     model.ReasonConfirmation,
 				ResumeTool: resumeTool,
@@ -200,7 +207,7 @@ func DispatchCatalogOp(ctx context.Context, cat catalog.Catalog, actor catalog.A
 		}
 		// An InteractiveOnly/NeedsHandoff op refused for a non-human actor is
 		// a hand-off to the human, not a failure.
-		if errors.Is(err, catalog.ErrHumanRequired) {
+		if errors.Is(err, opmesh.ErrHumanRequired) {
 			return model.NeedsHumanResult(model.NeedsHuman{
 				Reason:     model.ReasonInteractiveOnly,
 				ResumeTool: resumeTool,
@@ -211,6 +218,92 @@ func DispatchCatalogOp(ctx context.Context, cat catalog.Catalog, actor catalog.A
 	}
 
 	return resultToToolResult(result), nil
+}
+
+// firstMissingAgentRequiredArg reports the name of the first declared
+// AgentRequired arg that the input does not satisfy, or "" when every
+// AgentRequired arg is satisfied. It replicates the pre-opmesh-seam
+// ValidateMCPRequired semantics for the AgentRequired half: an arg counts as
+// missing when its value is absent, present-but-null, or present-but-empty.
+// Required-no-default args are excluded — the opmesh Invoke gate enforces
+// those itself with the same user-visible message — so AgentRequired can
+// never leak into a non-MCP invocation while Required enforcement is not
+// duplicated.
+func firstMissingAgentRequiredArg(op opmesh.Operation, input map[string]any) string {
+	for _, a := range op.Args() {
+		if !a.AgentRequired {
+			continue
+		}
+		raw, present := lookupAgentArgInput(a, input)
+		if !present || raw == nil || isAgentArgEmpty(a, raw) {
+			return a.Name
+		}
+	}
+	return ""
+}
+
+// lookupAgentArgInput resolves an operation arg against a raw input map,
+// matching both the declared (kebab) name and its camelCase alias, so a model
+// sending either spelling satisfies the arg — the same acceptance contract the
+// registry's normalize path applies. Returns the value and whether it was
+// present under either key.
+func lookupAgentArgInput(a opmesh.OperationArg, input map[string]any) (any, bool) {
+	if raw, ok := input[a.Name]; ok {
+		return raw, true
+	}
+	if alias := camelCase(a.Name); alias != a.Name {
+		if raw, ok := input[alias]; ok {
+			return raw, true
+		}
+	}
+	return nil, false
+}
+
+// isAgentArgEmpty classifies a present argument value as "empty" for
+// required-arg purposes: an empty string (or a string-flexible id), an empty
+// string slice, or an empty raw-JSON string. Typed scalars (bool/int/float/
+// duration) have no meaningful empty value; their zero values are legitimate
+// (an explicit 0 is a value, not an omission).
+func isAgentArgEmpty(a opmesh.OperationArg, raw any) bool {
+	switch a.Type {
+	case opmesh.ArgTypeStringSlice:
+		if s, ok := raw.([]string); ok {
+			return len(s) == 0
+		}
+		if s, ok := raw.([]any); ok {
+			return len(s) == 0
+		}
+		return false
+	case opmesh.ArgTypeString, opmesh.ArgTypeFlexibleID, opmesh.ArgTypeRawJSON:
+		s, ok := raw.(string)
+		return ok && s == ""
+	default:
+		return false
+	}
+}
+
+// camelCase converts a kebab-case name to camelCase (e.g. "device-name" ->
+// "deviceName"). Used to accept the camelCase spelling of an arg a model may
+// send in place of the declared kebab name.
+func camelCase(name string) string {
+	var b strings.Builder
+	b.Grow(len(name))
+	upper := false
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if c == '-' {
+			upper = true
+			continue
+		}
+		if upper {
+			if c >= 'a' && c <= 'z' {
+				c -= 'a' - 'A'
+			}
+			upper = false
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }
 
 // resultToToolResult converts the typed (any) result returned by the catalog

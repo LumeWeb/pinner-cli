@@ -8,8 +8,9 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	opmesh "go.lumeweb.com/opmesh"
+	"go.lumeweb.com/pinner-cli/internal/clicatalog"
+	"go.lumeweb.com/pinner/catalogops"
 	"go.lumeweb.com/pinner/core/operations"
 )
 
@@ -49,12 +50,12 @@ var operationsCatalogDepsVar = catalogops.OperationsDeps(catalogOperationsDeps()
 // newOperationsCommandCatalog is the catalog-driven "operations" parent
 // command. (newOperationsCommand in operations.go delegates to this.)
 func newOperationsCommandCatalog() *cli.Command {
-	cat := catalog.NewCatalog()
+	cat := opmesh.NewCatalog()
 	for _, op := range catalogops.OperationsOperations(operationsCatalogDepsVar) {
 		_ = cat.Add(op)
 	}
 
-	compiler := catalog.NewCLICompiler()
+	compiler := clicatalog.NewCLICompiler()
 	compiled, err := compiler.Compile(cat)
 	if err != nil {
 		panic(fmt.Sprintf("catalog compile operations: %v", err))
@@ -67,7 +68,7 @@ func newOperationsCommandCatalog() *cli.Command {
 		c.Category = "Management"
 		relaxFlagRequired(c)
 
-		var op catalog.Operation
+		var op opmesh.Operation
 		for _, cand := range catalogops.OperationsOperations(operationsCatalogDepsVar) {
 			if cand.Name() == canonical {
 				op = cand
@@ -92,10 +93,10 @@ func newOperationsCommandCatalog() *cli.Command {
 // operationsActionAdapter wraps a catalog operations command's Action: it maps
 // the positional <id> into the operation input, then invokes the handler and
 // renders the result.
-func operationsActionAdapter(op catalog.Operation) cli.ActionFunc {
+func operationsActionAdapter(op opmesh.Operation) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
 
-		input := catalog.FlagsToInput(c, op)
+		input := clicatalog.FlagsToInput(c, op)
 
 		// Thread the per-invocation --auth-token override into the operation
 		// input so the Service closure honors it (flag over config).
@@ -108,7 +109,7 @@ func operationsActionAdapter(op catalog.Operation) cli.ActionFunc {
 		// with IntArg (which coerces string/int) so an explicit --id flag is not
 		// clobbered by a positional.
 		if c.Args().Len() > 0 {
-			if hasArg(op, "id") && catalog.IntArg(input, "id", 0) == 0 {
+			if hasArg(op, "id") && opmesh.IntArg(input, "id", 0) == 0 {
 				input["id"] = c.Args().First()
 			}
 		}
@@ -137,7 +138,7 @@ func operationsActionAdapter(op catalog.Operation) cli.ActionFunc {
 // catalogops deps closure. It requires authentication up front and clamps
 // page/pageSize to the defaults (1/10) so an unset or zero page-size does not
 // disable pagination and fetch the entire operations table on every poll tick.
-func watchCatalogOperationsList(ctx context.Context, c *cli.Command, op catalog.Operation, input map[string]any) error {
+func watchCatalogOperationsList(ctx context.Context, c *cli.Command, op opmesh.Operation, input map[string]any) error {
 	output := setupOutput(c)
 	svc := operationsCatalogDepsVar.Service(input)
 	if svc == nil {
@@ -146,7 +147,7 @@ func watchCatalogOperationsList(ctx context.Context, c *cli.Command, op catalog.
 	if err := svc.RequireAuthenticated(); err != nil {
 		return err
 	}
-	l := catalog.ParseList(input)
+	l := opmesh.ParseList(input)
 	// The watcher clamps to a sane default (Limit 10) so an unset or zero limit
 	// does not disable pagination and fetch the entire operations table on
 	// every poll tick.
@@ -155,13 +156,13 @@ func watchCatalogOperationsList(ctx context.Context, c *cli.Command, op catalog.
 		limit = 10
 	}
 	opts := operations.ListOptions{
-		Search:          catalog.SearchArg(input),
-		StatusFilters:   catalog.StrSliceArg(input, "status"),
-		IncludeAll:      catalog.BoolArg(input, "all", false),
-		OperationFilter: catalog.StrArg(input, "operation", ""),
-		ProtocolFilter:  catalog.StrArg(input, "protocol", ""),
-		CIDFilter:       catalog.StrArg(input, "cid", ""),
-		Sort:            catalog.StrArg(input, "sort", ""),
+		Search:          opmesh.SearchArg(input),
+		StatusFilters:   opmesh.StrSliceArg(input, "status"),
+		IncludeAll:      opmesh.BoolArg(input, "all", false),
+		OperationFilter: opmesh.StrArg(input, "operation", ""),
+		ProtocolFilter:  opmesh.StrArg(input, "protocol", ""),
+		CIDFilter:       opmesh.StrArg(input, "cid", ""),
+		Sort:            opmesh.StrArg(input, "sort", ""),
 		Start:           l.Start,
 		Limit:           limit,
 	}
@@ -171,7 +172,7 @@ func watchCatalogOperationsList(ctx context.Context, c *cli.Command, op catalog.
 
 // renderOperationsResult renders an operations handler's typed DATA through the
 // CLI Output formatter.
-func renderOperationsResult(_ context.Context, c *cli.Command, op catalog.Operation, result any) error {
+func renderOperationsResult(_ context.Context, c *cli.Command, op opmesh.Operation, result any) error {
 	output := setupOutput(c)
 
 	switch r := result.(type) {

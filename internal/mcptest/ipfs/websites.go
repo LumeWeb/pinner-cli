@@ -437,7 +437,6 @@ func (s *Server) PostApiWebsitesIdValidate(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-
 // PostApiWebsitesIdDomainsDomainIdOnchain converts a bound domain to on-chain
 // managed (POST /api/websites/{id}/domains/{domain_id}/onchain). Mirrors the
 // portal's ConvertToOnChain contract: a non-HNS binding or a name whose NS
@@ -549,7 +548,6 @@ func (d *websiteDomain) toRepublishResponse() DomainDANERepublishResponse {
 		ZoneName:    d.ZoneName,
 	}
 }
-
 
 // domainStatusPtr converts the fake's stored *string domain status into the
 // typed DomainResponseStatus pointer the wire contract carries now that the

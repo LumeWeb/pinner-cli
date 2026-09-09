@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	"go.lumeweb.com/pinner/catalogops"
 	"go.lumeweb.com/pinner/core/auth"
 	"go.lumeweb.com/pinner/core/config"
 	configmocks "go.lumeweb.com/pinner/core/config/mocks"
@@ -132,8 +132,8 @@ func TestAccountOTPDisableWired(t *testing.T) {
 
 	disable := accountOTPDisableWired()
 	root := &cli.Command{
-		Name:    "pinner",
-		Flags:   []cli.Flag{&cli.BoolFlag{Name: FlagJSON}},
+		Name:     "pinner",
+		Flags:    []cli.Flag{&cli.BoolFlag{Name: FlagJSON}},
 		Commands: []*cli.Command{disable},
 	}
 	var buf bytes.Buffer

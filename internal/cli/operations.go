@@ -9,7 +9,7 @@ import (
 	"github.com/urfave/cli/v3"
 	portalsdk "go.lumeweb.com/portal-sdk"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
+	opmesh "go.lumeweb.com/opmesh"
 )
 
 func newOperationsCommand() *cli.Command {
@@ -37,7 +37,7 @@ func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgM
 	// operations command and the catalog operations_list op share the same
 	// page/page-size → start/limit mapping (page is 1-based; an absent or
 	// zero page-size falls back to the shared default).
-	list := catalog.ParseListPage(map[string]any{
+	list := opmesh.ParseListPage(map[string]any{
 		"page":      cmd.Int(FlagPage),
 		"page-size": cmd.Int(FlagPageSize),
 	}, 10)

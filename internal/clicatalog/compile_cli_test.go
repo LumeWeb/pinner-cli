@@ -1,4 +1,4 @@
-package catalog
+package clicatalog
 
 import (
 	"context"
@@ -213,18 +213,22 @@ func TestCLICompilerRejectsForceArgOnDestructive(t *testing.T) {
 // mechanism that removes the redundant `--zone string` flag from the DNS
 // zone/record ops, which already expose <domain> positionally.
 func TestCLICompilerPositionalOnlyNoFlag(t *testing.T) {
+	// The PositionalOnly carve-out is frontend metadata keyed by the stable
+	// operation ID in module catalogmeta (dns_records_create's "zone" arg is
+	// PositionalOnly), so this test pins the compiler's merge against the real
+	// module metadata rather than an inline field.
 	c := NewCatalog()
 	if err := c.Add(NewOperation(OperationSpec{
-		Name: "dns.records.create", Title: "Create", Summary: "create a record",
+		Name: "dns_records_create", Title: "Create", Summary: "create a record",
 		Description: "create a dns record", Category: "dns", Safety: SafetyMutate,
 		Interaction: InteractionAgentSafe, Visibility: VisibilityBoth,
 		Positional: "<domain>",
 		Args: []OperationArg{
-			{Name: "zone", Type: ArgTypeString, Required: true, PositionalOnly: true, Help: "Domain name or numeric zone ID"},
+			{Name: "zone", Type: ArgTypeString, Required: true, Help: "Domain name or numeric zone ID"},
 			{Name: "name", Type: ArgTypeString, Help: "Record name (or @ for apex)"},
 			{Name: "type", Type: ArgTypeString, Required: true, Help: "Record type"},
 		},
-		Handler: markerHandler{marker: "ran:dns.records.create"},
+		Handler: markerHandler{marker: "ran:dns_records_create"},
 	})); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -262,18 +266,21 @@ func TestCLICompilerPositionalOnlyNoFlag(t *testing.T) {
 // surfacing a CLI flag for it.
 func TestCLICompilerAgentOnlyNoFlag(t *testing.T) {
 	c := NewCatalog()
+	// The AgentOnly carve-out is frontend metadata keyed by the stable
+	// operation ID in module catalogmeta (websites_create's platform/label
+	// args are AgentOnly), so this test pins against the real module metadata.
 	if err := c.Add(NewOperation(OperationSpec{
-		Name: "websites.create", Title: "Create", Summary: "create a site",
+		Name: "websites_create", Title: "Create", Summary: "create a site",
 		Description: "create a website", Category: "websites", Safety: SafetyMutate,
 		Interaction: InteractionAgentSafe, Visibility: VisibilityBoth,
 		Positional: "<domain>",
 		Args: []OperationArg{
 			{Name: "website", Type: ArgTypeString, Help: "Custom domain"},
 			{Name: "cid", Type: ArgTypeString, Required: true, Help: "IPFS CID"},
-			{Name: "platform", Type: ArgTypeBool, AgentOnly: true, Help: "Claim a platform subdomain", AgentHelp: "Set to claim a platform subdomain at create"},
-			{Name: "label", Type: ArgTypeString, AgentOnly: true, Help: "Subdomain label", AgentHelp: "Subdomain label to claim"},
+			{Name: "platform", Type: ArgTypeBool, Help: "Claim a platform subdomain"},
+			{Name: "label", Type: ArgTypeString, Help: "Subdomain label"},
 		},
-		Handler: markerHandler{marker: "ran:websites.create"},
+		Handler: markerHandler{marker: "ran:websites_create"},
 	})); err != nil {
 		t.Fatalf("Add: %v", err)
 	}

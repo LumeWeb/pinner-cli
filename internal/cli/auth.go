@@ -8,9 +8,9 @@ import (
 
 	"github.com/manifoldco/promptui"
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/internal/mcp/core/flag"
 	"go.lumeweb.com/pinner/core/auth"
 	"go.lumeweb.com/pinner/core/config"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/flag"
 )
 
 // cleanupTerminal restores terminal state after an interrupt.

@@ -1,8 +1,8 @@
 package cli
 
 import (
-	"go.lumeweb.com/pinner/core/auth"
 	"context"
+	"go.lumeweb.com/pinner/core/auth"
 	"testing"
 
 	"github.com/stretchr/testify/mock"

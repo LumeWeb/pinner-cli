@@ -7,8 +7,9 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	opmesh "go.lumeweb.com/opmesh"
+	"go.lumeweb.com/pinner-cli/internal/clicatalog"
+	"go.lumeweb.com/pinner/catalogops"
 	"go.lumeweb.com/pinner/core/vault"
 )
 
@@ -126,13 +127,13 @@ func vaultParentUsage(parent string) string {
 // IO hand-written commands (create, restore, cp, cat) are appended by
 // newVaultCommand.
 func newVaultCatalogCommands() []*cli.Command {
-	cat := catalog.NewCatalog()
+	cat := opmesh.NewCatalog()
 	ops := catalogops.VaultOperations(vaultCatalogDepsVar)
 	for _, op := range ops {
 		_ = cat.Add(op)
 	}
 
-	compiler := catalog.NewCLICompiler()
+	compiler := clicatalog.NewCLICompiler()
 	compiled, err := compiler.Compile(cat)
 	if err != nil {
 		// Compilation of well-formed catalog operations cannot fail; if it
@@ -211,7 +212,7 @@ func mountVaultCatalogCommand(cmd *cli.Command) *cli.Command {
 	// (see relaxFlagRequired); call before wrapping the Action.
 	relaxFlagRequired(cmd)
 
-	var op catalog.Operation
+	var op opmesh.Operation
 	for _, cand := range catalogops.VaultOperations(vaultCatalogDepsVar) {
 		if cand.Name() == canonical {
 			op = cand
@@ -323,10 +324,10 @@ func vaultFlushSyncAction() cli.ActionFunc {
 // operation. It builds the operation input map from flags plus the resolved
 // positional path/name and profile, applies the destructive --force gate, and
 // renders the handler's result through renderVaultResult.
-func vaultActionAdapter(op catalog.Operation) cli.ActionFunc {
+func vaultActionAdapter(op opmesh.Operation) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
 		// Build the input map from the compiler-declared flags.
-		input := catalog.FlagsToInput(c, op)
+		input := clicatalog.FlagsToInput(c, op)
 
 		// Map the positional argument into the operation's path/name input.
 		// The catalog CLI compiler reads flags only, so the adapter resolves
@@ -334,7 +335,7 @@ func vaultActionAdapter(op catalog.Operation) cli.ActionFunc {
 		// mapping rule (right-aligned, surplus rejection, name resolution from
 		// the Positional declaration) lives in the catalog framework and is
 		// shared with every frontend.
-		if err := catalog.MapPositionalArgs(op.Args(), op.Positional(), c.Args().Slice(), input); err != nil {
+		if err := opmesh.MapPositionalArgs(op.Args(), op.Positional(), c.Args().Slice(), input); err != nil {
 			return err
 		}
 
@@ -351,7 +352,7 @@ func vaultActionAdapter(op catalog.Operation) cli.ActionFunc {
 		// --force guards the irreversible registry/cache/seed deletion. Both
 		// destructive ops enforce confirmation at the handler level too, so the
 		// CLI maps --force into input["confirm"] for programmatic parity.
-		if op.Safety() == catalog.SafetyDestructive {
+		if op.Safety() == opmesh.SafetyDestructive {
 			confirm := c.Bool(FlagForce) || c.Bool(FlagConfirm)
 			input["confirm"] = confirm
 			if !confirm {
@@ -372,7 +373,7 @@ func vaultActionAdapter(op catalog.Operation) cli.ActionFunc {
 }
 
 // hasArg reports whether the operation declares an arg with the given name.
-func hasArg(op catalog.Operation, name string) bool {
+func hasArg(op opmesh.Operation, name string) bool {
 	for _, a := range op.Args() {
 		if a.Name == name {
 			return true
@@ -384,7 +385,7 @@ func hasArg(op catalog.Operation, name string) bool {
 // renderVaultResult is the catalog.RenderFunc that renders a vault handler's
 // typed result through the CLI Output formatter. It is the single rendering
 // home for catalog-driven vault commands.
-func renderVaultResult(_ context.Context, c *cli.Command, op catalog.Operation, result any) error {
+func renderVaultResult(_ context.Context, c *cli.Command, op opmesh.Operation, result any) error {
 	output := setupOutput(c)
 
 	switch r := result.(type) {
