@@ -21,6 +21,23 @@ runs:
         cache: 'pnpm'
         cache-dependency-path: pnpm-lock.yaml
 
+    - name: 'Check out mcpcanvas (file: dependency)'
+      # packages/apps pins @lumeweb/mcpcanvas via a file: spec that the root
+      # pnpm-lock.yaml resolves to the sibling directory ../mcpcanvas/ui —
+      # OUTSIDE $GITHUB_WORKSPACE, where actions/checkout cannot clone, so do
+      # it with plain git. Pin to the same commit go.mod requires
+      # (go.lumeweb.com/mcpcanvas v0.0.0-20260907112052-7adbd4d8dcac, the
+      # develop head) so the runtime sources pnpm links match the Go module.
+      shell: bash
+      run: |
+        target="$GITHUB_WORKSPACE/../mcpcanvas"
+        if [ -d "$target/.git" ]; then
+          git -C "$target" fetch --quiet origin
+        else
+          git clone --quiet https://github.com/LumeWeb/mcpcanvas "$target"
+        fi
+        git -C "$target" checkout --quiet --force 7adbd4d8dcac9a71c596db04debb3e3e4f2e1892
+
     - name: Install JS deps
       run: pnpm install --frozen-lockfile
       shell: bash
