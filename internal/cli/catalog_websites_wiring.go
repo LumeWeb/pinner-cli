@@ -10,8 +10,9 @@ import (
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	opmesh "go.lumeweb.com/opmesh"
+	"go.lumeweb.com/pinner-cli/internal/clicatalog"
+	"go.lumeweb.com/pinner/catalogops"
 	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/pinner/core/download"
 	"go.lumeweb.com/pinner/core/websites"
@@ -103,13 +104,13 @@ var websitesCatalogDepsVar = catalogops.WebsitesDeps(catalogWebsitesDeps())
 // interactive hand-written commands (wizard, domains wizard) are appended by
 // newWebsitesCommand.
 func newWebsitesCatalogCommands() []*cli.Command {
-	cat := catalog.NewCatalog()
+	cat := opmesh.NewCatalog()
 	ops := catalogops.WebsitesOperations(websitesCatalogDepsVar)
 	for _, op := range ops {
 		_ = cat.Add(op)
 	}
 
-	compiler := catalog.NewCLICompiler()
+	compiler := clicatalog.NewCLICompiler()
 	compiled, err := compiler.Compile(cat)
 	if err != nil {
 		// Compilation of well-formed catalog operations cannot fail; if it
@@ -219,7 +220,7 @@ func mountWebsitesCatalogCommand(cmd *cli.Command) *cli.Command {
 		cmd.Aliases = []string{"ipns"}
 	}
 
-	var op catalog.Operation
+	var op opmesh.Operation
 	for _, cand := range catalogops.WebsitesOperations(websitesCatalogDepsVar) {
 		if cand.Name() == canonical {
 			op = cand
@@ -252,16 +253,16 @@ func mountWebsitesCatalogCommand(cmd *cli.Command) *cli.Command {
 // the catalog framework so every frontend interprets a Positional declaration
 // identically. The adapter only translates the urfave args into a []string.
 // Flag-populated values are never overwritten.
-func applyPositionalArgs(op catalog.Operation, input map[string]any, args cli.Args) error {
-	return catalog.MapPositionalArgs(op.Args(), op.Positional(), args.Slice(), input)
+func applyPositionalArgs(op opmesh.Operation, input map[string]any, args cli.Args) error {
+	return opmesh.MapPositionalArgs(op.Args(), op.Positional(), args.Slice(), input)
 }
 
-func websitesActionAdapter(op catalog.Operation) cli.ActionFunc {
+func websitesActionAdapter(op opmesh.Operation) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
 		output := setupOutput(c)
 
 		// Build the input map from the compiler-declared flags.
-		input := catalog.FlagsToInput(c, op)
+		input := clicatalog.FlagsToInput(c, op)
 
 		// Thread the per-invocation --auth-token flag into the operation's
 		// service construction (flag -> config precedence, mirroring the
@@ -283,10 +284,10 @@ func websitesActionAdapter(op catalog.Operation) cli.ActionFunc {
 		// Destructive gate (websites delete). Enforce --force when a target is
 		// present; with no target, fall through so the handler's required-arg
 		// validation produces a non-zero exit instead of silently succeeding.
-		if op.Safety() == catalog.SafetyDestructive {
+		if op.Safety() == opmesh.SafetyDestructive {
 			confirm := c.Bool(FlagForce) || c.Bool(FlagConfirm)
 			input["confirm"] = confirm
-			if !confirm && catalog.StrArg(input, "website", "") != "" {
+			if !confirm && opmesh.StrArg(input, "website", "") != "" {
 				return fmt.Errorf("websites delete: pass --force to confirm this destructive operation")
 			}
 		}
@@ -349,7 +350,7 @@ func websitesActionAdapter(op catalog.Operation) cli.ActionFunc {
 // the user what to do (mirrors the removed legacy handler). It renders only in
 // human (non-JSON) output — in --json mode the error document stays machine
 // clean, and it no-ops for every non-verify operation.
-func renderVerifyGuidance(output Output, op catalog.Operation, err error) {
+func renderVerifyGuidance(output Output, op opmesh.Operation, err error) {
 	if op.Name() == "websites_domains_verify" && !output.IsJSON() {
 		renderDNSSelfServiceGuidance(output, err)
 	}
@@ -371,7 +372,7 @@ func isNilPointerResult(v any) bool {
 // renderWebsitesResult is the catalog.RenderFunc that renders a websites
 // handler's typed result through the CLI Output formatter. It is the single
 // rendering home for catalog-driven websites commands.
-func renderWebsitesResult(_ context.Context, c *cli.Command, op catalog.Operation, result any) error {
+func renderWebsitesResult(_ context.Context, c *cli.Command, op opmesh.Operation, result any) error {
 	output := setupOutput(c)
 
 	// Guard against a typed-nil single-object result (interface non-nil,

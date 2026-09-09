@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	corevault "go.lumeweb.com/pinner/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
+	corevault "go.lumeweb.com/pinner/core/vault"
 )
 
 // OpenVaultManagerURI is the ui:// resource URI served by the Upload to Vault

@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	opmesh "go.lumeweb.com/opmesh"
+	"go.lumeweb.com/pinner/catalogops"
 	"go.lumeweb.com/pinner/core/auth"
 	"go.lumeweb.com/pinner/core/config"
 	account "go.lumeweb.com/portal-sdk"
@@ -40,7 +40,7 @@ func fakeAccountDeps(t *testing.T) catalogops.AccountDeps {
 // --open flag appended (as accountWiringParent does).
 func buildSubscriptionCmd(t *testing.T) *cli.Command {
 	t.Helper()
-	var op catalog.Operation
+	var op opmesh.Operation
 	for _, o := range catalogops.AccountOperations(fakeAccountDeps(t)) {
 		if o.Name() == "account_subscription" {
 			op = o
@@ -135,7 +135,7 @@ func ptrInt(v int) *int { return &v }
 // appended (as accountWiringParent does).
 func buildQuotaCmd(t *testing.T) *cli.Command {
 	t.Helper()
-	var op catalog.Operation
+	var op opmesh.Operation
 	for _, o := range catalogops.AccountOperations(fakeAccountQuotaDeps(t)) {
 		if o.Name() == "account_quota" {
 			op = o

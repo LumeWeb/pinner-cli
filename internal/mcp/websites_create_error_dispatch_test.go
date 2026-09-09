@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	opmesh "go.lumeweb.com/opmesh"
+	"go.lumeweb.com/pinner/catalogops"
 	"go.lumeweb.com/pinner/core/config"
 	configmocks "go.lumeweb.com/pinner/core/config/mocks"
 	"go.lumeweb.com/pinner/core/websites"
@@ -58,7 +58,7 @@ func TestWebsitesCreateDispatchSurfacesTranslatedError(t *testing.T) {
 	base := errors.New("invalid website data")
 	fake := &mcpErrWebsitesService{err: &ipfs.APIError{Reason: ipfs.ErrorCodeCIDNotPinned, Err: base}}
 
-	var op catalog.Operation
+	var op opmesh.Operation
 	for _, o := range catalogops.WebsitesOperations(mcpErrWebsitesDeps(t, fake)) {
 		if o.Name() == "websites_create" {
 			op = o
@@ -67,10 +67,10 @@ func TestWebsitesCreateDispatchSurfacesTranslatedError(t *testing.T) {
 	}
 	require.NotNil(t, op, "websites_create operation not found")
 
-	cat := catalog.NewCatalog()
+	cat := opmesh.NewCatalog()
 	require.NoError(t, cat.Add(op))
 
-	res, err := DispatchCatalogOp(context.Background(), cat, catalog.ActorModel, op.Name(), map[string]any{
+	res, err := DispatchCatalogOp(context.Background(), cat, opmesh.ActorModel, op.Name(), map[string]any{
 		"website": "example.test",
 		"cid":     "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
 	}, op.Name())

@@ -38,7 +38,7 @@ func TestDomainAddWizard_Run(t *testing.T) {
 			Namespace: ipfs.DomainNamespaceICANN,
 			Status:    new(ipfs.DomainResponseStatusActive),
 		}
-		
+
 		verifyResult := &ipfs.DomainResponse{
 			Id:        42,
 			Domain:    "staging.example.com",

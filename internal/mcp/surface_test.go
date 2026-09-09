@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
+	"go.lumeweb.com/pinner/catalogops"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

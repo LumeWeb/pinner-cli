@@ -32,7 +32,7 @@ const VaultDownloadAppURI = "ui://downloads/vault.html"
 // the ONLY tools that carry _meta.ui.resourceUri for these views; the headless
 // download_file / vault_get_file primitives never advertise a card.
 const (
-	OpenDownloadManagerToolName       = "open_download_manager"
+	OpenDownloadManagerToolName      = "open_download_manager"
 	OpenVaultDownloadManagerToolName = "open_vault_download_manager"
 )
 

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"go.lumeweb.com/pinner/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
+	"go.lumeweb.com/pinner/core/vault"
 	"go.uber.org/zap"
 )
 

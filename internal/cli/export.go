@@ -6,11 +6,10 @@ import (
 	"strconv"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/pinner-cli/internal/core/export"
+	"go.lumeweb.com/pinner/core/config"
 	meta "go.lumeweb.com/portal-sdk/meta"
 )
-
 
 // ExportService and options are re-exported from core; the impl lives in core/export.
 type ExportService = export.Service
@@ -31,7 +30,6 @@ func WithExportMetaClient(client *meta.MetaClient) ExportServiceOption {
 var newExportAPI = func(cfgMgr config.Manager, authToken string, secure bool) (ExportService, error) {
 	return export.NewAuthenticated(cfgMgr, authToken, secure)
 }
-
 
 func newExportCommand() *cli.Command {
 	return &cli.Command{

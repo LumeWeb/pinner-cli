@@ -3,8 +3,8 @@ package oob
 import (
 	"context"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	"go.lumeweb.com/opmesh"
+	"go.lumeweb.com/pinner/catalogops"
 	"go.lumeweb.com/pinner/core/vault"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
@@ -32,14 +32,14 @@ import (
 // by the OOBRestore coordinator's wizard.RestoreRunner.
 //
 // DELIBERATE DIVERGENCE from the Catalog.Invoke dispatch seam: these two
-// handlers call catalog.NormalizeOperationInput + op.Handler().Execute directly
+// handlers call opmesh.NormalizeOperationInput + op.Handler().Execute directly
 // rather than Catalog.Invoke / DispatchCatalogOp. The reason is structural, not
 // a preference for skipping gates:
 //
 //   - These handlers are OOB-coordinator wiring layered on top of the compiled
 //     catalog, not a catalog-dispatched surface. vaultSetupOps() below builds
 //     the two vault-setup operations with their own core Provisioner deps and
-//     returns bare catalog.Operation values; the handler has no populated
+//     returns bare opmesh.Operation values; the handler has no populated
 //     catalog.Catalog in scope to call Invoke on.
 //   - The handler needs the raw typed VaultCreateHandoff / VaultRestoreHandoff
 //     result (for handoff.Profile) to mint the one-time OOB create/restore URL
@@ -60,7 +60,7 @@ import (
 // default core Provisioner. The getter preserves the lazy-deps pattern: a
 // fresh Provisioner is built per invocation so any test override of the
 // underlying core stays live.
-func vaultSetupOps() (create, restore catalog.Operation) {
+func vaultSetupOps() (create, restore opmesh.Operation) {
 	deps := catalogops.VaultDeps{
 		Provisioner: func() *vault.Provisioner { return vault.NewProvisioner() },
 	}
@@ -133,7 +133,7 @@ func VaultCreateSetupHandler(oobCreate *OOBCreate, reg *handoff.HandoffRegistry,
 		// coercion, defaults) before the op handler runs, mirroring the
 		// Catalog.Invoke path so a model sending e.g. camelCase "deviceName"
 		// for kebab "device-name" is not silently dropped.
-		normalized, err := catalog.NormalizeOperationInput(op, req.Arguments)
+		normalized, err := opmesh.NormalizeOperationInput(op, req.Arguments)
 		if err != nil {
 			return model.ToolResult{IsError: true, Text: "vault create: " + err.Error()}, nil
 		}
@@ -181,7 +181,7 @@ func VaultRestoreSetupHandler(oobRestore *OOBRestore, reg *handoff.HandoffRegist
 		}
 		// Route through the catalog's normalization (aliasing, coercion,
 		// defaults) before the op handler runs, mirroring Catalog.Invoke.
-		normalized, err := catalog.NormalizeOperationInput(op, req.Arguments)
+		normalized, err := opmesh.NormalizeOperationInput(op, req.Arguments)
 		if err != nil {
 			return model.ToolResult{IsError: true, Text: "vault restore: " + err.Error()}, nil
 		}

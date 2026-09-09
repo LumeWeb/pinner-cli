@@ -9,13 +9,14 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	opmesh "go.lumeweb.com/opmesh"
+	"go.lumeweb.com/pinner-cli/internal/clicatalog"
+	"go.lumeweb.com/pinner/catalogops"
 	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/pinner/core/pinning"
 )
 
-// catalog_wiring.go adapts the operation catalog (internal/catalog) and its
+// catalog_wiring.go adapts the operation catalog (go.lumeweb.com/pinner/catalogops) and its
 // catalogops pins operations to the urfave/cli/v3 command tree, mounting them
 // under the "pins" parent command and rendering each handler's DATA result
 // through the CLI Output formatter.
@@ -27,7 +28,7 @@ import (
 //
 // The catalog compiler names operations with a dot ("pins.add"). The CLI nests
 // them, so the "<group>." prefix is stripped and each leaf is mounted under the
-// "pins" parent. That mapping lives here, not in internal/catalog.
+// "pins" parent. That mapping lives here, not in the catalog model.
 //
 // The catalog compiler builds the input map from flags only and does not read
 // positional args. Commands that take <cid>/<cid...> positionally (pins
@@ -86,12 +87,12 @@ var pinsCatalogDeps = catalogops.PinsDeps(catalogPinningDeps())
 // pins operations via the catalog's CLI compiler and nests the resulting leaf
 // commands under a "pins" group.
 func newPinsCommand() *cli.Command {
-	cat := catalog.NewCatalog()
+	cat := opmesh.NewCatalog()
 	for _, op := range catalogops.PinsOperations(pinsCatalogDeps) {
 		_ = cat.Add(op)
 	}
 
-	compiler := catalog.NewCLICompiler()
+	compiler := clicatalog.NewCLICompiler()
 	compiled, err := compiler.Compile(cat)
 	if err != nil {
 		// Compilation of well-formed catalog operations cannot fail; if it
@@ -149,7 +150,7 @@ func mountCatalogCommand(cmd *cli.Command) *cli.Command {
 	// Find the canonical operation for this command so the adapter and
 	// renderer can dispatch to its Handler. Lookup uses the catalog's
 	// canonical (dotted) name, independent of the CLI display alias.
-	var op catalog.Operation
+	var op opmesh.Operation
 	for _, cand := range catalogops.PinsOperations(pinsCatalogDeps) {
 		if cand.Name() == group+canonicalLeaf {
 			op = cand
@@ -171,7 +172,7 @@ func mountCatalogCommand(cmd *cli.Command) *cli.Command {
 // operation. It resolves CLI inputs into the operation's input map, applies
 // the CLI-only gates described in the package comment, invokes the handler,
 // and renders the result through the Output formatter.
-func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
+func catalogActionAdapter(op opmesh.Operation, group string) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
 		output := setupOutput(c)
 		cfgMgr, err := defaultConfigManagerFactory()
@@ -182,7 +183,7 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 
 		// Build the input map from the compiler-declared flags plus the
 		// resolved CLI inputs (positional/file/stdin → "cids"/"cid").
-		input := catalog.FlagsToInput(c, op)
+		input := clicatalog.FlagsToInput(c, op)
 
 		// The per-invocation --auth-token flag takes precedence over the config
 		// token. Only set it when provided so deps.service() falls back to the
@@ -201,7 +202,7 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 			}
 			input["cids"] = resolved
 		case group + "status", group + "update":
-			if cid := positionalCID(c); cid != "" && catalog.StrArg(input, "cid", "") == "" {
+			if cid := positionalCID(c); cid != "" && opmesh.StrArg(input, "cid", "") == "" {
 				input["cid"] = cid
 			}
 		}
@@ -215,7 +216,7 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 		// confirm gate into the compiled Action, but since we replace the Action
 		// here we enforce it ourselves, honoring both --force and the hidden
 		// --confirm alias.
-		if op.Safety() == catalog.SafetyDestructive {
+		if op.Safety() == opmesh.SafetyDestructive {
 			confirm := c.Bool(FlagForce) || c.Bool(FlagConfirm)
 			input["confirm"] = confirm
 			if c.Bool(FlagAll) {
@@ -227,8 +228,8 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 				case c.Bool(FlagAll):
 					output.Printfln("Use --force to unpin all pins. This is a destructive operation.")
 					return nil
-				case len(catalog.StrSliceArg(input, "cids")) > 0:
-					output.Printfln("Use --force to unpin CID: %s", catalog.StrSliceArg(input, "cids")[0])
+				case len(opmesh.StrSliceArg(input, "cids")) > 0:
+					output.Printfln("Use --force to unpin CID: %s", opmesh.StrSliceArg(input, "cids")[0])
 					return nil
 				default:
 					// Nothing to delete: fall through to the handler so its
@@ -286,7 +287,7 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 		// identically on the CLI surface. This is the single selector-contract
 		// chokepoint; without it the CLI would bypass the gate and hit the
 		// Handler with an unresolved cids+all conflict.
-		normalized, err := catalog.NormalizeOperationInput(op, input)
+		normalized, err := opmesh.NormalizeOperationInput(op, input)
 		if err != nil {
 			return err
 		}
@@ -302,7 +303,7 @@ func catalogActionAdapter(op catalog.Operation, group string) cli.ActionFunc {
 // Output formatter. It is the single rendering home for catalog-driven commands
 // and never touches core services. It is a plain function invoked by
 // catalogActionAdapter.
-func renderCatalogResult(_ context.Context, c *cli.Command, op catalog.Operation, result any) error {
+func renderCatalogResult(_ context.Context, c *cli.Command, op opmesh.Operation, result any) error {
 	output := setupOutput(c)
 
 	switch r := result.(type) {

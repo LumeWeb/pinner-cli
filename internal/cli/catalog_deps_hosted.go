@@ -1,8 +1,8 @@
 package cli
 
 import (
-	"go.lumeweb.com/pinner/core/config"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // BuildCatalogOpsDepsForHosted assembles the production CatalogDepsBundle for a

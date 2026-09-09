@@ -11,10 +11,10 @@ import (
 	"github.com/avast/retry-go/v5"
 	"github.com/ipfs/boxo/pinning/remote/client"
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	"go.lumeweb.com/pinner/core/config"
-	coreerrors "go.lumeweb.com/pinner/core/errors"
 	statuspkg "go.lumeweb.com/pinner-cli/internal/core/status"
 	"go.lumeweb.com/pinner-cli/internal/mcp"
+	"go.lumeweb.com/pinner/core/config"
+	coreerrors "go.lumeweb.com/pinner/core/errors"
 	portalsdk "go.lumeweb.com/portal-sdk"
 )
 

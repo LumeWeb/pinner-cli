@@ -9,7 +9,7 @@ import (
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
+	opmesh "go.lumeweb.com/opmesh"
 )
 
 // TestRenderWebsitesPlatformDomainAvailabilityResult verifies renderWebsitesResult
@@ -21,7 +21,7 @@ import (
 func TestRenderWebsitesPlatformDomainAvailabilityResult(t *testing.T) {
 	t.Run("renders results as a table", func(t *testing.T) {
 		var buf bytes.Buffer
-		op := catalog.NewOperation(catalog.OperationSpec{Name: "websites_platform_domain_availability"})
+		op := opmesh.NewOperation(opmesh.OperationSpec{Name: "websites_platform_domain_availability"})
 		resp := &ipfs.PlatformAvailabilityResponse{
 			Label: "my-app",
 			Results: []ipfs.PlatformAvailabilityResult{
@@ -58,7 +58,7 @@ func TestRenderWebsitesPlatformDomainAvailabilityResult(t *testing.T) {
 
 	t.Run("empty results renders empty state", func(t *testing.T) {
 		var buf bytes.Buffer
-		op := catalog.NewOperation(catalog.OperationSpec{Name: "websites_platform_domain_availability"})
+		op := opmesh.NewOperation(opmesh.OperationSpec{Name: "websites_platform_domain_availability"})
 		resp := &ipfs.PlatformAvailabilityResponse{Label: "", Results: nil}
 
 		cmd := &cli.Command{
@@ -85,7 +85,7 @@ func TestRenderWebsitesPlatformDomainAvailabilityResult(t *testing.T) {
 func TestRenderWebsitesPlatformDomainsListResult(t *testing.T) {
 	t.Run("renders results as a table", func(t *testing.T) {
 		var buf bytes.Buffer
-		op := catalog.NewOperation(catalog.OperationSpec{Name: "websites_platform_domains_list"})
+		op := opmesh.NewOperation(opmesh.OperationSpec{Name: "websites_platform_domains_list"})
 		resp := &ipfs.PlatformDomainListResponse{
 			Total: 2,
 			Data: []ipfs.PlatformDomainResponse{
@@ -123,7 +123,7 @@ func TestRenderWebsitesPlatformDomainsListResult(t *testing.T) {
 
 	t.Run("empty results renders empty state", func(t *testing.T) {
 		var buf bytes.Buffer
-		op := catalog.NewOperation(catalog.OperationSpec{Name: "websites_platform_domains_list"})
+		op := opmesh.NewOperation(opmesh.OperationSpec{Name: "websites_platform_domains_list"})
 		resp := &ipfs.PlatformDomainListResponse{Total: 0, Data: nil}
 
 		cmd := &cli.Command{

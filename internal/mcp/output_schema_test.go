@@ -7,7 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/internal/catalog"
+	opmesh "go.lumeweb.com/opmesh"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
@@ -105,11 +105,11 @@ func TestOutputUnionSchemaObjectRoot(t *testing.T) {
 // descriptor/runtime consistency the outputSchema contract requires.
 func TestCatalogSurfaceOutputSchemaEnvelope(t *testing.T) {
 	// A minimal catalog with one operation.
-	cat := catalog.NewCatalog()
-	require.NoError(t, cat.Add(catalog.NewOperation(catalog.OperationSpec{
+	cat := opmesh.NewCatalog()
+	require.NoError(t, cat.Add(opmesh.NewOperation(opmesh.OperationSpec{
 		Name:    "pins_list",
 		Summary: "List pins",
-		Args:    []catalog.OperationArg{},
+		Args:    []opmesh.OperationArg{},
 		Handler: handlerFunc(func(ctx context.Context, input map[string]any) (any, error) {
 			return []map[string]any{{"cid": "QmTest"}}, nil
 		}),
@@ -258,20 +258,20 @@ func TestNeedsHumanSchemaCoversVaultHandoffKeys(t *testing.T) {
 func TestOutputSchemaForCompiledClassification(t *testing.T) {
 	// Agent-safe, non-destructive ops return only the success envelope.
 	require.JSONEq(t, string(catalogOutputSchema),
-		string(outputSchemaForCompiled(catalog.SafetyMutate, catalog.InteractionAgentSafe)))
+		string(outputSchemaForCompiled(opmesh.SafetyMutate, opmesh.InteractionAgentSafe)))
 	require.JSONEq(t, string(catalogOutputSchema),
-		string(outputSchemaForCompiled(catalog.SafetyRead, catalog.InteractionAgentSafe)))
+		string(outputSchemaForCompiled(opmesh.SafetyRead, opmesh.InteractionAgentSafe)))
 
 	// Destructive ops are refused for confirmation first, then succeed: the
 	// schema must admit both the success envelope and the needs_human hand-off.
-	union := outputSchemaForCompiled(catalog.SafetyDestructive, catalog.InteractionAgentSafe)
+	union := outputSchemaForCompiled(opmesh.SafetyDestructive, opmesh.InteractionAgentSafe)
 	require.JSONEq(t, string(catalogOutputUnionSchema), string(union))
 	require.Contains(t, string(union), `"anyOf"`, "destructive ops must declare a union schema")
 
 	// Interactive-only ops are always refused for a model actor: only the
 	// needs_human hand-off shape is emitted.
 	require.JSONEq(t, string(catalogNeedsHumanOutputSchema),
-		string(outputSchemaForCompiled(catalog.SafetyMutate, catalog.InteractionHumanOnly)))
+		string(outputSchemaForCompiled(opmesh.SafetyMutate, opmesh.InteractionHumanOnly)))
 	require.JSONEq(t, string(catalogNeedsHumanOutputSchema),
-		string(outputSchemaForCompiled(catalog.SafetyDestructive, catalog.InteractionNeedsHandoff)))
+		string(outputSchemaForCompiled(opmesh.SafetyDestructive, opmesh.InteractionNeedsHandoff)))
 }

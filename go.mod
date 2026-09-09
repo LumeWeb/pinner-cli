@@ -42,6 +42,7 @@ require (
 	go.lumeweb.com/ipfs-sdk v0.1.97
 	go.lumeweb.com/ipfs-sdk/dnsname v0.1.64
 	go.lumeweb.com/oauth v0.1.6
+	go.lumeweb.com/opmesh v0.0.0-20260907112428-ade506e64ae9
 	go.lumeweb.com/pinner v0.0.0-20260909064307-78707cb2baf3
 	go.lumeweb.com/portal-sdk v0.1.72
 	go.lumeweb.com/queryutil v0.3.19
@@ -253,6 +254,7 @@ require (
 	go.lumeweb.com/configmanager v0.3.30 // indirect
 	go.lumeweb.com/event/v2 v2.1.0 // indirect
 	go.lumeweb.com/gswagger v0.20.12 // indirect
+	go.lumeweb.com/mcpforge v0.0.0-20260907155938-f64f92060f4e // indirect
 	go.lumeweb.com/portal v0.5.1 // indirect
 	go.lumeweb.com/portal-middleware v0.3.7 // indirect
 	go.lumeweb.com/portal-router v0.7.7 // indirect

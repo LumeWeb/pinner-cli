@@ -22,7 +22,7 @@ The codebase is organized around a **two-tier design**:
   domain to a terminal CLI and to an MCP server respectively.
 
 The two primary frontends are **both compiled from a single in-memory
-operation catalog** (`internal/catalog/`). No frontend is the source of truth
+operation catalog** (module `go.lumeweb.com/opmesh`). No frontend is the source of truth
 for what an operation does or how it is described; the catalog is.
 
 ## Repository Layout
@@ -30,8 +30,11 @@ for what an operation does or how it is described; the catalog is.
 ```
 cmd/pinner/                 Entry point. Minimal main.go -> cli.Run()
 internal/core/<domain>/     Domain logic; pure Go, no urfave/MCP/Output
-internal/catalog/           Operation-descriptor registry (single source of truth)
-internal/catalogops/        Per-domain Operation providers
+go.lumeweb.com/opmesh       Operation-descriptor registry (single source of truth)
+go.lumeweb.com/pinner/catalogops   Per-domain Operation providers
+go.lumeweb.com/pinner/assembly    Catalog assembly + surface gating
+go.lumeweb.com/pinner/catalogmcp   MCP descriptions/targets compiler
+go.lumeweb.com/pinner/catalogmeta  Frontend metadata (Environment, arg audience flags)
 internal/cli/               urfave CLI commands, service interfaces, wiring
 internal/cli/internal/      PinningClient / BoxoPinningClient (HTTP + retry)
 internal/fieldform/         CLI-side wizard field system (Field/Gather/ValueSource)
@@ -67,7 +70,8 @@ Each domain is its own package and owns its service logic and types:
 
 ## The Operation Catalog
 
-`internal/catalog` holds the registry of **operations**, each described by an
+Module `go.lumeweb.com/opmesh` (consumed from `go.lumeweb.com/pinner/catalogops`
+providers via `pinnerops` assembly) holds the registry of **operations**, each described by an
 `Operation` descriptor. The two frontends compile the same registry into
 urfave commands (CLI) and MCP tools (MCP). This replaced the earlier design in
 which the MCP surface was derived by walking the CLI command tree — a model
@@ -127,22 +131,22 @@ prevents bypassing confirmation prompts or human-only restrictions.
 
 ### Compilers
 
-- `internal/catalog/compile_cli.go` — builds urfave `*cli.Command` trees from
-  `Operation` descriptors (flags, help, names).
-- `internal/catalog/compile_mcp.go` — builds the base MCP tool JSON Schema
+- `internal/clicatalog` — builds urfave `*cli.Command` trees from
+  `Operation` descriptors (flags, help, names), merging CLI frontend metadata
+  (PositionalOnly/AgentOnly/Sources) from module `catalogmeta`.
+- module `catalogmcp` — builds the MCP tool JSON Schema
   from the same descriptors, including value-aware `oneOf` for
   `SelectionGroup`s. The published schema can then be adapted per host profile
   by `internal/mcp/toolforge` (see *MCP server*).
-- `internal/catalog/accessors.go` — typed readers (`StrArg`, `IntArg`,
+- module `opmesh` — typed readers (`StrArg`, `IntArg`,
   `BoolArg`, `BoolArgPtr`, ...) that decouple handlers from the raw input map.
-- `internal/catalog/positional.go`, `search.go`, `list.go` — positional-arg
-  handling and discovery helpers.
+- module `opmesh` — positional-arg handling and discovery helpers.
 
-### Operation providers: `internal/catalogops/`
+### Operation providers: `go.lumeweb.com/pinner/catalogops`
 
-`internal/catalogops` holds one provider per domain (e.g. `pins.go`,
+The module's `catalogops` package holds one provider per domain (e.g. `pins.go`,
 `websites.go`, `dns.go`, `vault.go`). Each provider returns a slice of
-`catalog.Operation`s (`PinsOperations(deps)`, `DNSOperations(deps)`, ...) and
+`opmesh.Operation`s (`PinsOperations(deps)`, `DNSOperations(deps)`, ...) and
 takes a per-domain deps struct (getter **functions**, never values — deps are
 resolved lazily per invocation, never at package init). Handlers drive the
 core service domains directly and **return typed data**; rendering belongs to
@@ -239,7 +243,7 @@ which formats its own results.
   therefore `internal/mcp` **must not** import `internal/cli` (cycle).
 - Cross-cutting helpers that both need live in neutral leaf packages:
   `internal/urlopen` (browser opening), etc.
-- `internal/catalogops` is presentation-free: it never imports `internal/cli`
+- module `catalogops` is presentation-free: it never imports the CLI frontend
   and returns data rather than rendered output.
 
 ## Wizards

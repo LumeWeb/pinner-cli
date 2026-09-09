@@ -24,9 +24,9 @@ import (
 	contentfs "go.lumeweb.com/ipfs-content/fs"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner-cli/internal/car"
+	"go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner/core/config"
 	configmocks "go.lumeweb.com/pinner/core/config/mocks"
-	"go.lumeweb.com/pinner-cli/internal/mcp"
 	portalsdkmocks "go.lumeweb.com/portal-sdk/mocks"
 )
 

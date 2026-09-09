@@ -60,8 +60,8 @@ type httpToken struct {
 type Upload struct {
 	loopback transport.LoopbackServer
 
-	mu       sync.Mutex
-	tokens   map[string]httpToken
+	mu     sync.Mutex
+	tokens map[string]httpToken
 	// byHandle maps a prepared upload handle back to its minted token so the
 	// App or model can continue (find the URL for) the same canonical operation
 	// instead of minting a sibling. Removed when the endpoint is consumed.

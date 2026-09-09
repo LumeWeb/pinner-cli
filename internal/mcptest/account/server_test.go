@@ -317,4 +317,3 @@ func TestOperationsFilters(t *testing.T) {
 		t.Fatalf("unexpected filters: %+v", f)
 	}
 }
-

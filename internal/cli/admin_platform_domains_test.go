@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	opmesh "go.lumeweb.com/opmesh"
+	"go.lumeweb.com/pinner/catalogops"
 	coreadmin "go.lumeweb.com/pinner/core/admin"
 	"go.lumeweb.com/pinner/core/config"
 	configmocks "go.lumeweb.com/pinner/core/config/mocks"
@@ -29,7 +29,7 @@ func TestAdminPlatformDomainsTree(t *testing.T) {
 	}
 }
 
-// captureHandler is a catalog.Handler stub that records invocation and returns
+// captureHandler is a opmesh.Handler stub that records invocation and returns
 // a routable admin result, letting the tests exercise adminActionAdapter's
 // input mapping and destructive gate without a real admin service.
 type captureHandler struct {
@@ -45,14 +45,16 @@ func (h *captureHandler) Execute(_ context.Context, input map[string]any) (any, 
 
 // deleteOp builds a minimal catalog delete-style operation for testing the
 // CLI adapter's destructive confirm gate.
-func deleteOp(called *bool) catalog.Operation {
-	return catalog.NewOperation(catalog.OperationSpec{
+func deleteOp(called *bool) opmesh.Operation {
+	return opmesh.NewOperation(opmesh.OperationSpec{
 		Name:       "admin_platform_domains_delete",
-		Safety:     catalog.SafetyDestructive,
+		Safety:     opmesh.SafetyDestructive,
 		Positional: "<id>",
-		Args: []catalog.OperationArg{
-			{Name: "id", Type: catalog.ArgTypeString, Required: true, PositionalOnly: true},
-			{Name: "confirm", Type: catalog.ArgTypeBool, AgentRequired: true, Default: "true"},
+		// "id" is PositionalOnly for admin_platform_domains_delete in module
+		// catalogmeta — the compiler merges that metadata, so no inline field.
+		Args: []opmesh.OperationArg{
+			{Name: "id", Type: opmesh.ArgTypeString, Required: true},
+			{Name: "confirm", Type: opmesh.ArgTypeBool, AgentRequired: true, Default: "true"},
 		},
 		Handler: &captureHandler{called: called},
 	})

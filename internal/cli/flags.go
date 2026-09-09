@@ -4,8 +4,8 @@ import (
 	"os"
 
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/flag"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // Flag name constants

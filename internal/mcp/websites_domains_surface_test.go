@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	"go.lumeweb.com/pinner/catalogops"
 )
 
 // Verify the 7 websites_domains_* ops are registered in WebsitesOperations

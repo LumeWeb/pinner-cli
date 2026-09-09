@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/internal/catalog"
+	opmesh "go.lumeweb.com/opmesh"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
@@ -21,65 +21,65 @@ func (h markerHandler) Execute(_ context.Context, _ map[string]any) (any, error)
 
 // sampleCatalog builds a small op catalog exercising the read/destructive and
 // discovery surfaces used by populateCatalogSurface.
-func sampleCatalog() catalog.Catalog {
-	c := catalog.NewCatalog()
-	_ = c.Add(catalog.NewOperation(catalog.OperationSpec{
+func sampleCatalog() opmesh.Catalog {
+	c := opmesh.NewCatalog()
+	_ = c.Add(opmesh.NewOperation(opmesh.OperationSpec{
 		Name:        "vault.get",
 		Title:       "Get Vault",
 		Summary:     "get a vault",
 		Description: "agent-aware get description",
 		Category:    "vault",
-		Safety:      catalog.SafetyRead,
-		Interaction: catalog.InteractionAgentSafe,
-		Visibility:  catalog.VisibilityModel,
-		Args: []catalog.OperationArg{
-			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "vault name"},
+		Safety:      opmesh.SafetyRead,
+		Interaction: opmesh.InteractionAgentSafe,
+		Visibility:  opmesh.VisibilityModel,
+		Args: []opmesh.OperationArg{
+			{Name: "name", Type: opmesh.ArgTypeString, Required: true, Help: "vault name"},
 		},
 		Handler: markerHandler{marker: "ran:vault.get"},
 	}))
-	_ = c.Add(catalog.NewOperation(catalog.OperationSpec{
+	_ = c.Add(opmesh.NewOperation(opmesh.OperationSpec{
 		Name:        "vault.delete",
 		Title:       "Delete Vault",
 		Summary:     "delete a vault",
 		Description: "agent-aware delete description",
 		Category:    "vault",
-		Safety:      catalog.SafetyDestructive,
-		Interaction: catalog.InteractionAgentSafe,
-		Visibility:  catalog.VisibilityModel,
-		Args: []catalog.OperationArg{
-			{Name: "name", Type: catalog.ArgTypeString, Required: true, Help: "vault name"},
+		Safety:      opmesh.SafetyDestructive,
+		Interaction: opmesh.InteractionAgentSafe,
+		Visibility:  opmesh.VisibilityModel,
+		Args: []opmesh.OperationArg{
+			{Name: "name", Type: opmesh.ArgTypeString, Required: true, Help: "vault name"},
 		},
 		Handler: markerHandler{marker: "ran:vault.delete"},
 	}))
 	// An op with an AgentRequired StringSlice: required on the MCP surface,
 	// never a CLI flag, and never enforced by the shared normalize path.
-	_ = c.Add(catalog.NewOperation(catalog.OperationSpec{
+	_ = c.Add(opmesh.NewOperation(opmesh.OperationSpec{
 		Name:        "pins.mcp.add",
 		Title:       "Add pins",
 		Summary:     "add pins",
 		Description: "add pins to the pin set",
 		Category:    "pins",
-		Safety:      catalog.SafetyMutate,
-		Interaction: catalog.InteractionAgentSafe,
-		Visibility:  catalog.VisibilityModel,
-		Args: []catalog.OperationArg{
-			{Name: "cids", Type: catalog.ArgTypeStringSlice, AgentRequired: true, Help: "cids to pin"},
+		Safety:      opmesh.SafetyMutate,
+		Interaction: opmesh.InteractionAgentSafe,
+		Visibility:  opmesh.VisibilityModel,
+		Args: []opmesh.OperationArg{
+			{Name: "cids", Type: opmesh.ArgTypeStringSlice, AgentRequired: true, Help: "cids to pin"},
 		},
 		Handler: markerHandler{marker: "ran:pins.mcp.add"},
 	}))
 	// A primary (curated) destructive op so Onboarding exercises the safety
 	// tier on a tool that actually appears in the onboarding listing.
-	_ = c.Add(catalog.NewOperation(catalog.OperationSpec{
+	_ = c.Add(opmesh.NewOperation(opmesh.OperationSpec{
 		Name:        "pins_rm",
 		Title:       "Remove pins",
 		Summary:     "remove pins",
 		Description: "remove pins from the pin set",
 		Category:    "pins",
-		Safety:      catalog.SafetyDestructive,
-		Interaction: catalog.InteractionAgentSafe,
-		Visibility:  catalog.VisibilityModel,
-		Args: []catalog.OperationArg{
-			{Name: "cids", Type: catalog.ArgTypeStringSlice, Required: true, Help: "cids to unpin"},
+		Safety:      opmesh.SafetyDestructive,
+		Interaction: opmesh.InteractionAgentSafe,
+		Visibility:  opmesh.VisibilityModel,
+		Args: []opmesh.OperationArg{
+			{Name: "cids", Type: opmesh.ArgTypeStringSlice, Required: true, Help: "cids to unpin"},
 		},
 		Handler: markerHandler{marker: "ran:pins_rm"},
 	}))
@@ -219,7 +219,7 @@ func TestAgentRequiredArgEnforcedAtMCPDispatch(t *testing.T) {
 	// non-MCP caller invoking the op without cids should still run, because
 	// AgentRequired is MCP-only and must not leak into the shared contract.
 	cat := sampleCatalog()
-	out, err := cat.Invoke(context.Background(), "pins.mcp.add", map[string]any{}, catalog.ActorModel)
+	out, err := cat.Invoke(context.Background(), "pins.mcp.add", map[string]any{}, opmesh.ActorModel)
 	require.NoError(t, err)
 	require.Equal(t, "ran:pins.mcp.add", out)
 }

@@ -7,11 +7,11 @@ import (
 
 	contentfs "go.lumeweb.com/ipfs-content/fs"
 
-	"go.lumeweb.com/pinner/core/auth"
-	"go.lumeweb.com/pinner/core/config"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	"go.lumeweb.com/pinner/core/auth"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // streamUploadHandler is the shared IPFS stream→upload executor used by both

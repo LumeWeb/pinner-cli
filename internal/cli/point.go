@@ -6,7 +6,7 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	"go.lumeweb.com/pinner/catalogops"
 	"go.lumeweb.com/pinner/core/config"
 )
 

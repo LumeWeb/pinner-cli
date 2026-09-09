@@ -8,8 +8,9 @@ import (
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	opmesh "go.lumeweb.com/opmesh"
+	"go.lumeweb.com/pinner-cli/internal/clicatalog"
+	"go.lumeweb.com/pinner/catalogops"
 	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/pinner/core/ipns"
 )
@@ -23,7 +24,7 @@ import (
 //
 // The IPNS operations are canonically dotted ("ipns.keys.list",
 // "ipns.publish", ...). The CLI nests ipns.keys.* under a "keys" parent; the
-// rest are direct leaves. That nesting lives here, not in internal/catalog.
+// rest are direct leaves. That nesting lives here, not in the catalog model.
 
 // catalogIPNSDeps builds the catalogops.IPNSDeps from the live CLI wiring.
 func catalogIPNSDeps(factory ...ConfigManagerFactory) catalogops.IPNSDeps {
@@ -63,12 +64,12 @@ var ipnsCatalogDepsVar = catalogops.IPNSDeps(catalogIPNSDeps())
 // compiles the IPNS operations and nests ipns.keys.* under a "keys" parent.
 // newIPNSCommand in ipns.go delegates to this.
 func newIPNSCommandCatalog() *cli.Command {
-	cat := catalog.NewCatalog()
+	cat := opmesh.NewCatalog()
 	for _, op := range catalogops.IPNSOperations(ipnsCatalogDepsVar) {
 		_ = cat.Add(op)
 	}
 
-	compiler := catalog.NewCLICompiler()
+	compiler := clicatalog.NewCLICompiler()
 	compiled, err := compiler.Compile(cat)
 	if err != nil {
 		panic(fmt.Sprintf("catalog compile ipns: %v", err))
@@ -116,7 +117,7 @@ func mountIPNSCatalogCommand(cmd *cli.Command) *cli.Command {
 	cmd.Category = "Management"
 	relaxFlagRequired(cmd)
 
-	var op catalog.Operation
+	var op opmesh.Operation
 	for _, cand := range catalogops.IPNSOperations(ipnsCatalogDepsVar) {
 		if cand.Name() == canonical {
 			op = cand
@@ -133,9 +134,9 @@ func mountIPNSCatalogCommand(cmd *cli.Command) *cli.Command {
 // operation. It maps the positional <key>/<id>/<cid>/<name> into the
 // operation's string arg, threads the --auth-token override into the input,
 // and invokes the handler, then renders the result.
-func ipnsActionAdapter(op catalog.Operation) cli.ActionFunc {
+func ipnsActionAdapter(op opmesh.Operation) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
-		input := catalog.FlagsToInput(c, op)
+		input := clicatalog.FlagsToInput(c, op)
 
 		// The per-invocation --auth-token override takes precedence over the
 		// config token. Put it in the input so IPNSDeps.service() honors it;
@@ -148,7 +149,7 @@ func ipnsActionAdapter(op catalog.Operation) cli.ActionFunc {
 		// it is still empty (positional <key>/<id>/<cid>/<name>).
 		if c.Args().Len() > 0 {
 			for _, a := range op.Args() {
-				if (a.Type == catalog.ArgTypeString || a.Type == catalog.ArgTypeFlexibleID) && catalog.StrArg(input, a.Name, "") == "" {
+				if (a.Type == opmesh.ArgTypeString || a.Type == opmesh.ArgTypeFlexibleID) && opmesh.StrArg(input, a.Name, "") == "" {
 					input[a.Name] = c.Args().First()
 					break
 				}
@@ -165,7 +166,7 @@ func ipnsActionAdapter(op catalog.Operation) cli.ActionFunc {
 		// Route through the same normalize path as the generic adapter and
 		// Catalog.Invoke so required-arg validation, declared defaults, and
 		// SelectionGroup enforcement apply identically on the CLI surface.
-		normalized, err := catalog.NormalizeOperationInput(op, input)
+		normalized, err := opmesh.NormalizeOperationInput(op, input)
 		if err != nil {
 			return err
 		}
@@ -184,7 +185,7 @@ func ipnsActionAdapter(op catalog.Operation) cli.ActionFunc {
 
 // renderIPNSResult renders an IPNS handler's typed DATA result through the CLI
 // Output formatter. It is a plain function invoked by the wiring's own adapter.
-func renderIPNSResult(_ context.Context, c *cli.Command, op catalog.Operation, result any) error {
+func renderIPNSResult(_ context.Context, c *cli.Command, op opmesh.Operation, result any) error {
 	output := setupOutput(c)
 
 	switch r := result.(type) {

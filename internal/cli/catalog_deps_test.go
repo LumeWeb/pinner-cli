@@ -3,11 +3,11 @@ package cli
 import (
 	"testing"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
+	"github.com/stretchr/testify/require"
+	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
+	"go.lumeweb.com/pinner/catalogmcp"
 	"go.lumeweb.com/pinner/core/config"
 	configmocks "go.lumeweb.com/pinner/core/config/mocks"
-	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
-	"github.com/stretchr/testify/require"
 )
 
 // TestProductionCatalogOpsBundleAssemblesLiveSurface verifies that the
@@ -35,7 +35,7 @@ func TestProductionCatalogOpsBundleAssemblesLiveSurface(t *testing.T) {
 	require.NoError(t, err, "production deps must assemble a catalog")
 	require.NotNil(t, oc)
 
-	descs, err := catalog.NewMCPCompiler().Compile(oc)
+	descs, err := catalogmcp.NewCompiler().Compile(oc)
 	require.NoError(t, err)
 	require.NotEmpty(t, descs, "compiler must yield a non-empty model surface")
 
@@ -70,7 +70,7 @@ func TestProductionCatalogOpsBundleExposesAdminDomain(t *testing.T) {
 	oc, err := mcpadapter.AssembleCatalogOps(bundle, mcpadapter.FullSurface, false)
 	require.NoError(t, err, "production deps must assemble a catalog")
 
-	descs, err := catalog.NewMCPCompiler().Compile(oc)
+	descs, err := catalogmcp.NewCompiler().Compile(oc)
 	require.NoError(t, err)
 
 	names := map[string]bool{}

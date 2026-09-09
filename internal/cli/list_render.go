@@ -1,6 +1,6 @@
 package cli
 
-import "go.lumeweb.com/pinner-cli/internal/catalogops"
+import "go.lumeweb.com/pinner/catalogops"
 
 // renderListResult renders any *-list operation result (a catalogops.ListResult)
 // through the CLI Output formatter. It is the single rendering home for list

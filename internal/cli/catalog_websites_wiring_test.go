@@ -10,8 +10,8 @@ import (
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	opmesh "go.lumeweb.com/opmesh"
+	"go.lumeweb.com/pinner/catalogops"
 )
 
 // TestWebsitesDomainsPositionalMapping ensures every websites_domains_* op
@@ -22,7 +22,7 @@ import (
 // end for the domains ops.
 func TestWebsitesDomainsPositionalMapping(t *testing.T) {
 	ops := catalogops.WebsitesOperations(catalogops.WebsitesDeps{})
-	byName := map[string]catalog.Operation{}
+	byName := map[string]opmesh.Operation{}
 	for _, op := range ops {
 		byName[op.Name()] = op
 	}
@@ -40,7 +40,7 @@ func TestWebsitesDomainsPositionalMapping(t *testing.T) {
 			t.Fatalf("op %s not registered", name)
 		}
 		input := map[string]any{}
-		if err := catalog.MapPositionalArgs(op.Args(), op.Positional(), []string{"example.com"}, input); err != nil {
+		if err := opmesh.MapPositionalArgs(op.Args(), op.Positional(), []string{"example.com"}, input); err != nil {
 			t.Fatalf("%s: MapPositionalArgs err: %v", name, err)
 		}
 		if input["domain"] != "example.com" {
@@ -52,7 +52,7 @@ func TestWebsitesDomainsPositionalMapping(t *testing.T) {
 	// the required domain (right-aligned), two map to both.
 	add := byName["websites_domains_add"]
 	in1 := map[string]any{}
-	if err := catalog.MapPositionalArgs(add.Args(), add.Positional(), []string{"example.com"}, in1); err != nil {
+	if err := opmesh.MapPositionalArgs(add.Args(), add.Positional(), []string{"example.com"}, in1); err != nil {
 		t.Fatalf("add single arg err: %v", err)
 	}
 	if in1["domain"] != "example.com" {
@@ -62,7 +62,7 @@ func TestWebsitesDomainsPositionalMapping(t *testing.T) {
 		t.Errorf("add single arg should not populate website, got %v", in1["website"])
 	}
 	in2 := map[string]any{}
-	if err := catalog.MapPositionalArgs(add.Args(), add.Positional(), []string{"my-site", "example.com"}, in2); err != nil {
+	if err := opmesh.MapPositionalArgs(add.Args(), add.Positional(), []string{"my-site", "example.com"}, in2); err != nil {
 		t.Fatalf("add two args err: %v", err)
 	}
 	if in2["website"] != "my-site" || in2["domain"] != "example.com" {
@@ -72,7 +72,7 @@ func TestWebsitesDomainsPositionalMapping(t *testing.T) {
 	// list: single required website positional.
 	list := byName["websites_domains_list"]
 	inList := map[string]any{}
-	if err := catalog.MapPositionalArgs(list.Args(), list.Positional(), []string{"my-site"}, inList); err != nil {
+	if err := opmesh.MapPositionalArgs(list.Args(), list.Positional(), []string{"my-site"}, inList); err != nil {
 		t.Fatalf("list arg err: %v", err)
 	}
 	if inList["website"] != "my-site" {
@@ -89,7 +89,7 @@ func TestWebsitesDomainsPositionalMapping(t *testing.T) {
 // CLI rejects ambiguous invocations instead of guessing.
 func TestWebsitesCRUDPositionalMapping(t *testing.T) {
 	ops := catalogops.WebsitesOperations(catalogops.WebsitesDeps{})
-	byName := map[string]catalog.Operation{}
+	byName := map[string]opmesh.Operation{}
 	for _, op := range ops {
 		byName[op.Name()] = op
 	}
@@ -101,7 +101,7 @@ func TestWebsitesCRUDPositionalMapping(t *testing.T) {
 		}
 		// Single positional maps to the website arg.
 		input := map[string]any{}
-		if err := catalog.MapPositionalArgs(op.Args(), op.Positional(), []string{"example.com"}, input); err != nil {
+		if err := opmesh.MapPositionalArgs(op.Args(), op.Positional(), []string{"example.com"}, input); err != nil {
 			t.Fatalf("%s single positional err: %v", name, err)
 		}
 		if input["website"] != "example.com" {
@@ -109,19 +109,19 @@ func TestWebsitesCRUDPositionalMapping(t *testing.T) {
 		}
 
 		// Surplus trailing arg is rejected (legacy tolerance removed).
-		if err := catalog.MapPositionalArgs(op.Args(), op.Positional(), []string{"example.com", "extra"}, map[string]any{}); err == nil {
+		if err := opmesh.MapPositionalArgs(op.Args(), op.Positional(), []string{"example.com", "extra"}, map[string]any{}); err == nil {
 			t.Errorf("%s: surplus arg should be rejected", name)
 		}
 
 		// Flag+positional conflict is rejected (legacy preference removed).
-		if err := catalog.MapPositionalArgs(op.Args(), op.Positional(), []string{"example.com"}, map[string]any{"website": "already-set"}); err == nil {
+		if err := opmesh.MapPositionalArgs(op.Args(), op.Positional(), []string{"example.com"}, map[string]any{"website": "already-set"}); err == nil {
 			t.Errorf("%s: flag+positional conflict should be rejected", name)
 		}
 	}
 }
 
 func TestRenderWebsitesResultRejectsTypedNil(t *testing.T) {
-	op := catalog.NewOperation(catalog.OperationSpec{Name: "websites_domains_verify"})
+	op := opmesh.NewOperation(opmesh.OperationSpec{Name: "websites_domains_verify"})
 
 	// A handler that returns (nil, nil) surfaces as a typed nil *ipfs.DomainResponse.
 	var typedNil *ipfs.DomainResponse
@@ -165,7 +165,7 @@ func TestRenderVerifyGuidance(t *testing.T) {
 
 	// Verify op, human output: guidance is rendered.
 	bufVerify, outVerify := capture(false)
-	opVerify := catalog.NewOperation(catalog.OperationSpec{Name: "websites_domains_verify"})
+	opVerify := opmesh.NewOperation(opmesh.OperationSpec{Name: "websites_domains_verify"})
 	renderVerifyGuidance(outVerify, opVerify, dnsErr)
 	if bufVerify.Len() == 0 {
 		t.Error("expected DNS guidance output for websites_domains_verify error, got none")
@@ -183,7 +183,7 @@ func TestRenderVerifyGuidance(t *testing.T) {
 
 	// Non-verify op: no guidance is rendered regardless of format.
 	bufOther, outOther := capture(false)
-	opOther := catalog.NewOperation(catalog.OperationSpec{Name: "websites_domains_add"})
+	opOther := opmesh.NewOperation(opmesh.OperationSpec{Name: "websites_domains_add"})
 	renderVerifyGuidance(outOther, opOther, dnsErr)
 	if bufOther.Len() != 0 {
 		t.Errorf("expected no guidance for a non-verify op, got: %q", bufOther.String())
@@ -194,12 +194,12 @@ func TestRenderVerifyGuidance(t *testing.T) {
 // CLI arguments: `domains rm good.example bogus` must reject `bogus` rather than
 // deleting good.example while ignoring the surplus (restores legacy validation).
 func TestApplyPositionalArgsSurplusRejected(t *testing.T) {
-	makeOp := func(positional string) catalog.Operation {
-		return catalog.NewOperation(catalog.OperationSpec{
+	makeOp := func(positional string) opmesh.Operation {
+		return opmesh.NewOperation(opmesh.OperationSpec{
 			Name:       "websites_domains_remove",
 			Positional: positional,
-			Args: []catalog.OperationArg{
-				{Name: "domain", Type: catalog.ArgTypeString, Required: true},
+			Args: []opmesh.OperationArg{
+				{Name: "domain", Type: opmesh.ArgTypeString, Required: true},
 			},
 		})
 	}
@@ -224,7 +224,7 @@ func TestApplyPositionalArgsSurplusRejected(t *testing.T) {
 
 	// Two-slot op with optional lead (add): two args are valid, three are not.
 	input3 := map[string]any{}
-	err = applyPositionalArgs(catalog.NewOperation(catalog.OperationSpec{
+	err = applyPositionalArgs(opmesh.NewOperation(opmesh.OperationSpec{
 		Name: "websites_domains_add", Positional: "[<website>] <domain>",
 	}), input3, &mockArgs{args: []string{"my-site", "good.example", "bogus"}})
 	if err == nil {

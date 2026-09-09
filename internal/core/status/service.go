@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"go.lumeweb.com/pinner/core/auth"
-	coreerrors "go.lumeweb.com/pinner/core/errors"
 	"go.lumeweb.com/pinner/core/config"
+	coreerrors "go.lumeweb.com/pinner/core/errors"
 	"go.lumeweb.com/pinner/core/pinning"
 	portalsdk "go.lumeweb.com/portal-sdk"
 	"go.lumeweb.com/queryutil/filter"

@@ -7,8 +7,8 @@ import (
 	"context"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
-	coreerrors "go.lumeweb.com/pinner/core/errors"
 	"go.lumeweb.com/pinner/core/config"
+	coreerrors "go.lumeweb.com/pinner/core/errors"
 	"go.lumeweb.com/pinner/core/ipfsbase"
 	"go.uber.org/zap"
 )

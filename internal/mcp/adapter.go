@@ -21,10 +21,10 @@ import (
 
 	"github.com/rs/cors"
 	"github.com/urfave/cli/v3"
+	opmesh "go.lumeweb.com/opmesh"
 	"go.lumeweb.com/pinner-cli/build"
-	opcat "go.lumeweb.com/pinner-cli/internal/catalog"
-	corevault "go.lumeweb.com/pinner/core/vault"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	corevault "go.lumeweb.com/pinner/core/vault"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 	"go.uber.org/zap"
@@ -684,9 +684,9 @@ func buildCatalog(root *cli.Command, seedDrop *oobpkg.SeedDrop, oobRestore *oobp
 	// Compiled operation surface. When catalogDeps is set, buildCatalog derives
 	// the MCP tool surface from the operation catalog (compiler-backed
 	// descriptions/schemas). Each compiled operation is surfaced as a ToolEntry
-	// whose Handler routes through catalog.Catalog.Invoke directly (see
+	// whose Handler routes through opmesh.Catalog.Invoke directly (see
 	// populateCatalogSurface), so there is no separate argv-dispatcher routing.
-	var opsCat opcat.Catalog
+	var opsCat opmesh.Catalog
 	if cfg.catalogDeps != nil {
 		if deps := cfg.catalogDeps(); deps != nil {
 			oc, err := AssembleCatalogOps(deps, surface, cfg.hosted)

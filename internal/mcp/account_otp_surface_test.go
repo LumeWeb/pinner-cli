@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	"go.lumeweb.com/pinner/catalogops"
 )
 
 // Verify the account_otp_disable op is registered in AccountOperations (the

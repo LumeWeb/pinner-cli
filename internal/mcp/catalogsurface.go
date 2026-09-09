@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
-
 	"github.com/samber/lo"
+	"go.lumeweb.com/opmesh"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
+	"go.lumeweb.com/pinner/catalogmcp"
+	"go.lumeweb.com/pinner/catalogmeta"
 )
 
 // startupProfile returns the static profile for the startup transport, used to
@@ -35,11 +36,24 @@ func startupProfile() hostenv.PlatformProfile {
 // (search_tools, describe_tool, invoke_read_tool/invoke_write_tool/invoke_destructive_tool).
 //
 // The compiled catalog yields ToolDescriptors whose Description/InputSchema
-// come from the catalogops MCPTargets fallback and typed arg metadata, so CLI
+// come from the module's catalogmcp compiler (MCP-target fallback resolution
+// plus typed arg metadata with catalogmeta AgentHelp re-application), so CLI
 // help prose, global flag bags, and empty "required" arrays never leak into
 // the model surface. Each compiled operation is surfaced as a ToolEntry whose
-// Handler routes through catalog.Catalog.Invoke the dispatch gate so
+// Handler routes through opmesh.Catalog.Invoke the dispatch gate so
 // Interaction, Visibility, Safety, and required-arg enforcement hold.
+
+// compileProfileFor adapts the local hostenv profile into the module compiler's
+// feature-carrier contract. The module's description DSL (catalogmcp) gates
+// segments on a mcpforge.FeatureSet carried by an MCPProfile; it cannot know
+// hostenv. ProfileFromHas probes every feature the module's descriptions gate
+// on, so adapting through it cannot drop a segment — exactly the lossless
+// bridge the module documents for pinner-cli's Has-style PlatformProfile.
+func compileProfileFor(prof hostenv.PlatformProfile) catalogmcp.MCPProfile {
+	return catalogmcp.ProfileFromHas(func(f string) bool {
+		return prof.Has(hostenv.Feature(f))
+	})
+}
 
 // compiledHandler wraps the operation catalog's Invoke gate for a single
 // compiled operation and returns its result as a ToolResult. It is the Handler
@@ -57,7 +71,7 @@ func startupProfile() hostenv.PlatformProfile {
 // middleware (credentialMiddleware) resolves it once per request, so the
 // handler does not re-resolve per tool. On the stdio path there is no
 // middleware, so the handler falls back to resolving now via resolveToken.
-func compiledHandler(cat catalog.Catalog, name string, resolveToken func(ctx context.Context) (string, error)) model.PinnerToolHandler {
+func compiledHandler(cat opmesh.Catalog, name string, resolveToken func(ctx context.Context) (string, error)) model.PinnerToolHandler {
 	return func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		tok := CredentialFromContext(ctx)
 		if tok == "" && resolveToken != nil {
@@ -71,9 +85,9 @@ func compiledHandler(cat catalog.Catalog, name string, resolveToken func(ctx con
 			if args == nil {
 				args = map[string]any{}
 			}
-			args[catalog.ReservedAuthTokenKey] = tok
+			args[opmesh.ReservedAuthTokenKey] = tok
 		}
-		return DispatchCatalogOp(ctx, cat, catalog.ActorModel, name, args, name)
+		return DispatchCatalogOp(ctx, cat, opmesh.ActorModel, name, args, name)
 	}
 }
 
@@ -92,7 +106,7 @@ var readOnlyOverride = map[string]struct {
 	"auth_status": {readOnly: false, destructive: true, openWorld: true},
 }
 
-// catalogDescriptorToEntry converts a compiler-produced catalog.ToolDescriptor
+// catalogDescriptorToEntry converts a compiler-produced opmesh.ToolDescriptor
 // into a ToolEntry backed by the operation catalog's Invoke gate. It maps the
 // catalog Safety classification onto the MCP entry's ReadOnly/Destructive
 // semantics so tool metadata is truthful for the model surface:
@@ -109,9 +123,9 @@ var readOnlyOverride = map[string]struct {
 //
 // DirectVisible is left to markCurated (the curated product surface), matching
 // how every other tool is promoted to tools/list.
-func catalogDescriptorToEntry(d catalog.ToolDescriptor, cat catalog.Catalog, resolveToken func(ctx context.Context) (string, error)) *model.ToolEntry {
-	readOnly := d.Safety == catalog.SafetyRead
-	destructive := d.Safety == catalog.SafetyDestructive
+func catalogDescriptorToEntry(d opmesh.ToolDescriptor, cat opmesh.Catalog, resolveToken func(ctx context.Context) (string, error)) *model.ToolEntry {
+	readOnly := d.Safety == opmesh.SafetyRead
+	destructive := d.Safety == opmesh.SafetyDestructive
 	openWorld := !readOnly
 	if override, ok := readOnlyOverride[d.Name]; ok {
 		readOnly = override.readOnly
@@ -128,22 +142,28 @@ func catalogDescriptorToEntry(d catalog.ToolDescriptor, cat catalog.Catalog, res
 		ReadOnly:      readOnly,
 		Destructive:   destructive,
 		OpenWorldHint: openWorld,
-		MCPTargets:    toModelTargets(d.MCPTargets),
+		MCPTargets:    toModelTargets(catalogmcp.TargetsOf(d.Name)),
 		Handler:       compiledHandler(cat, d.Name, resolveToken),
 	})
 	return entry
 }
 
-// toModelTargets maps catalog-native per-profile presentation Targets onto the
-// model's ToolTarget variants. Each catalog Target's opaque Require feature
+// toModelTargets maps the module's MCP boundary presentation Targets onto the
+// model's ToolTarget variants. Each catalogmcp Target's opaque Require feature
 // names are cast to hostenv.Feature and packed into a FeatureSet, so the MCP
 // surface can resolve the best-matching variant per request via the detected
 // platform profile.
-func toModelTargets(targets []catalog.Target) []model.ToolTarget {
+//
+// DescFunc resolvers are adapted across the module boundary: the module DSL
+// resolves features from a FeatureCarrier (MCPProfile), while the model layer
+// passes the live hostenv.PlatformProfile. The adapter re-wraps the request
+// profile via compileProfileFor so feature-gated description segments resolve
+// losslessly at per-request time, not just at compile time.
+func toModelTargets(targets []catalogmcp.Target) []model.ToolTarget {
 	if len(targets) == 0 {
 		return nil
 	}
-	return lo.Map(targets, func(t catalog.Target, _ int) model.ToolTarget {
+	return lo.Map(targets, func(t catalogmcp.Target, _ int) model.ToolTarget {
 		require := lo.SliceToMap(t.Require, func(name string) (hostenv.Feature, bool) {
 			return hostenv.Feature(name), true
 		})
@@ -155,7 +175,7 @@ func toModelTargets(targets []catalog.Target) []model.ToolTarget {
 		if t.DescFunc != nil {
 			fn := t.DescFunc
 			mt.DescFunc = func(p hostenv.PlatformProfile) string {
-				return fn(p)
+				return fn(compileProfileFor(p))
 			}
 		}
 		return mt
@@ -180,11 +200,11 @@ func toModelTargets(targets []catalog.Target) []model.ToolTarget {
 //
 //   - Otherwise (SafetyRead / SafetyMutate, agent-safe): the op runs directly
 //     and returns only the {status:ok,value} success envelope.
-func outputSchemaForCompiled(safety catalog.Safety, interaction catalog.Interaction) json.RawMessage {
+func outputSchemaForCompiled(safety opmesh.Safety, interaction opmesh.Interaction) json.RawMessage {
 	switch {
-	case interaction == catalog.InteractionHumanOnly || interaction == catalog.InteractionNeedsHandoff:
+	case interaction == opmesh.InteractionHumanOnly || interaction == opmesh.InteractionNeedsHandoff:
 		return catalogNeedsHumanOutputSchema
-	case safety == catalog.SafetyDestructive:
+	case safety == opmesh.SafetyDestructive:
 		return catalogOutputUnionSchema
 	default:
 		return catalogOutputSchema
@@ -199,19 +219,20 @@ func outputSchemaForCompiled(safety catalog.Safety, interaction catalog.Interact
 // hybrid deployment (compiled ops for covered domains, legacy tools for the
 // rest) stays coherent. Tools are discoverable via search_tools/describe_tool;
 // tools/list prominence is decided by markCurated.
-func populateCatalogSurface(tc *ToolCatalog, cat catalog.Catalog) (map[string]bool, error) {
+func populateCatalogSurface(tc *ToolCatalog, cat opmesh.Catalog) (map[string]bool, error) {
 	if tc == nil {
 		return nil, fmt.Errorf("populateCatalogSurface: nil tool catalog")
 	}
 	if cat == nil {
 		return nil, fmt.Errorf("populateCatalogSurface: nil operation catalog")
 	}
-	// Resolve the static descriptor against the startup/transport profile so a
-	// DescFunc-only MCPTarget fallback (FallbackFunc, e.g. websites_create's
-	// DSL-composed description) survives onto the static/non-profile surface
-	// instead of collapsing to the short CLI description. Per-request
-	// describe_tool/search_tools still re-resolves against the live profile.
-	descs, err := catalog.NewMCPCompilerForProfile(startupProfile()).Compile(cat)
+	// Compile against the module's MCP boundary compiler, adapted to the
+	// startup/transport profile. The compiler resolves FallbackFunc targets
+	// (e.g. websites_create's DSL-composed description, feature-gated per
+	// profile) so the static/non-profile surface does not collapse to the
+	// short base description instead. Per-request describe_tool/search_tools
+	// still re-resolves against the live profile.
+	descs, err := catalogmcp.NewCompilerForProfile(compileProfileFor(startupProfile())).Compile(cat)
 	if err != nil {
 		return nil, fmt.Errorf("populateCatalogSurface: compile operation catalog: %w", err)
 	}
@@ -235,9 +256,10 @@ func populateCatalogSurface(tc *ToolCatalog, cat catalog.Catalog) (map[string]bo
 		// and duplicate the OOB tools (account_password_update /
 		// account_email_change) that hand off to a browser form. They remain
 		// available to the CLI frontend through the operation catalog; only the
-		// MCP surface omits them. This is declared on the operation, not by a
-		// hard-coded name list here.
-		if op, ok := cat.Get(d.Name); ok && op.Environment() == catalog.EnvCLIOnly {
+		// MCP surface omits them. The carve-out is frontend metadata
+		// (catalogmeta.EnvironmentOf, keyed by the stable operation ID): the
+		// opmesh core model carries no Environment field.
+		if op, ok := cat.Get(d.Name); ok && catalogmeta.EnvironmentOf(op.Name()) == catalogmeta.EnvCLIOnly {
 			continue
 		}
 		tc.Add(catalogDescriptorToEntry(d, cat, resolveToken))

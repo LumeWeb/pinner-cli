@@ -3,8 +3,8 @@ package cli
 import (
 	"context"
 
-	"go.lumeweb.com/pinner/core/vault"
 	mcpwizard "go.lumeweb.com/pinner-cli/internal/mcp/wizard"
+	"go.lumeweb.com/pinner/core/vault"
 )
 
 // vaultCreateRunner implements mcpwizard.CreateRunner so the MCP layer can

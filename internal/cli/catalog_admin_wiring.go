@@ -10,8 +10,9 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/pterm/pterm"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/catalog"
-	"go.lumeweb.com/pinner-cli/internal/catalogops"
+	opmesh "go.lumeweb.com/opmesh"
+	"go.lumeweb.com/pinner-cli/internal/clicatalog"
+	"go.lumeweb.com/pinner/catalogops"
 	coreadmin "go.lumeweb.com/pinner/core/admin"
 	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/portal-sdk/admin"
@@ -111,13 +112,13 @@ type adminSectionGroup struct {
 // group prefix mount under that subgroup; the rest mount directly on the parent.
 // Each leaf is stripped of the section prefix and hyphenated.
 func newAdminGroupedSection(parentName, usage, sectionPrefix string, groups []adminSectionGroup) *cli.Command {
-	cat := catalog.NewCatalog()
+	cat := opmesh.NewCatalog()
 	for _, op := range catalogops.AdminOperations(adminCatalogDepsVar) {
 		if strings.HasPrefix(op.Name(), sectionPrefix) {
 			_ = cat.Add(op)
 		}
 	}
-	compiler := catalog.NewCLICompiler()
+	compiler := clicatalog.NewCLICompiler()
 	compiled, err := compiler.Compile(cat)
 	if err != nil {
 		panic(fmt.Sprintf("catalog compile admin section %q: %v", parentName, err))
@@ -200,7 +201,7 @@ func hyphenate(s string) string {
 // each leaf name. Leaves have their flag-required markers relaxed so positionals
 // can supply required args, and their Action wrapped with the CLI adapter.
 func newAdminSectionCommand(prefix, parentName, usage string) *cli.Command {
-	cat := catalog.NewCatalog()
+	cat := opmesh.NewCatalog()
 	for _, op := range catalogops.AdminOperations(adminCatalogDepsVar) {
 		if !strings.HasPrefix(op.Name(), prefix) {
 			continue
@@ -208,7 +209,7 @@ func newAdminSectionCommand(prefix, parentName, usage string) *cli.Command {
 		_ = cat.Add(op)
 	}
 
-	compiler := catalog.NewCLICompiler()
+	compiler := clicatalog.NewCLICompiler()
 	compiled, err := compiler.Compile(cat)
 	if err != nil {
 		panic(fmt.Sprintf("catalog compile admin section %q: %v", parentName, err))
@@ -237,7 +238,7 @@ func mountAdminSectionCommand(cmd *cli.Command, prefix string) *cli.Command {
 
 	relaxFlagRequired(cmd)
 
-	var op catalog.Operation
+	var op opmesh.Operation
 	for _, cand := range catalogops.AdminOperations(adminCatalogDepsVar) {
 		if cand.Name() == canonical {
 			op = cand
@@ -254,9 +255,9 @@ func mountAdminSectionCommand(cmd *cli.Command, prefix string) *cli.Command {
 // operation. It builds the input map from flags plus resolved positionals,
 // threads the --auth-token override, applies the destructive --force gate, and
 // renders the handler result.
-func adminActionAdapter(op catalog.Operation) cli.ActionFunc {
+func adminActionAdapter(op opmesh.Operation) cli.ActionFunc {
 	return func(ctx context.Context, c *cli.Command) error {
-		input := catalog.FlagsToInput(c, op)
+		input := clicatalog.FlagsToInput(c, op)
 		// Note: no --auth-token override is threaded here. Admin services read
 		// auth from the live config manager's token, so a per-invocation flag
 		// override is not currently supported for the admin domain.
@@ -272,7 +273,7 @@ func adminActionAdapter(op catalog.Operation) cli.ActionFunc {
 		case catalogops.OpAdminPlatformDomainsDelete,
 			catalogops.OpAdminPlatformDomainsUpdate,
 			catalogops.OpAdminPlatformDomainsBind:
-			if id := catalog.StrArg(input, "id", ""); id != "" {
+			if id := opmesh.StrArg(input, "id", ""); id != "" {
 				if op.Name() == catalogops.OpAdminPlatformDomainsDelete {
 					deleteID = id
 				}
@@ -290,7 +291,7 @@ func adminActionAdapter(op catalog.Operation) cli.ActionFunc {
 			catalogops.OpAdminSocialProvidersDelete,
 			catalogops.OpAdminSocialProvidersEnable,
 			catalogops.OpAdminSocialProvidersDisable:
-			if id := catalog.StrArg(input, "id", ""); id != "" {
+			if id := opmesh.StrArg(input, "id", ""); id != "" {
 				resolved, err := resolveSocialProviderID(ctx, adminCatalogDepsVar, id)
 				if err != nil {
 					return err
@@ -305,7 +306,7 @@ func adminActionAdapter(op catalog.Operation) cli.ActionFunc {
 		// interactively instead of passing --force; non-interactive contexts
 		// (scripts, --json/agent) still require --force so nothing is ever deleted
 		// without an explicit override.
-		if op.Safety() == catalog.SafetyDestructive {
+		if op.Safety() == opmesh.SafetyDestructive {
 			confirm := c.Bool(FlagForce) || c.Bool(FlagConfirm)
 			if !confirm {
 				switch op.Name() {
@@ -425,7 +426,7 @@ func resolveSocialProviderID(ctx context.Context, deps catalogops.AdminDeps, idO
 
 // renderAdminResult renders an admin handler's typed result through the CLI
 // Output formatter.
-func renderAdminResult(_ context.Context, c *cli.Command, op catalog.Operation, result any) error {
+func renderAdminResult(_ context.Context, c *cli.Command, op opmesh.Operation, result any) error {
 	output := setupOutput(c)
 	if result != nil && isNilPointerResult(result) {
 		return fmt.Errorf("%s returned no result", op.Name())

@@ -30,7 +30,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
-	"go.lumeweb.com/pinner-cli/internal/catalog"
+	opmesh "go.lumeweb.com/opmesh"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
@@ -110,9 +110,9 @@ func TestWireAnnotationsOnMetaTools(t *testing.T) {
 // hints must declare non-read and destructive rather than the SafetyRead
 // defaults.
 func TestAuthStatusAnnotationOverride(t *testing.T) {
-	entry := catalogDescriptorToEntry(catalog.ToolDescriptor{
+	entry := catalogDescriptorToEntry(opmesh.ToolDescriptor{
 		Name:   "auth_status",
-		Safety: catalog.SafetyRead,
+		Safety: opmesh.SafetyRead,
 	}, nil, nil)
 	require.False(t, entry.ReadOnly, "auth_status must declare readOnlyHint=false (external out-of-band communication)")
 	require.True(t, entry.Destructive, "auth_status must declare destructiveHint=true (a sent email cannot be unsent)")
@@ -121,9 +121,9 @@ func TestAuthStatusAnnotationOverride(t *testing.T) {
 	// A sibling read op without an override keeps the Safety mapping. Reads
 	// change no external state, so openWorldHint must stay false alongside
 	// readOnlyHint=true (directory validators reject readOnly+openWorld).
-	entry = catalogDescriptorToEntry(catalog.ToolDescriptor{
+	entry = catalogDescriptorToEntry(opmesh.ToolDescriptor{
 		Name:   "pins_list",
-		Safety: catalog.SafetyRead,
+		Safety: opmesh.SafetyRead,
 	}, nil, nil)
 	require.True(t, entry.ReadOnly, "pins_list keeps SafetyRead -> readOnlyHint=true")
 	require.False(t, entry.OpenWorldHint, "pins_list is a read; openWorldHint must be false for read-only tools")
