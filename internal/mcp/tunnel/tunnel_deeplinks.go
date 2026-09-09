@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"go.lumeweb.com/pinner-cli/internal/fieldform"
+	"go.lumeweb.com/fieldcraft"
 	"go.lumeweb.com/pinner-cli/internal/urlopen"
 )
 
@@ -65,7 +65,7 @@ func PrintTunnelDeepLink(provider, missing string) {
 // when no deep link exists for the pair.
 func OpenTunnelDeepLink(provider, missing string) {
 	PrintTunnelDeepLink(provider, missing)
-	if fieldform.NonInteractive {
+	if fieldcraft.NonInteractive {
 		return
 	}
 	if u := tunnelDeepLink(provider, missing); u != "" {

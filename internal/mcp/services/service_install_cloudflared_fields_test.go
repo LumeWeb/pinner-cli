@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/fieldform"
+	"go.lumeweb.com/fieldcraft"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 )
 
@@ -22,7 +22,7 @@ func TestCloudflaredFieldsShape(t *testing.T) {
 	fields := cloudflaredFields()
 	require.Len(t, fields, 2)
 
-	byName := map[string]*fieldform.Field[*ServiceInstallState, string]{}
+	byName := map[string]*fieldcraft.Field[*ServiceInstallState, string]{}
 	for i := range fields {
 		byName[fields[i].Name] = &fields[i]
 	}
@@ -54,7 +54,7 @@ func TestCloudflaredFieldsDeriveProvisionedState(t *testing.T) {
 	defer func() { tunnel.TunnelStatePath = orig }()
 
 	fields := cloudflaredFields()
-	byName := map[string]*fieldform.Field[*ServiceInstallState, string]{}
+	byName := map[string]*fieldcraft.Field[*ServiceInstallState, string]{}
 	for i := range fields {
 		byName[fields[i].Name] = &fields[i]
 	}
@@ -80,7 +80,7 @@ func TestCloudflaredTunnelNameDefaults(t *testing.T) {
 	defer func() { tunnel.TunnelStatePath = orig }()
 
 	fields := cloudflaredFields()
-	byName := map[string]*fieldform.Field[*ServiceInstallState, string]{}
+	byName := map[string]*fieldcraft.Field[*ServiceInstallState, string]{}
 	for i := range fields {
 		byName[fields[i].Name] = &fields[i]
 	}
@@ -111,17 +111,17 @@ func TestCloudflaredGatherNoPromptWhenDerived(t *testing.T) {
 	require.NoError(t, cmd.Set(serviceAuthTokenFlag, "shared-token"))
 
 	state := &ServiceInstallState{}
-	prior := fieldform.NonInteractive
-	fieldform.NonInteractive = true
-	defer func() { fieldform.NonInteractive = prior }()
+	prior := fieldcraft.NonInteractive
+	fieldcraft.NonInteractive = true
+	defer func() { fieldcraft.NonInteractive = prior }()
 
 	src := newServiceInstallValueSource(cmd, "")
-	fields := append([]fieldform.Field[*ServiceInstallState, string]{}, cloudflaredFields()...)
+	fields := append([]fieldcraft.Field[*ServiceInstallState, string]{}, cloudflaredFields()...)
 	auth := *installFieldByName("AuthToken")
 	auth.Prompt = promptText("shared", "*")
 	fields = append(fields, auth)
 
-	seeded, fullyDecided, err := fieldform.Gather(context.Background(), src, state, fields)
+	seeded, fullyDecided, err := fieldcraft.Gather(context.Background(), src, state, fields)
 	require.NoError(t, err)
 	require.True(t, fullyDecided)
 	// Domain/TunnelName were provider-derived (precedence 0), so they carry no
@@ -146,9 +146,9 @@ func writeCloudflareState(t *testing.T, body string) string {
 // empty MCP_DOMAIN (the legacy configurer errored at the prompt under
 // non-interactive mode).
 func TestCloudflaredFinalizeHeadlessFailsWhenDomainUnresolved(t *testing.T) {
-	prior := fieldform.NonInteractive
-	fieldform.NonInteractive = true
-	defer func() { fieldform.NonInteractive = prior }()
+	prior := fieldcraft.NonInteractive
+	fieldcraft.NonInteractive = true
+	defer func() { fieldcraft.NonInteractive = prior }()
 
 	err := cloudflaredFinalize(context.Background(), nil, &ServiceInstallState{}, nil)
 	require.Error(t, err)
@@ -161,9 +161,9 @@ func TestCloudflaredFinalizeHeadlessFailsWhenDomainUnresolved(t *testing.T) {
 // TestCloudflaredFinalizeInteractiveAllowsMissing verifies the fail-fast does
 // NOT fire on an interactive run (Domain is gathered by the prompt).
 func TestCloudflaredFinalizeInteractiveAllowsMissing(t *testing.T) {
-	prior := fieldform.NonInteractive
-	fieldform.NonInteractive = false
-	defer func() { fieldform.NonInteractive = prior }()
+	prior := fieldcraft.NonInteractive
+	fieldcraft.NonInteractive = false
+	defer func() { fieldcraft.NonInteractive = prior }()
 
 	require.NoError(t, cloudflaredFinalize(context.Background(), nil, &ServiceInstallState{}, nil))
 }

@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/fieldcraft"
 	"go.lumeweb.com/pinner-cli/internal/cli/wizard"
-	"go.lumeweb.com/pinner-cli/internal/fieldform"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/pinner/services"
@@ -143,7 +143,7 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 	state := &ServiceInstallState{EnvFile: envFile}
 	// Bind the pterm prompter so the wizard's steps ask the user through the
 	// shared prompt channel (like any other wizard), never via private widgets.
-	ctx = fieldform.WithPrompter(ctx, wizard.NewPtermPrompter())
+	ctx = fieldcraft.WithPrompter(ctx, wizard.NewPtermPrompter())
 	// Pre-seed scalar values from flags/env so the wizard never re-prompts for
 	// something already explicit.
 	seedServiceFromFlagsAndEnv(cmd, state, envFile)
@@ -160,14 +160,14 @@ func RunServiceInstallWizard(ctx context.Context, cmd *cli.Command, envFile stri
 // it genuinely needs user input; when no channel is bound (e.g. a direct step
 // drive in a non-interactive test where every value resolves from config/env),
 // the missing channel surfaces as a clear error only if a prompt is attempted.
-func serviceInstallStepsPrompter(ctx context.Context) fieldform.Prompter {
-	if p := fieldform.PrompterFrom(ctx); p != nil {
+func serviceInstallStepsPrompter(ctx context.Context) fieldcraft.Prompter {
+	if p := fieldcraft.PrompterFrom(ctx); p != nil {
 		return p
 	}
 	return nilPrompt{}
 }
 
-// nilPrompt is a fieldform.Prompter that errors on any method call: a step reached
+// nilPrompt is a fieldcraft.Prompter that errors on any method call: a step reached
 // it meaning it needs input, but no prompt channel is bound to the run context.
 type nilPrompt struct{}
 
@@ -220,7 +220,7 @@ func tunnelFlagSetOnCmdLine() bool { return flagSetOnCmdLine(serviceTunnelFlag) 
 // command line (an explicit operator decision that seeds the tri-state
 // directly).
 func promptOAuthForInstall(ctx context.Context, s *ServiceInstallState) error {
-	if fieldform.NonInteractive {
+	if fieldcraft.NonInteractive {
 		return nil
 	}
 	if OAuthFlagSetOnCmdLine() {
@@ -254,7 +254,7 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 				// already fixed (from a --tunnel switch or a persisted env value a
 				// headless run reuses), so mark it decided to keep later seed
 				// folds from re-deciding it.
-				if s.Provider != "" && fieldform.NonInteractive {
+				if s.Provider != "" && fieldcraft.NonInteractive {
 					s.ProviderDecided = true
 					return nil
 				}
@@ -293,7 +293,7 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 				p := serviceInstallStepsPrompter(ctx)
 
 				// Resolve the provider's field set — provider fields PLUS the
-				// shared auth token — through the fieldform.Gather primitive,
+				// shared auth token — through the fieldcraft.Gather primitive,
 				// applying one precedence model (switch > existing decision >
 				// headless env fold, prompting with the current value as an
 				// editable default) instead of hand-rolled `if s.X == ""`
@@ -307,7 +307,7 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 					// configurers provided).
 					fireProviderDeepLinks(s.Provider, s)
 
-					fields := append([]fieldform.Field[*ServiceInstallState, string]{}, spec.Fields(ctx, s, cfgMgr)...)
+					fields := append([]fieldcraft.Field[*ServiceInstallState, string]{}, spec.Fields(ctx, s, cfgMgr)...)
 
 					// The shared auth token, preferred from MCP_AUTH_TOKEN (env
 					// fold) over an interactive prompt so the secret is never
@@ -316,7 +316,7 @@ func ServiceInstallSteps(state *ServiceInstallState, cmd *cli.Command, envFile s
 					auth.Prompt = promptText("Shared auth token / secret for the public MCP endpoint", "*")
 					fields = append(fields, auth)
 
-					if _, _, err := fieldform.Gather(ctx, src, s, fields); err != nil {
+					if _, _, err := fieldcraft.Gather(ctx, src, s, fields); err != nil {
 						return err
 					}
 

@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
-	"go.lumeweb.com/pinner-cli/internal/fieldform"
+	"go.lumeweb.com/fieldcraft"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 )
 
@@ -19,7 +19,7 @@ func TestOpenAIFieldsShape(t *testing.T) {
 	fields := openAIFields()
 	require.Len(t, fields, 2)
 
-	byName := map[string]*fieldform.Field[*ServiceInstallState, string]{}
+	byName := map[string]*fieldcraft.Field[*ServiceInstallState, string]{}
 	for i := range fields {
 		byName[fields[i].Name] = &fields[i]
 	}
@@ -41,7 +41,7 @@ func TestOpenAIFieldsShape(t *testing.T) {
 }
 
 // TestOpenAIFieldGatherPrepopulatesFromFlags verifies that a flag-supplied
-// TunnelID and ApiKey are resolved by fieldform.Gather (precedence 1) without
+// TunnelID and ApiKey are resolved by fieldcraft.Gather (precedence 1) without
 // prompting — so a headless openai install with explicit flags never hard-errors
 // and never reaches the prompter.
 func TestOpenAIFieldGatherPrepopulatesFromFlags(t *testing.T) {
@@ -51,13 +51,13 @@ func TestOpenAIFieldGatherPrepopulatesFromFlags(t *testing.T) {
 	require.NoError(t, cmd.Set(serviceApiKeyFlag, "sk-openai-key"))
 
 	state := &ServiceInstallState{}
-	prior := fieldform.NonInteractive
-	fieldform.NonInteractive = true
-	defer func() { fieldform.NonInteractive = prior }()
+	prior := fieldcraft.NonInteractive
+	fieldcraft.NonInteractive = true
+	defer func() { fieldcraft.NonInteractive = prior }()
 
 	src := newServiceInstallValueSource(cmd, "")
 
-	fields := append([]fieldform.Field[*ServiceInstallState, string]{}, openAIFields()...)
+	fields := append([]fieldcraft.Field[*ServiceInstallState, string]{}, openAIFields()...)
 	auth := *installFieldByName("AuthToken")
 	auth.Prompt = promptText("shared", "*")
 	fields = append(fields, auth)
@@ -66,7 +66,7 @@ func TestOpenAIFieldGatherPrepopulatesFromFlags(t *testing.T) {
 	// flag so precedence 1 settles it (does not reach the prompter).
 	require.NoError(t, cmd.Set(serviceAuthTokenFlag, "shared-token"))
 
-	seeded, fullyDecided, err := fieldform.Gather(context.Background(), src, state, fields)
+	seeded, fullyDecided, err := fieldcraft.Gather(context.Background(), src, state, fields)
 	require.NoError(t, err)
 	require.True(t, fullyDecided)
 	require.Contains(t, seeded, "tunnel-id")
@@ -95,12 +95,12 @@ func TestOpenAIFieldGatherInvalidIDHardErrors(t *testing.T) {
 	require.NoError(t, cmd.Set(serviceTunnelIDFlag, "not-an-openai-id"))
 
 	state := &ServiceInstallState{}
-	prior := fieldform.NonInteractive
-	fieldform.NonInteractive = true
-	defer func() { fieldform.NonInteractive = prior }()
+	prior := fieldcraft.NonInteractive
+	fieldcraft.NonInteractive = true
+	defer func() { fieldcraft.NonInteractive = prior }()
 
 	src := newServiceInstallValueSource(cmd, "")
-	_, _, err := fieldform.Gather(context.Background(), src, state, openAIFields())
+	_, _, err := fieldcraft.Gather(context.Background(), src, state, openAIFields())
 	require.Error(t, err, "invalid tunnel ID must hard-error on headless")
 	require.Contains(t, err.Error(), "TunnelID")
 }

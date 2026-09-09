@@ -731,6 +731,8 @@ go.lumeweb.com/configmanager v0.3.30 h1:4hCz8MOR5qFR2JK8NSmbdiZiLbE5k6a/6fx0VXB5
 go.lumeweb.com/configmanager v0.3.30/go.mod h1:QBU+Qkk7ihnrn3Km6PkMt7zfVR5A2bAjt+jYXv9ZXKY=
 go.lumeweb.com/event/v2 v2.1.0 h1:pVWRzrHAkjhXa+owzhDTtaxBHbnxrsIpDHFZwEUxKoY=
 go.lumeweb.com/event/v2 v2.1.0/go.mod h1:e1Ss7iATIrP1b2Ojwbp1wdF0VTuxFXHdI7szkAG40AI=
+go.lumeweb.com/fieldcraft v0.0.0-20260907095025-2a7bfdd040cb h1:woNHOi+8jgZbg+PE+AsCtOJ8oqXDVbUPcnWsxgEcO6w=
+go.lumeweb.com/fieldcraft v0.0.0-20260907095025-2a7bfdd040cb/go.mod h1:iArF4Pwi4J1RCRC/UhkvlWbqGYe42RVCVT0+iGVBUlU=
 go.lumeweb.com/gswagger v0.20.12 h1:FNSrDAeMQVAGIogzJ4SQX+X8U/FMeWQ80yxdyfsM2/M=
 go.lumeweb.com/gswagger v0.20.12/go.mod h1:qz+9/8qstYy7WJ48VZJW/0FonlExw/Igv7vWGgp5uoU=
 go.lumeweb.com/ipfs-content v0.1.18 h1:Lq3/A+2kZcS4RK+bpdk+m4iJ95ZgpEa4DKhiH6bQWUg=

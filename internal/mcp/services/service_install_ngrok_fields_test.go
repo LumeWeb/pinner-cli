@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.lumeweb.com/pinner-cli/internal/fieldform"
+	"go.lumeweb.com/fieldcraft"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 )
 
@@ -30,7 +30,7 @@ func TestNgrokFieldsShape(t *testing.T) {
 	fields := ngrokFields(context.Background(), nil)
 	require.Len(t, fields, 2)
 
-	byName := map[string]*fieldform.Field[*ServiceInstallState, string]{}
+	byName := map[string]*fieldcraft.Field[*ServiceInstallState, string]{}
 	for i := range fields {
 		byName[fields[i].Name] = &fields[i]
 	}
@@ -156,9 +156,9 @@ func TestNgrokFinalizePersistsToken(t *testing.T) {
 // configurer errored at the prompt under non-interactive mode). The token is
 // NOT independently required — an API/operator-resolved URL needs no token.
 func TestNgrokFinalizeHeadlessFailsWhenUnresolved(t *testing.T) {
-	prior := fieldform.NonInteractive
-	fieldform.NonInteractive = true
-	defer func() { fieldform.NonInteractive = prior }()
+	prior := fieldcraft.NonInteractive
+	fieldcraft.NonInteractive = true
+	defer func() { fieldcraft.NonInteractive = prior }()
 
 	// Empty token AND empty URL -> error naming the required public URL.
 	err := ngrokFinalize(context.Background(), nil, &ServiceInstallState{}, newTestConfigMgr(t))
@@ -178,9 +178,9 @@ func TestNgrokFinalizeHeadlessFailsWhenUnresolved(t *testing.T) {
 // on an interactive run (the URL is gathered by the prompt after Gather), so
 // interactive installs keep working.
 func TestNgrokFinalizeInteractiveAllowsMissing(t *testing.T) {
-	prior := fieldform.NonInteractive
-	fieldform.NonInteractive = false
-	defer func() { fieldform.NonInteractive = prior }()
+	prior := fieldcraft.NonInteractive
+	fieldcraft.NonInteractive = false
+	defer func() { fieldcraft.NonInteractive = prior }()
 
 	require.NoError(t, ngrokFinalize(context.Background(), nil, &ServiceInstallState{}, newTestConfigMgr(t)))
 }

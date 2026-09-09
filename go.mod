@@ -37,6 +37,7 @@ require (
 	github.com/tus/tusd/v2 v2.10.0
 	github.com/urfave/cli/v3 v3.11.0
 	github.com/yosida95/uritemplate/v3 v3.0.2
+	go.lumeweb.com/fieldcraft v0.0.0-20260907095025-2a7bfdd040cb
 	go.lumeweb.com/ipfs-content v0.1.18
 	go.lumeweb.com/ipfs-sdk v0.1.97
 	go.lumeweb.com/ipfs-sdk/dnsname v0.1.64

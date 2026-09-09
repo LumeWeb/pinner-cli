@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sync"
 
-	"go.lumeweb.com/pinner-cli/internal/fieldform"
+	"go.lumeweb.com/fieldcraft"
 	"go.lumeweb.com/pinner-cli/internal/mcp/tunnel"
 	"go.lumeweb.com/pinner/core/config"
 )
@@ -32,7 +32,7 @@ type TunnelProviderSpec struct {
 	// runtime-tunnel driven).
 	NewTunnel func(cfg tunnel.TunnelConfig) (tunnel.Tunnel, error)
 	// Fields returns the provider's promptable install fields (IDs, domains,
-	// credentials) as fieldform.Field views, so the tunnel-config step resolves
+	// credentials) as fieldcraft.Field views, so the tunnel-config step resolves
 	// them with the shared field-resolution primitive (switch > existing
 	// decision > headless env fold) instead of the provider hand-rolling
 	// prompts. ctx and cfgMgr thread the step's caller context and last-resort
@@ -41,7 +41,7 @@ type TunnelProviderSpec struct {
 	// credentials (e.g. an ngrok token persisted by a prior Finalize). The step
 	// resolves Fields then runs Finalize.
 	// Nil means the provider has no promptable fields.
-	Fields func(ctx context.Context, s *ServiceInstallState, cfgMgr config.Manager) []fieldform.Field[*ServiceInstallState, string]
+	Fields func(ctx context.Context, s *ServiceInstallState, cfgMgr config.Manager) []fieldcraft.Field[*ServiceInstallState, string]
 	// Finalize runs after the step gathers the provider's fields: it does the
 	// side-effects that are not field-shaped — provider-derived values (e.g. an
 	// ngrok public URL resolved from the account API), last-resort credential
@@ -49,7 +49,7 @@ type TunnelProviderSpec struct {
 	// auth token, being shared across every public tunnel, is gatherable as a
 	// field by the step itself (not provider-specific). Used only when Fields is
 	// set.
-	Finalize func(ctx context.Context, p fieldform.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error
+	Finalize func(ctx context.Context, p fieldcraft.Prompter, s *ServiceInstallState, cfgMgr config.Manager) error
 	// ConfigSeeded reports whether the install state already carries every
 	// value this provider's install flow would collect (the Fields + Finalize
 	// requirements, plus the shared auth token the tunnel-config step

@@ -7,13 +7,13 @@ import (
 	"os"
 	"testing"
 
-	"go.lumeweb.com/pinner-cli/internal/fieldform"
+	"go.lumeweb.com/fieldcraft"
 )
 
-// oauthConfirmPrompter is a fieldform.Prompter that records every Confirm
+// oauthConfirmPrompter is a fieldcraft.Prompter that records every Confirm
 // default it is asked with and returns a fixed result. It stubs the other
 // methods so promptOAuthForInstall (the only code under test here) flows
-// through the shared prompt channel bound via fieldform.WithPrompter.
+// through the shared prompt channel bound via fieldcraft.WithPrompter.
 type oauthConfirmPrompter struct {
 	confirmCalls []bool
 	result       bool
@@ -36,7 +36,7 @@ func (p *oauthConfirmPrompter) Text(string, string, string) (string, error) { re
 // secure default-on (true) and recording the operator's decision into state.
 func TestPromptOAuthForInstallAsksWithSecureDefault(t *testing.T) {
 	p := &oauthConfirmPrompter{result: true}
-	ctx := fieldform.WithPrompter(context.Background(), p)
+	ctx := fieldcraft.WithPrompter(context.Background(), p)
 	s := &ServiceInstallState{}
 	if err := promptOAuthForInstall(ctx, s); err != nil {
 		t.Fatalf("prompt OAuth failed: %v", err)
@@ -54,7 +54,7 @@ func TestPromptOAuthForInstallAsksWithSecureDefault(t *testing.T) {
 // defaulting to the operator's prior opt-out).
 func TestPromptOAuthForInstallHonorsPersistedDefault(t *testing.T) {
 	p := &oauthConfirmPrompter{result: false}
-	ctx := fieldform.WithPrompter(context.Background(), p)
+	ctx := fieldcraft.WithPrompter(context.Background(), p)
 	optOut := false
 	s := &ServiceInstallState{OAuth: &optOut}
 	if err := promptOAuthForInstall(ctx, s); err != nil {
@@ -73,17 +73,17 @@ func TestPromptOAuthForInstallHonorsPersistedDefault(t *testing.T) {
 // switch on the command line (an operator decision that seeds the tri-state).
 func TestPromptOAuthForInstallSkips(t *testing.T) {
 	// Non-interactive: never prompt.
-	prior := fieldform.NonInteractive
-	fieldform.NonInteractive = true
+	prior := fieldcraft.NonInteractive
+	fieldcraft.NonInteractive = true
 	s := &ServiceInstallState{}
-	ctx := fieldform.WithPrompter(context.Background(), &oauthConfirmPrompter{})
+	ctx := fieldcraft.WithPrompter(context.Background(), &oauthConfirmPrompter{})
 	if err := promptOAuthForInstall(ctx, s); err != nil {
 		t.Fatalf("prompt OAuth failed in non-interactive mode: %v", err)
 	}
 	if s.OAuth != nil {
 		t.Errorf("s.OAuth = %v, want nil (must not prompt in non-interactive mode)", s.OAuth)
 	}
-	fieldform.NonInteractive = prior
+	fieldcraft.NonInteractive = prior
 
 	// A literal --oauth on the command line is an explicit operator decision:
 	// do not prompt; leave the tri-state untouched for the flag fold.
@@ -94,7 +94,7 @@ func TestPromptOAuthForInstallSkips(t *testing.T) {
 
 	p := &oauthConfirmPrompter{result: true}
 	s2 := &ServiceInstallState{}
-	if err := promptOAuthForInstall(fieldform.WithPrompter(context.Background(), p), s2); err != nil {
+	if err := promptOAuthForInstall(fieldcraft.WithPrompter(context.Background(), p), s2); err != nil {
 		t.Fatalf("prompt OAuth failed with --oauth on the command line: %v", err)
 	}
 	if s2.OAuth != nil {
@@ -108,7 +108,7 @@ func TestPromptOAuthForInstallSkips(t *testing.T) {
 // default, never silently suppress the question.
 func TestPromptOAuthForInstallEnvSourcedValueDoesNotSuppress(t *testing.T) {
 	p := &oauthConfirmPrompter{result: true}
-	ctx := fieldform.WithPrompter(context.Background(), p)
+	ctx := fieldcraft.WithPrompter(context.Background(), p)
 	on := true // folded from MCP_OAUTH=true
 	s := &ServiceInstallState{OAuth: &on}
 	if err := promptOAuthForInstall(ctx, s); err != nil {
