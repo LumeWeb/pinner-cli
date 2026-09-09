@@ -13,7 +13,7 @@ import (
 	"go.lumeweb.com/pinner/core/auth"
 	portalsdk "go.lumeweb.com/portal-sdk"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 )
 
 // testAccountAuthService implements the mcp AuthService subset for password OOB

@@ -10,10 +10,10 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
+	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 func TestCapabilitiesReportStdio(t *testing.T) {
@@ -290,7 +290,7 @@ func TestCapabilitiesDescDropGated(t *testing.T) {
 // AND a file-capable upload/vault tool is actually wired. An OpenAI/ChatGPT
 // host with no upload/vault tool must not report host_file_input=true.
 func TestCapabilitiesHostFileInputRequiresWiredTool(t *testing.T) {
-	httpProfile := hostenv.ProfileOpenAIHTTP.CloneFeatures()
+	httpProfile := hostenv.ProfileOpenAIHTTP.CloneFeatures().Shared()
 	caps := &model.RequestCaps{Profile: &httpProfile}
 
 	run := func(upload, vault bool) CapabilityReport {
@@ -340,7 +340,8 @@ func TestCapabilitiesDescriptionMatchesWiring(t *testing.T) {
 func TestCapabilitiesDraftXFileGatedOnProfile(t *testing.T) {
 	run := func(draftWired bool, profile hostenv.PlatformProfile) CapabilityReport {
 		desc := NewCapabilitiesDescriptor(false, false, true, false, false, false, false, true, true, draftWired, 0, hostenv.ProfileOpenAITunnel.Features)
-		caps := &model.RequestCaps{Profile: &profile}
+		shared := profile.Shared()
+		caps := &model.RequestCaps{Profile: &shared}
 		res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}, Caps: caps})
 		require.NoError(t, err)
 		return res.StructuredContent.(CapabilityReport)

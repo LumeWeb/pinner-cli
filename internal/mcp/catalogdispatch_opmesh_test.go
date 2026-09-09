@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/opmesh"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner/catalogmeta"
 	"go.lumeweb.com/pinner/catalogops"
 )

@@ -2,7 +2,7 @@ package toolforge
 
 import (
 	"github.com/samber/lo"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 )
 

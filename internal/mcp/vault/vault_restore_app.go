@@ -3,12 +3,12 @@ package vault
 import (
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/mcpplane/session"
 
+	"go.lumeweb.com/mcpplane/model"
+	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // This file wires the "Restore Vault" MCP App onto the shared AppView lib
@@ -49,7 +49,7 @@ func VaultRestoreStatusDescriptor(reg *handoff.HandoffRegistry, handles *session
 		UnknownHandleDetail: "unknown handle; start a fresh vault restore with vault_restore",
 		ExpiredHandleDetail: "the vault restore hand-off expired before the human completed it; start a fresh vault restore with vault_restore",
 		DeadHandleReason:    model.ReasonCredentialEntry,
-		Category:            model.CategoryVault,
+		Category:            model.CategoryStorage,
 	}, reg, handles)
 }
 

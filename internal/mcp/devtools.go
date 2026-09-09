@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
@@ -184,7 +184,7 @@ func registerDevTools(catalog *ToolCatalog) {
 // devToolDescriptors builds the descriptors for every dev tool. They are all
 // read-only and directly visible.
 func devToolDescriptors() []model.ToolDescriptor {
-	desc := func(name, title, description string, handler model.PinnerToolHandler) model.ToolDescriptor {
+	desc := func(name, title, description string, handler model.ToolHandler) model.ToolDescriptor {
 		return model.ToolDescriptor{
 			Name:          name,
 			Title:         title,

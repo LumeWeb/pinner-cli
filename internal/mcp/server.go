@@ -1,10 +1,10 @@
 package mcp
 
 import (
+	"go.lumeweb.com/mcpplane/sdk"
+	"go.lumeweb.com/mcpplane/session"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // ServerConfig holds everything needed to assemble an MCP server independent

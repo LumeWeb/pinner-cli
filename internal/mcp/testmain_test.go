@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/mcpplane/sdk"
 )
 
 // TestMain installs the hub's tool-registration adapter into the sdk seam

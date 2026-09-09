@@ -12,12 +12,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/mcpplane/session"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/mcpplane/sdk"
+	"go.lumeweb.com/mcpplane/toolargs"
 )
 
 func TestCallToolResultFromElicitationForm(t *testing.T) {
@@ -54,7 +54,7 @@ func TestOfficialToolHandlerElicitationRoundTrip(t *testing.T) {
 	type localInput struct {
 		Input json.RawMessage `json:"input"`
 	}
-	stepHandler := model.PinnerToolHandler(func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
+	stepHandler := model.ToolHandler(func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		in, err := toolargs.DecodeToolArgs[localInput](req)
 		if err != nil {
 			return model.ToolResult{}, err
@@ -107,7 +107,7 @@ func TestElicitationRequestStateCarriesSession(t *testing.T) {
 		Input        json.RawMessage `json:"input"`
 		RequestState string          `json:"request_state"`
 	}
-	stepHandler := model.PinnerToolHandler(func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
+	stepHandler := model.ToolHandler(func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		in, err := toolargs.DecodeToolArgs[stepInput](req)
 		if err != nil {
 			return model.ToolResult{}, err
@@ -198,7 +198,7 @@ func TestSchemaRequiresInput(t *testing.T) {
 // submission instead of falling back to plain StepResponse JSON.
 func TestOfficialToolHandlerFlagsFormRetry(t *testing.T) {
 	got := make(chan bool, 1)
-	stepHandler := model.PinnerToolHandler(func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
+	stepHandler := model.ToolHandler(func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		got <- req.InputResponses
 		return model.ToolResult{Text: "ok"}, nil
 	})

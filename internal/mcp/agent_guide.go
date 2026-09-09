@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/mcpplane/model"
+	"go.lumeweb.com/mcpplane/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
@@ -25,11 +25,16 @@ type (
 )
 
 // profileFromRequest safely extracts the PlatformProfile from a tool request.
-// If the request has no Caps or no Profile (e.g. tests invoking handlers
-// directly), it returns a default stdio generic profile.
+// The request carries the SDK-neutral model.Profile; it is adapted to the CLI
+// PlatformProfile view (Surface zero — see hostenv.FromShared) because every
+// consumer here gates on features/transport/host, and buildAgentGuide
+// re-overlays Surface/Hosted from construction-time state. If the request has
+// no Caps or no Profile (e.g. tests invoking handlers directly), it returns a
+// default stdio generic profile.
 func profileFromRequest(request model.ToolRequest) *hostenv.PlatformProfile {
 	if request.Caps != nil && request.Caps.Profile != nil {
-		return request.Caps.Profile
+		p := hostenv.FromShared(*request.Caps.Profile)
+		return &p
 	}
 	p := hostenv.ProfileStdioGeneric
 	return &p
@@ -405,7 +410,7 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 			Detail(toolforge.Static("Ensure the vault is unlocked (vault_status), then call vault_share with the vault_path to generate a shareable link (control its lifetime with expiry). Local reads (vault_get_file / vault cat / vault_stats) work any time after a staged PUT; only share/send require durability across profiles. Only durable (status: durable) files can be shared: if vault_share or vault_send returns {code:'not_durable', ...}, run vault_flush (non-blocking, returns an accepted job { job_id, profile, path? }), poll vault_flush_status(job_id) or vault_stat until status: durable, then share/send again. If a file stays non-durable across polls, read vault_stat's flush_started_at, flush_attempts and flush_error: a flushing file shows a flush_started_at and a rising flush_attempts with no error, a failed file shows flush_attempts plus a non-empty flush_error, and a staged file that never started shows zero attempts/no error and an empty flush_started_at — compare now against flush_started_at to tell a long host upload from a hung pin. The recipient accepts the share with vault_share_accept (accept_state 'pinned' — an independent pin of the same object key, NOT a digest failure), which is directly visible on tools/list; vault_verify on a freshly pinned object reports digest_verified 'not_applicable' until first get/decrypt/deep verify — treat accept_state 'pinned' (not a digest signal) as the success indicator. For multi-profile swarms, list profiles with vault_profiles and hand off a file with vault_send (or pass profile=<name> when more than one profile is unlocked — vault ops return profile_required otherwise)."))).
 		Flow(toolforge.Flow("vault_sync", "Sync and verify vault state").
 			Steps("vault_status", "vault_sync", "vault_verify").
-			Detail(toolforge.Static("vault_sync reconciles the local vault cache from the indexer; vault_verify checks file integrity. Run both after creating or restoring on a new device, or when share state may have changed. Related utilities are discoverable via search_tools(category=vault): vault_ls, vault_stat, vault_tag_add, vault_tag_rm, vault_version_restore."))).
+			Detail(toolforge.Static("vault_sync reconciles the local vault cache from the indexer; vault_verify checks file integrity. Run both after creating or restoring on a new device, or when share state may have changed. Related utilities are discoverable via search_tools(category=storage): vault_ls, vault_stat, vault_tag_add, vault_tag_rm, vault_version_restore."))).
 		Flow(toolforge.Flow("pins", "Manage pins").
 			Steps("pins_add", "pins_list", "pins_status", "pins_rm").
 			Detail(toolforge.Static("pins_add imports content already on IPFS by external CID; it is NOT for use after an upload tool (which already pins). pins_status takes one cid; pins_rm requires confirm and exactly one of cids or all."))).

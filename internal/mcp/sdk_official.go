@@ -27,17 +27,17 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/opmesh"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/mcpplane/session"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 
+	"go.lumeweb.com/mcpplane/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
 )
 
@@ -224,7 +224,10 @@ func requestCaps(req *sdk.CallToolRequest, transportFlags transportFlags) *model
 		}
 	}
 
-	rc.Profile = &profile
+	// The request capability view carries the SDK-neutral profile; adapt the
+	// CLI-detected profile (features/host/wire signals are shared verbatim).
+	shared := profile.Shared()
+	rc.Profile = &shared
 
 	return rc
 }
@@ -285,7 +288,7 @@ func annotateAppOnHandoff(toolName string, caps *model.RequestCaps, result *mode
 // sdk.SetToolRegistrar in adapter.go). It routes app-tool registration through
 // the same handler-adaptation deps as the meta-tools, so app tools attached to
 // a ui:// view reuse the single registration path.
-func registerTool(srv *sdk.Server, desc model.ToolDescriptor, handler model.PinnerToolHandler) error {
+func registerTool(srv *sdk.Server, desc model.ToolDescriptor, handler model.ToolHandler) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
@@ -341,7 +344,7 @@ func (s *metaToolSchema) raw() json.RawMessage {
 // searchToolsInput is the typed argument shape for search_tools.
 type searchToolsInput struct {
 	Query    string `json:"query,omitempty" jsonschema:"description=A single keyword to search for in tool names and descriptions."`
-	Category string `json:"category,omitempty" jsonschema:"description=Filter by category: core, account, vault, ipns, operations, admin, or wizard."`
+	Category string `json:"category,omitempty" jsonschema:"description=Filter by category: core, account, storage, names, operations, admin, or wizard."`
 	// Limit caps the number of results returned. Leave unset/0 for no cap.
 	Limit int `json:"limit,omitempty" jsonschema:"description=Optional maximum number of results to return. Leave unset for no limit."`
 }
@@ -366,7 +369,7 @@ func registerOfficialSearchTools(srv *sdk.Server, catalog *ToolCatalog) error {
 	})
 	schema.property("category", map[string]any{
 		"type":        "string",
-		"description": "Filter by category: 'core' (user commands incl. pins/dns/websites), 'account' (auth, api keys), 'vault', 'ipns', 'operations', 'admin', or 'wizard'. Wizards are hidden from general search unless you set category to 'wizard' explicitly. Leave empty to search all categories.",
+		"description": "Filter by category: 'core' (user commands incl. pins/dns/websites), 'account' (auth, api keys), 'storage' (vault files/cache), 'names' (IPNS keys), 'operations', 'admin', or 'wizard'. Wizards are hidden from general search unless you set category to 'wizard' explicitly. Leave empty to search all categories.",
 	})
 	schema.property("limit", map[string]any{
 		"type":        "integer",
@@ -386,7 +389,7 @@ func registerOfficialSearchTools(srv *sdk.Server, catalog *ToolCatalog) error {
 		InputSchema:   schema.raw(),
 	}
 
-	desc.Handler = model.PinnerToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
+	desc.Handler = model.ToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
 		in, err := toolargs.DecodeToolArgs[searchToolsInput](request)
 		if err != nil {
 			return model.ToolResult{}, err
@@ -399,7 +402,7 @@ func registerOfficialSearchTools(srv *sdk.Server, catalog *ToolCatalog) error {
 		var data []byte
 		if isOnboardingQuery(strings.ToLower(strings.TrimSpace(in.Query))) && in.Category == "" {
 			res := catalog.Onboarding()
-			res.Hint = "These are the primary start-here tools for the four flows (auth, vault_create, vault_restore, pins). Call agent_guide for the full ordered chains, or search with category=core|account|vault|ipns|operations|admin (or category=wizard for wizards) to browse a specific domain."
+			res.Hint = "These are the primary start-here tools for the four flows (auth, vault_create, vault_restore, pins). Call agent_guide for the full ordered chains, or search with category=core|account|storage|names|operations|admin (or category=wizard for wizards) to browse a specific domain."
 			// Honor the documented limit contract on the onboarding path too:
 			// cap the result set to in.Limit when it is > 0.
 			if in.Limit > 0 && len(res.Tools) > in.Limit {
@@ -435,7 +438,7 @@ func registerOfficialDescribeTool(srv *sdk.Server, catalog *ToolCatalog) error {
 		InputSchema:   schema.raw(),
 	}
 
-	desc.Handler = model.PinnerToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
+	desc.Handler = model.ToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
 		in, err := toolargs.DecodeToolArgs[describeToolInput](request)
 		if err != nil {
 			return model.ToolResult{IsError: true, Text: err.Error()}, nil
@@ -573,7 +576,7 @@ func registerOfficialInvokeTools(srv *sdk.Server, catalog *ToolCatalog, stdioMod
 			InputSchema:   schema.raw(),
 		}
 
-		desc.Handler = model.PinnerToolHandler(func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
+		desc.Handler = model.ToolHandler(func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[invokeToolInput](request)
 			if err != nil {
 				return model.ToolResult{IsError: true, Text: err.Error()}, nil

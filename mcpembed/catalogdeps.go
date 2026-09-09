@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 
 	"go.lumeweb.com/pinner-cli/internal/cli"
-	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/pinner-cli/internal/mcp"
+	"go.lumeweb.com/pinner/core/config"
 )
 
 // NewCatalogDeps builds the production CatalogDepsBundle for a hosted

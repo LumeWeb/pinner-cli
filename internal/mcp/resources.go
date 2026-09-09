@@ -10,9 +10,9 @@ import (
 	"github.com/samber/lo"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/mcpplane/session"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 )
 

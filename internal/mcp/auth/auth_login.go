@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"go.lumeweb.com/mcpplane/session"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transport"
 	"go.uber.org/zap"
 )

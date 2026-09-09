@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"io"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
+	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/mcpplane/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 	"go.uber.org/zap"
@@ -47,7 +48,7 @@ type VaultGetFileInput struct {
 // transport, or a filedrop GET on HTTP / real tunnel). The vault service lives
 // in the CLI layer, exposed to MCP as a VaultGetHandler closure — mirror of
 // VaultPutHandler.
-func NewVaultGetFileDescriptor(getFn transfer.VaultGetHandler, hd *transfer.Download, downloadRoot string, maxDownloadBytes int64, tunnelOpenAI bool) model.ToolDescriptor {
+func NewVaultGetFileDescriptor(getFn transfer.VaultGetHandler, hd *mcptransfer.Download, downloadRoot string, maxDownloadBytes int64, tunnelOpenAI bool) model.ToolDescriptor {
 	return model.ToolDescriptor{
 		Name:          "vault_get_file",
 		Title:         "Download a file from the Pinner vault",

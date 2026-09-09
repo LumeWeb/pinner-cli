@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/mcpplane/session"
 
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
@@ -313,7 +313,7 @@ func NewVaultCreateResumeDescriptor(reg *handoff.HandoffRegistry, handles *sessi
 		UnknownHandleDetail: "unknown handle; start a fresh vault create with vault_create",
 		ExpiredHandleDetail: "the vault create hand-off expired before the vault was created and the seed retrieved; start a fresh vault create with vault_create so a new create_url is minted",
 		DeadHandleReason:    model.ReasonCredentialEntry,
-		Category:            model.CategoryVault,
+		Category:            model.CategoryStorage,
 	}, reg, handles)
 }
 
@@ -329,6 +329,6 @@ func NewVaultRestoreResumeDescriptor(reg *handoff.HandoffRegistry, handles *sess
 		UnknownHandleDetail: "unknown handle; start a fresh vault restore with vault_restore",
 		ExpiredHandleDetail: "the vault restore hand-off expired before the human completed it; start a fresh vault restore with vault_restore so a new restore_url is minted",
 		DeadHandleReason:    model.ReasonCredentialEntry,
-		Category:            model.CategoryVault,
+		Category:            model.CategoryStorage,
 	}, reg, handles)
 }

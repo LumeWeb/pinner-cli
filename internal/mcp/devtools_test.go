@@ -9,9 +9,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
+	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // devCaps builds a RequestCaps carrying a resolved HTTP profile plus a raw wire
@@ -22,12 +22,13 @@ func devCaps() *model.RequestCaps {
 	p.UserAgent = "grok-client/1.2.3"
 	p.ProtocolVer = "2025-03-26"
 	p.Headers = http.Header{"User-Agent": []string{"grok-client/1.2.3"}}
+	sp := p.Shared()
 	return &model.RequestCaps{
 		ProtocolVersion:  "2025-03-26",
 		ClientName:       "grok-client",
 		Capabilities:     map[string]any{"roots": map[string]any{"listChanged": true}},
 		InitializeParams: map[string]any{"protocolVersion": "2025-03-26"},
-		Profile:          &p,
+		Profile:          &sp,
 	}
 }
 

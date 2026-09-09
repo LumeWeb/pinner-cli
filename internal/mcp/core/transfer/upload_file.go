@@ -12,9 +12,9 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/mcpplane/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 	"go.uber.org/zap"
@@ -276,7 +276,7 @@ func newUploadFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenA
 					"upload_handle":      handle,
 					"upload_handle_poll": "upload_status",
 					"ttl":                ttl.String(),
-					"max_bytes":          hp.maxBytes,
+					"max_bytes":          hp.MaxBytes(),
 				}
 				// Text carries the same JSON as StructuredContent so a text-only
 				// MCP client (which renders no widget) still sees the actual

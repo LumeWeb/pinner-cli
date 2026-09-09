@@ -2,6 +2,8 @@ package transfer
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,9 +13,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/cors"
+
 	"go.lumeweb.com/pinner/core/vault"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/credctx"
+	"go.lumeweb.com/mcpplane/credctx"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transport"
 )
@@ -138,7 +142,7 @@ func (vu *VaultHTTPUpload) Mint(ctx context.Context, vaultPath string, ttl time.
 	if ttl <= 0 {
 		ttl = DefaultHTTPUploadTTL
 	}
-	token := newHTTPToken()
+	token := newVaultHTTPToken()
 	now := vu.now()
 	vu.mu.Lock()
 	// Prune expired minted-but-never-used tokens.
@@ -251,4 +255,59 @@ func (vu *VaultHTTPUpload) claim(token string) (string, map[string]any, string, 
 	}
 	delete(vu.tokens, token)
 	return tkn.vaultPath, tkn.metadata, tkn.jwt, true
+}
+
+// transferCORS wraps next with CORS middleware (github.com/rs/cors) that
+// reflects ANY request Origin back on the token-gated vault-upload route. It
+// mirrors the main MCP transport's corsHandler in the adapter:
+// Access-Control-Allow-Origin echoes whatever Origin header the client sent,
+// rather than a static allow-list.
+//
+// Reflecting any origin is safe here because this route is gated by an
+// unguessable, expiring, single-use token in the URL path and never sends
+// credentials — the reflected Origin is NOT the access-control boundary, the
+// token is. Restricting to a static allow-list cannot include the MCP host's
+// dynamically generated per-session sandbox origin (a fresh <hash> per
+// connection on the host's content CDN). The matching helpers for the module's
+// upload/download coordinators live alongside them in
+// go.lumeweb.com/mcpplane/transfer; this copy stays CLI-side because the vault
+// OOB coordinator itself does.
+func transferCORS(methods, headers []string, next http.Handler) http.Handler {
+	return cors.New(cors.Options{
+		AllowOriginFunc: func(_ string) bool {
+			return true
+		},
+		AllowedMethods: methods,
+		AllowedHeaders: headers,
+	}).Handler(next)
+}
+
+// corsUpload wraps the vault-upload route handler so a browser XHR (the app's
+// Uppy uploader) can PUT the picked file across origins. The app iframe and
+// the transport/loopback mux live on different origins, so without CORS the
+// browser sends an OPTIONS preflight that the handler would reject with 405
+// and the upload never fires. rs/cors answers the preflight and reflects any
+// request origin; see transferCORS for why that is safe (token-gated route).
+func corsUpload(next http.HandlerFunc) http.HandlerFunc {
+	return transferCORS(
+		[]string{http.MethodPut, http.MethodOptions},
+		[]string{
+			"Content-Type",
+			"Content-Length",
+			"Upload-Length",
+			"Upload-Offset",
+			"Upload-Name",
+			"Upload-Defer-Length",
+		},
+		next,
+	).ServeHTTP
+}
+
+// newVaultHTTPToken returns a fresh 128-bit hex token guarding the
+// unauthenticated PUT route — 64-bit entropy would be too guessable on a route
+// that accepts arbitrary request bodies.
+func newVaultHTTPToken() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }

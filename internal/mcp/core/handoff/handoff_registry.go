@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/mcpplane/session"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/mcpplane/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 
@@ -220,7 +220,9 @@ type ResumeToolSpec struct {
 	DeadHandleReason model.HandoffReason
 	// Category is the tool category for search/filter. Defaults to CategoryCore
 	// when zero. Auth resumes use CategoryAccount; vault resumes use
-	// CategoryVault so filtering by category surfaces the OOB flow correctly.
+	// CategoryStorage ("storage"; the legacy "vault" wire value was renamed by
+	// the mcpplane model vocabulary) so filtering by category surfaces the OOB
+	// flow correctly.
 	Category model.ToolCategory
 }
 

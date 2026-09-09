@@ -9,8 +9,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"go.lumeweb.com/mcpplane/session"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 )
 
 // OOBAccountChange completes an account credential change (password or email)

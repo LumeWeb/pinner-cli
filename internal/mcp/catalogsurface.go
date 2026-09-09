@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/samber/lo"
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/opmesh"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner/catalogmcp"
@@ -71,7 +71,7 @@ func compileProfileFor(prof hostenv.PlatformProfile) catalogmcp.MCPProfile {
 // middleware (credentialMiddleware) resolves it once per request, so the
 // handler does not re-resolve per tool. On the stdio path there is no
 // middleware, so the handler falls back to resolving now via resolveToken.
-func compiledHandler(cat opmesh.Catalog, name string, resolveToken func(ctx context.Context) (string, error)) model.PinnerToolHandler {
+func compiledHandler(cat opmesh.Catalog, name string, resolveToken func(ctx context.Context) (string, error)) model.ToolHandler {
 	return func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		tok := CredentialFromContext(ctx)
 		if tok == "" && resolveToken != nil {
@@ -174,8 +174,10 @@ func toModelTargets(targets []catalogmcp.Target) []model.ToolTarget {
 		}
 		if t.DescFunc != nil {
 			fn := t.DescFunc
-			mt.DescFunc = func(p hostenv.PlatformProfile) string {
-				return fn(compileProfileFor(p))
+			mt.DescFunc = func(sp model.Profile) string {
+				// Reconstruct the CLI profile view (Surface zero — feature/
+				// transport gating only) before re-wrapping for the module DSL.
+				return fn(compileProfileFor(hostenv.FromShared(sp)))
 			}
 		}
 		return mt

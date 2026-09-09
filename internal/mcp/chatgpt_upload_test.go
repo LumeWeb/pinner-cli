@@ -10,10 +10,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"go.lumeweb.com/mcpplane/model"
+	"go.lumeweb.com/mcpplane/sdk"
+	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 // upload_file is unified across transports; these replace the removed
@@ -57,11 +58,11 @@ func TestUploadFileDescriptorStdioRejectsMint(t *testing.T) {
 }
 
 func TestUploadFileDescriptorHTTPMints(t *testing.T) {
-	mgr := transfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, _ string, _ bool, _ string, _ bool) (any, error) {
+	mgr := mcptransfer.NewUploadTaskManager(func(_ context.Context, reader io.Reader, _ int64, _ string, _ bool, _ string, _ bool) (any, error) {
 		_, _ = io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmMint"}, nil
 	}, 0)
-	cu := transfer.NewHTTPUpload(mgr, 0)
+	cu := mcptransfer.NewHTTPUpload(mgr, 0)
 	defer cu.Stop(context.Background())
 	desc := transfer.NewUploadFileDescriptor(transportFeatures(false, false), false, false, nil, cu, nil, nil, 0)
 
@@ -88,11 +89,11 @@ func TestUploadFileDescriptorHTTPMintSupportsWrapAndConvert(t *testing.T) {
 	// time and applied when the PUT bytes arrive (see upload_tasks.go). A mint
 	// request with wrap and/or archive_mode=convert must now succeed and mint
 	// the presigned URL + handle, not fail.
-	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
+	mgr := mcptransfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 		_, _ = io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmDir"}, nil
 	}, 0)
-	cu := transfer.NewHTTPUpload(mgr, 0)
+	cu := mcptransfer.NewHTTPUpload(mgr, 0)
 	defer cu.Stop(context.Background())
 	desc := transfer.NewUploadFileDescriptor(transportFeatures(false, false), false, false, nil, cu, nil, nil, 0)
 	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{
@@ -114,12 +115,12 @@ func TestUploadFileDescriptorHTTPMintDefaultsToPreserve(t *testing.T) {
 	// bytes are never silently extracted into a directory DAG, even when they
 	// look like an archive. Only an explicit archive_mode=convert converts.
 	var gotMode string
-	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
+	mgr := mcptransfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 		gotMode = archiveMode
 		_, _ = io.Copy(io.Discard, reader)
 		return map[string]any{"cid": "QmRaw"}, nil
 	}, 0)
-	cu := transfer.NewHTTPUpload(mgr, 0)
+	cu := mcptransfer.NewHTTPUpload(mgr, 0)
 	defer cu.Stop(context.Background())
 	desc := transfer.NewUploadFileDescriptor(transportFeatures(false, false), false, false, nil, cu, nil, nil, 0)
 
@@ -144,13 +145,13 @@ func TestUploadFileDescriptorHTTPMintDefaultsToPreserve(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		t, err := mgr.Get(handle)
-		return err == nil && t.State == transfer.UploadStateCompleted
+		return err == nil && t.State == mcptransfer.UploadStateCompleted
 	}, 2*time.Second, 10*time.Millisecond)
 	require.Equal(t, string(ieo.ArchivePreserve), gotMode, "undecorated mint PUT must default to preserve, not silently extract")
 }
 
 func TestUploadFileDescriptorHTTPRejectsPath(t *testing.T) {
-	cu := transfer.NewHTTPUpload(nil, 0)
+	cu := mcptransfer.NewHTTPUpload(nil, 0)
 	defer cu.Stop(context.Background())
 	desc := transfer.NewUploadFileDescriptor(transportFeatures(false, false), false, false, nil, cu, nil, nil, 0)
 	_, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{

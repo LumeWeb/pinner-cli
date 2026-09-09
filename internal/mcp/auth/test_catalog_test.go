@@ -1,6 +1,6 @@
 package auth
 
-import "go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+import "go.lumeweb.com/mcpplane/model"
 
 // testCatalog is a minimal in-memory catalog double for app-view registration
 // tests. It satisfies the apps.AppCatalog surface the auth app views require

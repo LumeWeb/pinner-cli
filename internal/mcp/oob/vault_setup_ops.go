@@ -7,10 +7,10 @@ import (
 	"go.lumeweb.com/pinner/catalogops"
 	"go.lumeweb.com/pinner/core/vault"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/mcpplane/session"
 
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // This file turns pinner_vault_create and pinner_vault_restore into clean,
@@ -116,7 +116,7 @@ func VaultHandoffResult(resumeTool, urlKey, url, handle, detail string) model.To
 //
 // When the OOB create coordinator is absent, the handler returns a structured
 // not-configured hand-off rather than hanging.
-func VaultCreateSetupHandler(oobCreate *OOBCreate, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.PinnerToolHandler {
+func VaultCreateSetupHandler(oobCreate *OOBCreate, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.ToolHandler {
 	return func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		if reg == nil || handles == nil || oobCreate == nil {
 			return model.NeedsHumanResult(model.NeedsHuman{
@@ -166,7 +166,7 @@ func VaultCreateSetupHandler(oobCreate *OOBCreate, reg *handoff.HandoffRegistry,
 //
 // When the OOB restore coordinator is absent, the handler returns a structured
 // not-configured hand-off rather than hanging.
-func VaultRestoreSetupHandler(oobRestore *OOBRestore, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.PinnerToolHandler {
+func VaultRestoreSetupHandler(oobRestore *OOBRestore, reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.ToolHandler {
 	return func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		if reg == nil || handles == nil || oobRestore == nil {
 			return model.NeedsHumanResult(model.NeedsHuman{

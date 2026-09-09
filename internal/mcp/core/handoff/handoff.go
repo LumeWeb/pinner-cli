@@ -9,7 +9,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/mcpplane/session"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transport"
 )
 

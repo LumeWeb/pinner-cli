@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/invopop/jsonschema"
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/opmesh"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 )
 
 // This file provides the generic operation-catalog dispatch seam: a typed MCP

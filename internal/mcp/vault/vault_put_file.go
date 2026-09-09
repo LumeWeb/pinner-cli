@@ -11,15 +11,16 @@ import (
 
 	"github.com/invopop/jsonschema"
 
+	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 	corevault "go.lumeweb.com/pinner/core/vault"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/mcpplane/toolargs"
 	"go.uber.org/zap"
 )
 
@@ -51,7 +52,7 @@ type VaultPutFileInput struct {
 	// download_url + file_id). It lets a ChatGPT user hand a file it created
 	// in its own environment directly to the vault, without a human file-picker
 	// or manual transport. Mutually exclusive with Source.
-	File *transfer.ChatGPTFileInput `json:"file,omitempty"`
+	File *mcptransfer.ChatGPTFileInput `json:"file,omitempty"`
 	// VaultPath is the destination file path inside the encrypted vault. It
 	// must be a file path (not a directory) free of parent-relative traversal.
 	// Any vault file path is allowed (e.g. vault:/docs/f.pdf); there is no
@@ -133,7 +134,7 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 		// file it owns, without a human file-picker. This metadata is additive
 		// to any other Pinner metadata. Hosts without FeatFileHostInput (e.g.
 		// Grok) must not advertise it.
-		meta = transfer.ChatGPTFileMeta()
+		meta = mcptransfer.ChatGPTFileMeta()
 	}
 	return model.ToolDescriptor{
 		Name:          "vault_put_file",
@@ -225,12 +226,12 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 				if relayFn == nil {
 					return model.ToolResult{}, errors.New("vault relay write is not configured")
 				}
-				_, body, size, oerr := transfer.OpenChatGPTFileInput(ctx, *in.File, transfer.ChatGPTOpenTimeout, maxRelayBytes, relayHosts, httpClient)
+				_, body, size, oerr := mcptransfer.OpenChatGPTFileInput(ctx, *in.File, mcptransfer.ChatGPTOpenTimeout, maxRelayBytes, relayHosts, httpClient)
 				if oerr != nil {
 					return model.ToolResult{}, oerr
 				}
 				defer body.Close()
-				writeCtx, cancel := context.WithTimeout(ctx, transfer.SyncUploadBudget(size))
+				writeCtx, cancel := context.WithTimeout(ctx, mcptransfer.SyncUploadBudget(size))
 				defer cancel()
 				result, err := relayFn(writeCtx, body, size, in.VaultPath, metadata)
 				return toolargs.WrapResult(result, err, "Stored in the vault.")
@@ -258,7 +259,7 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 				if vu == nil {
 					return model.ToolResult{}, errors.New("presigned vault-upload endpoint is not configured for remote mode")
 				}
-				ttl := transfer.DefaultHTTPUploadTTL
+				ttl := mcptransfer.DefaultHTTPUploadTTL
 				if in.TTL != "" {
 					d, derr := time.ParseDuration(in.TTL)
 					if derr != nil {
@@ -299,7 +300,7 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 					return model.ToolResult{}, oerr
 				}
 				defer body.Close()
-				writeCtx, cancel := context.WithTimeout(ctx, transfer.SyncUploadBudget(size))
+				writeCtx, cancel := context.WithTimeout(ctx, mcptransfer.SyncUploadBudget(size))
 				defer cancel()
 				result, err := relayFn(writeCtx, body, size, in.VaultPath, metadata)
 				return toolargs.WrapResult(result, err, "Stored in the vault.")
@@ -315,7 +316,7 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 func vaultPutFileSchema(features hostenv.FeatureSet) json.RawMessage {
 	return toolforge.Schema().
 		Property("source", toolargs.SchemaFor[transfer.UploadSource](), toolforge.Description("The file to store as a transport-scoped source object. Choose the mode this transport accepts (see capabilities.source_modes): path=co-located stdio, mint=HTTP/tunnel presigned endpoint, url/data=relay. Omit when a host-provided file reference is used instead."), toolforge.Transform(transfer.VaultSourceSchemaTransform)).
-		Property("file", toolargs.SchemaFor[transfer.ChatGPTFileInput](), toolforge.When(hostenv.FeatFileHostInput)).
+		Property("file", toolargs.SchemaFor[mcptransfer.ChatGPTFileInput](), toolforge.When(hostenv.FeatFileHostInput)).
 		StringProperty("vault_path", "Vault destination file path (e.g. vault:/docs/f.pdf or vault:/uploads/report.pdf). Required. A file path, not a directory; traversal (.. or .) segments are rejected. Any vault file path is allowed.").
 		StringProperty("profile", "Vault profile name to write into. Required when more than one profile is unlocked (omitting it returns profile_required and mints nothing); on a single-profile server it defaults to the active profile. Specify a different profile to store in another vault without changing the default.").
 		// archive_mode is only meaningful for source.mode=path (co-located

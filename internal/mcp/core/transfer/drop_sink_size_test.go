@@ -11,7 +11,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/mcpplane/toolargs"
+
+	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 )
 
 // TestExecuteDropSinkReportsRealSize verifies sink=drop no longer reports
@@ -20,7 +22,7 @@ import (
 func TestExecuteDropSinkReportsRealSize(t *testing.T) {
 	payload := bytes.Repeat([]byte("x"), 1556)
 
-	hd := NewHTTPDownload()
+	hd := mcptransfer.NewHTTPDownload()
 	defer hd.Stop(context.Background())
 	hd.SetBaseURL("http://127.0.0.1") // avoid the loopback listener; not needed here
 
@@ -45,7 +47,7 @@ func TestExecuteDropSinkReportsRealSize(t *testing.T) {
 // front (at mint/resolve time) rather than minting an endpoint that would
 // stream a truncated file.
 func TestExecuteDropSinkEnforcesCapAtMint(t *testing.T) {
-	hd := NewHTTPDownload()
+	hd := mcptransfer.NewHTTPDownload()
 	defer hd.Stop(context.Background())
 	hd.SetBaseURL("http://127.0.0.1")
 
@@ -61,7 +63,7 @@ func TestExecuteDropSinkEnforcesCapAtMint(t *testing.T) {
 // pre-buffered bytes with a correct Content-Length and cleans up the temp file.
 func TestDropSinkGetStreamsBytesOnce(t *testing.T) {
 	payload := []byte("pdf-bytes-1-2-3")
-	hd := NewHTTPDownload()
+	hd := mcptransfer.NewHTTPDownload()
 	defer hd.Stop(context.Background())
 
 	// Wire into a real loopback via httptest so we can actually GET it.

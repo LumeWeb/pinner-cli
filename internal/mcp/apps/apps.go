@@ -7,8 +7,8 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
+	"go.lumeweb.com/mcpplane/model"
+	"go.lumeweb.com/mcpplane/sdk"
 )
 
 // MCP Apps (ext-apps) product views. Each App pairs one or more existing tools

@@ -7,9 +7,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"go.lumeweb.com/mcpplane/model"
+	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 )
 
 func TestMCPAppsConstants(t *testing.T) {
@@ -126,7 +126,7 @@ func buildAppServer(t *testing.T) *mcp.Server {
 	srv := sdk.NewServer(nil)
 	sdk.SetToolRegistrar(registerTool)
 
-	handler := model.PinnerToolHandler(func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
+	handler := model.ToolHandler(func(_ context.Context, _ model.ToolRequest) (model.ToolResult, error) {
 		return model.ToolResult{Text: "vault listing fallback"}, nil
 	})
 	err := sdk.RegisterAppTool(srv, model.ToolDescriptor{

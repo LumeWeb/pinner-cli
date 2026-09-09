@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/credctx"
+	"go.lumeweb.com/mcpplane/credctx"
 )
 
 // TestVaultUploadCredentialPropagates verifies that a JWT captured at Mint time

@@ -13,7 +13,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
+	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
@@ -21,7 +22,7 @@ import (
 // ---- httpDownload filedrop GET coordinator ----
 
 func TestHTTPDownloadMintAndServe(t *testing.T) {
-	hd := transfer.NewHTTPDownload()
+	hd := mcptransfer.NewHTTPDownload()
 	// Use a real loopback listener (stdio-style, baseURL empty) so the minted
 	// URL is reachable.
 	url, err := hd.Mint(context.Background(), "report.pdf", 0, func(ctx context.Context, w io.Writer) error {
@@ -50,7 +51,7 @@ func TestHTTPDownloadMintAndServe(t *testing.T) {
 }
 
 func TestHTTPDownloadRejectsBadMethodAndUnknownToken(t *testing.T) {
-	hd := transfer.NewHTTPDownload()
+	hd := mcptransfer.NewHTTPDownload()
 	url, err := hd.Mint(context.Background(), "f.bin", 0, func(ctx context.Context, w io.Writer) error { return nil }, 0)
 	require.NoError(t, err)
 
@@ -70,7 +71,7 @@ func TestHTTPDownloadRejectsBadMethodAndUnknownToken(t *testing.T) {
 }
 
 func TestHTTPDownloadExpiry(t *testing.T) {
-	hd := transfer.NewHTTPDownload()
+	hd := mcptransfer.NewHTTPDownload()
 	frozen := time.Now()
 	hd.SetNow(func() time.Time { return frozen })
 	url, err := hd.Mint(context.Background(), "f.bin", 0, func(ctx context.Context, w io.Writer) error {
@@ -89,7 +90,7 @@ func TestHTTPDownloadExpiry(t *testing.T) {
 }
 
 func TestHTTPDownloadSourceErrorFailures(t *testing.T) {
-	hd := transfer.NewHTTPDownload()
+	hd := mcptransfer.NewHTTPDownload()
 	url, err := hd.Mint(context.Background(), "bad.bin", 0, func(ctx context.Context, w io.Writer) error {
 		return errors.New("source exploded")
 	}, 0)
@@ -108,14 +109,14 @@ func TestHTTPDownloadSourceErrorFailures(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, resp2.StatusCode)
 }
 
-// ---- transfer.SanitizeFilename / sink helpers ----
+// ---- mcptransfer.SanitizeFilename / sink helpers ----
 
 func TestSanitizeFilename(t *testing.T) {
-	require.Equal(t, "download", transfer.SanitizeFilename(""))
-	require.Equal(t, "download", transfer.SanitizeFilename(".."))
-	require.Equal(t, "a_b.txt", transfer.SanitizeFilename("a/b.txt"))
-	require.Equal(t, "a_b", transfer.SanitizeFilename(`a\b`))
-	require.Equal(t, "a_b_c", transfer.SanitizeFilename(`a"b:c`))
+	require.Equal(t, "download", mcptransfer.SanitizeFilename(""))
+	require.Equal(t, "download", mcptransfer.SanitizeFilename(".."))
+	require.Equal(t, "a_b.txt", mcptransfer.SanitizeFilename("a/b.txt"))
+	require.Equal(t, "a_b", mcptransfer.SanitizeFilename(`a\b`))
+	require.Equal(t, "a_b_c", mcptransfer.SanitizeFilename(`a"b:c`))
 }
 
 func TestSinkDefaultName(t *testing.T) {
@@ -198,7 +199,7 @@ func TestDownloadSinksAllowed(t *testing.T) {
 func TestWriteLocalDownload(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "sub", "out.bin")
-	n, err := transfer.WriteLocalDownload(context.Background(), out, 0, func(ctx context.Context, w io.Writer) error {
+	n, err := transfer.WriteLocalDownload(context.Background(), dir, out, 0, func(ctx context.Context, w io.Writer) error {
 		_, err := w.Write([]byte("hello world"))
 		return err
 	})
@@ -215,7 +216,7 @@ func TestWriteLocalDownloadExceedsCap(t *testing.T) {
 	// Cap smaller than the stream; the write must fail loudly and must NOT
 	// leave a final file (the temp is cleaned up), so no truncated download
 	// is presented as complete.
-	_, err := transfer.WriteLocalDownload(context.Background(), out, 4, func(ctx context.Context, w io.Writer) error {
+	_, err := transfer.WriteLocalDownload(context.Background(), dir, out, 4, func(ctx context.Context, w io.Writer) error {
 		_, err := w.Write([]byte("hello world"))
 		return err
 	})
@@ -261,7 +262,7 @@ func TestDownloadFileLocalSinkRejectsEscape(t *testing.T) {
 }
 
 func TestDownloadFileDropSink(t *testing.T) {
-	hd := transfer.NewHTTPDownload()
+	hd := mcptransfer.NewHTTPDownload()
 	root := t.TempDir()
 	desc := transfer.NewDownloadFileDescriptor(
 		transfer.IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
@@ -323,7 +324,7 @@ func TestDownloadFileTextSurfacesDestination(t *testing.T) {
 	})
 
 	t.Run("drop", func(t *testing.T) {
-		hd := transfer.NewHTTPDownload()
+		hd := mcptransfer.NewHTTPDownload()
 		root := t.TempDir()
 		desc := transfer.NewDownloadFileDescriptor(
 			transfer.IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
@@ -346,7 +347,7 @@ func TestDownloadFileTextSurfacesDestination(t *testing.T) {
 }
 
 func TestDownloadFileDropHiddenOnOpenAITunnel(t *testing.T) {
-	hd := transfer.NewHTTPDownload()
+	hd := mcptransfer.NewHTTPDownload()
 	root := t.TempDir()
 	desc := transfer.NewDownloadFileDescriptor(
 		transfer.IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error { return nil }),
@@ -436,7 +437,7 @@ func TestVaultGetFileThreadsProfile(t *testing.T) {
 // and that a dynamic host-sandbox origin is reflected over CORS on the
 // token-gated filedrop GET route.
 func TestHTTPDownloadCORSReflectsDynamicSandboxOrigin(t *testing.T) {
-	hd := transfer.NewHTTPDownload()
+	hd := mcptransfer.NewHTTPDownload()
 	url, err := hd.Mint(context.Background(), "f.txt", 0, func(ctx context.Context, w io.Writer) error {
 		_, _ = w.Write([]byte("data"))
 		return nil
@@ -457,7 +458,7 @@ func TestHTTPDownloadCORSReflectsDynamicSandboxOrigin(t *testing.T) {
 // An omitted ttl must report the effective default (5m) so a consumer does not
 // mistake a still-live endpoint for an expired one.
 func TestExecuteDropSinkDefaultsReportedTTL(t *testing.T) {
-	hd := transfer.NewHTTPDownload()
+	hd := mcptransfer.NewHTTPDownload()
 	root := t.TempDir()
 	desc := transfer.NewDownloadFileDescriptor(
 		transfer.IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {
@@ -478,7 +479,7 @@ func TestExecuteDropSinkDefaultsReportedTTL(t *testing.T) {
 	require.False(t, res.IsError, "unexpected error: %s", res.Text)
 	sc, ok := res.StructuredContent.(transfer.DownloadResult)
 	require.True(t, ok)
-	require.Equal(t, transfer.DefaultHTTPDownloadTTL.String(), sc.TTL, "reported TTL must be the effective default, not 0s")
+	require.Equal(t, mcptransfer.DefaultHTTPDownloadTTL.String(), sc.TTL, "reported TTL must be the effective default, not 0s")
 }
 
 // A sink=drop larger than the download cap must fail up front at mint time
@@ -487,7 +488,7 @@ func TestExecuteDropSinkDefaultsReportedTTL(t *testing.T) {
 // surfaced by the mint call itself, so no endpoint is ever handed out for a
 // file that cannot be fully served.
 func TestDownloadFileDropSinkEnforcesSizeCap(t *testing.T) {
-	hd := transfer.NewHTTPDownload()
+	hd := mcptransfer.NewHTTPDownload()
 	root := t.TempDir()
 	desc := transfer.NewDownloadFileDescriptor(
 		transfer.IPFSDownloadHandler(func(ctx context.Context, ipfsPath string, w io.Writer) error {

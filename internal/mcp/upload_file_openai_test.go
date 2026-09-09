@@ -9,10 +9,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/require"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
+	"go.lumeweb.com/mcpplane/sdk"
+	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 )
 
@@ -95,10 +96,10 @@ func TestUploadFileMetaOpenAIFileParams(t *testing.T) {
 // are both attached through the real registration flow, BOTH survive on the
 // direct tools/list surface. This catches accidental metadata replacement.
 func TestUploadFileOpenAIMetaCoexistsWithAppUI(t *testing.T) {
-	mgr := transfer.NewUploadTaskManager(func(_ context.Context, _ io.Reader, _ int64, _ string, _ bool, _ string, _ bool) (any, error) {
+	mgr := mcptransfer.NewUploadTaskManager(func(_ context.Context, _ io.Reader, _ int64, _ string, _ bool, _ string, _ bool) (any, error) {
 		return map[string]any{"cid": "QmApp"}, nil
 	}, 0)
-	cu := transfer.NewHTTPUpload(mgr, 1<<20)
+	cu := mcptransfer.NewHTTPUpload(mgr, 1<<20)
 	t.Cleanup(func() { cu.Stop(context.Background()) })
 
 	catalog := NewToolCatalog()

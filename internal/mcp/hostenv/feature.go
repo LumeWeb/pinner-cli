@@ -1,12 +1,20 @@
 package hostenv
 
-import "github.com/samber/lo"
+import (
+	"go.lumeweb.com/mcpplane/model"
+)
 
 // Feature is a named capability a host platform may or may not support.
 // It functions like a caniuse entry: the forge checks whether the
 // connected platform supports a feature to resolve which ToolTarget
 // variant to materialize.
-type Feature string
+//
+// It is a type alias for mcpplane/model.Feature: the feature vocabulary and
+// wire values are byte-identical in both packages, so aliasing keeps every
+// CLI declaration (hostenv.Feat*) assignment-compatible with the shared
+// model.FeatureSet carried on ToolTarget.Require and the model.Profile that
+// travels with requests.
+type Feature = model.Feature
 
 const (
 	// FeatFileHostInput: host can build {download_url, file_id} file
@@ -59,30 +67,11 @@ const (
 	FeatCoLocated Feature = "co-located"
 )
 
-// FeatureSet is the set of features a platform profile supports.
-type FeatureSet map[Feature]bool
-
-// Has reports whether the feature set contains f.
-func (fs FeatureSet) Has(f Feature) bool {
-	return fs[f]
-}
-
-// HasAll reports whether the feature set contains every feature in req.
-func (fs FeatureSet) HasAll(req FeatureSet) bool {
-	for f := range req {
-		if !fs[f] {
-			return false
-		}
-	}
-	return true
-}
-
-// Clone returns a shallow copy of the feature set. Callers that need to
-// mutate a profile's features (e.g. to overlay runtime flags) MUST clone
-// first — the FeatureSet in a static PlatformProfile is a shared map.
-func (fs FeatureSet) Clone() FeatureSet {
-	return lo.Assign(fs)
-}
+// FeatureSet is the set of features a platform profile supports. It is a
+// type alias for mcpplane/model.FeatureSet (byte-identical vocabulary and
+// Has/HasAll/Clone semantics), so CLI feature sets are directly assignable
+// to model.ToolTarget.Require and the model.Profile.Features field.
+type FeatureSet = model.FeatureSet
 
 // transportMechanismFeatures returns the features that are a pure function of
 // the running transport: which source/sink modes upload_file/download_file can

@@ -18,13 +18,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.lumeweb.com/pinner/catalogops"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
+	"go.lumeweb.com/mcpplane/model"
+	"go.lumeweb.com/mcpplane/session"
 
+	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/oob"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
@@ -42,7 +42,7 @@ func newOfficialTestServer(t *testing.T) (*mcp.Server, *ToolCatalog) {
 		Category:    model.CategoryCore,
 		ReadOnly:    true,
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"json":{"type":"boolean"}}}`),
-		Handler: model.PinnerToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
+		Handler: model.ToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
 			return model.ToolResult{Text: "status-ok:" + request.Name}, nil
 		}),
 	})
@@ -722,7 +722,7 @@ func TestOfficialHandlerPreservesLargeIntID(t *testing.T) {
 	const bigID = "9007199254740993" // 2^53+1: not exactly representable as float64
 
 	var got map[string]any
-	inner := model.PinnerToolHandler(func(_ context.Context, r model.ToolRequest) (model.ToolResult, error) {
+	inner := model.ToolHandler(func(_ context.Context, r model.ToolRequest) (model.ToolResult, error) {
 		got = r.Arguments
 		return model.ToolResult{Text: "ok"}, nil
 	})
@@ -766,7 +766,7 @@ func TestOfficialHTTPDetectionOverStreamableHandler(t *testing.T) {
 		Description: "Echo the detected platform host type",
 		Category:    model.CategoryCore,
 		InputSchema: json.RawMessage(`{"type":"object"}`),
-		Handler: model.PinnerToolHandler(func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
+		Handler: model.ToolHandler(func(_ context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			host := hostenv.HostGeneric
 			if req.Caps != nil && req.Caps.Profile != nil {
 				host = req.Caps.Profile.HostType

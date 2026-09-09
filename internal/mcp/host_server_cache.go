@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"sync"
 
+	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
-	"go.lumeweb.com/pinner-cli/internal/mcp/sdk"
 
 	"go.uber.org/zap"
 )

@@ -1,7 +1,7 @@
 package toolforge
 
 import (
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 )
 
@@ -68,13 +68,13 @@ var vaultPutFileDesc = Static(
 // pre-built complete-string variants.
 var UploadFileTargets = []model.ToolTarget{{
 	Visible:  true,
-	DescFunc: uploadFileDesc.Resolve,
+	DescFunc: DescResolver(uploadFileDesc.Resolve),
 }}
 
 // VaultPutFileTargets are the per-profile description targets for vault_put_file.
 var VaultPutFileTargets = []model.ToolTarget{{
 	Visible:  true,
-	DescFunc: vaultPutFileDesc.Resolve,
+	DescFunc: DescResolver(vaultPutFileDesc.Resolve),
 }}
 
 // downloadFileDesc composes the download_file description: sink=local is
@@ -95,7 +95,7 @@ var downloadFileDesc = Static(
 // DownloadFileTargets are the per-profile description targets for download_file.
 var DownloadFileTargets = []model.ToolTarget{{
 	Visible:  true,
-	DescFunc: downloadFileDesc.Resolve,
+	DescFunc: DescResolver(downloadFileDesc.Resolve),
 }}
 
 // vaultGetFileDesc mirrors downloadFileDesc for vault_get_file, keeping the
@@ -114,5 +114,5 @@ var vaultGetFileDesc = Static(
 // VaultGetFileTargets are the per-profile description targets for vault_get_file.
 var VaultGetFileTargets = []model.ToolTarget{{
 	Visible:  true,
-	DescFunc: vaultGetFileDesc.Resolve,
+	DescFunc: DescResolver(vaultGetFileDesc.Resolve),
 }}

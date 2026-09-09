@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"go.lumeweb.com/mcpplane/model"
 	opmesh "go.lumeweb.com/opmesh"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

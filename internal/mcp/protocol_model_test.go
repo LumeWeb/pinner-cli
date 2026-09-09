@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 )
 
 func TestDescriptorFromToolPreservesCatalogContract(t *testing.T) {
@@ -30,7 +30,7 @@ func TestDescriptorFromToolPreservesCatalogContract(t *testing.T) {
 }
 
 func TestToolDescriptorHandlerContract(t *testing.T) {
-	handler := model.PinnerToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
+	handler := model.ToolHandler(func(_ context.Context, request model.ToolRequest) (model.ToolResult, error) {
 		return model.ToolResult{Text: request.Name + ":" + request.Arguments["value"].(string)}, nil
 	})
 

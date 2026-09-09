@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 )
 
@@ -72,7 +72,7 @@ func TestGuideHintTargetIsResolvable(t *testing.T) {
 
 	// The onboarding hint directs the agent to agent_guide for the full flows.
 	res := catalog.Onboarding()
-	res.Hint = "Call agent_guide for the full ordered chains, or search with category=core|vault|ipns to browse a domain."
+	res.Hint = "Call agent_guide for the full ordered chains, or search with category=core|storage|names to browse a domain."
 	require.Contains(t, res.Hint, "agent_guide")
 
 	// describe_tool("agent_guide") (following the hint) must resolve.

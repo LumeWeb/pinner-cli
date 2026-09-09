@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	corevault "go.lumeweb.com/pinner/core/vault"
@@ -366,6 +366,7 @@ func TestVaultPutFileStampsMetadata(t *testing.T) {
 		return map[string]any{"vault_path": vaultPath}, nil
 	}, nil, nil)
 
+	shared := hostenv.PlatformProfile{HostType: hostenv.HostCodex}.Shared()
 	req := model.ToolRequest{
 		Arguments: map[string]any{
 			"source":     map[string]any{"mode": "path", "path": "/tmp/x.bin"},
@@ -373,7 +374,7 @@ func TestVaultPutFileStampsMetadata(t *testing.T) {
 			"agent":      "orchestrator-a",
 			"metadata":   map[string]any{"kind": "artifact", "project": "reports"},
 		},
-		Caps: &model.RequestCaps{Profile: &hostenv.PlatformProfile{HostType: hostenv.HostCodex}},
+		Caps: &model.RequestCaps{Profile: &shared},
 	}
 	_, err := desc.Handler(context.Background(), req)
 	require.NoError(t, err)
@@ -398,13 +399,14 @@ func TestVaultPutFileStampsRequestedProfile(t *testing.T) {
 		return map[string]any{"vault_path": vaultPath}, nil
 	}, nil, nil)
 
+	shared := hostenv.PlatformProfile{HostType: hostenv.HostCodex}.Shared()
 	req := model.ToolRequest{
 		Arguments: map[string]any{
 			"source":     map[string]any{"mode": "path", "path": "/tmp/x.bin"},
 			"vault_path": "vault:/docs/x.bin",
 			"profile":    "work",
 		},
-		Caps: &model.RequestCaps{Profile: &hostenv.PlatformProfile{HostType: hostenv.HostCodex}},
+		Caps: &model.RequestCaps{Profile: &shared},
 	}
 	_, err := desc.Handler(context.Background(), req)
 	require.NoError(t, err)

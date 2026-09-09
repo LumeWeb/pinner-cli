@@ -6,9 +6,9 @@ import (
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/model"
+	"go.lumeweb.com/mcpplane/model"
 
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/toolargs"
+	"go.lumeweb.com/mcpplane/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
@@ -50,7 +50,7 @@ var dataURIUploadDesc = toolforge.Static(
 // on tools/list.
 var DataURIUploadTargets = toolforge.MCPTargets(model.ToolTarget{
 	Visible:  true,
-	DescFunc: dataURIUploadDesc.Resolve,
+	DescFunc: toolforge.DescResolver(dataURIUploadDesc.Resolve),
 })
 
 // DataURIUploadDescriptor uploads a file passed as a SEP-2356 data: URI. This

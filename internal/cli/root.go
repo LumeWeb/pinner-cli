@@ -14,12 +14,13 @@ import (
 
 	"github.com/urfave/cli/v3"
 	contentfs "go.lumeweb.com/ipfs-content/fs"
+	"go.lumeweb.com/mcpplane/session"
+	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/build"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	mcpauth "go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/session"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	mcpvault "go.lumeweb.com/pinner-cli/internal/mcp/vault"
 	mcpwizard "go.lumeweb.com/pinner-cli/internal/mcp/wizard"
@@ -27,6 +28,7 @@ import (
 	"go.lumeweb.com/pinner/core/config"
 	"go.lumeweb.com/pinner/core/vault"
 	"go.lumeweb.com/pinner/core/websites"
+	ptransfer "go.lumeweb.com/pinner/transfer"
 )
 
 // Run executes the CLI application with the given context and arguments.
@@ -126,7 +128,7 @@ For more help on any command: pinner <command> --help`,
 	// async). Only the byte source differs; the authenticated upload contract is
 	// the same. It is also assigned to the type-alias handler (a type alias
 	// of UploadHandler) that the vendored pinner_upload_file tool needs.
-	var uploadHandler transfer.UploadHandler
+	var uploadHandler mcptransfer.UploadHandler
 	var vaultPutHandler mcpvault.VaultPutHandler
 	// ipfsDownload is the IPFS download executor used by download_file's sinks.
 	// It is built inside the wizard factory (where cfgMgr/secure are available)
@@ -140,7 +142,7 @@ For more help on any command: pinner <command> --help`,
 	// the consolidated upload_file tool's co-located branch: it uploads
 	// a host-side file/directory/archive. It is built inside the wizard factory
 	// (where uploadSvc lives) and read by the WithLocalPathUpload option below.
-	var localPathUpload transfer.LocalPathUploadHandler
+	var localPathUpload mcptransfer.LocalPathUploadHandler
 	// localPathVaultPut is the vault_put_file (SDIO/local-mode path branch)
 	// handler: it writes a host-side file/directory/archive into the encrypted
 	// vault. It is built inside the wizard factory (where the vault service is
@@ -198,72 +200,17 @@ For more help on any command: pinner <command> --help`,
 					websitesSvc.SetAuthToken(tok)
 				}
 			})
+			// uploadHandler delegates the stream→upload executor to
+			// ptransfer.StreamUpload, the module-extracted implementation
+			// of the temp-buffer → wrap-sniff → archive-convert → upload
+			// contract (Stage 5). ptransfer.StreamUpload freezes maxBytes
+			// at handler construction, while cfgMgr reads max_mcp_upload_size
+			// live on disk edits — so the module executor is rebuilt per call,
+			// preserving the per-request live-reload semantics the inline
+			// implementation had.
 			uploadHandler = func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
-				if name == "" {
-					name = transfer.DefaultUploadName
-				}
-				file, err := os.CreateTemp("", "pinner-mcp-upload-*")
-				if err != nil {
-					return nil, err
-				}
-				path := file.Name()
-				defer os.Remove(path)
-				defer file.Close()
-				// A wrapped (website) single-file upload with no explicit name
-				// sniffs the content: HTML becomes index.html so the site
-				// resolves at its root instead of exposing a temp/upload label.
-				// The sniffed head bytes are written to the temp file first so
-				// the subsequent io.Copy appends the remainder without dropping
-				// the content consumed during sniffing.
-				if wrap && (name == "" || name == transfer.DefaultUploadName) {
-					var head [512]byte
-					n, _ := io.ReadFull(reader, head[:])
-					if resolved := transfer.ResolveWrappedFileName(name, true, head[:n]); resolved != "" {
-						name = resolved
-					}
-					if n > 0 {
-						if _, err := file.Write(head[:n]); err != nil {
-							return nil, err
-						}
-					}
-				}
-				if _, err := io.Copy(file, reader); err != nil {
-					return nil, err
-				}
-				if _, err := file.Seek(0, io.SeekStart); err != nil {
-					return nil, err
-				}
-				// archive_mode=convert (default) on a stream source: sniff the
-				// buffered temp file and, when it is an archive, extract it into
-				// a directory DAG (preserving relative paths) rather than
-				// uploading the raw archive as a single file. This matches the
-				// directory shape path-mode convert produces, so a host-provided
-				// `file`/url/data site ZIP behaves identically to a co-located
-				// path. The *os.File satisfies the ReaderAtSeeker contract
-				// contentArchive needs for extraction.
-				if ieo.ParseArchiveMode(archiveMode) == ieo.ArchiveConvert {
-					if _, isArc, serr := ieo.SniffArchive(file); serr == nil && isArc {
-						if _, err := file.Seek(0, io.SeekStart); err != nil {
-							return nil, err
-						}
-						vfs, closer, aerr := ieo.OpenArchiveFS(ctx, file)
-						if aerr == nil {
-							defer closer()
-							if err := ieo.CheckTreeSize(vfs, int64(cfgMgr.Config().GetMaxMCPUploadSize()), ieo.TreeSizeAggregate); err != nil {
-								return nil, err
-							}
-							return uploadSvc.Upload(ctx, vfs, name, wait, false)
-						}
-					}
-					if _, err := file.Seek(0, io.SeekStart); err != nil {
-						return nil, err
-					}
-				}
-				result, err := uploadSvc.Upload(ctx, contentfs.NewSingleFileFS(file, name), name, wait, wrap)
-				if err != nil {
-					return nil, err
-				}
-				return result, nil
+				handler := ptransfer.StreamUpload(uploadSvc, int64(cfgMgr.Config().GetMaxMCPUploadSize()))
+				return handler(ctx, reader, size, name, wait, archiveMode, wrap)
 			}
 			// resolvePath stats path, returns a not-exist error, and applies the
 			// upload name defaulting (filepath.Base, else "upload") when name is
@@ -279,7 +226,7 @@ For more help on any command: pinner <command> --help`,
 				if name == "" {
 					name = filepath.Base(path)
 					if name == "" || name == "." || name == string(filepath.Separator) {
-						name = transfer.DefaultUploadName
+						name = mcptransfer.DefaultUploadName
 					}
 				}
 				return info, name, nil
@@ -349,10 +296,10 @@ For more help on any command: pinner <command> --help`,
 				}
 				// Wrapped (website) single-file upload with no explicit name:
 				// sniff for HTML and default to index.html (see uploadHandler).
-				if wrap && (name == "" || name == transfer.DefaultUploadName) {
+				if wrap && (name == "" || name == mcptransfer.DefaultUploadName) {
 					var head [512]byte
 					n, _ := file.Read(head[:])
-					if resolved := transfer.ResolveWrappedFileName(name, true, head[:n]); resolved != "" {
+					if resolved := mcptransfer.ResolveWrappedFileName(name, true, head[:n]); resolved != "" {
 						name = resolved
 					}
 					_, _ = file.Seek(0, io.SeekStart)
@@ -635,7 +582,7 @@ For more help on any command: pinner <command> --help`,
 			}
 			return cfgMgr.Config().GetDownloadRoot()
 		}),
-		mcpadapter.WithUploadTaskManager(transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
+		mcpadapter.WithUploadTaskManager(mcptransfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 			if uploadHandler == nil {
 				return nil, notInitErr("file upload")
 			}

@@ -3,110 +3,47 @@ package cli
 import (
 	"context"
 	"io"
-	"os"
 
-	contentfs "go.lumeweb.com/ipfs-content/fs"
-
+	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	mcpadapter "go.lumeweb.com/pinner-cli/internal/mcp"
-	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner/core/auth"
 	"go.lumeweb.com/pinner/core/config"
+	ptransfer "go.lumeweb.com/pinner/transfer"
 )
 
 // streamUploadHandler is the shared IPFS stream→upload executor used by both
-// the CLI MCP command and a hosted (Portal-embedded) server. It is the single
-// implementation of the authenticated upload contract for a stream source: it
-// buffers the stream, applies the wrap/archive rules, and proxies into the
-// existing UploadService. It is the IPFS-only half of root.go's inline upload
-// handler — no vault — and is what lets a hosted surface reference transfer
-// executors without duplicating the CLI closure.
-func streamUploadHandler(cfgMgr config.Manager, output Output, uploadSvc UploadService) transfer.UploadHandler {
+// the CLI MCP command and a hosted (Portal-embedded) server. The temp-buffer →
+// wrap-sniff → archive-convert → upload mechanics live in
+// ptransfer.StreamUpload (extracted verbatim from this package in Stage
+// 5); this wrapper only supplies the live config value:
+//
+//	ptransfer.StreamUpload freezes maxBytes at construction, while
+//	cfgMgr reads max_mcp_upload_size live on disk edits (config watcher).
+//	Rebuilding the module executor per call preserves the per-request
+//	live-reload semantics of the previous inline implementation.
+func streamUploadHandler(cfgMgr config.Manager, output Output, uploadSvc UploadService) mcptransfer.UploadHandler {
 	return func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
-		if name == "" {
-			name = transfer.DefaultUploadName
-		}
-		file, err := os.CreateTemp("", "pinner-mcp-upload-*")
-		if err != nil {
-			return nil, err
-		}
-		path := file.Name()
-		defer os.Remove(path)
-		defer file.Close()
-		// A wrapped (website) single-file upload with no explicit name sniffs the
-		// content: HTML becomes index.html so the site resolves at its root. The
-		// sniffed head bytes are written to the temp file first so io.Copy appends
-		// the remainder without dropping the content consumed during sniffing.
-		if wrap && (name == "" || name == transfer.DefaultUploadName) {
-			var head [512]byte
-			n, _ := io.ReadFull(reader, head[:])
-			if resolved := transfer.ResolveWrappedFileName(name, true, head[:n]); resolved != "" {
-				name = resolved
-			}
-			if n > 0 {
-				if _, err := file.Write(head[:n]); err != nil {
-					return nil, err
-				}
-			}
-		}
-		if _, err := io.Copy(file, reader); err != nil {
-			return nil, err
-		}
-		if _, err := file.Seek(0, io.SeekStart); err != nil {
-			return nil, err
-		}
-		// archive_mode=convert (default) on a stream source: sniff the buffered
-		// temp file and, when it is an archive, extract it into a directory DAG
-		// rather than uploading the raw archive as a single file.
-		if ieo.ParseArchiveMode(archiveMode) == ieo.ArchiveConvert {
-			if _, isArc, serr := ieo.SniffArchive(file); serr == nil && isArc {
-				if _, err := file.Seek(0, io.SeekStart); err != nil {
-					return nil, err
-				}
-				vfs, closer, aerr := ieo.OpenArchiveFS(ctx, file)
-				if aerr == nil {
-					defer closer()
-					if err := ieo.CheckTreeSize(vfs, int64(cfgMgr.Config().GetMaxMCPUploadSize()), ieo.TreeSizeAggregate); err != nil {
-						return nil, err
-					}
-					return uploadSvc.Upload(ctx, vfs, name, wait, false)
-				}
-			}
-			if _, err := file.Seek(0, io.SeekStart); err != nil {
-				return nil, err
-			}
-		}
-		result, err := uploadSvc.Upload(ctx, contentfs.NewSingleFileFS(file, name), name, wait, wrap)
-		if err != nil {
-			return nil, err
-		}
-		return result, nil
+		handler := ptransfer.StreamUpload(uploadSvc, int64(cfgMgr.Config().GetMaxMCPUploadSize()))
+		return handler(ctx, reader, size, name, wait, archiveMode, wrap)
 	}
 }
 
 // ipfsDownloadHandler is the shared IPFS download executor used by the
 // download_file sink: it streams a single IPFS node (CID or CID/path) to w via
-// the authenticated download service. It is the IPFS-only half of root.go's
-// inline ipfsDownload handler.
+// the authenticated download service. The Cat→io.Copy mechanics live in
+// ptransfer.StreamDownload; this wrapper only builds the concrete
+// download.Service from the config manager. There is no
+// RequireAuthenticated pre-check here — the auth gate lives in
+// Cat → newSDKDownloadService, which is ctx-aware (a hosted transfer carries
+// the per-request credential on the context), so pre-checking the ctx-less
+// shared config token would wrongly reject an authenticated hosted caller.
 func ipfsDownloadHandler(cfgMgr config.Manager, output Output, secure bool) transfer.IPFSDownloadHandler {
-	return func(ctx context.Context, ipfsPath string, w io.Writer) error {
-		authSvc := auth.NewAuthService(cfgMgr, cfgMgr.Config().GetAccountEndpointSecure(), nil)
-		var svcOpts []DownloadServiceOption
-		svcOpts = append(svcOpts, WithDownloadAuthService(authSvc), WithDownloadIPFSEndpoint(cfgMgr.Config().GetIPFSEndpointWithSecure(secure)))
-		downloadSvc := defaultDownloadServiceFactory(cfgMgr, output, svcOpts...)
-		// The auth gate lives in Cat → newSDKDownloadService, which is ctx-aware
-		// (a hosted transfer carries the per-request credential on the context).
-		// Do not pre-check with the ctx-less RequireAuthenticated here — on a
-		// hosted server the shared config token is empty and that would wrongly
-		// reject an authenticated caller.
-		reader, err := downloadSvc.Cat(ctx, ipfsPath)
-		if err != nil {
-			return err
-		}
-		defer reader.Close()
-		_, err = io.Copy(w, reader)
-		return err
-	}
+	authSvc := auth.NewAuthService(cfgMgr, cfgMgr.Config().GetAccountEndpointSecure(), nil)
+	var svcOpts []DownloadServiceOption
+	svcOpts = append(svcOpts, WithDownloadAuthService(authSvc), WithDownloadIPFSEndpoint(cfgMgr.Config().GetIPFSEndpointWithSecure(secure)))
+	downloadSvc := defaultDownloadServiceFactory(cfgMgr, output, svcOpts...)
+	return transfer.IPFSDownloadHandler(ptransfer.StreamDownload(downloadSvc))
 }
 
 // BuildHostedTransferOptions assembles the MCP server options wiring the
@@ -130,7 +67,7 @@ func BuildHostedTransferOptions(cfgMgr config.Manager) ([]mcpadapter.MCPServerOp
 			return uploadHandler(ctx, reader, size, name, wait, archiveMode, wrap)
 		}),
 		mcpadapter.WithIPFSDownload(ipfsDownloadHandler(cfgMgr, output, secure)),
-		mcpadapter.WithUploadTaskManager(transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
+		mcpadapter.WithUploadTaskManager(mcptransfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, archiveMode string, wrap bool) (any, error) {
 			return uploadHandler(ctx, reader, size, name, wait, archiveMode, wrap)
 		}, 0)),
 		mcpadapter.WithMaxMCPUploadSize(func() uint64 { return cfgMgr.Config().GetMaxMCPUploadSize() }),
