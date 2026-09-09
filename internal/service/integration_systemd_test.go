@@ -18,6 +18,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -146,6 +147,15 @@ func systemdAvailable(t *testing.T) bool {
 	return false
 }
 
+// runCommandOutput runs command with args and returns its combined output.
+// The equivalent helper in go.lumeweb.com/pinner/services is unexported, so the
+// test carries its own copy (os/exec wrapper with combined output capture).
+func runCommandOutput(ctx context.Context, command string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, command, args...)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
 func mustUserConfigDir(t *testing.T) string {
 	dir, err := os.UserConfigDir()
 	if err != nil {
@@ -154,7 +164,7 @@ func mustUserConfigDir(t *testing.T) string {
 	return dir
 }
 
-func waitActive(t *testing.T, svc Service, name string) {
+func waitActive(t *testing.T, svc services.Service, name string) {
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
 	ctx := context.Background()
