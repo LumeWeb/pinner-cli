@@ -1,8 +1,6 @@
 package toolforge
 
 import (
-	"encoding/json"
-
 	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 )
@@ -24,17 +22,6 @@ func ResolveDescription(targets []model.ToolTarget, profile hostenv.PlatformProf
 		return target.DescFunc(profile.Shared()), true
 	}
 	return target.Description, true
-}
-
-// ResolveInputSchema finds the best-matching model.ToolTarget's input schema
-// for a platform profile, using the same resolution rules as
-// ResolveDescription.
-func ResolveInputSchema(targets []model.ToolTarget, profile hostenv.PlatformProfile) (json.RawMessage, bool) {
-	target := resolveTarget(targets, profile)
-	if target == nil || !target.Visible {
-		return nil, false
-	}
-	return target.InputSchema, true
 }
 
 // DescResolver adapts a CLI, PlatformProfile-based description resolver (a

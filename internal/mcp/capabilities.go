@@ -310,6 +310,20 @@ func capabilitiesDescriptionFor(profile hostenv.PlatformProfile, uploadFile, vau
 // capabilitiesTargets resolves the capabilities description per profile for a
 // specific tool-wiring decision. It is a direct-only tool outside the catalog,
 // so it carries a single DescFunc target for uniformity.
+//
+// PARITY NOTE (Stage 5, slice 4 characterization, see
+// capabilities_characterization_test.go): this per-request DescFunc seam is a
+// deliberate CLI divergence from mcp.NewCapabilitiesDescriptor, which
+// bakes ONE startup description (mechanism set with the embedded OpenAI
+// tunnel's ChatGPT host capabilities merged — the same mechanism+host merge
+// hostenv.ProfileForTransport performs for the tunnel) and exposes no
+// MCPTargets/DescFunc. The CLI keeps per-request re-resolution because its
+// servers are long-lived multi-host processes: describe_tool / search_tools
+// re-resolve against the detected per-request profile after host detection,
+// so a Grok request receives the "no `file` parameter" routing copy even
+// though tools/list baked the host-file copy. Dropping this seam would erase
+// that behavior (module API gap: mcp descriptors expose no
+// MCPTargets/DescFunc), so it stays CLI-owned until the module grows the seam.
 func capabilitiesTargets(uploadFile, vaultPutFile, downloadFile, vaultGetFile bool) []model.ToolTarget {
 	return toolforge.MCPTargets(model.ToolTarget{Visible: true,
 		DescFunc: toolforge.DescResolver(func(p hostenv.PlatformProfile) string {

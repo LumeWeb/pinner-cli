@@ -65,10 +65,6 @@ func RegisterAppView(srv *sdk.Server, catalog AppCatalog, v AppView) error {
 	return registry.RegisterAppView(srv, catalog, v)
 }
 
-// AttachAppMeta attaches the _meta.ui resource reference onto a catalog tool
-// (module-owned implementation, re-exported for the CLI's direct attach path).
-var AttachAppMeta = mcpapps.AttachAppMeta
-
 // MCP Apps protocol constants (mirroring @modelcontextprotocol/ext-apps),
 // owned by the module and re-exported here.
 const (
