@@ -42,8 +42,8 @@ importers:
   packages/apps:
     dependencies:
       '@lumeweb/mcpcanvas':
-        specifier: file:../../../mcpcanvas/ui
-        version: file:../mcpcanvas/ui(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.4.3)
+        specifier: LumeWeb/mcpcanvas#7adbd4d8dcac&path:/ui
+        version: https://codeload.github.com/LumeWeb/mcpcanvas/tar.gz/7adbd4d8dcac9a71c596db04debb3e3e4f2e1892#path:/ui(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.4.3)
       '@modelcontextprotocol/ext-apps':
         specifier: 'catalog:'
         version: 1.7.5(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.4.3)
@@ -247,8 +247,9 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@lumeweb/mcpcanvas@file:../mcpcanvas/ui':
-    resolution: {directory: ../mcpcanvas/ui, type: directory}
+  '@lumeweb/mcpcanvas@https://codeload.github.com/LumeWeb/mcpcanvas/tar.gz/7adbd4d8dcac9a71c596db04debb3e3e4f2e1892#path:/ui':
+    resolution: {path: /ui, tarball: https://codeload.github.com/LumeWeb/mcpcanvas/tar.gz/7adbd4d8dcac9a71c596db04debb3e3e4f2e1892}
+    version: 0.0.0
 
   '@modelcontextprotocol/ext-apps@1.7.5':
     resolution: {integrity: sha512-TjPH2S2y5UEGKhmI6+XGFuqfqOV4ppe1x6DA3txnUaEWkgtA4G5vo14jGKFZmegdkZ1H4QMLyujLvoU1BEdnAg==}
@@ -1909,7 +1910,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@lumeweb/mcpcanvas@file:../mcpcanvas/ui(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.4.3)':
+  '@lumeweb/mcpcanvas@https://codeload.github.com/LumeWeb/mcpcanvas/tar.gz/7adbd4d8dcac9a71c596db04debb3e3e4f2e1892#path:/ui(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.4.3)':
     dependencies:
       '@modelcontextprotocol/ext-apps': 1.7.5(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.4.3)
       robot3: 1.2.0
