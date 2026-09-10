@@ -135,6 +135,12 @@ func TestKeepWholeValue(t *testing.T) {
 		{"full table A content wraps", []string{"r1", "www", "A", "1.2.3.4", "300", ""}, 3, false},
 		{"full table name col wraps", []string{"r1", "www", "A", "1.2.3.4", "300", ""}, 1, false},
 		{"full table ttl wraps", []string{"r1", "www", "A", "1.2.3.4", "300", ""}, 4, false},
+		// On-chain TLSA layout [NAME, TYPE, VALUE]
+		{"onchain tlsa value kept whole", []string{"_443._tcp.example.com", "TLSA", "3 1 1 0a9e..."}, 2, true},
+		{"onchain dnslink value kept whole", []string{"_dnslink.example.com", "TXT", "dnslink=/ipfs/bafy..."}, 2, true},
+		{"onchain non-record value wraps", []string{"example.com", "A", "1.2.3.4"}, 2, false},
+		{"onchain name col wraps", []string{"_443._tcp.example.com", "TLSA", "3 1 1 0a9e..."}, 0, false},
+		{"onchain type col wraps", []string{"_443._tcp.example.com", "TLSA", "3 1 1 0a9e..."}, 1, false},
 	}
 
 	for _, tt := range tests {

@@ -9,7 +9,7 @@ import (
 // namespace-specific copy.
 type genericDelegationDriver struct{}
 
-func (g *genericDelegationDriver) Render(output Output, result *ipfs.DomainResponse, managed bool) {
+func (g *genericDelegationDriver) Render(output Output, result *ipfs.DomainResponse, managed bool, website *ipfs.WebsiteItem) {
 	d := result.Delegation
 	if d == nil {
 		// A namespace without a dedicated driver has no on-chain concept to

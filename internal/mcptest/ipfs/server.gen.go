@@ -296,16 +296,17 @@ type DNSDelegationRecord struct {
 
 // DomainDANERepublishResponse defines model for DomainDANERepublishResponse.
 type DomainDANERepublishResponse struct {
-	Delegation  *DNSDelegation                       `json:"delegation,omitempty"`
-	Domain      string                               `json:"domain"`
-	GatewayHost *string                              `json:"gateway_host,omitempty"`
-	Id          int                                  `json:"id"`
-	Namespace   DomainDANERepublishResponseNamespace `json:"namespace"`
-	OwnerName   *string                              `json:"owner_name,omitempty"`
-	Ssl         *SSLStatusInfo                       `json:"ssl,omitempty"`
-	Status      *DomainDANERepublishResponseStatus   `json:"status,omitempty"`
-	TlsaRdata   *string                              `json:"tlsa_rdata,omitempty"`
-	ZoneName    *string                              `json:"zone_name,omitempty"`
+	Delegation             *DNSDelegation                       `json:"delegation,omitempty"`
+	Domain                 string                               `json:"domain"`
+	GatewayHost            *string                              `json:"gateway_host,omitempty"`
+	Id                     int                                  `json:"id"`
+	Namespace              DomainDANERepublishResponseNamespace `json:"namespace"`
+	OwnerName              *string                              `json:"owner_name,omitempty"`
+	PublishedToManagedZone bool                                 `json:"published_to_managed_zone"`
+	Ssl                    *SSLStatusInfo                       `json:"ssl,omitempty"`
+	Status                 *DomainDANERepublishResponseStatus   `json:"status,omitempty"`
+	TlsaRdata              *string                              `json:"tlsa_rdata,omitempty"`
+	ZoneName               *string                              `json:"zone_name,omitempty"`
 }
 
 // DomainDANERepublishResponseNamespace defines model for DomainDANERepublishResponse.Namespace.
@@ -334,14 +335,17 @@ type DomainRequest struct {
 
 // DomainResponse defines model for DomainResponse.
 type DomainResponse struct {
+	Checks            *[]ValidationCheck      `json:"checks,omitempty"`
 	Delegation        *DNSDelegation          `json:"delegation,omitempty"`
 	DnsHostingEnabled bool                    `json:"dns_hosting_enabled"`
 	Domain            string                  `json:"domain"`
 	GatewayHost       *string                 `json:"gateway_host,omitempty"`
 	Id                int                     `json:"id"`
 	Namespace         DomainResponseNamespace `json:"namespace"`
+	OwnerName         *string                 `json:"owner_name,omitempty"`
 	Ssl               *SSLStatusInfo          `json:"ssl,omitempty"`
 	Status            *DomainResponseStatus   `json:"status,omitempty"`
+	TlsaRdata         *string                 `json:"tlsa_rdata,omitempty"`
 	ZoneName          *string                 `json:"zone_name,omitempty"`
 }
 
@@ -633,6 +637,15 @@ type UploadResultResponse struct {
 // UploadResultResponseStatus defines model for UploadResultResponse.Status.
 type UploadResultResponseStatus string
 
+// ValidationCheck defines model for ValidationCheck.
+type ValidationCheck struct {
+	Expected *string `json:"expected,omitempty"`
+	Found    *string `json:"found,omitempty"`
+	Message  *string `json:"message,omitempty"`
+	Name     string  `json:"name"`
+	Ok       bool    `json:"ok"`
+}
+
 // ValidationResponse defines model for ValidationResponse.
 type ValidationResponse struct {
 	CheckedAt   time.Time `json:"checked_at"`
@@ -744,11 +757,12 @@ type WebsiteUpdateRequest struct {
 
 // WebsiteValidateResponse defines model for WebsiteValidateResponse.
 type WebsiteValidateResponse struct {
-	Domain  string `json:"domain"`
-	Id      int    `json:"id"`
-	Message string `json:"message"`
-	Reason  string `json:"reason"`
-	Valid   bool   `json:"valid"`
+	Checks  *[]ValidationCheck `json:"checks,omitempty"`
+	Domain  string             `json:"domain"`
+	Id      int                `json:"id"`
+	Message string             `json:"message"`
+	Reason  string             `json:"reason"`
+	Valid   bool               `json:"valid"`
 }
 
 // ZoneListResponse defines model for ZoneListResponse.

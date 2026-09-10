@@ -183,14 +183,17 @@ func (w *DomainAddWizard) executeDelegationSetup(ctx context.Context) error {
 	// website list fetched during the selection step.
 	managed := false
 	wID := w.WebsiteID()
+	var website *ipfs.WebsiteItem
 	for _, ws := range w.websites {
 		if fmt.Sprintf("%d", ws.Id) == wID {
 			managed = ws.DnsHostingEnabled
+			wsCopy := ws
+			website = &wsCopy
 			break
 		}
 	}
 
-	renderDomainDelegation(w.output, delegResult, managed)
+	renderDomainDelegation(w.output, delegResult, managed, website)
 	return nil
 }
 
