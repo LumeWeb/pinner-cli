@@ -181,6 +181,17 @@ func TestRenderWebsitesResultDNSRequirementsRoutesToDelegationRenderer(t *testin
 	if strings.Contains(out, "DNS Hosting") {
 		t.Errorf("expected the generic binding table NOT to run for dns-requirements, got: %q", out)
 	}
+	// The version-skew path has no owning website (the pure renderer has no
+	// service seam to resolve it), so the on-chain _dnslink can't be derived —
+	// but the TLSA guidance must still render from the domain response's own
+	// TlsaRdata rather than leaving the fallback empty. This is the behavior
+	// assertion (not empty, and showing the actual record for the user).
+	if !strings.Contains(out, "TLSA") {
+		t.Errorf("expected the on-chain TLSA guidance to render from the domain's own TLSA data in the version-skew path, got: %q", out)
+	}
+	if !strings.Contains(out, "3 1 1 abcdef") {
+		t.Errorf("expected the on-chain TLSA record value (from TlsaRdata) to render, got: %q", out)
+	}
 }
 
 func TestIsNilPointerResultTypedNil(t *testing.T) {

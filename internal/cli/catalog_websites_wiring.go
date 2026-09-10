@@ -521,8 +521,15 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op opmesh.Operation
 			// Version skew: when the dns-requirements op returns a plain
 			// DomainResponse instead of the wrapper, its delegation/validation
 			// rendering must still reach the user (mirrors the merged
-			// OpWebsitesDomainsVerify routing below). The owning website is
-			// unavailable on the bare response, so the website argument is nil.
+			// OpWebsitesDomainsVerify routing below). This renderer is a pure
+			// function (no service seam to resolve the owning website), so the
+			// on-chain delegation driver cannot derive the _dnslink record that
+			// depends on the website's target. What IS derivable without the
+			// website still renders: the on-chain TLSA table falls back to the
+			// response's own TlsaRdata when the delegation bundle is absent, so
+			// the version-skew path is not empty. The nil website is therefore a
+			// deliberate best-effort (matches the upstream wrapper only where the
+			// data it needs is present on the bare response).
 			renderDomainDelegation(output, r, r.DnsHostingEnabled, nil)
 			return nil
 		default:
