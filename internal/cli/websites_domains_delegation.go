@@ -12,7 +12,9 @@ type delegationDriver interface {
 	// Render prints the delegation bundle for a domain response. managed
 	// indicates whether Pinner manages the domain's DNS (authoritative side
 	// served by Pinner), which drivers use to decide which records to show.
-	Render(output Output, result *ipfs.DomainResponse, managed bool)
+	// website is the owning website when resolvable; drivers that derive
+	// records from it (on-chain) render them when present.
+	Render(output Output, result *ipfs.DomainResponse, managed bool, website *ipfs.WebsiteItem)
 }
 
 // delegationRegistry resolves the driver responsible for a namespace and holds
@@ -33,7 +35,7 @@ func newDelegationRegistry(fallback delegationDriver, drivers map[ipfs.DomainNam
 
 // Render routes a domain response to the driver registered for its namespace,
 // falling back to the generic driver for unrecognized namespaces.
-func (r *delegationRegistry) Render(output Output, result *ipfs.DomainResponse, managed bool) {
+func (r *delegationRegistry) Render(output Output, result *ipfs.DomainResponse, managed bool, website *ipfs.WebsiteItem) {
 	if r == nil {
 		return
 	}
@@ -41,7 +43,7 @@ func (r *delegationRegistry) Render(output Output, result *ipfs.DomainResponse, 
 	if !ok {
 		driver = r.fallback
 	}
-	driver.Render(output, result, managed)
+	driver.Render(output, result, managed, website)
 }
 
 // defaultDelegationDriver is the registry wired to the built-in drivers.

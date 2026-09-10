@@ -344,6 +344,16 @@ func keepWholeValue(row []string, j int) bool {
 	if len(row) == 2 {
 		return (row[0] == "DS" || row[0] == "TLSA") && j == 1
 	}
+	// On-chain TLSA table: [NAME, TYPE, VALUE] — the digest is the same
+	// copyable opaque value as above, just with the owner name (the
+	// _443._tcp.<domain> record location) promoted to its own column.
+	if len(row) == 3 && j == 2 {
+		switch row[1] {
+		case "TLSA", "DS":
+			return true
+		}
+		return strings.Contains(row[0], "_443._tcp") || strings.Contains(row[0], "_dnslink")
+	}
 	// Full DNS record table: [ID, NAME, TYPE, CONTENT, TTL, STATUS]
 	if len(row) >= 6 && j == 3 {
 		switch row[2] {

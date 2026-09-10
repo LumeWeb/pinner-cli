@@ -121,13 +121,76 @@ func TestWebsitesCRUDPositionalMapping(t *testing.T) {
 }
 
 func TestRenderWebsitesResultRejectsTypedNil(t *testing.T) {
-	op := opmesh.NewOperation(opmesh.OperationSpec{Name: "websites_domains_verify"})
+	op := opmesh.NewOperation(opmesh.OperationSpec{Name: "websites_get"})
 
 	// A handler that returns (nil, nil) surfaces as a typed nil *ipfs.DomainResponse.
 	var typedNil *ipfs.DomainResponse
 	err := renderWebsitesResult(context.Background(), &cli.Command{}, op, typedNil)
 	if err == nil {
 		t.Fatal("expected an error for a typed-nil *ipfs.DomainResponse result, got nil (would panic)")
+	}
+}
+
+func TestRenderWebsitesResultVerifyTypedNilRendersNotVerified(t *testing.T) {
+	// For verify, a typed nil (the handler returned (nil, nil)) means the
+	// domain's DNS could not be resolved yet — the not-verified outcome, not
+	// an error.
+	op := opmesh.NewOperation(opmesh.OperationSpec{Name: catalogops.OpWebsitesDomainsVerify})
+	var typedNil *ipfs.DomainResponse
+	var buf bytes.Buffer
+	cmd := &cli.Command{}
+	cmd.Writer = &buf
+	if err := renderWebsitesResult(context.Background(), cmd, op, typedNil); err != nil {
+		t.Fatalf("verify typed-nil should render the not-verified outcome, got err: %v", err)
+	}
+	if !strings.Contains(buf.String(), "⏳ not verified yet") {
+		t.Errorf("expected the not-verified outcome on stdout, got: %q", buf.String())
+	}
+}
+
+func TestRenderWebsitesResultDNSRequirementsRoutesToDelegationRenderer(t *testing.T) {
+	// Version skew: if the dns-requirements op ever returns a plain
+	// *ipfs.DomainResponse (instead of *catalogops.DomainDNSRequirements), it
+	// must still route to the delegation/validation renderer rather than the
+	// generic binding table, so on-chain guidance reaches the user. This pins
+	// the *ipfs.DomainResponse branch's op sub-switch.
+	op := opmesh.NewOperation(opmesh.OperationSpec{Name: catalogops.OpWebsitesDomainsDNSRequirements})
+	rdata := "3 1 1 abcdef"
+	result := &ipfs.DomainResponse{
+		Id:        1,
+		Domain:    "mydomain",
+		Namespace: ipfs.DomainNamespaceHNS,
+		Status:    new(ipfs.DomainResponseStatusOnchainManaged),
+		TlsaRdata: &rdata,
+	}
+	var buf bytes.Buffer
+	cmd := &cli.Command{}
+	cmd.Writer = &buf
+	if err := renderWebsitesResult(context.Background(), cmd, op, result); err != nil {
+		t.Fatalf("dns-requirements plain DomainResponse should render, got err: %v", err)
+	}
+	out := buf.String()
+	// The delegation renderer header (and its on-chain guidance) marks the
+	// routing; the generic binding table header ("DNS Hosting") must not run.
+	if !strings.Contains(out, "DNS requirements for mydomain") {
+		t.Errorf("expected the delegation renderer header, got: %q", out)
+	}
+	if !strings.Contains(out, "on-chain managed") {
+		t.Errorf("expected on-chain guidance from the delegation renderer, got: %q", out)
+	}
+	if strings.Contains(out, "DNS Hosting") {
+		t.Errorf("expected the generic binding table NOT to run for dns-requirements, got: %q", out)
+	}
+	// The version-skew path has no owning website (the pure renderer has no
+	// service seam to resolve it), so the on-chain _dnslink can't be derived —
+	// but the TLSA guidance must still render from the domain response's own
+	// TlsaRdata rather than leaving the fallback empty. This is the behavior
+	// assertion (not empty, and showing the actual record for the user).
+	if !strings.Contains(out, "TLSA") {
+		t.Errorf("expected the on-chain TLSA guidance to render from the domain's own TLSA data in the version-skew path, got: %q", out)
+	}
+	if !strings.Contains(out, "3 1 1 abcdef") {
+		t.Errorf("expected the on-chain TLSA record value (from TlsaRdata) to render, got: %q", out)
 	}
 }
 

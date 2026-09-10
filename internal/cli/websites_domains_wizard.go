@@ -174,7 +174,12 @@ func (w *DomainAddWizard) executeDelegationSetup(ctx context.Context) error {
 		return err
 	}
 
-	if delegResult == nil || delegResult.Delegation == nil {
+	// A wholly empty response means the backend returned nothing at all; render
+	// a neutral note. A non-nil response with a nil Delegation is meaningful
+	// (an on-chain managed binding has no bundle to publish), so it must flow
+	// into renderDomainDelegation, whose drivers own the per-namespace
+	// explanation (HNS on-chain guidance, generic/ICANN nil-safe fallback).
+	if delegResult == nil {
 		w.output.Printfln("No delegation records are available for %s.", result.Domain)
 		return nil
 	}
@@ -183,14 +188,17 @@ func (w *DomainAddWizard) executeDelegationSetup(ctx context.Context) error {
 	// website list fetched during the selection step.
 	managed := false
 	wID := w.WebsiteID()
+	var website *ipfs.WebsiteItem
 	for _, ws := range w.websites {
 		if fmt.Sprintf("%d", ws.Id) == wID {
 			managed = ws.DnsHostingEnabled
+			wsCopy := ws
+			website = &wsCopy
 			break
 		}
 	}
 
-	renderDomainDelegation(w.output, delegResult, managed)
+	renderDomainDelegation(w.output, delegResult, managed, website)
 	return nil
 }
 

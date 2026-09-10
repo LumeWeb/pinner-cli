@@ -351,7 +351,7 @@ func websitesActionAdapter(op opmesh.Operation) cli.ActionFunc {
 // human (non-JSON) output — in --json mode the error document stays machine
 // clean, and it no-ops for every non-verify operation.
 func renderVerifyGuidance(output Output, op opmesh.Operation, err error) {
-	if op.Name() == "websites_domains_verify" && !output.IsJSON() {
+	if op.Name() == catalogops.OpWebsitesDomainsVerify && !output.IsJSON() {
 		renderDNSSelfServiceGuidance(output, err)
 	}
 }
@@ -381,7 +381,13 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op opmesh.Operation
 	// Slices/maps are excluded — a nil slice legitimately means an empty
 	// result set (e.g. `websites domains list` with no domains) and is handled
 	// by the renderer's empty-state branches.
+	// A verify returning (nil, nil) is meaningful: DNS is not resolvable yet,
+	// so render the not-verified outcome rather than bailing out.
 	if result != nil && isNilPointerResult(result) {
+		if op.Name() == catalogops.OpWebsitesDomainsVerify {
+			renderDomainVerifyResult(output, nil)
+			return nil
+		}
 		return fmt.Errorf("%s returned no result", op.Name())
 	}
 
@@ -422,6 +428,7 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op opmesh.Operation
 				{"Message", r.Message},
 			},
 		})
+		renderValidationChecks(output, r.Checks)
 		return nil
 
 	case *ipfs.WebsiteConfigResponse:
@@ -449,6 +456,20 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op opmesh.Operation
 			return output.PrintJSON(map[string]any{"success": true, "message": fmt.Sprintf("Website %s deleted successfully", r.ID)})
 		}
 		output.Printfln("Website deleted successfully")
+		return nil
+
+	case *catalogops.DomainDNSRequirements:
+		// websites domains dns-requirements: the domain response plus the
+		// owning website, from which the renderer derives the authoritative
+		// records the backend no longer returns for on-chain bindings.
+		// --json keeps the historical domain-response shape.
+		if r.Domain == nil {
+			return fmt.Errorf("no result returned for %s", op.Name())
+		}
+		if output.IsJSON() {
+			return output.PrintJSON(r.Domain)
+		}
+		renderDomainDelegation(output, r.Domain, r.Domain.DnsHostingEnabled, r.Website)
 		return nil
 
 	case []ipfs.DomainResponse:
@@ -492,12 +513,29 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op opmesh.Operation
 		if output.IsJSON() {
 			return output.PrintJSON(r)
 		}
-		if op.Name() == "websites_domains_dns_requirements" {
-			renderDomainDelegation(output, r, r.DnsHostingEnabled)
+		switch op.Name() {
+		case catalogops.OpWebsitesDomainsVerify:
+			renderDomainVerifyResult(output, r)
+			return nil
+		case catalogops.OpWebsitesDomainsDNSRequirements:
+			// Version skew: when the dns-requirements op returns a plain
+			// DomainResponse instead of the wrapper, its delegation/validation
+			// rendering must still reach the user (mirrors the merged
+			// OpWebsitesDomainsVerify routing below). This renderer is a pure
+			// function (no service seam to resolve the owning website), so the
+			// on-chain delegation driver cannot derive the _dnslink record that
+			// depends on the website's target. What IS derivable without the
+			// website still renders: the on-chain TLSA table falls back to the
+			// response's own TlsaRdata when the delegation bundle is absent, so
+			// the version-skew path is not empty. The nil website is therefore a
+			// deliberate best-effort (matches the upstream wrapper only where the
+			// data it needs is present on the bare response).
+			renderDomainDelegation(output, r, r.DnsHostingEnabled, nil)
+			return nil
+		default:
+			renderDomainResponse(output, r)
 			return nil
 		}
-		renderDomainResponse(output, r)
-		return nil
 
 	case *ipfs.DomainDANERepublishResponse:
 		// websites domains dane republish.
@@ -610,20 +648,21 @@ func renderDomainDANEResponse(output Output, r *ipfs.DomainDANERepublishResponse
 	if r.OwnerName != nil {
 		ownerName = *r.OwnerName
 	}
-	tlsaRecord := ""
-	if r.TlsaRdata != nil {
-		tlsaRecord = *r.TlsaRdata
+	fields := []Field{
+		{"ID", fmt.Sprintf("%d", r.Id)},
+		{"Domain", r.Domain},
+		{"Namespace", string(r.Namespace)},
+		{"Status", status},
+		{"Owner Name", ownerName},
+		// published_to_managed_zone is a required field and always echoed; a
+		// false value means the republished TLSA is NOT live in the managed
+		// zone yet, so the user must not treat the command as a success.
+		{"TLSA Published", fmt.Sprintf("%t", r.PublishedToManagedZone)},
 	}
-	output.PrintFields(FieldGroup{
-		Fields: []Field{
-			{"ID", fmt.Sprintf("%d", r.Id)},
-			{"Domain", r.Domain},
-			{"Namespace", string(r.Namespace)},
-			{"Status", status},
-			{"Owner Name", ownerName},
-			{"TLSA Record", tlsaRecord},
-		},
-	})
+	if r.TlsaRdata != nil && *r.TlsaRdata != "" {
+		fields = append(fields, Field{"TLSA Record", *r.TlsaRdata})
+	}
+	output.PrintFields(FieldGroup{Fields: fields})
 }
 
 // renderWebsiteItemHuman renders the fields of a single website (used by get,

@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
 	"go.lumeweb.com/pinner/core/config"
@@ -251,6 +253,59 @@ func TestDomainAddWizard_Run(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, res.Completed)
 		require.True(t, mockUI.DelegationSetupExecuted)
+	})
+
+	t.Run("delegation setup renders on-chain guidance for nil-delegation onchain-managed domain", func(t *testing.T) {
+		cfgMgr := configmocks.NewMockManager(t)
+		mockUI := NewMockDomainsUI()
+		mockUI.SetWebsiteSelectIndex(0)
+		mockUI.SetDomainInput("mydomain")
+		mockUI.SetNamespaceChoice(DomainNamespaceHNSChoice)
+
+		cfg := &config.Config{AuthToken: "test-token", Secure: true}
+		cfgMgr.EXPECT().Config().Return(cfg).Maybe()
+
+		var buf bytes.Buffer
+		output := NewOutputFormatter(false, false, false, false)
+		output.SetWriter(&buf)
+
+		// The owning website carries the target the on-chain driver derives the
+		// _dnslink row from; a nil Delegation is routine for on-chain-managed
+		// HNS bindings, so the guidance must still render instead of being
+		// swallowed by the delegation-setup guard.
+		mockWebsitesSvc := &mockWebsitesServiceForCLI{
+			listFunc: func(_ context.Context) ([]ipfs.WebsiteItem, error) {
+				return []ipfs.WebsiteItem{{Id: 1, Domain: "mydomain", TargetType: "ipfs", TargetHash: "QmFoo"}}, nil
+			},
+			BindDomainFn: func(_ context.Context, _ string, req ipfs.DomainRequest) (*ipfs.DomainResponse, error) {
+				return &ipfs.DomainResponse{Id: 1, Domain: req.Domain, Namespace: ipfs.DomainNamespaceHNS, Status: new(ipfs.DomainResponseStatusOnchainManaged)}, nil
+			},
+			GetDomainDNSRequirementsFn: func(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
+				rdata := "3 1 1 abcdef"
+				return &ipfs.DomainResponse{
+					Id: 1, Domain: "mydomain", Namespace: ipfs.DomainNamespaceHNS,
+					Status: new(ipfs.DomainResponseStatusOnchainManaged), TlsaRdata: &rdata,
+					// Delegation intentionally nil.
+				}, nil
+			},
+			VerifyDomainFn: func(_ context.Context, _, _ string) (*ipfs.DomainResponse, error) {
+				return &ipfs.DomainResponse{Id: 1, Domain: "mydomain", Namespace: ipfs.DomainNamespaceHNS, Status: new(ipfs.DomainResponseStatusOnchainManaged)}, nil
+			},
+		}
+
+		w := NewDomainAddWizard(mockWebsitesSvc, cfgMgr, mockUI, output)
+
+		res, err := w.Run(context.Background())
+
+		require.NoError(t, err)
+		require.True(t, res.Completed)
+		// The on-chain branch must render despite the nil Delegation (the
+		// early-return guard only swallows a wholly nil response).
+		out := buf.String()
+		assert.Contains(t, out, "on-chain managed")
+		assert.Contains(t, out, "_dnslink.mydomain")
+		assert.Contains(t, out, "dnslink=/ipfs/QmFoo")
+		assert.Contains(t, out, "3 1 1 abcdef")
 	})
 
 	t.Run("verify step executes and reports valid status", func(t *testing.T) {
