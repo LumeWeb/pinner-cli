@@ -148,6 +148,41 @@ func TestRenderWebsitesResultVerifyTypedNilRendersNotVerified(t *testing.T) {
 	}
 }
 
+func TestRenderWebsitesResultDNSRequirementsRoutesToDelegationRenderer(t *testing.T) {
+	// Version skew: if the dns-requirements op ever returns a plain
+	// *ipfs.DomainResponse (instead of *catalogops.DomainDNSRequirements), it
+	// must still route to the delegation/validation renderer rather than the
+	// generic binding table, so on-chain guidance reaches the user. This pins
+	// the *ipfs.DomainResponse branch's op sub-switch.
+	op := opmesh.NewOperation(opmesh.OperationSpec{Name: catalogops.OpWebsitesDomainsDNSRequirements})
+	rdata := "3 1 1 abcdef"
+	result := &ipfs.DomainResponse{
+		Id:        1,
+		Domain:    "mydomain",
+		Namespace: ipfs.DomainNamespaceHNS,
+		Status:    new(ipfs.DomainResponseStatusOnchainManaged),
+		TlsaRdata: &rdata,
+	}
+	var buf bytes.Buffer
+	cmd := &cli.Command{}
+	cmd.Writer = &buf
+	if err := renderWebsitesResult(context.Background(), cmd, op, result); err != nil {
+		t.Fatalf("dns-requirements plain DomainResponse should render, got err: %v", err)
+	}
+	out := buf.String()
+	// The delegation renderer header (and its on-chain guidance) marks the
+	// routing; the generic binding table header ("DNS Hosting") must not run.
+	if !strings.Contains(out, "DNS requirements for mydomain") {
+		t.Errorf("expected the delegation renderer header, got: %q", out)
+	}
+	if !strings.Contains(out, "on-chain managed") {
+		t.Errorf("expected on-chain guidance from the delegation renderer, got: %q", out)
+	}
+	if strings.Contains(out, "DNS Hosting") {
+		t.Errorf("expected the generic binding table NOT to run for dns-requirements, got: %q", out)
+	}
+}
+
 func TestIsNilPointerResultTypedNil(t *testing.T) {
 	var p *int
 	var s []string

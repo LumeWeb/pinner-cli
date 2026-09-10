@@ -513,12 +513,22 @@ func renderWebsitesResult(_ context.Context, c *cli.Command, op opmesh.Operation
 		if output.IsJSON() {
 			return output.PrintJSON(r)
 		}
-		if op.Name() == catalogops.OpWebsitesDomainsVerify {
+		switch op.Name() {
+		case catalogops.OpWebsitesDomainsVerify:
 			renderDomainVerifyResult(output, r)
 			return nil
+		case catalogops.OpWebsitesDomainsDNSRequirements:
+			// Version skew: when the dns-requirements op returns a plain
+			// DomainResponse instead of the wrapper, its delegation/validation
+			// rendering must still reach the user (mirrors the merged
+			// OpWebsitesDomainsVerify routing below). The owning website is
+			// unavailable on the bare response, so the website argument is nil.
+			renderDomainDelegation(output, r, r.DnsHostingEnabled, nil)
+			return nil
+		default:
+			renderDomainResponse(output, r)
+			return nil
 		}
-		renderDomainResponse(output, r)
-		return nil
 
 	case *ipfs.DomainDANERepublishResponse:
 		// websites domains dane republish.
