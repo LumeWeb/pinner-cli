@@ -1,6 +1,7 @@
 package clicatalog
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/urfave/cli/v3"
@@ -21,6 +22,59 @@ import (
 // SafetyDestructive operation. The consuming CLI mount's gate factories read
 // it to decide whether to require --force before running a destructive op.
 const ForceFlagName = "force"
+
+// Compiler turns a Catalog into one frontend's native command/tool surface. T
+// is the frontend-specific element type: the CLI compiler is a
+// Compiler[*cli.Command], the MCP compiler (in the pinner module) is a
+// Compiler[opmesh.ToolDescriptor]. A generic-typed Compile means callers get
+// back a concrete []T with no `any` assertion, while still sharing the one
+// "compile a catalog" abstraction.
+type Compiler[T any] interface {
+	// Compile maps every operation in cat to the frontend's native shape as
+	// []T. The CLI compiler emits []*cli.Command; the MCP compiler emits
+	// []ToolDescriptor.
+	Compile(cat opmesh.Catalog) ([]T, error)
+}
+
+// NewCLICompiler returns an urfave/cli/v3 compiler (a Compiler[*cli.Command])
+// that maps a Catalog to []*cli.Command. This is the legacy whole-catalog
+// compile API, retained for the pre-shared-adapter internal/cli wiring; the new
+// declarative command-shape compiler is available separately via NewCLILeaf.
+func NewCLICompiler() Compiler[*cli.Command] { return &cliCompiler{} }
+
+// cliCompiler maps a Catalog's operations to urfave/cli/v3 *cli.Command values.
+// It consumes the underlying Operation directly (it needs the declared Metadata
+// AND the Handler to wire into the command's Action), which is why its element
+// type differs from the MCP compiler's.
+//
+// Each operation's Name() (e.g. "vault.create") is used verbatim as the
+// *cli.Command Name. urfave tolerates dotted names, and using the full declared
+// name keeps the mapping unambiguous across categories: two categories can both
+// declare a "create" leaf, so flattening to leaf names would collide.
+type cliCompiler struct{}
+
+// Compile converts every operation in cat into a []*cli.Command.
+func (c *cliCompiler) Compile(cat opmesh.Catalog) ([]*cli.Command, error) {
+	if cat == nil {
+		return nil, fmt.Errorf("catalog: cannot compile a nil catalog")
+	}
+	// VisibilityBoth is treated as unrestricted by the registry, so this
+	// returns every registered operation regardless of visibility.
+	ops := cat.Search("", "", opmesh.VisibilityBoth)
+	cmds := make([]*cli.Command, 0, len(ops))
+	for _, op := range ops {
+		cmd, err := commandFor(op)
+		if err != nil {
+			return nil, err
+		}
+		// The shared commandFor leaves Action nil for the declarative
+		// NewCLILeaf path; the legacy whole-catalog compiler wires the action
+		// adapter itself so internal/cli keeps its prior behavior.
+		cmd.Action = actionFor(op)
+		cmds = append(cmds, cmd)
+	}
+	return cmds, nil
+}
 
 // NewCLILeaf builds an urfave/cli/v3 *cli.Command shape node for one catalog
 // operation using the resolved shape fields (primary display name, category,
@@ -45,10 +99,12 @@ func NewCLILeaf(op opmesh.Operation, name, category string, aliases []string) (*
 
 // commandFor builds a single *cli.Command from an Operation descriptor. It
 // keeps Action nil: behavior is attached by the consuming CLI mount via its
-// catalog action adapter (see NewCLILeaf), never here. It returns an error if a
-// destructive operation declares an arg whose name collides with the reserved
-// --force confirm gate, which would otherwise produce a duplicate --force flag
-// and a urfave 'flag redefined' error at runtime.
+// catalog action adapter (see NewCLILeaf), never here. The legacy whole-catalog
+// compiler (cliCompiler.Compile) sets the Action itself via actionFor after the
+// fact. commandFor returns an error if a destructive operation declares an arg
+// whose name collides with the reserved --force confirm gate, which would
+// otherwise produce a duplicate --force flag and a urfave 'flag redefined'
+// error at runtime.
 func commandFor(op opmesh.Operation) (*cli.Command, error) {
 	destructive := op.Safety() == opmesh.SafetyDestructive
 
@@ -173,6 +229,88 @@ func flagSources(opID, argName string) cli.ValueSourceChain {
 // predicate, so no round-trip through an unexported-module shim is needed.
 func isRequiredArg(a opmesh.OperationArg) bool {
 	return a.Required && a.Default == ""
+}
+
+// actionFor returns the urfave ActionFunc adapter that dispatches to the
+// operation's Handler. It builds an input map from the parsed flags, enforces
+// the --force confirm gate for destructive operations and the required-arg
+// contract, then prints the Handler's result. It is used by the legacy
+// whole-catalog compiler (cliCompiler) so internal/cli keeps its prior
+// command behavior; the declarative NewCLILeaf path leaves Action unset.
+func actionFor(op opmesh.Operation) cli.ActionFunc {
+	destructive := op.Safety() == opmesh.SafetyDestructive
+
+	return func(ctx context.Context, cmd *cli.Command) error {
+		// Destructive confirm gate: refuse unless --force was passed.
+		if destructive && !cmd.Bool(ForceFlagName) {
+			return fmt.Errorf("operation %q is destructive: pass --%s to confirm", op.Name(), ForceFlagName)
+		}
+
+		input := make(map[string]any, len(op.Args()))
+		for _, a := range op.Args() {
+			value, set, empty := cliArgValue(cmd, a)
+			if !set {
+				// Requiredness uses the shared isRequiredArg predicate (same one
+				// Invoke and the schema builder use): an arg is only mandatory
+				// when Required AND has no default; otherwise
+				// NormalizeOperationInput satisfies it.
+				if isRequiredArg(a) {
+					return fmt.Errorf("missing required argument --%s", a.Name)
+				}
+				continue
+			}
+			if isRequiredArg(a) && empty {
+				return fmt.Errorf("required argument --%s was empty", a.Name)
+			}
+			input[a.Name] = value
+		}
+		// Final unified step shared with Invoke: coerces present values into
+		// their declared ArgType shape and applies declared defaults uniformly
+		// with the Invoke path, so the Handler receives identical input no
+		// matter which frontend dispatched. It also re-checks required args
+		// (clirRequiredArgError re-surfaces those in the CLI-facing --flag
+		// spelling). The unknown-argument and reserved-key stripping inside
+		// NormalizeOperationInput are no-ops here: the input map only ever
+		// holds declared flag names.
+		normalized, err := opmesh.NormalizeOperationInput(op, input)
+		if err != nil {
+			// Re-surface a missing required arg with the CLI-facing --flag
+			// spelling so user-facing help stays flag-oriented.
+			return cliRequiredArgError(op, err)
+		}
+		input = normalized
+
+		h := op.Handler()
+		if h == nil {
+			return fmt.Errorf("operation %q has no handler", op.Name())
+		}
+		result, err := h.Execute(ctx, input)
+		if err != nil {
+			return err
+		}
+		if result != nil {
+			fmt.Printf("%v\n", result)
+		}
+		return nil
+	}
+}
+
+// cliRequiredArgError rewords the module's `missing required argument "name"`
+// dispatch error into the CLI's `missing required argument --name` spelling so
+// the user is pointed at the flag to pass. Any other error passes through
+// unchanged.
+func cliRequiredArgError(op opmesh.Operation, err error) error {
+	const prefix = `missing required argument "`
+	msg := err.Error()
+	if len(msg) > len(prefix) && msg[:len(prefix)] == prefix {
+		name := msg[len(prefix) : len(msg)-1] // strip trailing closing quote
+		for _, a := range op.Args() {
+			if a.Name == name {
+				return fmt.Errorf("missing required argument --%s", a.Name)
+			}
+		}
+	}
+	return err
 }
 
 // cliArgValue is the single source of truth for how each ArgType surfaces from
