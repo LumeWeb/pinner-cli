@@ -325,6 +325,24 @@ func (r *serverExtensionRegistry) complete() error {
 			r.catalog.Add(model.ToolEntryFromDescriptor(s.desc))
 		}
 	}
+
+	// Record the direct-only custom tools (registered straight onto
+	// tools/list, NOT catalog-searchable — e.g. the no-app upload_file /
+	// vault_put_file mode) NOW, during the collection phase, so they are
+	// visible to the construction-time initialize instructions and the
+	// legacy flat card BEFORE Materialize projects the surface. Because
+	// BuildServer derives the instructions from the completed catalog right
+	// after CollectExtensions returns — before the single Materialize pass —
+	// populating this side channel here is what keeps the instruction
+	// tool-naming predicate (catalogToolAvailable) from silently dropping a
+	// direct-only tool the same server advertises on the wire. Materialize's
+	// finalized MaterializedTooling supersedes this side channel after
+	// projection; this pre-projection record lives on until then.
+	for _, s := range r.specs {
+		if s.roles.has(roleDirectTool) && !s.roles.has(roleCatalogSearch) {
+			r.catalog.DirectCustom = append(r.catalog.DirectCustom, s.desc.Name)
+		}
+	}
 	return nil
 }
 
@@ -436,15 +454,6 @@ func (r *serverExtensionRegistry) materialize() (*MaterializedTooling, error) {
 		}
 		alreadyDirect[s.desc.Name] = true
 		specDirect = append(specDirect, DirectTool{Name: s.desc.Name, Description: s.desc.Description})
-		// A directly-registered tool that is NOT catalog-searchable (e.g.
-		// upload_file / vault_put_file in the no-app mode) is absent from the
-		// catalog, so a legacy (non-finalized) flat card must consult this
-		// explicit set to advertise exactly the direct surface that was
-		// registered. Finalized surfaces read m.direct instead; this record is
-		// kept as a compatibility side channel.
-		if !s.roles.has(roleCatalogSearch) {
-			r.catalog.DirectCustom = append(r.catalog.DirectCustom, s.desc.Name)
-		}
 	}
 	// (No app-helper projection: this registry never registers app-only
 	// helpers. They are registered inside their owning app views during the
