@@ -1,4 +1,4 @@
-.PHONY: build install clean generate templinstall mcpembed genappmanifest
+.PHONY: build install clean generate templinstall assets genappmanifest
 
 # A bare `make` must produce a binary, not just regenerate templ output.
 # generate was added above build, which silently made it (not build) the
@@ -48,7 +48,7 @@ generate:
 
 # templinstall installs the templ CLI used by `generate`, pinned to the version
 # declared in go.mod (github.com/a-h/templ). Runs from the repo root. Part of
-# `mcpembed` so a fresh checkout can regenerate templates without templ
+# `assets` so a fresh checkout can regenerate templates without templ
 # pre-installed.
 templinstall:
 	go install github.com/a-h/templ/cmd/templ@v0.3.1020
@@ -68,7 +68,7 @@ jsbuild:
 
 # genappmanifest regenerates ONLY the mcpcanvas AssetSource manifest
 # (internal/mcpapp/appsassets/manifest.json) against the bundles already in
-# appsassets/dist/. Used by jsbuild (which is what mcpembed/CI chain);
+# appsassets/dist/. Used by jsbuild (which is what assets/CI chain);
 # usable standalone when iterating on bundles without a full JS build.
 genappmanifest:
 	GOFLAGS=-mod=mod go run ./build/genappmanifest
@@ -80,25 +80,23 @@ genappmanifest:
 cssbuild:
 	pnpm build:css
 
-# mcpembed regenerates everything the MCP embed surface depends on: installs
-# the templ CLI (templinstall), regenerates the templ *_templ.go files
+# assets regenerates all embeddable assets the MCP Apps surface depends on:
+# installs the templ CLI (templinstall), regenerates the templ *_templ.go files
 # (generate), builds the MCP App JS bundles (jsbuild, which runs
 # `pnpm install --frozen-lockfile` then `pnpm build`) and compiles the Tailwind
 # stylesheet (cssbuild). It is the single target that regenerates all
-# embeddable assets, and is what `go generate ./mcpembed` invokes. It is
-# declared .PHONY because a real source directory named mcpembed/ exists; run
-# `go run ./build/genappmanifest` standalone to regenerate only the manifest.
-# Must run before any go build/test so the go:embed directives pick up freshly
-# built assets.
-mcpembed: templinstall generate jsbuild cssbuild
+# embeddable assets. Run `go run ./build/genappmanifest` standalone to
+# regenerate only the manifest. Must run before any go build/test so the
+# go:embed directives pick up freshly built assets.
+assets: templinstall generate jsbuild cssbuild
 
-build: mcpembed
+build: assets
 	CGO_ENABLED=1 go build -tags="$(TAGS)" -ldflags="$(LDFLAGS)" -o pinner ./cmd/pinner
 
-install: mcpembed
+install: assets
 	CGO_ENABLED=1 go install -tags="$(TAGS)" -ldflags="$(LDFLAGS)" ./cmd/pinner
 
-test: mcpembed
+test: assets
 	go test -tags "$(TAGS)" ./...
 
 clean:

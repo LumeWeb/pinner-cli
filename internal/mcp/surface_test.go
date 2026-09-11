@@ -131,7 +131,7 @@ func TestAssembleCatalogOpsHostedExplicitRegardlessOfSurface(t *testing.T) {
 	}
 
 	// HostedDomainScope with no resolver and hosted=true: drops EnvLocalOnly. This
-	// is the construction path mcpembed.New uses by default.
+	// is the construction path a hosted assembly uses by default.
 	hosted, err := AssembleCatalogOps(bundle, HostedDomainScope, true)
 	require.NoError(t, err, "hosted-preset catalog must assemble")
 	for _, name := range []string{"auth_login", "auth_logout"} {
