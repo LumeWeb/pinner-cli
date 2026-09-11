@@ -834,7 +834,7 @@ Commands are organized into categories in the help output:
 |----------|----------|
 | **Setup** | `setup`, `auth`, `register`, `confirm-email` |
 | **Content** | `upload`, `download`, `cat`, `ls` |
-| **Pinning** | `pins`, `pin`, `list`, `status`, `unpin`, `metadata` |
+| **Pinning** | `pins`, `pin`, `list`, `status`, `unpin` |
 | **Management** | `websites`, `dns`, `ipns`, `operations` |
 | **System** | `config`, `doctor`, `bench`, `mcp` |
 | **Admin** | `admin` |

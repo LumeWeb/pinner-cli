@@ -85,7 +85,7 @@ handler:
 
 | Metadata | Meaning |
 |---|---|
-| `Name` | Dot-namespaced, e.g. `pins.add`, `dns.records.create` |
+| `Name` | Underscore-namespaced, e.g. `pins_add`, `dns_records_create` |
 | `Safety` | `Read` / `Mutate` / `Destructive` |
 | `Interaction` | `AgentSafe` / `HumanOnly` / `NeedsHandoff` |
 | `Visibility` | `Model` (agent-discoverable) / `AppOnly` / `Both` |
@@ -161,10 +161,14 @@ the frontends.
 - Command files (`pins.go`, `upload.go`, `websites.go`, `dns.go`, ...) plus
   the domain service interfaces and their implementations.
 - Catalog wiring (`catalog_wiring.go`, `dns_wiring.go`, ...) adapts catalog
-  operations to the urfave tree: it maps positional args and `--file`/stdin
-  into the operation input map, applies CLI-only gates (`--force`), and renders
-  the handler's returned data through the `Output` formatter. The catalog
-  compiler supplies flags/help/names; only the action is wrapped.
+  operations to the urfave tree through a single shared adapter,
+  `catalog_adapter.go`'s `catalogActionAdapter`: it maps positional args and
+  `--file`/stdin into the operation input map, applies CLI-only gates
+  (`--force`), and renders the handler's returned data through the `Output`
+  formatter. The command-shape compiler (`internal/clicatalog`) is the other
+  half of the pair — it builds flags/help/names from `Operation` descriptors
+  plus `catalogmeta` frontend metadata; the shared adapter only wraps the
+  action and never re-derives shape.
 - `internal/cli/internal/` — `PinningClient` (wraps boxo's remote pinning
   client) and `BoxoPinningClient` (the concrete implementation) with an HTTP
   client that supports retry/backoff.
@@ -245,6 +249,31 @@ which formats its own results.
   `internal/urlopen` (browser opening), etc.
 - module `catalogops` is presentation-free: it never imports the CLI frontend
   and returns data rather than rendered output.
+
+### MCP ownership boundaries
+
+The MCP surface keeps reusable libraries free of Pinner product policy:
+
+- **`canimcp` handles host facts only.** The connected host's capabilities —
+  platform/transport/auth evidence, profile, feature set, detectors, registry —
+  live in the reusable `go.lumeweb.com/canimcp` model. It answers *what the
+  connected client can do* and carries no `Hosted`/`DomainScope`, curation,
+  strategy, or disclosure concept. `internal/mcp/hostenv` is a shim that adapts
+  it and keeps those Pinner-only notions local.
+- **Pinner owns the listing policy.** The deployment/entitlement surface
+  (`DomainScope`, `Hosted`) and the `tools/list` listing strategy are product
+  policy owned by the Pinner consumer (`internal/mcp/surface.go`,
+  `internal/mcp/policy.go`, `internal/mcp/catalogdeps.go`), not by `canimcp`.
+  Progressive disclosure (`tools/list` + `search_tools`/`describe_tool` +
+  `invoke_*`) is the active strategy for every profile and surface.
+- **`mcpplane` provides generic discovery mechanics.** The protocol-neutral MCP
+  engine (`go.lumeweb.com/mcpplane`: session, model, sdk, toolargs, transfer)
+  is domain-agnostic discovery/dispatch machinery and holds no Pinner policy.
+- **`mcpforge` materializes per-tool surfaces.** Schema building, guide DSL,
+  targets, and feature-gated tool variants come from `go.lumeweb.com/mcpforge`;
+  `internal/mcp/toolforge` is a Pinner shim welding that DSL onto `hostenv`
+  predicates. It carries Pinner tool content and its feature gates, not listing
+  or entitlement policy.
 
 ## Wizards
 
