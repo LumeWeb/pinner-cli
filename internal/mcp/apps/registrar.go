@@ -1,9 +1,10 @@
 package apps
 
-// De-fork seam (Stage 5, slice 4): the instance-scoped registration machinery
-// (AppView / AppViewInfo / AppCatalog, the tool→view association map, the
-// deployment view-domain resolver, and RegisterAppView's atomic wiring) lives
-// in go.lumeweb.com/mcpplane/apps. This file is the thin CLI adapter that
+// This adapter exposes the process-wide registration API the CLI was built
+// against over the instance-scoped registration machinery in
+// go.lumeweb.com/mcpplane/apps (AppView / AppViewInfo / AppCatalog, the
+// tool→view association map, the deployment view-domain resolver, and
+// RegisterAppView's atomic wiring). This file is the thin CLI adapter that
 // preserves the package-global registration API the CLI was built against:
 // a single process-wide AppRegistry serves the CLI's one-server-per-process
 // assembly (and its tests, which save/restore association state), while

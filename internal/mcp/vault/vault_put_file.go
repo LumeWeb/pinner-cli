@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/invopop/jsonschema"
 
@@ -15,6 +14,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
+	"go.lumeweb.com/pinner-cli/internal/mcp/mintcontract"
+	"go.lumeweb.com/pinner-cli/internal/mcp/schematext"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 	corevault "go.lumeweb.com/pinner/core/vault"
 
@@ -64,6 +65,9 @@ type VaultPutFileInput struct {
 	// silently targeting the active vault. Specify it to write into another
 	// vault without switching the default (avoids a swarm flipping the active
 	// profile via vault_profile_use).
+	// Profile's tag composes schematext.ProfileWriteExtended and TTL's tag
+	// composes schematext.TTLMint (struct tags cannot embed constants;
+	// TestSchemaTextFragmentsPinned pins these literals to them).
 	Profile string `json:"profile,omitempty" jsonschema:"description=Vault profile name to write into. Required when more than one profile is unlocked (omitting it returns profile_required and mints nothing); on a single-profile server it defaults to the active profile. Specify a different profile to store in another vault without changing the default."`
 	// ArchiveMode controls how an archive path is handled: 'convert' (default)
 	// extracts and stores the contents; 'preserve' keeps the archive intact.
@@ -71,7 +75,7 @@ type VaultPutFileInput struct {
 	ArchiveMode string `json:"archive_mode,omitempty" jsonschema:"enum=convert,enum=preserve,description=How to treat an archive path ('convert' extracts, 'preserve' keeps intact). Only used for source mode path."`
 	// TTL is the presigned endpoint lifetime for source mode mint (e.g. 5m).
 	// Only used in HTTP/tunnel mode.
-	TTL string `json:"ttl,omitempty" jsonschema:"description=Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used with source mode mint."`
+	TTL string `json:"ttl,omitempty" jsonschema:"description=Presigned endpoint lifetime (e.g. 5m; default 5m). Only used with source mode mint."`
 	// Agent is an identifier for the creating agent (e.g. an orchestrator
 	// name). It is stored as metadata alongside the auto-stamped write-context
 	// keys — never as a tag.
@@ -212,11 +216,16 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 				}
 				callerKV["tags"] = in.Tags
 			}
-			var hostType string
-			if request.Caps != nil && request.Caps.Profile != nil {
-				hostType = string(request.Caps.Profile.HostType)
-			}
-			metadata := corevault.StampedMetadata("mcp", hostType, in.Profile, callerKV)
+			// ONE canonical mint-metadata assembly
+			// (transfer.StampedMCPMetadata): host-type lifting from the
+			// request caps, ResolveMintProfile pinning (explicit profile
+			// passes through; an empty one is pinned to the single unlocked
+			// profile at mint time) so the sealed metadata names the
+			// destination profile for every write branch — a later presigned
+			// PUT can never re-resolve against an ambiguous registry — and
+			// the corevault.StampedMetadata stamp around the caller KV
+			// assembled above. Identical on every mint surface.
+			metadata := transfer.StampedMCPMetadata(request.Caps, in.Profile, callerKV)
 
 			// OpenAI/host-provided generated-file handoff. The host passes a
 			// temporary download_url + file_id; Pinner fetches/streams the bytes
@@ -245,7 +254,7 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 			switch transport {
 			case transfer.TransportStdio:
 				if src.Mode != transfer.SourcePath {
-					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", src.Mode, transport)
+					return model.ToolResult{}, transfer.ErrSourceModeUnavailable(src.Mode, transport)
 				}
 				if pathFn == nil {
 					return model.ToolResult{}, errors.New("local path vault handler is not configured")
@@ -254,26 +263,24 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 				return toolargs.WrapResult(result, err, "Stored in the vault.")
 			case transfer.TransportHTTP:
 				if src.Mode != transfer.SourceMint {
-					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", src.Mode, transport)
+					return model.ToolResult{}, transfer.ErrSourceModeUnavailable(src.Mode, transport)
 				}
 				if vu == nil {
 					return model.ToolResult{}, errors.New("presigned vault-upload endpoint is not configured for remote mode")
 				}
-				ttl := mcptransfer.DefaultHTTPUploadTTL
-				if in.TTL != "" {
-					d, derr := time.ParseDuration(in.TTL)
-					if derr != nil {
-						return model.ToolResult{}, fmt.Errorf("invalid ttl %q: %w", in.TTL, derr)
-					}
-					if d > 0 {
-						ttl = d
-					}
+				// ONE shared presign-TTL parser (core/transfer.ParsePresignTTL):
+				// empty → default, non-positive → default, unparseable → the
+				// stable `invalid ttl "..."` wording. The coordinator-side
+				// clamp inside Mint remains as defense in depth only.
+				ttl, terr := transfer.ParsePresignTTL(in.TTL)
+				if terr != nil {
+					return model.ToolResult{}, terr
 				}
 				url, merr := vu.Mint(ctx, in.VaultPath, ttl, metadata)
 				if merr != nil {
 					return model.ToolResult{}, merr
 				}
-				curlCmd := fmt.Sprintf("curl -sS -T <your-file> %q", url)
+				curlCmd := mintcontract.CurlUploadCommand(url)
 				sc := map[string]any{
 					"url":          url,
 					"vault_path":   in.VaultPath,
@@ -285,11 +292,13 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 					StructuredContent: sc,
 					// Text carries the same JSON so a text-only client sees the
 					// actual presigned URL and curl command, not just prose.
-					Text: toolargs.ResultJSONText(sc) + " Run the curl command with your file; the PUT stages the bytes locally (status: staged) — durability on Sia happens in the background or via the vault_flush tool.",
+					// The durability tail composes the shared dependency-neutral
+					// canon (internal/mcp/mintcontract).
+					Text: toolargs.ResultJSONText(sc) + " Run the curl command with your file; " + mintcontract.StagedWrite + " — " + mintcontract.DurabilitySource + ".",
 				}, nil
 			default: // TransportOpenAI
 				if src.Mode != transfer.SourceURL && src.Mode != transfer.SourceData {
-					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the OpenAI tunnel transport", src.Mode)
+					return model.ToolResult{}, transfer.ErrSourceModeUnavailable(src.Mode, "OpenAI tunnel")
 				}
 				if relayFn == nil {
 					return model.ToolResult{}, errors.New("vault relay write is not configured")
@@ -318,14 +327,14 @@ func vaultPutFileSchema(features hostenv.FeatureSet) json.RawMessage {
 		Property("source", toolargs.SchemaFor[transfer.UploadSource](), toolforge.Description("The file to store as a transport-scoped source object. Choose the mode this transport accepts (see capabilities.source_modes): path=co-located stdio, mint=HTTP/tunnel presigned endpoint, url/data=relay. Omit when a host-provided file reference is used instead."), toolforge.Transform(transfer.VaultSourceSchemaTransform)).
 		Property("file", toolargs.SchemaFor[mcptransfer.ChatGPTFileInput](), toolforge.When(hostenv.FeatFileHostInput)).
 		StringProperty("vault_path", "Vault destination file path (e.g. vault:/docs/f.pdf or vault:/uploads/report.pdf). Required. A file path, not a directory; traversal (.. or .) segments are rejected. Any vault file path is allowed.").
-		StringProperty("profile", "Vault profile name to write into. Required when more than one profile is unlocked (omitting it returns profile_required and mints nothing); on a single-profile server it defaults to the active profile. Specify a different profile to store in another vault without changing the default.").
+		StringProperty("profile", schematext.ProfileWriteExtended).
 		// archive_mode is only meaningful for source.mode=path (co-located
 		// stdio): the mint and url/data branches stream raw bytes with no
 		// in-band archive contract. Declaring it solely for FeatSourcePath
 		// keeps its "source mode path" prose off a mint-only host (e.g. Grok),
 		// where the dead transport name would reactivate the wrong source.
 		StringProperty("archive_mode", "How to treat an archive path ('convert' extracts the archive contents, 'preserve' keeps the archive intact as a single file).", toolforge.Enum("convert", "preserve"), toolforge.When(hostenv.FeatSourcePath)).
-		StringProperty("ttl", "Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used with source mode mint.").
+		StringProperty("ttl", schematext.TTLMint).
 		StringProperty("agent", "Identifier for the creating agent (e.g. an orchestrator name). Stored as vault metadata — never as a tag.").
 		Property("metadata", &jsonschema.Schema{
 			Type:        "object",

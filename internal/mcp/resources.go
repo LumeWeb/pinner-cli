@@ -127,14 +127,14 @@ type ResourceProviders struct {
 //   - pinner://websites/{id}/validation-status
 //   - pinner://wizard/{session_id}/state
 func ResourceDescriptors(provs ResourceProviders) ([]model.ResourceDescriptor, []model.ResourceTemplateDescriptor) {
-	return ResourceDescriptorsForSurface(provs, true)
+	return ResourceDescriptorsForScope(provs, true)
 }
 
-// ResourceDescriptorsForSurface builds the pinner:// resource descriptors for
-// the given surface. The single surface-sensitive entry is pinner://vault/
+// ResourceDescriptorsForScope builds the pinner:// resource descriptors for
+// the given scope. The single scope-sensitive entry is pinner://vault/
 // status, which is omitted when the Sia vault surface is disabled (hosted
 // mode) so a hosted server never advertises a vault resource.
-func ResourceDescriptorsForSurface(provs ResourceProviders, vaultOn bool) ([]model.ResourceDescriptor, []model.ResourceTemplateDescriptor) {
+func ResourceDescriptorsForScope(provs ResourceProviders, vaultOn bool) ([]model.ResourceDescriptor, []model.ResourceTemplateDescriptor) {
 	resources := []model.ResourceDescriptor{
 		{
 			URI:         AccountStatusURI,

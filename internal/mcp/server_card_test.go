@@ -43,8 +43,10 @@ func TestServerCardHandler(t *testing.T) {
 	assert.True(t, card.Authentication.Required)
 	assert.Contains(t, card.Authentication.Schemes, "bearer")
 	assert.NotEmpty(t, card.Tools)
-	// Primary tool must be present so directories index the core surface.
-	assert.True(t, containsTool(card.Tools, "pins_add"))
+	// A curated (directly-visible) core tool must be present so directories
+	// index the core surface. The card is derived from the live curated set on
+	// the active surface; pins are search-only ops and correctly absent.
+	assert.True(t, containsTool(card.Tools, "auth_status"))
 }
 
 func containsTool(tools []struct {

@@ -33,9 +33,9 @@ func httpsOriginOf(baseURL string) string {
 // account/subscription and IPFS/websites/DNS — never the Sia vault or portal
 // admin.
 type HostedServerConfig struct {
-	// Surface declares which domains/tool families are exposed. Defaults to
-	// HostedSurface when zero.
-	Surface Surface
+	// DomainScope declares which domains/tool families are exposed. Defaults to
+	// HostedDomainScope when zero.
+	DomainScope DomainScope
 
 	// CatalogDeps supplies the operation-catalog dependency bundle for this
 	// hosted server (the Portal API endpoint and per-request credential
@@ -120,17 +120,21 @@ func BuildHostedServer(cfg HostedServerConfig) (*sdk.Server, *ToolCatalog, *Host
 // BuildHostedServer); BuildHostedServer wraps it in the deployment-origin
 // resolver window.
 func buildHostedServer(cfg HostedServerConfig) (*sdk.Server, *ToolCatalog, *HostedTransfer, error) {
-	surface := cfg.Surface
+	surface := cfg.DomainScope
 	if surface.IsZero() {
-		surface = HostedSurface
+		surface = HostedDomainScope
 	}
 	var hostedTransfer *HostedTransfer
 	srv, cat, err := BuildServer(ServerConfig{
 		Hosted:      true, // hosted mode is declared here, at the one construction seam
-		Surface:     surface,
+		DomainScope: surface,
 		CatalogDeps: cfg.CatalogDeps,
 		StdioMode:   false,
-		RegisterCustom: func(srv *sdk.Server, catalog *ToolCatalog) error {
+		// CollectExtensions runs the one-pass collection BEFORE the official
+		// server exists, so the constructed server's initialize instructions
+		// and the per-server card derive from the completed hosted catalog.
+		// The plan is materialized by BuildServer after construction.
+		CollectExtensions: func(catalog *ToolCatalog) (*MaterializationPlan, error) {
 			opts := &mcpServerOptions{}
 			for _, o := range cfg.Options {
 				o(opts)
@@ -143,7 +147,7 @@ func buildHostedServer(cfg HostedServerConfig) (*sdk.Server, *ToolCatalog, *Host
 			// WithVaultSync option loudly instead of accepting a no-op so a
 			// misconfiguration cannot hide.
 			if opts.vaultSyncCfg.Service != nil {
-				return fmt.Errorf("hosted MCP server: WithVaultSync is not supported (the Sia vault scheduler must not be registered in hosted mode)")
+				return nil, fmt.Errorf("hosted MCP server: WithVaultSync is not supported (the Sia vault scheduler must not be registered in hosted mode)")
 			}
 			// The app-tool registration path requires the single app-tool
 			// registrar seam to be installed (the CLI adapter installs it in
@@ -178,9 +182,11 @@ func buildHostedServer(cfg HostedServerConfig) (*sdk.Server, *ToolCatalog, *Host
 				}
 			}
 			hostedTransfer = &HostedTransfer{Upload: curlUpload, Download: dl}
-			// HTTP transport with no tunnel.
-			return registerCustomTools(customToolDeps{
-				srv:             srv,
+			// HTTP transport with no tunnel. The srv seam is injected at
+			// materialize time (MaterializationPlan.Materialize), not during
+			// collection, so the server object does not exist yet here.
+			return collectServerExtensions(customToolDeps{
+				srv:             nil,
 				catalog:         catalog,
 				store:           session.NewSessionStore(),
 				resourceFactory: cfg.ResourceFactory,

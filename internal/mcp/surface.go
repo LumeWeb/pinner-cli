@@ -7,54 +7,54 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 )
 
-// Surface is the internal/mcp alias for the host-platform surface model. It
+// DomainScope is the internal/mcp alias for the host-platform surface model. It
 // declares which Pinner operation domains and tool families a server exposes;
 // the zero value is the full surface.
-type Surface = hostenv.Surface
+type DomainScope = hostenv.DomainScope
 
-// FullSurface enables every domain/tool family (the CLI / local MCP server).
-var FullSurface = hostenv.FullSurface
+// FullDomainScope enables every domain/tool family (the CLI / local MCP server).
+var FullDomainScope = hostenv.FullDomainScope
 
-// HostedSurface is the restricted surface for a Portal-embedded ("hosted")
+// HostedDomainScope is the restricted surface for a Portal-embedded ("hosted")
 // MCP server: account/subscription and IPFS/websites/DNS/IPNS/ENS/operations,
 // with the Sia vault and portal admin excluded.
-var HostedSurface = hostenv.HostedSurface
+var HostedDomainScope = hostenv.HostedDomainScope
 
-// surfaceVar is the active server construction surface. It mirrors the
+// domainScopeVar is the active server construction surface. It mirrors the
 // SetTransportFlags / SetDevTools pattern: the server construction path
 // (buildCatalog) records the surface once at startup, and per-request
 // profile-aware resolution (agent_guide), startup profile derivation, and
 // capabilities overlay it so the whole surface agrees on what is exposed.
 // Defaults to the full surface so callers that never opt into a restricted
 // surface keep full behaviour.
-var surfaceVar = FullSurface
+var domainScopeVar = FullDomainScope
 
-// SetSurface records the active server surface. It MUST be called during
+// SetDomainScope records the active server surface. It MUST be called during
 // server construction (before serving) and is written once, mirroring
 // SetTransportFlags/SetDevTools.
-func SetSurface(s Surface) {
-	surfaceVar = s
+func SetDomainScope(s DomainScope) {
+	domainScopeVar = s
 }
 
-// activeSurface returns the surface currently active for this server,
+// activeDomainScope returns the surface currently active for this server,
 // normalizing the zero value to the full surface.
-func activeSurface() Surface {
-	if surfaceVar.IsZero() {
-		return FullSurface
+func activeDomainScope() DomainScope {
+	if domainScopeVar.IsZero() {
+		return FullDomainScope
 	}
-	return surfaceVar
+	return domainScopeVar
 }
 
 // hostedVar records whether the active server is a hosted (Portal-embedded)
-// assembly. It is the deployment-mode counterpart to surfaceVar: recorded once
+// assembly. It is the deployment-mode counterpart to domainScopeVar: recorded once
 // at server construction (buildCatalog) and overlaid on the resolved platform
 // profile so the prompt/guide DSL can gate hosted-specific copy. Hosted is
 // orthogonal to the surface — see activeHosted.
 var hostedVar bool
 
 // SetHosted records whether the active server is a hosted (Portal-embedded)
-// assembly. It MUST be called during server construction alongside SetSurface
-// and is written once (mirroring SetSurface/SetTransportFlags).
+// assembly. It MUST be called during server construction alongside SetDomainScope
+// and is written once (mirroring SetDomainScope/SetTransportFlags).
 func SetHosted(hosted bool) {
 	hostedVar = hosted
 }

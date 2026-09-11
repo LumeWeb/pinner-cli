@@ -2,12 +2,16 @@ package mcp
 
 import (
 	"context"
+	"slices"
+	"sort"
 	"strings"
 
 	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/mcpplane/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
+	"go.lumeweb.com/pinner-cli/internal/mcp/mintcontract"
+	"go.lumeweb.com/pinner-cli/internal/mcp/schematext"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 	"go.lumeweb.com/pinner-cli/internal/mcp/wizard"
 )
@@ -26,9 +30,9 @@ type (
 
 // profileFromRequest safely extracts the PlatformProfile from a tool request.
 // The request carries the SDK-neutral model.Profile; it is adapted to the CLI
-// PlatformProfile view (Surface zero — see hostenv.FromShared) because every
+// PlatformProfile view (DomainScope zero — see hostenv.FromShared) because every
 // consumer here gates on features/transport/host, and buildAgentGuide
-// re-overlays Surface/Hosted from construction-time state. If the request has
+// re-overlays DomainScope/Hosted from construction-time state. If the request has
 // no Caps or no Profile (e.g. tests invoking handlers directly), it returns a
 // default stdio generic profile.
 func profileFromRequest(request model.ToolRequest) *hostenv.PlatformProfile {
@@ -72,72 +76,156 @@ func sourceModesText(profile *hostenv.PlatformProfile) string {
 	return strings.Join(guideSourceModes(profile), " or ")
 }
 
-// uploadDetailDesc composes the upload flow detail string from feature-gated
-// segments, replacing the previous string concatenation. The returned CID is
-// already pinned, so it must never steer an agent to pins_add.
-var uploadDetailDesc = toolforge.Static(
-	"Check capabilities to pick the byte source THIS client is told to use.",
-).
-	When(hostenv.FeatFileHostInput,
-		"If capabilities' file_input_policy is host_file_first (only when your client can hand Pinner a {download_url, file_id} file object), pass a host-provided file reference directly. Otherwise use a transport-scoped source: {{SOURCES}}.",
-	).
-	Unless(hostenv.FeatFileHostInput,
-		"Use a transport-scoped source: {{SOURCES}}.",
-	).
-	Static("The returned CID is already pinned — use it directly in websites_create/update; do NOT call pins_add after an upload").
-	WhenSentence(hostenv.FeatSourceMint,
-		"Mint (source.mode=mint) has NOT stored bytes when upload_file returns — it only mints url + upload_handle.",
-	).
-	WhenSentence(hostenv.FeatSourceMint,
-		"1) PUT your agent-local file to the returned url (curl -sS -T <file> \"<url>\")",
-	).
-	WhenSentence(hostenv.FeatSourceMint,
-		"2) poll upload_status with the returned upload_handle until it reports completed",
-	).
-	WhenSentence(hostenv.FeatSourceMint,
-		"3) the completed CID is already pinned — use it directly; do NOT call pins_add. Treat the mint response as the START of the upload, not the end.",
-	).
-	ListWhenAny([]hostenv.Feature{hostenv.FeatSourceURL, hostenv.FeatSourceData},
-		toolforge.List(toolforge.ListNumbered).
-			Intro("Pick the byte route in this order:").
-			ItemWhen(hostenv.FeatSourceMint, "a file you can read locally → upload_file mint + host PUT + upload_status").
-			ItemWhen(hostenv.FeatSourceURL, "bytes already at a public HTTPS URL → upload_url (server fetch; do not download then re-upload)").
-			ItemWhen(hostenv.FeatSourceData, "only raw bytes, no file, no URL → upload_data (RFC 2397 data: URI) — last resort; never base64-encode a real file"),
-	).
-	StaticSentence("Static site bundle rule: a ZIP containing index.html, CSS, JS, images, or nested pages is a single directory DAG — call upload_file").
-	When(hostenv.FeatFileHostInput,
-		"with the host file argument (or a convert source) and archive_mode=convert",
-	).
-	Unless(hostenv.FeatFileHostInput,
-		"with a convert source ({{SOURCES}}) and archive_mode=convert",
-	).
-	StaticList("not individual assets.")
+// uploadDetailDesc is the LEGACY (nil-availability) upload flow detail: full
+// historical prose. Production builders derive through uploadDetailDescFor,
+// whose tool-naming segments gate on the completed per-server surface (a
+// hosted/minimal assembly must never see an upload tool it does not register).
+var uploadDetailDesc = uploadDetailDescFor(nil)
 
-// vaultUploadDetailDesc composes the vault upload flow detail string.
+// featureAndTool composes the shared gate: profile feature AND tool presence.
+func featureAndTool(feat hostenv.Feature, avail *guideAvailability, tools ...string) hostenv.Predicate {
+	base := avail.toolPred(tools...)
+	return hostenv.And(func(p hostenv.PlatformProfile) bool { return p.Features.Has(feat) }, base)
+}
+
+// uploadDetailDescFor composes the upload flow detail string from feature- and
+// availability-gated segments. The returned CID is already pinned, so it must
+// never steer an agent to pins_add. Every segment that NAMES a tool
+// (upload_file, upload_status, pins_add, websites_*) is additionally gated on
+// that tool being registered on the completed surface, so a
+// hosted/minimal assembly never sees an absent upload tool in detail text.
+func uploadDetailDescFor(avail *guideAvailability) toolforge.DescBuilder {
+	return toolforge.Static(
+		"Check capabilities to pick the byte source THIS client is told to use.",
+	).
+		// The host-file routing composes the shared hostFilePolicyLead +
+		// transportSourceRouting fragments (guide_fragments.go) — one policy
+		// lead and one base fallback sentence for every routing flow, with
+		// this operation adding no suffix. The once-diverged colon form
+		// ("source: {{SOURCES}}") is normalized to the shared paren form.
+		When(hostenv.FeatFileHostInput,
+			hostFilePolicyLead+" Otherwise "+transportSourceRouting+".",
+		).
+		Unless(hostenv.FeatFileHostInput,
+			mintcontract.FirstUpper(transportSourceRouting)+".",
+		).
+		WhenPred(avail.toolPred("websites_create", "pins_add"),
+			// The completion clause composes the shared mintcontract upload
+			// completion contract (UploadReturnedCIDPinned /
+			// UploadNoPinsAddNeeded) — never a hand copy of the
+			// already-pinned/no-pins_add facts.
+			mintcontract.FirstUpper(mintcontract.UploadReturnedCIDPinned)+" — use it directly in websites_create/update; "+mintcontract.UploadNoPinsAddNeeded+" (the upload already pinned the content).").
+		WhenPredSep(toolforge.SepSentence, featureAndTool(hostenv.FeatSourceMint, avail, "upload_file"),
+			"Mint (source.mode=mint) "+mintcontract.UploadMintNoBytes+" when upload_file returns — it only mints url + upload_handle.",
+		).
+		// Numbered steps 1) and 2) compose the canonical mintcontract
+		// upload-mint steps (UploadMintStepPut/UploadMintStepPoll) instead of
+		// hand-copying them — the hand copy had already drifted ("your"
+		// agent-local file vs the canonical "the").
+		WhenPredSep(toolforge.SepSentence, featureAndTool(hostenv.FeatSourceMint, avail, "upload_file"),
+			mintcontract.UploadMintStepPut,
+		).
+		WhenPredSep(toolforge.SepSentence, featureAndTool(hostenv.FeatSourceMint, avail, "upload_status"),
+			mintcontract.UploadMintStepPoll,
+		).
+		WhenPredSep(toolforge.SepSentence, featureAndTool(hostenv.FeatSourceMint, avail, "upload_file", "upload_status"),
+			// Step 3 composes the canonical UploadMintNoPinsAdd contract +
+			// the directly-use resolution instead of hand-copying the
+			// completed-CID fact.
+			"3) "+mintcontract.UploadMintNoPinsAdd+" — use it directly. Treat the mint response as the START of the upload, not the end.",
+		).
+		// The byte-route list is the SHARED chooser (byteRouteChooser in
+		// capabilities.go): the guide and the capabilities report compose the
+		// same route items, and the mint item composes
+		// mintcontract.UploadMintPutPoll so the guide cannot drop the
+		// handle-until-completed polling contract (the hand copy here once
+		// had exactly that drift).
+		ListWhenAny([]hostenv.Feature{hostenv.FeatSourceURL, hostenv.FeatSourceData},
+			byteRouteChooser(),
+		).
+		// The bundle rule composes the shared schematext site-ZIP fragments
+		// (SiteZIPSingleDAG) — the same bundle definition the guide summary,
+		// the siteBundleUpload fragment, and the toolforge site-ZIP clauses
+		// compose — never a hand-copied asset list.
+		WhenPred(hostenv.And(func(p hostenv.PlatformProfile) bool { return true }, avail.toolPred("upload_file")),
+			"Static site bundle rule: "+schematext.SiteZIPSingleDAG+" — call upload_file").
+		// The input clauses compose the ONE shared archive-mode input wording
+		// (siteZIP*Input consts in guide_fragments.go — the same pair the
+		// siteBundleUpload fragment features), so the guide detail and the
+		// fragment lead cannot diverge on the accepted inputs. The gate here
+		// additionally requires upload_file to be registered on the surface
+		// (guide-detail clauses that name a tool must be availability-gated);
+		// the "(or a convert source)" parenthetical that once collapsed the
+		// feature gate is pinned out — the mutually exclusive feature gate
+		// carries the either/or, never the prose.
+		WhenPred(featureAndTool(hostenv.FeatFileHostInput, avail, "upload_file"),
+			siteZIPHostFileInput,
+		).
+		WhenPred(hostenv.And(func(p hostenv.PlatformProfile) bool { return !p.Features.Has(hostenv.FeatFileHostInput) }, avail.toolPred("upload_file")),
+			siteZIPConvertSourceInput,
+		).
+		StaticList("not individual assets.")
+}
+
+// The durability tail is the shared vault-mint canon (see vault_mint_contract.go)
+// so the flow detail cannot drift from the capabilities contract or the
+// summary/decision prose.
 var vaultUploadDetailDesc = toolforge.Static(
 	"Check capabilities to pick the byte source THIS client is told to use.",
 ).
+	// The host-file routing composes the shared hostFilePolicyLead +
+	// transportSourceRouting fragments (guide_fragments.go) — the same policy
+	// lead and base fallback sentence the upload-flow detail composes — with
+	// this operation's own suffix ("plus the destination vault_path") appended
+	// after, never a hand copy of the policy text.
 	When(hostenv.FeatFileHostInput,
-		"If capabilities' file_input_policy is host_file_first (only when your client can hand Pinner a {download_url, file_id} file object), pass a host-provided file reference directly. Otherwise use a transport-scoped source ({{SOURCES}}) plus the destination vault_path.",
+		hostFilePolicyLead+" Otherwise "+transportSourceRouting+" plus the destination vault_path.",
 	).
 	Unless(hostenv.FeatFileHostInput,
-		"Use a transport-scoped source ({{SOURCES}}) plus the destination vault_path.",
+		mintcontract.FirstUpper(transportSourceRouting)+" plus the destination vault_path.",
 	).
 	When(hostenv.FeatSourceMint,
-		"When using source.mode=mint + vault_path, mint returns a one-time presigned PUT url bound to vault_path (it has NOT stored bytes yet). PUT the agent-local file to the returned url; the PUT returns quickly after staging the bytes locally (status: staged). The file is immediately readable from this instance; durability on Sia happens in the background or via the vault_flush tool — vault_flush is non-blocking and returns an accepted job { job_id, profile, path? }, so poll vault_flush_status(job_id) or vault_stat until status: durable when durability is needed before sharing; there is no upload_status to poll.",
+		"When using source.mode=mint + vault_path, mint returns "+vaultMintLead+". "+mintcontract.UploadMintPutAction+"; "+vaultMintDurabilityCanon+".",
 	).
+	// The mint-only materialize sentence composes the shared schematext
+	// relay-not-vault fragment (RelayVaultMaterialize) — the same fragment
+	// core/transfer's vaultSourceModeDesc composes — never a hand copy.
 	WhenSentence(hostenv.FeatSourceMint,
-		"On this mint-only transport there is no direct vault path for a public URL or inline bytes: materialize them to an agent-local file first, then vault_put_file(source.mode=mint) + PUT.",
+		"On this mint-only transport there is no direct vault path for a public URL or inline bytes: "+schematext.RelayVaultMaterialize+".",
 	).
+	// The per-tool and tunnel clauses compose the shared
+	// relayToolNotVaultWrite / schematext.RelayToolsNotVaultWrite fragments —
+	// one source each, per-tool and combined.
 	When(hostenv.FeatSourceURL,
-		"The separate upload_url tool is IPFS-only, not a vault write — do not invent a 'vault a CID' step.",
+		mintcontract.FirstUpper(relayToolNotVaultWrite("upload_url"))+" — "+vaultCIDSteerTail+".",
 	).
 	When(hostenv.FeatSourceData,
-		"The separate upload_data tool is IPFS-only, not a vault write — do not invent a 'vault a CID' step.",
+		mintcontract.FirstUpper(relayToolNotVaultWrite("upload_data"))+" — "+vaultCIDSteerTail+".",
 	).
 	WhenPredSep(toolforge.SepSentence, hostenv.TransportIs(hostenv.TransportOpenAI),
-		"The separate upload_url / upload_data tools pin to IPFS and are NOT vault writes: over this tunnel transport vault_put_file takes public-URL or raw-inline bytes via its own url/data source plus the destination vault_path. Do not invent a 'vault a CID' step.",
+		mintcontract.FirstUpper(schematext.RelayToolsNotVaultWrite)+": over this tunnel transport vault_put_file takes public-URL or raw-inline bytes via its own url/data source plus the destination vault_path. "+mintcontract.FirstUpper(vaultCIDSteerTail)+".",
 	)
+
+// vaultCIDSteerTail is the shared steer tail of the vault write-flow clauses:
+// the ONE pinned binding every url/data/tunnel clause ends with — the model
+// must not invent a vault step for a CID-sized relay. Composed by the three
+// uploadFlow clauses above so their closings can never drift.
+var vaultCIDSteerTail = "do not invent a 'vault a CID' step"
+
+// relayToolNotVaultWrite composes the singular not-a-vault-write clause naming
+// ONE sibling relay tool (lowercase opener — callers supply their own casing
+// and tail): the ONE source for the vault upload detail's per-tool clauses and
+// the vault byte-route decision's URL branch, so the two surfaces can never
+// drift from each other.
+func relayToolNotVaultWrite(tool string) string {
+	return "the separate " + tool + " tool is IPFS-only, not a vault write"
+}
+
+// localSinkOnly is the residual sink sentence both download flows carry when
+// the filedrop sink is absent on the transport. ONE fragment composed by
+// downloadDetailDesc and vaultDownloadDetailDesc, so the two sink-mode
+// summaries can never disagree about what remains when sink=drop is off.
+var localSinkOnly = "On this transport, sink=local is the only sink offered."
 
 // downloadDetailDesc composes the download flow detail string. sink=local is
 // always available but writes to the MCP server's own disk; for a remote agent
@@ -145,72 +233,150 @@ var vaultUploadDetailDesc = toolforge.Static(
 var downloadDetailDesc = toolforge.Static(
 	"Read capabilities' download_sink_modes; call download_file with ipfs_path (CID or CID/path) using a supported sink.",
 ).
+	// The drop clause composes the canonical schematext drop-link fragments
+	// (mechanism + pull guidance) — the same prose the capabilities report and
+	// the toolforge descriptions compose.
 	WhenSentence(hostenv.FeatSinkDrop,
-		"Prefer sink=drop: it returns a one-time HTTP GET filedrop link to pull into your sandbox with curl -o or a browser.",
+		"Prefer sink=drop: it returns "+schematext.DropLinkBenefit+".",
 	).
 	UnlessSep(toolforge.SepSentence, hostenv.FeatCoLocated,
 		"sink=local writes to a path on the MCP server's own disk and is NOT visible to a remote agent like this one — do not look for the downloaded file in your sandbox.",
 	).
 	UnlessSep(toolforge.SepSentence, hostenv.FeatSinkDrop,
-		"On this transport, sink=local is the only sink offered.",
+		localSinkOnly,
 	)
+
+// vaultShareDetailDesc composes the vault share flow detail string. The
+// not-durable recovery steps compose the shared mintcontract fragments — the
+// accepted-job shape, the poll core, and the FULL VaultFlushTriage (canonically:
+// also composed verbatim by the capabilities completion contract, of which this
+// is not a shortened variant) — so the share flow's flush triage cannot drift
+// from the capabilities contract.
+var vaultShareDetailDesc = toolforge.Static(
+	"Ensure the vault is unlocked (vault_status), then call vault_share with the vault_path to generate a shareable link (control its lifetime with expiry). Local reads (vault_get_file / vault cat / vault_stats) work any time after a staged PUT; only share/send require durability across profiles. Only durable (status: durable) files can be shared: if vault_share or vault_send returns {code:'not_durable', ...}, run vault_flush (non-blocking, returns an " + vaultFlushAcceptedJob + "), " + vaultDurabilityPollCore + ", then share/send again. " + vaultFlushTriage + " The recipient accepts the share with vault_share_accept (accept_state 'pinned' — an independent pin of the same object key, NOT a digest failure), which is directly visible on tools/list; vault_verify on a freshly pinned object reports digest_verified 'not_applicable' until first get/decrypt/deep verify — treat accept_state 'pinned' (not a digest signal) as the success indicator. For multi-profile swarms, list profiles with vault_profiles and hand off a file with vault_send (or pass profile=<name> when more than one profile is unlocked — vault ops return profile_required otherwise).")
+
+// vaultSyncDetailLead composes the vault-sync flow's lead detail: the
+// related-utilities sentence is appended by the flow spec, gated on the
+// utilities actually being registered.
+var vaultSyncDetailLead = toolforge.Static(
+	"vault_sync reconciles the local vault cache from the indexer; vault_verify checks file integrity. Run both after creating or restoring on a new device, or when share state may have changed.")
+
+// updateWebsiteDetailDesc composes the update_website flow detail string.
+var updateWebsiteDetailDesc = toolforge.Static(
+	"Update a deployed website's content without recreating it. 1) websites_get <domain> first to capture the current target_type and dns_hosting_enabled — never guess them. 2) If the new CID is external, pins_add it first; updating an unpinned CID returns CidNotPinned. 3) websites_update <domain> with the new cid (target-type is inherited when omitted; change it only when intentionally switching IPFS<->IPNS). 4) websites_validate. If DNS hosting is managed, validation may report the old CID right after the update — that is reconciliation lag, not failure; re-call websites_validate without starting a new flow.").
+	Then(cdnDeployNoticeClause)
 
 // vaultDownloadDetailDesc composes the vault download flow detail string.
 var vaultDownloadDetailDesc = toolforge.Static(
 	"Read capabilities' download_sink_modes and ensure the vault is unlocked; call vault_get_file with vault_path using a supported sink.",
 ).
+	// Vault-get's drop clause composes the mechanism-only canonical fragment
+	// (no concrete curl/browser plumbing in the vault flow) — the same
+	// schematext.DropLinkHTTP the other drop surfaces compose.
 	WhenSentence(hostenv.FeatSinkDrop,
-		"Prefer sink=drop: it returns a one-time HTTP GET filedrop link to pull into your sandbox.",
+		"Prefer sink=drop: it returns "+schematext.DropLinkHTTP+".",
 	).
 	UnlessSep(toolforge.SepSentence, hostenv.FeatCoLocated,
 		"sink=local writes the decrypted bytes to the MCP server's own disk and is NOT visible to a remote agent like this one.",
 	).
 	UnlessSep(toolforge.SepSentence, hostenv.FeatSinkDrop,
-		"On this transport, sink=local is the only sink offered.",
+		localSinkOnly,
 	)
 
-// guideSummary is the guide's opening orientation: start here, check state,
-// follow flows, treat a static website ZIP as a single directory DAG, and take
-// the byte path capabilities actually reports for THIS host. The byte-path and
-// wizard-orientation tails are feature-gated so a host without a `file`
-// parameter (e.g. Grok) never sees a "prefer the file parameter" clause, and a
-// host without elicitation is not steered into a wizard. The {{SOURCES}} token
-// is substituted per profile.
-var guideSummary = toolforge.Static(
-	"Start here. Drive Pinner through these primary flows; each step is a tool. Check the current state first, then follow the matching flow. A static website ZIP (index.html, CSS, JS, images, nested pages) is always a single directory DAG: call upload_file",
-).
-	When(hostenv.FeatFileHostInput,
-		"with a host file argument IF capabilities' file_input_policy is host_file_first (your client can hand Pinner a {download_url, file_id} object), otherwise a convert-capable transport source",
-	).
-	Unless(hostenv.FeatFileHostInput,
-		"with a convert-capable transport source ({{SOURCES}})",
-	).
-	StaticList("then publish the resulting directory CID.").
-	When(hostenv.FeatFileHostInput,
-		"Follow the byte path capabilities reports: when file_input_policy is host_file_first, prefer the `file` parameter (user attachments AND assistant-generated sandbox files) over a transport source; otherwise use a transport-scoped source ({{SOURCES}}). Do NOT invent an OpenAI download_url/file_id or base64-encode a file as a data URI.",
-	).
-	Unless(hostenv.FeatFileHostInput,
-		"This host has no `file` parameter it can fill: use a transport-scoped source ({{SOURCES}}). Do NOT invent a file_id or OpenAI download_url, and do NOT base64-encode a file as upload_data.",
-	).
-	When(hostenv.FeatSourceMint,
-		"For source.mode=mint, completion differs by tool: upload_file is asynchronous — PUT the agent-local file to the returned url, then poll upload_status; vault_put_file is non-blocking — PUT the file and it returns after staging locally (status: staged), with durability on Sia happening in the background or via the vault_flush tool (which is itself non-blocking and returns an accepted job { job_id, profile, path? }), so poll vault_flush_status(job_id) or vault_stat until status: durable when durability is needed before sharing; there is no upload_status poll (see the upload and vault_upload flows).",
-	).
-	When(hostenv.FeatSourcePath,
-		"For source.mode=path, point the source at the host-side file/directory/archive path — the server reads it directly, so there is no PUT.",
-	).
-	WhenAll([]hostenv.Feature{hostenv.FeatSourceMint, hostenv.FeatSourceURL, hostenv.FeatSourceData},
-		"Byte route order is in the upload flow: a local file → mint + PUT, a public HTTPS URL → upload_url, raw bytes → upload_data.",
-	).
-	StaticSentence("For autonomous website publishing after an upload, run the publish_website flow directly. For explicitly requested guided website onboarding (human-in-the-loop, step-by-step DNS setup), use the website-onboarding prompt and the websites_wizard tools (websites_wizard_start → websites_wizard_step) instead. Once a wizard session is active, stay in it: always call the returned next_step_schema via the wizard step tool — do not abandon the wizard to rediscover low-level tools.").
-	When(hostenv.FeatMCPApps,
-		"This host renders MCP Apps: interactive app views are available via open_app for human-facing interactions (vault_browser, sso_signin, pin_creator, upload_manager, pin_list, account, vault_create, vault_restore, account_password, account_email). Prefer headless primitives for autonomous workflows; call open_app only when a human-facing screen is needed.")
+// guideSummaryDesc derives the guide's opening orientation from the completed
+// per-server surface: start here, check state, follow flows, treat a static
+// website ZIP as a single directory DAG, and take the byte path capabilities
+// actually reports for THIS host. The feature gates are unchanged (byte-path
+// tails, {{SOURCES}} substitution), but every sentence that NAMES a tool
+// (upload_file, upload_status, the vault mint tools, the wizard tools) is
+// additionally gated on that tool being registered on the completed surface,
+// so a hosted/minimal assembly's summary never names an absent tool.
+// avail==nil (the legacy/test path) renders the full historical copy.
+func guideSummaryDesc(avail *guideAvailability) toolforge.DescBuilder {
+	return toolforge.Static(
+		"Start here. Drive Pinner through these primary flows; each step is a tool. Check the current state first, then follow the matching flow.").
+		// The summary's site-ZIP rule composes the shared schematext
+		// SiteZIPAssets bundle enumeration — the same asset list the upload
+		// detail, the siteBundleUpload fragment, and the toolforge site-ZIP
+		// clauses compose — never a hand-copied list.
+		WhenPred(avail.toolPred("upload_file"),
+			"A static website ZIP ("+schematext.SiteZIPAssets+") is always a single directory DAG: call upload_file").
+		// The summary's input clause composes the ONE shared archive-mode
+		// input wording (siteZIPHostFileInput / siteZIPConvertSourceInput in
+		// guide_fragments.go — the same feature-gated pair the upload-flow
+		// detail and the siteBundleUpload fragment compose), so the summary
+		// cannot diverge from the canonical SiteZIP clauses (its independently
+		// worded "IF capabilities' file_input_policy is host_file_first..."
+		// restatement was normalized to the shared text, which carries the
+		// same either/or via the exclusive feature gate).
+		WhenPred(hostenv.And(func(p hostenv.PlatformProfile) bool { return p.Features.Has(hostenv.FeatFileHostInput) }, avail.toolPred("upload_file")),
+			siteZIPHostFileInput,
+		).
+		WhenPred(hostenv.And(func(p hostenv.PlatformProfile) bool { return !p.Features.Has(hostenv.FeatFileHostInput) }, avail.toolPred("upload_file")),
+			siteZIPConvertSourceInput,
+		).
+		WhenPred(avail.toolPred("upload_file"), "then publish the resulting directory CID.").
+		// The byte-path tails compose the shared transportSourceRouting
+		// routing clause (guide_fragments.go) — the same base sentence the
+		// flow details route through — keeping only this summary's own
+		// host-specific do-not-invent instructions around it.
+		WhenPred(hostenv.And(func(p hostenv.PlatformProfile) bool { return p.Features.Has(hostenv.FeatFileHostInput) }, avail.toolPred("upload_file")),
+			"Follow the byte path capabilities reports: when file_input_policy is host_file_first, prefer the `file` parameter (user attachments AND assistant-generated sandbox files) over a transport source; otherwise "+transportSourceRouting+". Do NOT invent an OpenAI download_url/file_id or base64-encode a file as a data URI.",
+		).
+		WhenPred(hostenv.And(func(p hostenv.PlatformProfile) bool { return !p.Features.Has(hostenv.FeatFileHostInput) }, avail.toolPred("upload_file")),
+			"This host has no `file` parameter it can fill: "+transportSourceRouting+". Do NOT invent a file_id or OpenAI download_url, and do NOT base64-encode a file as upload_data.",
+		).
+		WhenPred(featureAndTool(hostenv.FeatSourceMint, avail, "upload_file", "upload_status"),
+			// The short-form mint summary composes the canonical
+			// PUT-plus-poll fragment (PUT action + poll upload_status WITH
+			// the returned upload_handle until completed) so this summary
+			// can never silently drop the handle-until-completed contract.
+			"For source.mode=mint, upload_file is asynchronous — "+mintcontract.UploadMintPutPoll+".",
+		).
+		WhenPred(featureAndTool(hostenv.FeatSourceMint, avail, "vault_put_file"),
+			// Same shared vault-mint canon as the vault-upload flow detail, so the
+			// summary's durability/job-shape/polling claims have one source. The
+			// summary keeps its own tool-scoped lead ("vault_put_file is
+			// non-blocking") and composes the canonical facts after it.
+			"For source.mode=mint, vault_put_file is non-blocking: "+vaultMintDurabilityFacts+" (see the upload and vault_upload flows).",
+		).
+		WhenPred(featureAndTool(hostenv.FeatSourcePath, avail, "upload_file"),
+			"For source.mode=path, point the source at the host-side file/directory/archive path — the server reads it directly, so there is no PUT.",
+		).
+		WhenPred(hostenv.And(
+			func(p hostenv.PlatformProfile) bool {
+				return p.Features.Has(hostenv.FeatSourceMint) && p.Features.Has(hostenv.FeatSourceURL) && p.Features.Has(hostenv.FeatSourceData)
+			},
+			avail.toolPred("upload_file"),
+		),
+			"Byte route order is in the upload flow: a local file → mint + PUT, a public HTTPS URL → upload_url, raw bytes → upload_data.",
+		).
+		WhenPred(avail.toolPred("websites_create"),
+			"For autonomous website publishing after an upload, run the publish_website flow directly.").
+		WhenPred(avail.toolPred("websites_wizard_start", "websites_wizard_step"),
+			"For explicitly requested guided website onboarding (human-in-the-loop, step-by-step DNS setup), use the website-onboarding prompt and the websites_wizard tools (websites_wizard_start → websites_wizard_step) instead. Once a wizard session is active, stay in it: always call the returned next_step_schema via the wizard step tool — do not abandon the wizard to rediscover low-level tools.").
+		When(hostenv.FeatMCPApps,
+			"This host renders MCP Apps: interactive app views are available via open_app for human-facing interactions ({{APPS}}). Prefer headless primitives for autonomous workflows; call open_app only when a human-facing screen is needed.")
+}
 
 // guideArchiveInvariant and guideCIDStructure are the two operational website
 // rules every agent must honor. Kept as named fragments so branch guidance can
 // cite the same wrapper rule without duplicating the prose.
 var (
-	guideArchiveInvariant = "Website archive invariant: before publishing any generated static-site archive, verify that index.html is at the archive root. Never publish an archive where the entire site is wrapped in a single parent directory (e.g. site.zip/mysite/index.html). The correct layout is site.zip/index.html. If the first path component wraps the entire site, rebuild the archive from the directory's contents, not the directory itself."
-	guideCIDStructure     = "Website CID structure: a website CID must be a directory whose root contains index.html. Gateways serve /index.html at the directory path. Uploading an archive with archive_mode=convert produces a directory CID whose structure mirrors the archive — if the archive has a wrapper directory, the CID will too, and the site will not resolve at /. The tool will reject a CID that has no root index.html or is wrapped in a single parent directory."
+	// guideArchiveInvariant's layout check composes the canonical
+	// schematext.ArchiveRootCheck (the same check the toolforge site-ZIP
+	// clauses and the guide's siteBundleUpload fragment compose) — the
+	// generated-archive-specific rebuild sentences stay the guide's own, so
+	// the pre-publish layout rule has ONE source and this rule only adds the
+	// generated-archive wording. (The rejection clause is deliberately NOT
+	// duplicated here: guideCIDStructure, the rule attached right below this
+	// one, already composes schematext.RootRejectClause.)
+	guideArchiveInvariant = "Website archive invariant: " + schematext.ArchiveRootCheck + " Never publish an archive where the entire site is wrapped in a single parent directory (e.g. site.zip/mysite/index.html). The correct layout is site.zip/index.html. If the first path component wraps the entire site, rebuild the archive from the directory's contents, not the directory itself."
+	// guideCIDStructure's rejection tail composes the canonical
+	// schematext.RootRejectClause (the same clause the toolforge upload_file
+	// description and the guide's siteBundleUpload fragment compose), so the
+	// rejection contract has one source.
+	guideCIDStructure = "Website CID structure: a website CID must be a directory whose root contains index.html. Gateways serve /index.html at the directory path. Uploading an archive with archive_mode=convert produces a directory CID whose structure mirrors the archive — if the archive has a wrapper directory, the CID will too, and the site will not resolve at /. " + schematext.RootRejectClause
 )
 
 // byteRouteDecision composes the "where are the bytes?" chooser as a guide
@@ -240,7 +406,7 @@ func byteRouteDecision(next *toolforge.GuideDecisionBuilder) *toolforge.GuideDec
 			WhenFeature(hostenv.FeatSourceMint).
 			Steps("upload_file").
 			StepWhen(hostenv.FeatSourceMint, "<host PUT>", "upload_status").
-			Detail(toolforge.Static("Mint has NOT stored bytes when upload_file returns: PUT the agent-local file to the returned url (curl -sS -T <file> \"<url>\"), then poll upload_status until completed — the completed CID is already pinned; do not call pins_add.")).
+			Detail(toolforge.Static("Mint "+mintcontract.UploadMintNoBytes+" when upload_file returns: "+mintcontract.UploadMintPutAction+", then "+mintcontract.UploadMintPoll+" — "+mintcontract.UploadMintNoPinsAdd+".")).
 			Next(next),
 		toolforge.Branch("bytes already at a public HTTPS URL (user handed a URL)").
 			WhenFeature(hostenv.FeatSourceURL).
@@ -275,9 +441,12 @@ func vaultByteRouteDecision() *toolforge.GuideDecisionBuilder {
 			WhenFeature(hostenv.FeatSourceMint).
 			Steps("vault_put_file").
 			StepWhen(hostenv.FeatSourceMint, "<host PUT>").
-			Detail(toolforge.Static("vault_put_file with source.mode=mint + vault_path mints a one-time presigned PUT url bound to vault_path; it has not stored bytes yet.").
+			Detail(toolforge.Static("vault_put_file with source.mode=mint + vault_path mints "+vaultMintLead+".").
 				StaticSentence("PUT the agent-local file to the returned url.").
-				StaticSentence("The vault write is non-blocking: the PUT returns after staging the bytes locally (status: staged); the file is immediately readable from this instance, and durability on Sia happens in the background or via the vault_flush tool (non-blocking, returns an accepted job { job_id, profile, path? }) — poll vault_flush_status(job_id) or vault_stat until status: durable when durability is needed before sharing. There is no upload_status to poll.")),
+				// The canonical vault-mint durability contract (shared with the
+				// capabilities description and the summary), sentence-capitalized
+				// for this branch's opening sentence.
+				StaticSentence(firstUpper(vaultMintDurabilityCanon)+".")),
 		toolforge.Branch("bytes already at a public HTTPS URL").
 			// vault_put_file's url source exists ONLY on the OpenAI tunnel
 			// transport. Gate on the transport, not FeatSourceURL: Grok declares
@@ -285,7 +454,7 @@ func vaultByteRouteDecision() *toolforge.GuideDecisionBuilder {
 			// mint-only — there is no "vault a URL" branch on Grok.
 			WhenPred(hostenv.TransportIs(hostenv.TransportOpenAI)).
 			Steps("vault_put_file").
-			Detail(toolforge.Static("vault_put_file takes the URL via its own url source on the tunnel transport; the separate upload_url tool is IPFS-only, not a vault write.")),
+			Detail(toolforge.Static("vault_put_file takes the URL via its own url source on the tunnel transport; "+relayToolNotVaultWrite("upload_url")+".")),
 		toolforge.Branch("only raw inline bytes, no file and no URL").
 			WhenPred(hostenv.TransportIs(hostenv.TransportOpenAI)).
 			Steps("vault_put_file").
@@ -330,25 +499,54 @@ func publishDomainDecision() *toolforge.GuideDecisionBuilder {
 // same toolforge DSL the tool schemas use, so the guide can never advertise a
 // tool or source mode the resolved surface rejects (e.g. upload_status only
 // appears on mint transports).
+//
+// It is the backward-compatible entry point: the server surface/deployment
+// mode are resolved from the package construction globals at call time (the
+// legacy/test behavior). Production servers MUST NOT use this path — they call
+// buildAgentGuideFor with the per-server captured context so request-time guide
+// resolution never reads mutable construction globals.
 func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
+	return buildAgentGuideFor(profile, activeDomainScope(), activeHosted(), nil)
+}
+
+// buildAgentGuideFor is the immutable-context variant of buildAgentGuide. The
+// server surface and deployment mode are the assembly's OWN captured values
+// (recorded on the ToolCatalog by buildCatalog) passed in explicitly, so the
+// guide reflects the actual registered surface and whether this is a hosted
+// assembly, neither of which the request profile carries as a wire signal. Each
+// server instance — including a host-profile REassembly — passes its own
+// captured surface/hosted, so an active request on one server can never be
+// crossed by a concurrent second server rebuilding the package globals.
+//
+// avail, when non-nil, carries the COMPLETED per-server surface facts (tool
+// membership in the completed catalog + direct registrations, and the actually
+// installed app views). Production registration always supplies it; guide
+// steps naming a tool the completed surface does not register — and decisions
+// whose branches collapse to nothing — are dropped, so a hosted/minimal
+// assembly never recommends an absent OOB or transfer tool. nil (the legacy
+// /test path) keeps surface-gate filtering only.
+func buildAgentGuideFor(profile *hostenv.PlatformProfile, surface DomainScope, hosted bool, avail *guideAvailability) AgentGuide {
 	p := *profile
-	// The server surface and deployment mode are construction-time properties
-	// (recorded by buildCatalog); overlay them so the guide reflects the actual
-	// registered surface and whether this is a hosted assembly, neither of which
-	// the request profile carries as a wire signal.
-	p.Surface = activeSurface()
-	p.Hosted = activeHosted()
+	if surface.IsZero() {
+		surface = FullDomainScope
+	}
+	p.DomainScope = surface
+	p.Hosted = hosted
 	substitute := func(s string) string {
-		return strings.ReplaceAll(s, "{{SOURCES}}", sourceModesText(&p))
+		s = strings.ReplaceAll(s, "{{SOURCES}}", sourceModesText(&p))
+		return strings.ReplaceAll(s, "{{APPS}}", avail.guideAppNames())
 	}
 
-	spec := toolforge.Guide().
+	g := toolforge.Guide().
 		Substitute(substitute).
-		Summary(guideSummary).
+		Summary(guideSummaryDesc(avail)).
 		Rule(guideArchiveInvariant).
 		Rule(guideCIDStructure).
-		RuleWhen(hostenv.FeatMCPApps,
-			"MCP Apps rule: this host renders interactive app views. When a user explicitly requests a visual interface, call open_app with the app name (vault_browser, sso_signin, pin_creator, upload_manager, pin_list, account, vault_create, vault_restore, account_password, account_email). open_app returns a ui:// view the host renders as an iframe. Prefer headless primitives (vault_status, vault_put_file, pins_list, auth_sso, ...) for autonomous workflows — call open_app only when a human-facing screen is needed.").
+		RuleWhenPred(hostenv.And(
+			func(p hostenv.PlatformProfile) bool { return p.Features.Has(hostenv.FeatMCPApps) },
+			appsKnownPresentPredicate(avail),
+		),
+			"MCP Apps rule: this host renders interactive app views. When a user explicitly requests a visual interface, call open_app with the app name ({{APPS}}). open_app returns a ui:// view the host renders as an iframe. Prefer "+avail.headlessPrimitiveExamples()+" for autonomous workflows — call open_app only when a human-facing screen is needed.").
 		// Claude Web (host "claude") on a self-hosted (non-hosted) deployment
 		// cannot exercise the transport-derived mint/sink endpoints, so the
 		// only working upload is the base64 upload_data relay and downloads
@@ -362,132 +560,228 @@ func buildAgentGuide(profile *hostenv.PlatformProfile) AgentGuide {
 			"Host capability notice (Claude Web): this agent has no network egress (no curl) and no file references, so the ONLY working upload is upload_data (RFC 2397 base64 data: URI passed in the tool args). upload_file's source.mode=mint and the sink=drop download link both require the agent to curl or fetch out of band, which this host cannot do, and sink=local writes to the MCP server's own unreachable disk — so warn the user before offering a download that the content cannot be delivered to them.").
 		// Hosted (Portal-embedded) deployments establish the caller's identity
 		// via Portal OAuth before the request reaches the MCP server. State that
-		// explicitly so the agent does not attempt a config-mutating
-		// auth_login/auth_logout, which are CLI/local-only surfaces absent here.
+		// explicitly so the agent does not attempt a config-mutating credential
+		// command, which is a CLI/local-only surface absent here. The notice
+		// deliberately names NO tool: a hosted surface registers neither of the
+		// CLI auth-mutation tools, and the guide must never name an absent tool.
 		RuleWhenPred(hostenv.HostedIs(true),
-			"Hosted instance notice: a Portal OAuth identity is already established for the current request and authenticated operations run as that user. Do NOT call auth_login or auth_logout (they are unavailable on this hosted surface); identity cannot be switched mid-session.").
-		Rule("Access policy (quota trumps a subscription): before a paid/metered action, check the user's access via account_quota (discover it with search_tools query \"quota\"). Its has_quota flag is authoritative — if true, granted quota covers the user and they need NO subscription, so proceed without asking about one. Only when has_quota is false, check account_subscription (search_tools query \"subscription\"): if subscribed, proceed; if not subscribed, surface the returned web_url deep-link so the human opens the web app to subscribe — you can neither subscribe on their behalf nor treat a subscription as a substitute when quota is available.").
-		Flow(toolforge.Flow("auth", "Authenticate").
-			Steps("auth_status", "auth_sso", "auth_resume", "auth_status").
-			Detail(toolforge.Static("Run auth_status; if unauthenticated, call auth_sso and poll auth_resume with the returned handle until the human completes the browser sign-in.").
-				When(hostenv.FeatMCPApps,
-					"On this host you can also call open_app with app=\"sso_signin\" to render an interactive sign-in card for the human."))).
-		Flow(toolforge.Flow("vault_create", "Create a vault").
-			Steps("vault_create", "vault_create_resume", "vault_status").
-			Detail(toolforge.Static("Call vault_create with a profile name; poll vault_create_resume with the returned handle; confirm with vault_status until unlocked.").
-				When(hostenv.FeatMCPApps,
-					"On this host you can also call open_app with app=\"vault_create\" to render the interactive vault creation wizard."))).
-		Flow(toolforge.Flow("vault_restore", "Restore a vault").
-			Steps("vault_restore", "vault_restore_resume", "vault_status").
-			Detail(toolforge.Static("Call vault_restore; poll vault_restore_resume with the returned handle; confirm with vault_status until unlocked.").
-				When(hostenv.FeatMCPApps,
-					"On this host you can also call open_app with app=\"vault_restore\" to render the interactive restore wizard."))).
-		Flow(toolforge.Flow("upload", "Upload new content (creates + pins)").
-			Steps("capabilities").
-			// The byte route is a decision, not a fixed upload_file: a model
-			// that reads steps first still sees upload_url / upload_data as the
-			// route for a public URL / raw inline bytes. The mint tail (<host
-			// PUT> + upload_status) lives inside the mint branch; <host PUT> is
-			// an out-of-band action, not an MCP tool, but naming it keeps the
-			// chain from looking complete at the mint response.
-			Decision(byteRouteDecision(nil)).
-			Detail(uploadDetailDesc)).
-		Flow(toolforge.Flow("vault_upload", "Store a file in a vault").
-			Steps("capabilities").
-			// Vault storage is always vault_put_file (no vault-from-CID tool);
-			// the decision surfaces the byte source so steps-first models do not
-			// route vault bytes through the IPFS-only upload_url / upload_data.
-			Decision(vaultByteRouteDecision()).
-			Detail(vaultUploadDetailDesc)).
-		Flow(toolforge.Flow("download", "Download IPFS content to a file").
-			Steps("capabilities", "download_file").
-			Detail(downloadDetailDesc)).
-		Flow(toolforge.Flow("vault_download", "Download a file from a vault").
-			Steps("capabilities", "vault_get_file").
-			Detail(vaultDownloadDetailDesc)).
-		Flow(toolforge.Flow("vault_share", "Share from a vault").
-			Steps("vault_status", "vault_share", "vault_verify").
-			Detail(toolforge.Static("Ensure the vault is unlocked (vault_status), then call vault_share with the vault_path to generate a shareable link (control its lifetime with expiry). Local reads (vault_get_file / vault cat / vault_stats) work any time after a staged PUT; only share/send require durability across profiles. Only durable (status: durable) files can be shared: if vault_share or vault_send returns {code:'not_durable', ...}, run vault_flush (non-blocking, returns an accepted job { job_id, profile, path? }), poll vault_flush_status(job_id) or vault_stat until status: durable, then share/send again. If a file stays non-durable across polls, read vault_stat's flush_started_at, flush_attempts and flush_error: a flushing file shows a flush_started_at and a rising flush_attempts with no error, a failed file shows flush_attempts plus a non-empty flush_error, and a staged file that never started shows zero attempts/no error and an empty flush_started_at — compare now against flush_started_at to tell a long host upload from a hung pin. The recipient accepts the share with vault_share_accept (accept_state 'pinned' — an independent pin of the same object key, NOT a digest failure), which is directly visible on tools/list; vault_verify on a freshly pinned object reports digest_verified 'not_applicable' until first get/decrypt/deep verify — treat accept_state 'pinned' (not a digest signal) as the success indicator. For multi-profile swarms, list profiles with vault_profiles and hand off a file with vault_send (or pass profile=<name> when more than one profile is unlocked — vault ops return profile_required otherwise)."))).
-		Flow(toolforge.Flow("vault_sync", "Sync and verify vault state").
-			Steps("vault_status", "vault_sync", "vault_verify").
-			Detail(toolforge.Static("vault_sync reconciles the local vault cache from the indexer; vault_verify checks file integrity. Run both after creating or restoring on a new device, or when share state may have changed. Related utilities are discoverable via search_tools(category=storage): vault_ls, vault_stat, vault_tag_add, vault_tag_rm, vault_version_restore."))).
-		Flow(toolforge.Flow("pins", "Manage pins").
-			Steps("pins_add", "pins_list", "pins_status", "pins_rm").
-			Detail(toolforge.Static("pins_add imports content already on IPFS by external CID; it is NOT for use after an upload tool (which already pins). pins_status takes one cid; pins_rm requires confirm and exactly one of cids or all."))).
-		Flow(toolforge.Flow("publish_website", "Publish a website").
-			// The byte route comes first (real upload tools produce the CID),
-			// then the domain/websites_create choice is nested under each branch.
-			// Every step here is a real tool, so the guide's "steps resolve to
-			// real tools" invariant holds on every host.
-			Decision(byteRouteDecision(publishDomainDecision()))).
-		Flow(toolforge.Flow("ens_publish", "Point an ENS/onchain domain at IPFS content").
-			// ENS domains do not use the website system — they resolve via an
-			// IPNS-based contenthash set onchain in the ENS resolver. The byte
-			// route reuses the existing upload chooser to produce a CID, then
-			// ens_point publishes it under the domain's IPNS key and returns
-			// the contenthash + wallet guidance. ens_point/ens_unpoint are
-			// behind progressive disclosure (never curated), so name them here
-			// and steer the agent to search for them rather than expecting
-			// them on tools/list. The final contenthash is set by the USER's
-			// wallet/ENS manager — the agent surfaces the value and options,
-			// never assumes a specific wallet.
-			Decision(byteRouteDecision(
-				toolforge.Decision("Point the ENS name at the CID?",
-					toolforge.Branch("Yes — point the ENS/onchain domain at the content").
-						Steps("ens_point").
-						Detail(toolforge.Static("Search for ens_point (search_tools query \"ens\"), then call it with the onchain domain (e.g. vitalik.eth) and the cid from the upload. It creates or reuses the domain's IPNS key, publishes the CID, and returns the contenthash (ipns://<ipns-name>) plus a verify URL (eth.limo for .eth). The returned next_steps are onchain: the user sets the ENS resolver's contenthash field to the returned value from their own wallet or the ENS manager (app.ens.domains), the ENS SDK (ethers.js), or a wallet with ENS support. Do NOT assume a specific wallet. After the onchain transaction confirms, verify at the returned verify URL.")),
-					toolforge.Branch("No — only publish the content to IPFS/IPNS, no onchain pointing").
-						Steps("websites_create").
-						Detail(toolforge.Static("Treat it as a normal website publish: websites_create with the cid. ENS pointing is only applied when the user explicitly wants their ENS name to resolve to the content.")),
-				),
-			))).
-		Flow(toolforge.Flow("update_website", "Update an existing website").
-			Steps("websites_get", "websites_update", "websites_validate").
-			Detail(toolforge.Static("Update a deployed website's content without recreating it. 1) websites_get <domain> first to capture the current target_type and dns_hosting_enabled — never guess them. 2) If the new CID is external, pins_add it first; updating an unpinned CID returns CidNotPinned. 3) websites_update <domain> with the new cid (target-type is inherited when omitted; change it only when intentionally switching IPFS<->IPNS). 4) websites_validate. If DNS hosting is managed, validation may report the old CID right after the update — that is reconciliation lag, not failure; re-call websites_validate without starting a new flow.").
-				Then(cdnDeployNoticeClause))).
-		Resolve(p)
+			"Hosted instance notice: a Portal OAuth identity is already established for the current request and authenticated operations run as that user. Do NOT attempt a local config-mutating credential command (that is a CLI/local-only surface absent on this hosted server); identity cannot be switched mid-session.").
+		RuleWhenPred(avail.toolPred("account_quota", "account_subscription"),
+			"Access policy (quota trumps a subscription): before a paid/metered action, check the user's access via account_quota (discover it with search_tools query \"quota\"). Its has_quota flag is authoritative — if true, granted quota covers the user and they need NO subscription, so proceed without asking about one. Only when has_quota is false, check account_subscription (search_tools query \"subscription\"): if subscribed, proceed; if not subscribed, surface the returned web_url deep-link so the human opens the web app to subscribe — you can neither subscribe on their behalf nor treat a subscription as a substitute when quota is available.")
+
+	// EVERY flow — primary and residual — renders from the single declarative
+	// flow-spec table (guideFlowSpecs in guide_flows.go): name, title, ordered
+	// steps, gate, prerequisites, decision, and detail prose. The
+	// restricted-surface filter below drops any flow this table cannot verify,
+	// so a flow can never reach the wire without a spec entry.
+	flowsFromSpecs(g, avail)
+	resolved := g.Resolve(p)
 
 	// The resolved guide is filtered to the server surface: flows whose
-	// underlying tools are not registered on this surface (e.g. the Sia vault
-	// flows on a hosted server) are dropped so the guide never advertises an
-	// unregisterable action.
-	return filterGuideFlows(spec, p.Surface)
+	// definition gate is off (e.g. the Sia vault flows on a hosted server) are
+	// dropped, flows without definition metadata are treated as unverifiable
+	// and dropped, flows whose spec-declared REQUIRED prerequisite never
+	// registered are dropped whole, and — when completed-catalog availability
+	// is known — steps naming tools the completed surface does not register
+	// (and branches that collapsed to nothing) are removed, so the guide never
+	// advertises an unregisterable action.
+	return avail.filterGuideFlows(resolved, p.DomainScope)
 }
 
-// flowSurface maps each agent_guide flow name to the surface flag that gates
-// it. Flows not listed are gated by no flag (always kept).
-var flowSurface = map[string]func(Surface) bool{
-	"auth":            Surface.AccountOn,
-	"vault_create":    Surface.VaultOn,
-	"vault_restore":   Surface.VaultOn,
-	"vault_upload":    Surface.VaultOn,
-	"vault_download":  Surface.VaultOn,
-	"vault_share":     Surface.VaultOn,
-	"vault_sync":      Surface.VaultOn,
-	"upload":          Surface.UploadOn,
-	"download":        Surface.UploadOn,
-	"pins":            Surface.PinsOn,
-	"publish_website": Surface.WebsitesOn,
-	"update_website":  Surface.WebsitesOn,
-	"ens_publish":     Surface.ENSOn,
+// guideAvailability carries the completed per-server surface facts guide
+// resolution filters against: whether a named tool exists anywhere on THIS
+// server's completed surface (the completed catalog plus its direct-only
+// registrations — the same membership the finalized MaterializedTooling is
+// derived from), and which app views are actually installed. It is nil for the
+// legacy builders that have no completed-catalog knowledge, in which case only
+// surface-gate filtering applies (the historical behavior).
+type guideAvailability struct {
+	// toolAvailable reports whether a named tool exists on the completed
+	// per-server surface (catalog entry or direct-only registration).
+	toolAvailable func(name string) bool
+	// installedApps lists the open_* launcher tool names whose app views were
+	// installed during materialization.
+	installedApps func() []string
 }
 
-// filterGuideFlows drops resolved flows whose surface flag is disabled.
-func filterGuideFlows(guide toolforge.AgentGuide, s Surface) toolforge.AgentGuide {
-	if s.IsZero() {
-		return guide
+// toolPresent applies the availability predicate, defaulting to available when
+// no completed-catalog knowledge exists (the nil legacy path).
+func (a *guideAvailability) toolPresent(name string) bool {
+	if a == nil || a.toolAvailable == nil {
+		return true
 	}
-	kept := guide.Flows[:0]
-	for _, f := range guide.Flows {
-		if gate, ok := flowSurface[f.Name]; ok {
-			if !gate(s) {
+	return a.toolAvailable(name)
+}
+
+// legacyAppInventory is the historical hard-coded app inventory. It is the
+// FALLBACK only for the nil-availability legacy/test path (no completed
+// per-server facts to derive from): every PRODUCTION registration supplies
+// guideAvailability via catalogGuideAvailability, whose installedApps closure
+// derives the list from the finalized MaterializedTooling. New flows must
+// never extend this list — extending an app means installing its launcher.
+var legacyAppInventory = []string{"account", "account_email", "account_password", "pin_creator", "pin_list", "sso_signin", "upload_manager", "vault_browser", "vault_create", "vault_restore"}
+
+// installedAppNames returns the bare app screen names of the actually
+// installed app views (sorted): "open_vault_browser" -> "vault_browser".
+func (a *guideAvailability) installedAppNames() []string {
+	if a == nil || a.installedApps == nil {
+		// Unknown completed-surface facts (legacy/test path): fall back to the
+		// historical inventory. Production never sees this branch.
+		return append([]string(nil), legacyAppInventory...)
+	}
+	var names []string
+	for _, n := range a.installedApps() {
+		names = append(names, strings.TrimPrefix(n, "open_"))
+	}
+	sort.Strings(names)
+	return names
+}
+
+// installedAppPresent reports whether the named app view is actually installed.
+func (a *guideAvailability) installedAppPresent(name string) bool {
+	if a == nil || a.installedApps == nil {
+		return true
+	}
+	return slices.Contains(a.installedAppNames(), name)
+}
+
+// guideAppNames renders the installed app screen names as the rounded list the
+// guide copy embeds (the {{APPS}} substitution), with a truthful empty answer.
+func (a *guideAvailability) guideAppNames() string {
+	names := a.installedAppNames()
+	if len(names) == 0 {
+		return "none are installed on this server (ask the server which apps exist by calling open_app with an empty name)"
+	}
+	return strings.Join(names, ", ")
+}
+
+// isOOBStepMarker reports whether a guide step is an out-of-band action marker
+// (e.g. "<host PUT>") rather than a tool name. OOB markers describe actions
+// the HOST performs between tool calls and are kept by availability filtering.
+func isOOBStepMarker(step string) bool {
+	return strings.HasPrefix(step, "<")
+}
+
+// filterGuideSteps rewrites a resolved flow's step chain to only the tools
+// that exist on the completed per-server surface, dropping decision branches
+// whose every tool step is absent (the recommendation would be an absent-tool
+// chain) and dropping a flow whose fixed-step chain becomes empty. An
+// unavailable step never survives: a hosted/minimal server must not recommend
+// an OOB or transfer tool its surface does not register.
+func (a *guideAvailability) filterGuideSteps(flow *toolforge.GuideFlow) {
+	keep := func(step string) bool { return isOOBStepMarker(step) || a.toolPresent(step) }
+	filtered := flow.Steps[:0]
+	for _, s := range flow.Steps {
+		if keep(s) {
+			filtered = append(filtered, s)
+		}
+	}
+	flow.Steps = filtered
+
+	if flow.Decision == nil {
+		return
+	}
+	var filterDecision func(d *toolforge.GuideDecision) *toolforge.GuideDecision
+	filterDecision = func(d *toolforge.GuideDecision) *toolforge.GuideDecision {
+		if d == nil {
+			return nil
+		}
+		kept := d.Branches[:0]
+		for _, br := range d.Branches {
+			branch := br
+			steps := branch.Steps[:0]
+			for _, s := range branch.Steps {
+				if keep(s) {
+					steps = append(steps, s)
+				}
+			}
+			branch.Steps = steps
+			branch.Next = filterDecision(branch.Next)
+			// Drop a branch whose tool chain collapsed to nothing — even when
+			// it carries a Next decision. A branch's own steps are the
+			// prerequisite of everything nested below it: a branch that lost
+			// its prerequisite never survives merely because it has a Next,
+			// because its detail text would still describe (and thereby
+			// recommend) an action this surface cannot perform.
+			if len(branch.Steps) == 0 {
 				continue
 			}
+			kept = append(kept, branch)
 		}
-		kept = append(kept, f)
+		if len(kept) == 0 {
+			return nil
+		}
+		d.Branches = kept
+		return d
+	}
+	flow.Decision = filterDecision(flow.Decision)
+}
+
+// requiredStepsPresent reports whether the flow's spec-declared prerequisite
+// steps are all available on the completed surface. A flow whose essential
+// tool never registered is dropped whole BEFORE branch filtering: its prose
+// (Lead detail, nested decisions) exists to drive that tool, so the flow must
+// not survive merely because some segment of it filtered cleanly. The legacy
+// nil-availability path keeps every flow (historical behavior).
+func (a *guideAvailability) requiredStepsPresent(flowName string) bool {
+	spec, defined := guideFlowSpecFor(flowName)
+	if !defined {
+		return false // unverifiable flows are dropped by the restricted filter
+	}
+	for _, r := range spec.required {
+		if !a.toolPresent(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// filterGuideFlows drops resolved flows that cannot serve the actual server
+// surface: a flow whose definition gate is off, a flow WITHOUT definition
+// metadata (unverifiable — never kept), a flow whose spec-declared REQUIRED
+// step is not on the completed surface, a decision-bearing flow whose every
+// branch lost all its tools, and — when completed-catalog availability is
+// known — individual steps naming tools the surface does not register.
+func (a *guideAvailability) filterGuideFlows(guide toolforge.AgentGuide, s DomainScope) toolforge.AgentGuide {
+	kept := guide.Flows[:0]
+	for _, f := range guide.Flows {
+		flow := f
+		on, defined := guideFlowGate(flow.Name, s)
+		if !defined || !on {
+			continue
+		}
+		if !a.requiredStepsPresent(flow.Name) {
+			continue
+		}
+		a.filterGuideSteps(&flow)
+		if len(flow.Steps) == 0 && flow.Decision == nil {
+			continue
+		}
+		kept = append(kept, flow)
 	}
 	guide.Flows = kept
 	return guide
+}
+
+// appsKnownPresentPredicate is the predicate guard for the guide copy that
+// advertises open_app's app list: on the completed-surface path (installedApps
+// known) it passes only when at least one app view is actually installed; the
+// legacy nil-facts path keeps the historical always-present behavior so the
+// pre-derivation copy is stable there.
+func appsKnownPresentPredicate(a *guideAvailability) hostenv.Predicate {
+	return func(p hostenv.PlatformProfile) bool {
+		return a == nil || a.installedApps == nil || len(a.installedAppNames()) > 0
+	}
+}
+
+// appsPredicate is the guide predicate that combines a base feature/predicate
+// with named-app installation: the sentence naming open_app with a specific
+// app resolves only when that app view is actually installed on this server.
+func (a *guideAvailability) appsPredicate(appName string) hostenv.Predicate {
+	return hostenv.And(
+		func(p hostenv.PlatformProfile) bool { return p.Features.Has(hostenv.FeatMCPApps) },
+		func(p hostenv.PlatformProfile) bool { return a.installedAppPresent(appName) },
+	)
 }
 
 // NewAgentGuideDescriptor returns a static, no-input tool that orients an agent
@@ -498,12 +792,26 @@ func filterGuideFlows(guide toolforge.AgentGuide, s Surface) toolforge.AgentGuid
 // client's platform profile so file-input and download-sink guidance match the
 // transport's capabilities; because it is host-aware it is re-resolved per
 // request rather than at startup.
+// guideFlowNameList renders the flow-spec table's flow names as the rounded
+// enumeration the static description embeds.
+func guideFlowNameList() string {
+	return strings.Join(guideFlowNames(), ", ")
+}
+
 // agentGuideDescription is shared between the static Description (tools/list)
 // and the Fallback MCPTarget so the tool carries a target list for uniformity
-// (it is a direct-only tool and does not enter the catalog).
-const agentGuideDescription = "Orientation for autonomous agents: the primary Pinner flows (auth, vault_create, vault_restore, upload, vault_upload, download, vault_download, vault_share, vault_sync, pins, publish_website, ens_publish) as ordered tool chains or decision trees, plus operational rules. On hosts that render MCP Apps, the guide includes open_app as the single launcher for human-facing interactive views. Call this first to learn how to drive Pinner before probing individual tools."
+// (it is a direct-only tool and does not enter the catalog). The flow
+// enumeration inside it is DERIVED from the single flow-spec table
+// (guideFlowSpecs) in declaration order — there is no second named-flow
+// literal to maintain or leave behind.
+var agentGuideDescription = "Orientation for autonomous agents: the primary Pinner flows (" + guideFlowNameList() + ") as ordered tool chains or decision trees, plus operational rules. On hosts that render MCP Apps, the guide includes open_app as the single launcher for human-facing interactive views. Call this first to learn how to drive Pinner before probing individual tools."
 
-func NewAgentGuideDescriptor() model.ToolDescriptor {
+// agentGuideDescriptorWith builds the agent_guide ToolDescriptor with the given
+// guide-construction closure. The closure decides how the per-request
+// profile is resolved into the guide: either against the package construction
+// globals (legacy NewAgentGuideDescriptor) or against the IMMUTABLE per-server
+// captured surface/deployment mode (agentGuideDescriptorFor).
+func agentGuideDescriptorWith(guideFor func(*hostenv.PlatformProfile) AgentGuide) model.ToolDescriptor {
 	return model.ToolDescriptor{
 		Name:          "agent_guide",
 		Title:         "Pinner agent guide",
@@ -513,8 +821,84 @@ func NewAgentGuideDescriptor() model.ToolDescriptor {
 		MCPTargets:    toolforge.MCPTargets(toolforge.Fallback(agentGuideDescription)),
 		InputSchema:   toolargs.ToolSchemaFor[wizard.NoInput](),
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {
-			guide := buildAgentGuide(profileFromRequest(request))
+			guide := guideFor(profileFromRequest(request))
 			return model.ToolResult{StructuredContent: guide, Text: toolargs.ResultJSONText(guide)}, nil
 		},
 	}
+}
+
+// agentGuideDescriptorFor returns the agent_guide tool descriptor whose handler
+// resolves the guide against the given IMMUTABLE per-server surface,
+// deployment mode, and completed-surface availability (captured on the
+// assembled ToolCatalog by buildCatalog, plus the catalog/direct membership
+// the collected plan established). By closing over the server's own captured
+// context — never the mutable package construction globals — a request-time
+// agent_guide call stays stable even when another host profile concurrently
+// REassembles its own server (which rewrites those globals). Production
+// registration (registerCustomTools) uses this path.
+func agentGuideDescriptorFor(surface DomainScope, hosted bool, avail *guideAvailability) model.ToolDescriptor {
+	return agentGuideDescriptorWith(func(p *hostenv.PlatformProfile) AgentGuide {
+		return buildAgentGuideFor(p, surface, hosted, avail)
+	})
+}
+
+// catalogToolAvailable is the ONE completed-surface membership predicate a
+// prose builder gates tool-naming on: a tool is available when it is a member
+// of the completed ToolCatalog (compiled op, direct provision, or searchable
+// extension) or was directly registered outside it. For a finalized surface
+// the MaterializedTooling's direct membership is the authoritative record of
+// those outside-indexed registrations; the DirectCustom side channel is
+// consulted only for catalogs assembled without the plan (legacy/tests), so
+// the guide can never omit a direct-only tool the server advertises. A nil
+// catalog (legacy/test path, no completed facts) is always-available. Both the agent guide's availability
+// and the open_app description consume this single source so their copy can
+// never disagree about which tools a surface offers.
+func catalogToolAvailable(catalog *ToolCatalog) func(string) bool {
+	if catalog == nil {
+		return func(string) bool { return true }
+	}
+	return func(name string) bool {
+		if _, ok := catalog.Get(name); ok {
+			return true
+		}
+		if finalized := catalog.FinalizedTooling(); finalized != nil {
+			// Finalized surface: the MaterializedTooling's direct membership
+			// is the authoritative record of tools registered outside catalog
+			// indexing — the DirectCustom side channel may be stale/incomplete
+			// for future direct-only projections, and a finalized surface must
+			// never let the guide omit a tool the server advertises.
+			return finalized.IsDirect(name)
+		}
+		return slices.Contains(catalog.DirectCustom, name)
+	}
+}
+
+// catalogGuideAvailability builds the completed-catalog availability for the
+// production guide registration: tool membership comes from the shared
+// catalogToolAvailable predicate, and the installed apps are the finalized
+// surface's app-view launchers. The closure is evaluated at request time,
+// after the plan has completed collection and materialization, so it
+// always reads the finished per-server facts.
+func catalogGuideAvailability(catalog *ToolCatalog) *guideAvailability {
+	if catalog == nil {
+		return nil
+	}
+	return &guideAvailability{
+		toolAvailable: catalogToolAvailable(catalog),
+		installedApps: func() []string {
+			return catalog.FinalizedTooling().InstalledApps()
+		},
+	}
+}
+
+// NewAgentGuideDescriptor returns the agent_guide tool descriptor for legacy
+// and test callers: its handler resolves the guide against the package
+// construction globals at request time (the historical behavior). Production
+// servers register via agentGuideDescriptorFor with the assembled catalog's
+// captured DomainScope/Hosted instead, so they never touch the globals at request
+// time.
+func NewAgentGuideDescriptor() model.ToolDescriptor {
+	return agentGuideDescriptorWith(func(p *hostenv.PlatformProfile) AgentGuide {
+		return buildAgentGuide(p)
+	})
 }

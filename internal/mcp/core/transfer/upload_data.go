@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+	"go.lumeweb.com/pinner-cli/internal/mcp/mintcontract"
 
 	"go.lumeweb.com/mcpplane/model"
 
@@ -32,7 +33,9 @@ type DataURIUploadInput struct {
 // gone: it was a negation that flipped meaning after the honest host_file_input
 // report, so the gate is now the presence of the data relay itself.
 var dataURIUploadDesc = toolforge.Static(
-	"Upload bytes from an RFC 2397 data: URI and pin the resulting CID. The returned CID is already pinned, so pins_add is not needed afterward; the wait flag waits for this upload's own pin operation.",
+	// Same composed completion contract as upload_url/upload_file: the
+	// shared mintcontract fragments, never a hand copy.
+	"Upload bytes from an RFC 2397 data: URI and pin the resulting CID. "+mintcontract.FirstUpper(mintcontract.UploadPinnedCIDCompletion)+"; the wait flag waits for this upload's own pin operation.",
 ).
 	When(hostenv.FeatSourceData,
 		"Last resort — not for a host-provided or assistant-generated file.",
@@ -41,7 +44,7 @@ var dataURIUploadDesc = toolforge.Static(
 		"On this host prefer upload_file (mint + PUT) for an agent-local file and upload_url for a public HTTPS URL.",
 	).
 	Unless(hostenv.FeatSourceData,
-		"This transport has no data: URI relay. Upload bytes with upload_file(source.mode=mint) by PUTting the agent-local file to the returned url, then poll upload_status; a file is not base64-encoded as a data URI.",
+		"This transport has no data: URI relay. Upload bytes with upload_file(source.mode=mint) by PUTting the agent-local file to the returned url, then "+mintcontract.UploadMintPoll+"; a file is not base64-encoded as a data URI.",
 	)
 
 // DataURIUploadTargets is the per-profile description target for upload_data,

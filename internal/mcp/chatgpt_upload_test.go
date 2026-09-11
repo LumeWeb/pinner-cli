@@ -15,6 +15,7 @@ import (
 	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/mintcontract"
 )
 
 // upload_file is unified across transports; these replace the removed
@@ -77,6 +78,12 @@ func TestUploadFileDescriptorHTTPMints(t *testing.T) {
 	url, _ := sc["url"].(string)
 	require.NotEmpty(t, url)
 	require.NotEmpty(t, sc["curl_command"])
+	// The curl_command is composed from the ONE shared builder
+	// (mintcontract.CurlUploadCommand) — the same command shape
+	// vault_put_file's HTTP mint branch returns — pinned verbatim here so the
+	// two response builders cannot drift apart.
+	require.Equal(t, mintcontract.CurlUploadCommand(url), sc["curl_command"])
+	require.Equal(t, `curl -sS -T <your-file> "`+url+`"`, sc["curl_command"])
 	// The HTTP branch now pre-creates a canonical operation and returns its
 	// handle up front (so the App can continue the same op), not only in the
 	// PUT's 202 body.

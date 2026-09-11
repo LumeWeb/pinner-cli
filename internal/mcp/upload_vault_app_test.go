@@ -14,6 +14,8 @@ import (
 
 	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/mcpplane/sdk"
+	corevault "go.lumeweb.com/pinner/core/vault"
+
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
@@ -54,13 +56,22 @@ func buildVaultUploadAppServerEx(t *testing.T, fake *fakeVaultPutHandler) (*mcp.
 	if fake == nil {
 		fake = &fakeVaultPutHandler{}
 	}
+	// Hermetic profile guard: these tests exercise the mint/PUT wire behavior,
+	// not the multi-profile rule (see the dedicated profile tests in the
+	// upload package), so stub out the registry-backed profile_required guard —
+	// the real one is environment-dependent (a dev machine with >1 unlocked
+	// profile would otherwise turn every mint into a profile_required error).
+	singleProfile := func(string) *corevault.ProfileRequiredError { return nil }
+	prev := upload.SetVaultProfileRequiredForTest(singleProfile)
+	t.Cleanup(func() { upload.SetVaultProfileRequiredForTest(prev) })
 	catalog := NewToolCatalog()
 	srv := sdk.NewServer(nil)
 	vu := transfer.NewVaultHTTPUpload(fake.Put, 1<<20)
 
 	vaultPutDesc := vault.NewVaultPutFileDescriptor(transportFeatures(false, false), false, false, nil, vu, fake.Put, nil, 0)
 	catalog.Add(model.ToolEntryFromDescriptor(vaultPutDesc))
-	// Seed the launcher exactly as registerOpenLauncher does in production;
+	// Seed the launcher via the TEST-ONLY registerOpenLauncher helper
+	// (production routes launchers through the appLauncherSpec registry path);
 	// the app's AttachTo now points at open_vault_manager, not vault_put_file.
 	seedLauncherForTest(t, srv, catalog, upload.OpenVaultManagerToolName, upload.VaultUploadAppURI, model.CategoryStorage)
 	if err := upload.RegisterVaultUploadApp(srv, catalog, vu); err != nil {
@@ -79,8 +90,8 @@ func buildVaultUploadAppServerEx(t *testing.T, fake *fakeVaultPutHandler) (*mcp.
 	if err := RegisterOfficialDescriptor(srv, vaultPutDesc); err != nil {
 		t.Fatalf("RegisterOfficialDescriptor: %v", err)
 	}
-	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
-		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
+	if err := RegisterOfficialDirectTools(srv, catalog); err != nil {
+		t.Fatalf("RegisterOfficialDirectTools: %v", err)
 	}
 	t.Cleanup(func() { vu.Stop(context.Background()) })
 	return srv, vu

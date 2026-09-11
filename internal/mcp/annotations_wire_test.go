@@ -104,29 +104,52 @@ func TestWireAnnotationsOnMetaTools(t *testing.T) {
 	}
 }
 
-// TestAuthStatusAnnotationOverride pins the platform-required annotation
-// corrections applied in catalogDescriptorToEntry: auth_status can trigger
-// out-of-band sign-in communication (an email that cannot be unsent), so its
-// hints must declare non-read and destructive rather than the SafetyRead
-// defaults.
+// TestAuthStatusReadOnlyMetadata pins the corrected auth_status metadata: its
+// underlying operation is a pure read (checking session state via the
+// configured service — the act of checking can never trigger an out-of-band
+// sign-in message), so it keeps the SafetyRead -> readOnlyHint=true mapping
+// and carries NO destructive/open-world correction. Aligning the metadata with
+// the underlying operation also routes auth_status into invoke_read_tool via
+// the typed invoke classification.
 func TestAuthStatusAnnotationOverride(t *testing.T) {
 	entry := catalogDescriptorToEntry(opmesh.ToolDescriptor{
 		Name:   "auth_status",
 		Safety: opmesh.SafetyRead,
 	}, nil, nil)
-	require.False(t, entry.ReadOnly, "auth_status must declare readOnlyHint=false (external out-of-band communication)")
-	require.True(t, entry.Destructive, "auth_status must declare destructiveHint=true (a sent email cannot be unsent)")
-	require.True(t, entry.OpenWorldHint, "auth_status classifies as open-world")
+	require.True(t, entry.ReadOnly, "auth_status is a pure read: readOnlyHint must stay true")
+	require.False(t, entry.Destructive, "checking auth status can never send an out-of-band message: destructiveHint must stay false")
+	require.False(t, entry.OpenWorldHint, "auth_status is a read; openWorldHint must be false (validators reject readOnly+openWorld)")
+	require.Equal(t, toolInvokeReadTool, dispatcherForEntry(entry), "auth_status must classify into the read dispatcher")
 
-	// A sibling read op without an override keeps the Safety mapping. Reads
-	// change no external state, so openWorldHint must stay false alongside
-	// readOnlyHint=true (directory validators reject readOnly+openWorld).
+	// A sibling read op keeps the same Safety mapping. Reads change no external
+	// state, so openWorldHint must stay false alongside readOnlyHint=true
+	// (directory validators reject readOnly+openWorld).
 	entry = catalogDescriptorToEntry(opmesh.ToolDescriptor{
 		Name:   "pins_list",
 		Safety: opmesh.SafetyRead,
 	}, nil, nil)
 	require.True(t, entry.ReadOnly, "pins_list keeps SafetyRead -> readOnlyHint=true")
 	require.False(t, entry.OpenWorldHint, "pins_list is a read; openWorldHint must be false for read-only tools")
+	require.Equal(t, toolInvokeReadTool, dispatcherForEntry(entry), "pins_list must classify into the read dispatcher")
+
+	// A genuinely destructive op and a mutating op classify into their own
+	// dispatchers: the hint values drive the split, so confirmation-gated ops
+	// land in invoke_destructive_tool and everything else non-read lands in
+	// invoke_write_tool.
+	destructive := catalogDescriptorToEntry(opmesh.ToolDescriptor{
+		Name:   "pins_rm",
+		Safety: opmesh.SafetyDestructive,
+	}, nil, nil)
+	require.True(t, destructive.Destructive)
+	require.Equal(t, toolInvokeDestructiveTool, dispatcherForEntry(destructive))
+
+	mutating := catalogDescriptorToEntry(opmesh.ToolDescriptor{
+		Name:   "websites_create",
+		Safety: opmesh.SafetyMutate,
+	}, nil, nil)
+	require.False(t, mutating.ReadOnly)
+	require.False(t, mutating.Destructive)
+	require.Equal(t, toolInvokeWriteTool, dispatcherForEntry(mutating))
 }
 
 // requireSharedViewOrigin asserts every registered ui:// resource carries one

@@ -25,7 +25,7 @@ func startupProfile() hostenv.PlatformProfile {
 	// recorded by buildCatalog; carry them on the startup profile so
 	// profile-aware tool description/schema resolution (which reads the
 	// profile's surface) agrees with what was actually registered.
-	p.Surface = activeSurface()
+	p.DomainScope = activeDomainScope()
 	p.Hosted = activeHosted()
 	return p
 }
@@ -71,14 +71,32 @@ func compileProfileFor(prof hostenv.PlatformProfile) catalogmcp.MCPProfile {
 // middleware (credentialMiddleware) resolves it once per request, so the
 // handler does not re-resolve per tool. On the stdio path there is no
 // middleware, so the handler falls back to resolving now via resolveToken.
+//
+// FAIL CLOSED on the hosted path: when a per-request resolver is configured
+// (the hosted assembly seeds the bundle's CredentialResolver) a resolver
+// error or a blank resolved token returns a structured credential_entry
+// needs_human hand-off and the operation is NEVER dispatched. The catalog
+// ops' services fall back to the config default token when the reserved
+// auth-token override is absent, so dispatching without a resolved identity
+// would execute a request under the shared deployment credential. The
+// middleware already fails closed at the HTTP boundary; this gate defends
+// the direct-dispatch/tool path (and typed-invoke entry.Handler routes, which
+// call this handler directly) the same way. The CLI/local path (nil
+// resolver) is unchanged: an empty context credential simply means no
+// override is injected and services use their config token.
 func compiledHandler(cat opmesh.Catalog, name string, resolveToken func(ctx context.Context) (string, error)) model.ToolHandler {
 	return func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 		tok := CredentialFromContext(ctx)
 		if tok == "" && resolveToken != nil {
-			if t, err := resolveToken(ctx); err == nil && t != "" {
-				tok = t
-				ctx = WithCredential(ctx, tok)
+			t, err := resolveToken(ctx)
+			if err != nil || t == "" {
+				return model.NeedsHumanResult(model.NeedsHuman{
+					Reason: model.ReasonCredentialEntry,
+					Detail: name + " requires an authenticated request, but no Portal credential could be resolved for the current identity. Re-authenticate the MCP session (a hosted deployment resolves identity per request via Portal OAuth). No operation was executed under default credentials.",
+				}), nil
 			}
+			tok = t
+			ctx = WithCredential(ctx, tok)
 		}
 		args := req.Arguments
 		if tok != "" {
@@ -89,21 +107,6 @@ func compiledHandler(cat opmesh.Catalog, name string, resolveToken func(ctx cont
 		}
 		return DispatchCatalogOp(ctx, cat, opmesh.ActorModel, name, args, name)
 	}
-}
-
-// readOnlyOverride records the platform-required annotation values for tools
-// whose wire hints cannot be derived from the catalog Safety tier alone.
-//
-// auth_status is the only one so far: it can trigger out-of-band sign-in
-// communication (the SSO hand-off emails the human a verification link, which
-// cannot be unsent), so the Claude/MCP directory validators classify it as
-// non-read, destructive and open-world — a sent message is irreversible. Its
-// hints must declare that contract rather than the local "reads config only"
-// shape.
-var readOnlyOverride = map[string]struct {
-	readOnly, destructive, openWorld bool
-}{
-	"auth_status": {readOnly: false, destructive: true, openWorld: true},
 }
 
 // catalogDescriptorToEntry converts a compiler-produced opmesh.ToolDescriptor
@@ -118,20 +121,20 @@ var readOnlyOverride = map[string]struct {
 // The open-world hint derives from Safety: mutating/destructive operations
 // change publicly visible internet state (pins, websites, DNS), while reads
 // change nothing external, so openWorldHint stays false for any SafetyRead
-// operation. The hints may be corrected per tool via readOnlyOverride where
-// the platform contract demands it (see auth_status).
+// operation. There is deliberately NO per-tool hint override: the entry
+// metadata must match the operation's own classification so the typed invoke
+// dispatchers route it into the dispatcher its real behavior demands. In
+// particular auth_status is a pure read (its underlying operation reads
+// session state from the configured service; the agent can never trigger an
+// out-of-band message by checking status), so it keeps the SafetyRead ->
+// readOnlyHint=true mapping and is classified into invoke_read_tool.
 //
-// DirectVisible is left to markCurated (the curated product surface), matching
+// DirectVisible is left to stampDirectTools (the direct product surface), matching
 // how every other tool is promoted to tools/list.
 func catalogDescriptorToEntry(d opmesh.ToolDescriptor, cat opmesh.Catalog, resolveToken func(ctx context.Context) (string, error)) *model.ToolEntry {
 	readOnly := d.Safety == opmesh.SafetyRead
 	destructive := d.Safety == opmesh.SafetyDestructive
 	openWorld := !readOnly
-	if override, ok := readOnlyOverride[d.Name]; ok {
-		readOnly = override.readOnly
-		destructive = override.destructive
-		openWorld = override.openWorld
-	}
 	entry := model.ToolEntryFromDescriptor(model.ToolDescriptor{
 		Name:          d.Name,
 		Title:         d.Title,
@@ -145,7 +148,33 @@ func catalogDescriptorToEntry(d opmesh.ToolDescriptor, cat opmesh.Catalog, resol
 		MCPTargets:    toModelTargets(catalogmcp.TargetsOf(d.Name)),
 		Handler:       compiledHandler(cat, d.Name, resolveToken),
 	})
+	// Propagate the operation's Interaction classification onto the entry so
+	// the search/describe/invoke surface and the safety carve-out (agentDirectSafe)
+	// agree with the operation catalog. ToolEntryFromDescriptor stamps a default
+	// model.InteractionAgentSafe, but a human-only operation (prompts
+	// interactively, no agent-safe form) must be classified model.InteractionInteractive
+	// so agents are steered away: invoke dispatchers hand off and search_tools
+	// hides it. Without this, the operator-declared Interaction would be silently
+	// dropped and the interaction-based safety branch would be unreachable for
+	// the compiled surface.
+	entry.Interaction = modelInteractionFromOpmesh(d.Interaction)
 	return entry
+}
+
+// modelInteractionFromOpmesh maps the opmesh-operation Interaction class onto
+// the model's interaction vocabulary that the progressive search/describe/
+// invoke surface steers on. A human-only operation becomes
+// model.InteractionInteractive (steer agents away): the invoke dispatchers
+// return a needs_human hand-off and search_tools hides it, matching the
+// operation catalog's own refusal of a model actor for such ops. Everything
+// else — agent-safe and the out-of-band needs-handoff (external browser/device,
+// split into two calls) which the invoke gate serves as a needs_human redirect —
+// stays model.InteractionAgentSafe, the default the model converter stamps.
+func modelInteractionFromOpmesh(i opmesh.Interaction) model.Interaction {
+	if i == opmesh.InteractionHumanOnly {
+		return model.InteractionInteractive
+	}
+	return model.InteractionAgentSafe
 }
 
 // toModelTargets maps the module's MCP boundary presentation Targets onto the
@@ -175,7 +204,7 @@ func toModelTargets(targets []catalogmcp.Target) []model.ToolTarget {
 		if t.DescFunc != nil {
 			fn := t.DescFunc
 			mt.DescFunc = func(sp model.Profile) string {
-				// Reconstruct the CLI profile view (Surface zero — feature/
+				// Reconstruct the CLI profile view (DomainScope zero — feature/
 				// transport gating only) before re-wrapping for the module DSL.
 				return fn(compileProfileFor(hostenv.FromShared(sp)))
 			}
@@ -213,20 +242,20 @@ func outputSchemaForCompiled(safety opmesh.Safety, interaction opmesh.Interactio
 	}
 }
 
-// populateCatalogSurface compiles every model-visible operation from cat and
+// populateCatalogTools compiles every model-visible operation from cat and
 // registers it in tc as a ToolEntry whose Handler dispatches through the
 // catalog's Invoke gate. It returns the set of compiled operation names so the
 // legacy argv tool-handler can route those invocations to the catalog instead
 // of the CLI command tree. Names that already exist in tc are replaced, so a
 // hybrid deployment (compiled ops for covered domains, legacy tools for the
 // rest) stays coherent. Tools are discoverable via search_tools/describe_tool;
-// tools/list prominence is decided by markCurated.
-func populateCatalogSurface(tc *ToolCatalog, cat opmesh.Catalog) (map[string]bool, error) {
+// tools/list prominence is decided by stampDirectTools.
+func populateCatalogTools(tc *ToolCatalog, cat opmesh.Catalog) (map[string]bool, error) {
 	if tc == nil {
-		return nil, fmt.Errorf("populateCatalogSurface: nil tool catalog")
+		return nil, fmt.Errorf("populateCatalogTools: nil tool catalog")
 	}
 	if cat == nil {
-		return nil, fmt.Errorf("populateCatalogSurface: nil operation catalog")
+		return nil, fmt.Errorf("populateCatalogTools: nil operation catalog")
 	}
 	// Compile against the module's MCP boundary compiler, adapted to the
 	// startup/transport profile. The compiler resolves FallbackFunc targets
@@ -236,7 +265,7 @@ func populateCatalogSurface(tc *ToolCatalog, cat opmesh.Catalog) (map[string]boo
 	// still re-resolves against the live profile.
 	descs, err := catalogmcp.NewCompilerForProfile(compileProfileFor(startupProfile())).Compile(cat)
 	if err != nil {
-		return nil, fmt.Errorf("populateCatalogSurface: compile operation catalog: %w", err)
+		return nil, fmt.Errorf("populateCatalogTools: compile operation catalog: %w", err)
 	}
 	// A hosted server's per-request credential resolver (on the catalog deps
 	// bundle) is captured here so every compiled op authenticates as the

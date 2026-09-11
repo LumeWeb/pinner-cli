@@ -53,8 +53,8 @@ func buildPinAppServer(t *testing.T, pins apps.PinningProvider) *mcp.Server {
 	if err := apps.RegisterPinApp(srv, catalog, pins); err != nil {
 		t.Fatalf("RegisterPinApp: %v", err)
 	}
-	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
-		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
+	if err := RegisterOfficialDirectTools(srv, catalog); err != nil {
+		t.Fatalf("RegisterOfficialDirectTools: %v", err)
 	}
 	return srv
 }
@@ -244,13 +244,13 @@ func TestPinAppClientBundled(t *testing.T) {
 // surface, populates a ToolCatalog as buildCatalog does, and confirms
 // RegisterPinApp (the exact step the server runs on startup) succeeds.
 func TestRegisterPinAppOnCompilerSurface(t *testing.T) {
-	cat, err := AssembleCatalogOps(&CatalogDepsBundle{Pins: catalogops.PinsDeps{}}, FullSurface, false)
+	cat, err := AssembleCatalogOps(&CatalogDepsBundle{Pins: catalogops.PinsDeps{}}, FullDomainScope, false)
 	if err != nil {
 		t.Fatalf("AssembleCatalogOps: %v", err)
 	}
 	tc := NewToolCatalog()
-	if _, err := populateCatalogSurface(tc, cat); err != nil {
-		t.Fatalf("populateCatalogSurface: %v", err)
+	if _, err := populateCatalogTools(tc, cat); err != nil {
+		t.Fatalf("populateCatalogTools: %v", err)
 	}
 	if _, ok := tc.Get("pins_add"); !ok {
 		t.Fatalf("pins.add must be present on the compiler surface (legacy pinner_pin is gone)")
@@ -339,8 +339,8 @@ func buildVaultBrowserServer(t *testing.T) *mcp.Server {
 	if err := vault.RegisterVaultBrowserApp(srv, catalog); err != nil {
 		t.Fatalf("vault.RegisterVaultBrowserApp: %v", err)
 	}
-	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
-		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
+	if err := RegisterOfficialDirectTools(srv, catalog); err != nil {
+		t.Fatalf("RegisterOfficialDirectTools: %v", err)
 	}
 	return srv
 }
@@ -424,8 +424,8 @@ func buildPinListServer(t *testing.T) *mcp.Server {
 	if err := download.RegisterPinListApp(srv, catalog); err != nil {
 		t.Fatalf("download.RegisterPinListApp: %v", err)
 	}
-	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
-		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
+	if err := RegisterOfficialDirectTools(srv, catalog); err != nil {
+		t.Fatalf("RegisterOfficialDirectTools: %v", err)
 	}
 	return srv
 }
@@ -505,8 +505,8 @@ func buildAuthStatusServer(t *testing.T) *mcp.Server {
 	if err := auth.RegisterAuthStatusApp(srv, catalog); err != nil {
 		t.Fatalf("auth.RegisterAuthStatusApp: %v", err)
 	}
-	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
-		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
+	if err := RegisterOfficialDirectTools(srv, catalog); err != nil {
+		t.Fatalf("RegisterOfficialDirectTools: %v", err)
 	}
 	return srv
 }

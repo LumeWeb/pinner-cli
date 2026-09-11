@@ -39,6 +39,35 @@ type OpenLauncherSpec struct {
 	InputSchema json.RawMessage
 }
 
+// OpenLauncherDescriptionBody is the ONE composer for the shared UI-launcher
+// description skeleton used by every open_* launcher registration, so the
+// boilerplate ("Open the interactive ... This is a UI launcher: it renders an
+// iframe for a human to ... It is not a headless primitive; the headless
+// equivalent is ...") has a single source and the iframe/launcher wording
+// stays identical across all launchers instead of drifting per file.
+//
+// app is the phrase following "Open the interactive " (e.g. "Create a Pin
+// app", or "Upload to Vault file picker"); humanPurpose completes "it renders
+// an iframe for a human to ..." (e.g. "enter a CID and pin it"); body is
+// optional app-specific context prose inserted between the "It is not a
+// headless primitive" sentence and the headless-equivalent tail (empty for most
+// launchers — use OpenLauncherDescription); headlessEquivalent is the full
+// clause after "the headless equivalent is " (e.g. "pins_add for autonomous
+// pin creation without a rendered form").
+func OpenLauncherDescriptionBody(app, humanPurpose, body, headlessEquivalent string) string {
+	open := "Open the interactive " + app + ". This is a UI launcher: it renders an iframe for a human to " + humanPurpose + ". "
+	if body == "" {
+		return open + "It is not a headless primitive; the headless equivalent is " + headlessEquivalent + "."
+	}
+	return open + "It is not a headless primitive. " + body + " The headless equivalent is " + headlessEquivalent + "."
+}
+
+// OpenLauncherDescription is OpenLauncherDescriptionBody without the optional
+// mid-description context prose — the default skeleton most launchers use.
+func OpenLauncherDescription(app, humanPurpose, headlessEquivalent string) string {
+	return OpenLauncherDescriptionBody(app, humanPurpose, "", headlessEquivalent)
+}
+
 // NewOpenLauncherDescriptor builds a model-facing launcher tool for the given
 // app view. The tool's handler returns a minimal structured result ("the app
 // view is open"); the operation the view represents is driven by the iframe

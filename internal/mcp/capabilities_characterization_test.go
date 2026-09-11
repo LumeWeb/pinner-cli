@@ -1,7 +1,7 @@
 package mcp
 
-// Characterization tests for the Slice-3b follow-up delta: the CLI's direct
-// tools (capabilities, agent_guide) carry the toolforge MCPTargets DescFunc
+// Characterization tests for the CLI's direct
+// tools (capabilities, agent_guide) carrying the toolforge MCPTargets DescFunc
 // seam, which re-resolves tool descriptions PER REQUEST against the calling
 // host's PlatformProfile via catalog target resolution (catalog.go
 // resolveToolDescription -> toolforge.ResolveDescription ->
@@ -11,8 +11,7 @@ package mcp
 // startup description (mechanism set with the embedded OpenAI tunnel's ChatGPT
 // host capabilities merged in) and re-derives only the per-request HANDLER
 // report — it carries no MCPTargets and no DescFunc. These tests pin the CLI's
-// behavior BEFORE any parity decision so the delta (and any future migration)
-// cannot change semantics silently:
+// per-request re-resolution so the divergence cannot change semantics silently:
 //
 //   - The startup-baked Description follows the same mechanism+tunnel-host
 //     derivation as the module (hostenv.ProfileForTransport(TransportOpenAI)
@@ -22,7 +21,7 @@ package mcp
 //     capabilitiesDescriptionFor — a Grok-class host gets the "no `file`
 //     parameter" routing copy even though tools/list baked the host-file copy.
 //
-// DECISION (Stage 5, slice 4): keep the CLI's per-request resolution as
+// DECISION: keep the CLI's per-request resolution as
 // CLI-side logic (option a). It is behaviorally meaningful — CLI servers are
 // long-lived multi-host processes where describe_tool re-resolution adapts the
 // prose after per-request host detection, while mcp.Assemble targets
@@ -54,9 +53,9 @@ func TestCapabilitiesDescriptorPerRequestDescFunc(t *testing.T) {
 		false, false, // coLocated=false -> HTTP-class transport wiring
 		true, true, // uploadFile / vaultPutFile wired
 		true, true, // downloadFile / vaultGetFile wired
-		true, true, // dropWired / relayURLWired
-		true, true, // dataURIWired / draftXFile
-		0, hostenv.ProfileOpenAITunnel.Features, // maxBytes / relayFeatures
+		true, true, // dropWired / uploadURL registered
+		true, true, // uploadData registered / draftXFile
+		0, // maxBytes (relay-tool registration is pre-applied at the descriptor seam)
 	)
 
 	require.NotEmpty(t, desc.MCPTargets, "capabilities must carry MCPTargets for per-request re-resolution")
@@ -94,7 +93,7 @@ func TestCapabilitiesDescriptorStartupBakeTunnelHostMerged(t *testing.T) {
 	openaiDesc := NewCapabilitiesDescriptor(
 		false, true,
 		true, true, true, true, false, true, true, true,
-		0, hostenv.ProfileOpenAITunnel.Features,
+		0,
 	)
 	expectedOpenAI := capabilitiesDescriptionFor(
 		hostenv.ProfileForTransport(transfer.UploadFileTransport(false, true)), true, true, true, true)
@@ -105,7 +104,7 @@ func TestCapabilitiesDescriptorStartupBakeTunnelHostMerged(t *testing.T) {
 	stdioDesc := NewCapabilitiesDescriptor(
 		true, false,
 		true, true, true, true, true, true, true, false,
-		0, hostenv.ProfileStdioGeneric.Features,
+		0,
 	)
 	expectedStdio := capabilitiesDescriptionFor(
 		hostenv.ProfileForTransport(transfer.UploadFileTransport(true, false)), true, true, true, true)

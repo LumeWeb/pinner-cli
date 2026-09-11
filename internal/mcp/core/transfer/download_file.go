@@ -32,8 +32,10 @@ type DownloadFileInput struct {
 	// OutputPath is the destination for sink=local, resolved RELATIVE to the
 	// configured download root (default <config-dir>/downloads).
 	OutputPath string `json:"output_path,omitempty" jsonschema:"description=Destination path for sink=local, relative to the configured download root (subdirectories are created). If omitted, the source name is used at the root. Paths that escape the root are rejected."`
-	// TTL is the filedrop GET lifetime for sink=drop (e.g. 5m; default 5m).
-	TTL string `json:"ttl,omitempty" jsonschema:"description=Filedrop GET endpoint lifetime for sink=drop (e.g. 5m; default 5 minutes)."`
+	// TTL is the filedrop GET lifetime for sink=drop. Its tag composes
+	// schematext.TTLDownloadGet (struct tags cannot embed constants; pinned by
+	// TestSchemaTextFragmentsPinned).
+	TTL string `json:"ttl,omitempty" jsonschema:"description=Filedrop GET endpoint lifetime for sink=drop (e.g. 5m; default 5m)."`
 }
 
 // NewDownloadFileDescriptor builds the unified, sink-aware download_file tool.
@@ -111,12 +113,15 @@ func NewDownloadFileDescriptor(ipfsFn IPFSDownloadHandler, hd *Download, downloa
 
 // downloadProfile maps the transport wiring to the feature set the description
 // DSL resolves against. sink=local is always available; sink=drop needs a
-// reachable HTTP mux, so it is advertised only when a filedrop coordinator is
-// wired AND the transport is not the embedded OpenAI tunnel.
+// reachable HTTP mux, so the FeatSinkDrop value stamps the ONE shared reachability
+// decision (SinkDropReachable) — the same predicate the sink enum rewrite
+// (SinkEnumValues), the per-invocation gate (DownloadSinksAllowed), the vault_get
+// profile builder, and the parent package’s sinkModesFor capability report all
+// consume.
 func downloadProfile(dropWired, tunnelOpenAI bool) hostenv.PlatformProfile {
 	p := hostenv.ProfileHTTPGeneric.CloneFeatures()
 	p.Features[hostenv.FeatSinkLocal] = true
-	p.Features[hostenv.FeatSinkDrop] = dropWired && !tunnelOpenAI
+	p.Features[hostenv.FeatSinkDrop] = SinkDropReachable(dropWired, tunnelOpenAI)
 	return p
 }
 

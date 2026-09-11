@@ -118,17 +118,17 @@ func (b *GuideFlowBuilder) StepUnlessHost(h hostenv.HostType, names ...string) *
 	return b
 }
 
-// StepWhenSurface appends tool names included only when the profile's surface
-// passes get (a Surface accessor).
-func (b *GuideFlowBuilder) StepWhenSurface(get func(hostenv.Surface) bool, names ...string) *GuideFlowBuilder {
-	b.b.StepWhenPred(forgePred(hostenv.SurfaceIs(get)), names...)
+// StepWhenDomainScope appends tool names included only when the profile's surface
+// passes get (a DomainScope accessor).
+func (b *GuideFlowBuilder) StepWhenDomainScope(get func(hostenv.DomainScope) bool, names ...string) *GuideFlowBuilder {
+	b.b.StepWhenPred(forgePred(hostenv.DomainScopeIs(get)), names...)
 	return b
 }
 
-// StepUnlessSurface appends tool names included only when the profile's surface
+// StepUnlessDomainScope appends tool names included only when the profile's surface
 // fails get.
-func (b *GuideFlowBuilder) StepUnlessSurface(get func(hostenv.Surface) bool, names ...string) *GuideFlowBuilder {
-	b.b.StepUnlessPred(forgePred(hostenv.SurfaceIs(get)), names...)
+func (b *GuideFlowBuilder) StepUnlessDomainScope(get func(hostenv.DomainScope) bool, names ...string) *GuideFlowBuilder {
+	b.b.StepUnlessPred(forgePred(hostenv.DomainScopeIs(get)), names...)
 	return b
 }
 
@@ -190,17 +190,17 @@ func (b *GuideBranchBuilder) StepUnlessHost(h hostenv.HostType, names ...string)
 	return b
 }
 
-// StepWhenSurface appends tool names included only when the profile's surface
-// passes get (a Surface accessor).
-func (b *GuideBranchBuilder) StepWhenSurface(get func(hostenv.Surface) bool, names ...string) *GuideBranchBuilder {
-	b.b.StepWhenPred(forgePred(hostenv.SurfaceIs(get)), names...)
+// StepWhenDomainScope appends tool names included only when the profile's surface
+// passes get (a DomainScope accessor).
+func (b *GuideBranchBuilder) StepWhenDomainScope(get func(hostenv.DomainScope) bool, names ...string) *GuideBranchBuilder {
+	b.b.StepWhenPred(forgePred(hostenv.DomainScopeIs(get)), names...)
 	return b
 }
 
-// StepUnlessSurface appends tool names included only when the profile's surface
+// StepUnlessDomainScope appends tool names included only when the profile's surface
 // fails get.
-func (b *GuideBranchBuilder) StepUnlessSurface(get func(hostenv.Surface) bool, names ...string) *GuideBranchBuilder {
-	b.b.StepUnlessPred(forgePred(hostenv.SurfaceIs(get)), names...)
+func (b *GuideBranchBuilder) StepUnlessDomainScope(get func(hostenv.DomainScope) bool, names ...string) *GuideBranchBuilder {
+	b.b.StepUnlessPred(forgePred(hostenv.DomainScopeIs(get)), names...)
 	return b
 }
 
@@ -246,15 +246,15 @@ func (b *GuideBranchBuilder) UnlessHost(h hostenv.HostType) *GuideBranchBuilder 
 	return b
 }
 
-// WhenSurface includes the branch only when the profile's surface passes get.
-func (b *GuideBranchBuilder) WhenSurface(get func(hostenv.Surface) bool) *GuideBranchBuilder {
-	b.b.WhenPred(forgePred(hostenv.SurfaceIs(get)))
+// WhenDomainScope includes the branch only when the profile's surface passes get.
+func (b *GuideBranchBuilder) WhenDomainScope(get func(hostenv.DomainScope) bool) *GuideBranchBuilder {
+	b.b.WhenPred(forgePred(hostenv.DomainScopeIs(get)))
 	return b
 }
 
-// UnlessSurface includes the branch only when the profile's surface fails get.
-func (b *GuideBranchBuilder) UnlessSurface(get func(hostenv.Surface) bool) *GuideBranchBuilder {
-	b.b.UnlessPred(forgePred(hostenv.SurfaceIs(get)))
+// UnlessDomainScope includes the branch only when the profile's surface fails get.
+func (b *GuideBranchBuilder) UnlessDomainScope(get func(hostenv.DomainScope) bool) *GuideBranchBuilder {
+	b.b.UnlessPred(forgePred(hostenv.DomainScopeIs(get)))
 	return b
 }
 
@@ -351,17 +351,17 @@ func (g *GuideSpec) RuleUnlessPred(pred hostenv.Predicate, text string) *GuideSp
 	return g
 }
 
-// RuleWhenSurface adds a rule included only when the profile's surface passes
+// RuleWhenDomainScope adds a rule included only when the profile's surface passes
 // get.
-func (g *GuideSpec) RuleWhenSurface(get func(hostenv.Surface) bool, text string) *GuideSpec {
-	g.b.RuleWhenPred(forgePred(hostenv.SurfaceIs(get)), text)
+func (g *GuideSpec) RuleWhenDomainScope(get func(hostenv.DomainScope) bool, text string) *GuideSpec {
+	g.b.RuleWhenPred(forgePred(hostenv.DomainScopeIs(get)), text)
 	return g
 }
 
-// RuleUnlessSurface adds a rule included only when the profile's surface fails
+// RuleUnlessDomainScope adds a rule included only when the profile's surface fails
 // get.
-func (g *GuideSpec) RuleUnlessSurface(get func(hostenv.Surface) bool, text string) *GuideSpec {
-	g.b.RuleUnlessPred(forgePred(hostenv.SurfaceIs(get)), text)
+func (g *GuideSpec) RuleUnlessDomainScope(get func(hostenv.DomainScope) bool, text string) *GuideSpec {
+	g.b.RuleUnlessPred(forgePred(hostenv.DomainScopeIs(get)), text)
 	return g
 }
 

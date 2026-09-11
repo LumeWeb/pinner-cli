@@ -135,7 +135,7 @@ func TestCurrentCapabilitiesHonorsMaxBytes(t *testing.T) {
 }
 
 func TestCapabilitiesDescriptorSerializes(t *testing.T) {
-	desc := NewCapabilitiesDescriptor(true, false, true, true, true, true, true, true, true, true, 0, hostenv.ProfileStdioGeneric.Features)
+	desc := NewCapabilitiesDescriptor(true, false, true, true, true, true, true, true, true, true, 0)
 	require.Equal(t, "capabilities", desc.Name)
 	res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}})
 	require.NoError(t, err)
@@ -257,7 +257,7 @@ func TestCapabilitiesDescriptionConcurrentNoSharedBackingMutation(t *testing.T) 
 }
 
 func TestCapabilitiesDescriptorIsDirectVisible(t *testing.T) {
-	desc := NewCapabilitiesDescriptor(false, false, false, false, false, false, false, false, false, false, 0, hostenv.FeatureSet{})
+	desc := NewCapabilitiesDescriptor(false, false, false, false, false, false, false, false, false, false, 0)
 	tool := sdk.Tool(desc)
 	require.Equal(t, "capabilities", tool.Name)
 }
@@ -294,7 +294,7 @@ func TestCapabilitiesHostFileInputRequiresWiredTool(t *testing.T) {
 	caps := &model.RequestCaps{Profile: &httpProfile}
 
 	run := func(upload, vault bool) CapabilityReport {
-		desc := NewCapabilitiesDescriptor(false, false, upload, vault, false, false, false, false, false, false, 0, hostenv.FeatureSet{})
+		desc := NewCapabilitiesDescriptor(false, false, upload, vault, false, false, false, false, false, false, 0)
 		res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}, Caps: caps})
 		require.NoError(t, err)
 		return res.StructuredContent.(CapabilityReport)
@@ -339,7 +339,7 @@ func TestCapabilitiesDescriptionMatchesWiring(t *testing.T) {
 // false, while the OpenAI tunnel (which declares the feature) keeps it true.
 func TestCapabilitiesDraftXFileGatedOnProfile(t *testing.T) {
 	run := func(draftWired bool, profile hostenv.PlatformProfile) CapabilityReport {
-		desc := NewCapabilitiesDescriptor(false, false, true, false, false, false, false, true, true, draftWired, 0, hostenv.ProfileOpenAITunnel.Features)
+		desc := NewCapabilitiesDescriptor(false, false, true, false, false, false, false, true, true, draftWired, 0)
 		shared := profile.Shared()
 		caps := &model.RequestCaps{Profile: &shared}
 		res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}, Caps: caps})
@@ -349,4 +349,36 @@ func TestCapabilitiesDraftXFileGatedOnProfile(t *testing.T) {
 
 	require.True(t, run(true, hostenv.ProfileOpenAITunnel).DraftXFile, "OpenAI tunnel declares FeatXMcpFile")
 	require.False(t, run(true, hostenv.ProfileGrokHTTP).DraftXFile, "Grok lacks FeatXMcpFile; a wired upload_data must not report the draft")
+}
+
+// TestSinkModesForConsumesSharedDropDecision pins the capability-report side
+// of the ONE filedrop-sink reachability decision: sinkModesFor stamps the
+// drop mode from transfer.SinkDropReachable — the same predicate the
+// download_file / vault_get_file profile builders consume — so the
+// advertised filedrop capability can never drift from what a download tool
+// accepts at invocation.
+func TestSinkModesForConsumesSharedDropDecision(t *testing.T) {
+	// Iterate the canonical transfer.SinkDropReachableCases table (the owning
+	// package's export) rather than re-deriving the truth table locally —
+	// this consumer-side pin and the owning-package's own test can then
+	// never disagree about the expected outcome of any wiring combination.
+	for _, c := range transfer.SinkDropReachableCases() {
+		modes := sinkModesFor(c.DropWired, c.TunnelOpenAI)
+		require.Equalf(t, c.Reachable, loContains(modes, CapabilitySinkDrop),
+			"sinkModesFor(%v,%v): drop mode must follow transfer.SinkDropReachable", c.DropWired, c.TunnelOpenAI)
+		require.Containsf(t, modes, CapabilitySinkLocal,
+			"sinkModesFor(%v,%v): local mode is always offered", c.DropWired, c.TunnelOpenAI)
+		require.Equalf(t, c.Reachable, transfer.SinkDropReachable(c.DropWired, c.TunnelOpenAI),
+			"transfer.SinkDropReachable(%v,%v)", c.DropWired, c.TunnelOpenAI)
+	}
+}
+
+// loContains reports whether modes carries capability.
+func loContains(modes []FileOutputCapability, capability FileOutputCapability) bool {
+	for _, m := range modes {
+		if m == capability {
+			return true
+		}
+	}
+	return false
 }

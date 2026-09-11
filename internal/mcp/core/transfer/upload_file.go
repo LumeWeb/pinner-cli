@@ -6,11 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/invopop/jsonschema"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
+	"go.lumeweb.com/pinner-cli/internal/mcp/mintcontract"
+	"go.lumeweb.com/pinner-cli/internal/mcp/schematext"
 
 	"go.lumeweb.com/mcpplane/model"
 
@@ -58,17 +59,45 @@ type UploadFileInput struct {
 	// mode on the handle at mint time and applies it when the PUT bytes
 	// arrive, but DEFAULTS to preserve — only an explicit convert extracts a
 	// streamed archive.
-	ArchiveMode string `json:"archive_mode,omitempty" jsonschema:"enum=convert,enum=preserve,description=How to treat an archive. convert extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. The archive's directory structure is preserved exactly, so index.html sits at the archive root (not inside a wrapper directory). preserve keeps the archive intact as a single file. IMPORTANT: the default depends on the source. Host-file, path, and url/data sources default to convert; the mint (presigned PUT) source defaults to preserve and ONLY converts when archive_mode=convert is passed explicitly. A website ZIP streamed via source.mode=mint therefore needs archive_mode=convert, or it uploads as a raw single-file CID and websites_create will reject it."`
-	// TTL is the presigned endpoint lifetime (e.g. 5m). Only used on transports
-	// that use presigned PUT endpoints (HTTP/tunnel).
-	TTL string `json:"ttl,omitempty" jsonschema:"description=Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used on transports that use presigned PUT endpoints."`
+	// NOTE: the live upload_file schema is compiled by uploadFileSchema()
+	// (which composes archiveModeSchemaDesc), NOT from this struct — the
+	// struct is the decode target only. No jsonschema tag here: a descriptive
+	// tag would be a dead, unpinned duplicate of the live schema constant.
+	ArchiveMode string `json:"archive_mode,omitempty"`
+	// TTL is the presigned endpoint lifetime. Its tag composes
+	// schematext.TTLPut (struct tags cannot embed constants; pinned by
+	// TestSchemaTextFragmentsPinned).
+	TTL string `json:"ttl,omitempty" jsonschema:"description=Presigned endpoint lifetime (e.g. 5m; default 5m). Only used on transports that use presigned PUT endpoints."`
 	// Wrap forces a directory root when uploading a single file, required for
 	// content that will be a website (a website must resolve to a directory,
 	// not a bare file). Only affects single-file uploads (file / url / data /
 	// path to a file, or a mint PUT whose bytes are not an archive); directory
 	// and archive-converted uploads are already a directory root.
-	Wrap bool `json:"wrap,omitempty" jsonschema:"description=Wrap a single file in a directory root so the CID is a directory (required when the upload is a website). When wrap=true and no name is given, HTML content is auto-named index.html so the site resolves at its root. An explicit name such as 'starter-site' is honored as-is and the page is then only reachable at /starter-site, not /. Only affects single-file uploads; directories and archive-converted uploads are already a directory root."`
+	// The live schema composes schematext.WrapDesc (single live copy — see
+	// the ArchiveMode note above); no descriptive struct tag here.
+	Wrap bool `json:"wrap,omitempty"`
 }
+
+// ErrUploadPrepare is the stable mint-prepare failure: the coordinator could
+// not mint a one-time presigned upload endpoint (empty url or handle). The
+// three surfaces that surface it — upload_file's mint branch, the
+// open_upload_manager launcher, and the ipfs_upload_submit app helper — return
+// THIS ONE error so callers test a single identity instead of three drifted
+// fmt.Errorf copies.
+var ErrUploadPrepare = errors.New("failed to prepare one-time upload endpoint")
+
+// The structured-content field name and poll-tool value of the mint response's
+// upload-handle handoff. upload_file's mint branch and the
+// open_upload_manager launcher both shape their response maps with these —
+// one source so the field contract cannot drift between the two surfaces.
+const (
+	// UploadHandlePollKey names the response field telling the caller which
+	// tool polls the returned upload_handle.
+	UploadHandlePollKey = "upload_handle_poll"
+	// UploadStatusTool is the model-facing upload poll tool the handoff
+	// field cites.
+	UploadStatusTool = "upload_status"
+)
 
 // UploadFileHandler is the co-located local-path upload path for upload_file.
 type UploadFileHandler = LocalPathUploadHandler
@@ -206,7 +235,7 @@ func newUploadFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenA
 			switch transport {
 			case TransportStdio:
 				if src.Mode != SourcePath {
-					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", src.Mode, transport)
+					return model.ToolResult{}, ErrSourceModeUnavailable(src.Mode, transport)
 				}
 				if pathFn == nil {
 					return model.ToolResult{}, errors.New("local path upload is not configured")
@@ -219,7 +248,7 @@ func newUploadFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenA
 				return toolargs.WrapResult(result, wrapUploadError(err), "Uploaded.")
 			case TransportHTTP:
 				if src.Mode != SourceMint {
-					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the %s transport", src.Mode, transport)
+					return model.ToolResult{}, ErrSourceModeUnavailable(src.Mode, transport)
 				}
 				if hp == nil {
 					return model.ToolResult{}, errors.New("presigned upload endpoint is not configured for remote mode")
@@ -228,15 +257,14 @@ func newUploadFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenA
 				if name == "" {
 					name = DefaultUploadName
 				}
-				ttl := DefaultHTTPUploadTTL
-				if in.TTL != "" {
-					d, derr := time.ParseDuration(in.TTL)
-					if derr != nil {
-						return model.ToolResult{}, fmt.Errorf("invalid ttl %q: %w", in.TTL, derr)
-					}
-					if d > 0 {
-						ttl = d
-					}
+				// The ONE shared presign-TTL parser (ParsePresignTTL below in
+				// this package): empty → default, non-positive → default,
+				// unparseable → the stable `invalid ttl "..."` wording. The
+				// coordinator-side clamp inside Prepare remains as defense in
+				// depth only.
+				ttl, terr := ParsePresignTTL(in.TTL)
+				if terr != nil {
+					return model.ToolResult{}, terr
 				}
 				// Prepare mints the presigned URL AND pre-creates a single
 				// canonical upload handle in the shared UploadTaskManager. The
@@ -267,16 +295,16 @@ func newUploadFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenA
 				}
 				url, handle := hp.Prepare(ctx, name, ttl, opts...)
 				if url == "" || handle == "" {
-					return model.ToolResult{}, errors.New("failed to prepare one-time upload endpoint")
+					return model.ToolResult{}, ErrUploadPrepare
 				}
-				curlCmd := fmt.Sprintf("curl -sS -T <your-file> %q", url)
+				curlCmd := mintcontract.CurlUploadCommand(url)
 				sc := map[string]any{
-					"url":                url,
-					"curl_command":       curlCmd,
-					"upload_handle":      handle,
-					"upload_handle_poll": "upload_status",
-					"ttl":                ttl.String(),
-					"max_bytes":          hp.MaxBytes(),
+					"url":               url,
+					"curl_command":      curlCmd,
+					"upload_handle":     handle,
+					UploadHandlePollKey: UploadStatusTool,
+					"ttl":               ttl.String(),
+					"max_bytes":         hp.MaxBytes(),
 				}
 				// Text carries the same JSON as StructuredContent so a text-only
 				// MCP client (which renders no widget) still sees the actual
@@ -287,11 +315,16 @@ func newUploadFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenA
 				// with upload_status.
 				return model.ToolResult{
 					StructuredContent: sc,
-					Text:              toolargs.ResultJSONText(sc) + " Stream your file bytes to the URL with the curl command, or pass upload_handle to the upload App's file picker; then poll upload_status with the handle.",
+					// The poll tail composes the canonical mintcontract
+					// UploadMintPoll (which tool, with which handle, until
+					// which terminal status) so the terse response copy keeps
+					// the returned-handle/completed semantics — never a
+					// hand-paraphrase that drops "completed".
+					Text: toolargs.ResultJSONText(sc) + " Stream your file bytes to the URL with the curl command, or pass upload_handle to the upload App's file picker; then " + mintcontract.UploadMintPoll + ".",
 				}, nil
 			default: // TransportOpenAI
 				if src.Mode != SourceURL && src.Mode != SourceData {
-					return model.ToolResult{}, fmt.Errorf("source mode %q is not available on the OpenAI tunnel transport", src.Mode)
+					return model.ToolResult{}, ErrSourceModeUnavailable(src.Mode, "OpenAI tunnel")
 				}
 				if relayFn == nil {
 					return model.ToolResult{}, errors.New("file relay upload is not configured")
@@ -324,13 +357,59 @@ func newUploadFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenA
 	}
 }
 
-// archiveModeSchemaDesc and wrapSchemaDesc are the shared property copy for the
-// upload_file archive_mode and wrap inputs. They are static (the same wording
-// is correct on every profile); only their presence and the source-mode enum
-// vary by feature.
+// Shared archive-mode sentence fragments: the ONE definitions of the
+// route-neutral behavior copy and the per-route default clauses that BOTH
+// archive_mode schema paths compose — the static property copy
+// (archiveModeSchemaDesc, below) and the live transformed copy
+// (archiveModeSchemaTransform resolving archiveModeDesc / mintOnlyArchiveModeDesc).
+// archiveModeSchemaTransform ALWAYS overwrites the static property copy on the
+// wire, so the static copy is dead on the wire and must never become an
+// independent edit point: it composes the same fragments, and the parity test
+// (TestArchiveModeSchemaFragmentsComposed) pins both paths to them.
 const (
-	archiveModeSchemaDesc = "How to treat an archive. convert extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. The archive's directory structure is preserved exactly, so index.html sits at the archive root (not inside a wrapper directory). preserve keeps the archive intact as a single file. IMPORTANT: the default depends on the source. Host-file, path, and url/data sources default to convert; the mint (presigned PUT) source defaults to preserve and ONLY converts when archive_mode=convert is passed explicitly. A website ZIP streamed via source.mode=mint therefore needs archive_mode=convert, or it uploads as a raw single-file CID and websites_create will reject it."
-	wrapSchemaDesc        = "Wrap a single file in a directory root so the CID is a directory (required when the upload is a website). When wrap=true and no name is given, HTML content is auto-named index.html so the site resolves at its root. An explicit name such as 'starter-site' is honored as-is and the page is then only reachable at /starter-site, not /. Only affects single-file uploads; directories and archive-converted uploads are already a directory root."
+	// archiveModeLead introduces the archive_mode property on both paths.
+	archiveModeLead = "How to treat an archive."
+	// archiveConvertClause is the convert behavior sentence (both paths).
+	archiveConvertClause = "convert extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update."
+	// archiveRootStructureClause is the preserved-layout sentence (both paths).
+	archiveRootStructureClause = "The archive's directory structure is preserved exactly, so index.html sits at the archive root (not inside a wrapper directory)."
+	// archivePreserveClause is the preserve behavior sentence (both paths).
+	archivePreserveClause = "preserve keeps the archive intact as a single file."
+	// archiveDefaultLead states that the default is route-dependent.
+	archiveDefaultLead = "The default depends on which sources this host accepts."
+	// archiveDefaultHostFile is the host-file route's default clause.
+	archiveDefaultHostFile = "A host-file source defaults to convert."
+	// archiveDefaultPath is the path route's default clause.
+	archiveDefaultPath = "A path source defaults to convert."
+	// archiveDefaultMint is the mint route's default clause (preserve polarity).
+	archiveDefaultMint = "The mint (presigned PUT) source defaults to preserve, converting only when archive_mode=convert is passed explicitly."
+	// archiveDefaultRelay is the url/data relay route's default clause.
+	archiveDefaultRelay = "A url/data source defaults to convert."
+	// archiveWebsiteMintClause is the mint-streamed website-ZIP rule the mint
+	// route's default would otherwise break.
+	archiveWebsiteMintClause = "A website ZIP streamed via source.mode=mint therefore needs archive_mode=convert, or it uploads as a raw single-file CID that websites_create will reject."
+	// archiveModeBase is the route-neutral behavior copy both paths compose.
+	archiveModeBase = archiveConvertClause + " " + archiveRootStructureClause + " " + archivePreserveClause
+)
+
+// archiveModeSchemaDesc and wrapSchemaDesc are the shared property copy for the
+// upload_file archive_mode and wrap inputs. Only the archive_mode copy's
+// PRESENCE (and the source-mode enum) vary by feature; its wording is fully
+// composed from the shared fragments above.
+const (
+	// archiveModeSchemaDesc is upload_file's archive_mode property copy —
+	// composed entirely from the shared archive-mode fragments (the
+	// UploadFileInput decode struct carries no jsonschema description;
+	// uploadFileSchema composes this directly). NEVER hand-edited: this copy
+	// enumerates every route's default, so it can only ever be a superset of
+	// the route-gated live copy the transform renders from the SAME
+	// fragments (archiveModeDesc / mintOnlyArchiveModeDesc).
+	archiveModeSchemaDesc = archiveModeLead + " " + archiveModeBase + " " + archiveDefaultLead + " " + archiveDefaultHostFile + " " + archiveDefaultPath + " " + archiveDefaultMint + " " + archiveDefaultRelay + " " + archiveWebsiteMintClause
+	// wrapSchemaDesc composes the shared schematext.WrapDesc so the
+	// website→directory-root / auto-name / explicit-name contract is composed
+	// with upload_data's pinned wrap tag (schematext.WrapDataDesc), never a
+	// second hand copy.
+	wrapSchemaDesc = schematext.WrapDesc
 )
 
 // sourceFallbackDesc is the mode.copy for hosts that accept a host-provided
@@ -349,10 +428,13 @@ var uploadSourceModeDesc = toolforge.Static("Only source.mode this tool accepts 
 // upload_data are IPFS relays, not vault writes, so on a mint-only host a
 // public URL or inline bytes are not vault sources: the agent must materialize
 // them to a local file first, then mint + PUT — never send the agent to the
-// sibling relays.
+// sibling relays. The clause composes the shared schematext
+// relay-not-vault fragments (RelayVaultMaterialize / RelayToolsNotVaultWrite)
+// — the same fragments the agent guide's vault upload flow composes — never a
+// hand copy.
 var vaultSourceModeDesc = toolforge.Static("Only source.mode this tool accepts on this transport.").
 	WhenAny([]hostenv.Feature{hostenv.FeatSourceURL, hostenv.FeatSourceData},
-		"A public URL or inline bytes are not vault sources here — write them to an agent-local file first, then vault_put_file source.mode=mint and PUT it to the returned url. Do not use upload_url / upload_data: those pin to IPFS and do not write the vault.")
+		"A public URL or inline bytes are not vault sources here — "+schematext.RelayVaultMaterialize+". Do not use the separate relays: "+schematext.RelayToolsNotVaultWrite+".")
 
 // UploadSourceSchemaTransform narrows a reflected UploadSource schema's `mode`
 // enum to the profile's supported source modes and rewrites its prose so a host
@@ -438,7 +520,7 @@ func uploadFileSchema(features hostenv.FeatureSet) json.RawMessage {
 		StringProperty("name", "Optional upload name (defaults to the file name).").
 		BoolProperty("wait", "Wait until this upload's own pin operation completes before returning (the upload already pins; this only controls whether the call blocks for it).").
 		StringProperty("archive_mode", archiveModeSchemaDesc, toolforge.Enum("convert", "preserve"), toolforge.Transform(archiveModeSchemaTransform)).
-		StringProperty("ttl", "Presigned endpoint lifetime (e.g. 5m; default 5 minutes). Only used on transports that use presigned PUT endpoints.").
+		StringProperty("ttl", schematext.TTLPut).
 		BoolProperty("wrap", wrapSchemaDesc).
 		RawJSON(features)
 }
@@ -492,23 +574,23 @@ func mintOnlySource(fs hostenv.FeatureSet) bool {
 // (see mintOnlySource's comment for why relay capability features are ignored).
 // See mintOnlyArchiveModeDesc for the pure mint-only variant.
 var archiveModeDesc = toolforge.Static(
-	"How to treat an archive. convert extracts an archive and uploads its contents as a directory DAG while preserving relative paths; use for complete static website ZIPs (index.html, CSS, JS, images, nested directories) — the resulting CID is a directory CID ready for websites_create/update. The archive's directory structure is preserved exactly, so index.html sits at the archive root (not inside a wrapper directory). preserve keeps the archive intact as a single file.",
+	archiveModeLead+" "+archiveModeBase,
 ).
-	StaticSentence("The default depends on which sources this host accepts.").
+	StaticSentence(archiveDefaultLead).
 	WhenSentence(hostenv.FeatFileHostInput,
-		"A host-file source defaults to convert.",
+		archiveDefaultHostFile,
 	).
 	WhenPredSep(toolforge.SepSentence, hostenv.TransportIs(hostenv.TransportStdio),
-		"A path source defaults to convert.",
+		archiveDefaultPath,
 	).
 	WhenPredSep(toolforge.SepSentence, hostenv.TransportIs(hostenv.TransportHTTP),
-		"The mint (presigned PUT) source defaults to preserve, converting only when archive_mode=convert is passed explicitly.",
+		archiveDefaultMint,
 	).
 	WhenPredSep(toolforge.SepSentence, hostenv.TransportIs(hostenv.TransportOpenAI),
-		"A url/data source defaults to convert.",
+		archiveDefaultRelay,
 	).
 	WhenPredSep(toolforge.SepSentence, hostenv.TransportIs(hostenv.TransportHTTP),
-		"A website ZIP streamed via source.mode=mint therefore needs archive_mode=convert, or it uploads as a raw single-file CID that websites_create will reject.",
+		archiveWebsiteMintClause,
 	)
 
 // uploadFileDescription resolves the tool description from the forge's

@@ -87,13 +87,13 @@ func pinStatusDescriptor(pins PinningProvider) model.ToolDescriptor {
 }
 
 // RegisterPinApp wires the complete "Create a Pin" MCP App: attaches the
-// ui:// view to the curated pins_add tool, registers the ui://pins/create.html
+// ui:// view to the direct pins_add tool, registers the ui://pins/create.html
 // HTML resource, and registers the app-only pin_status polling helper. It is
 // expressed through the shared RegisterAppView lib layer so the pin app stays
 // a single declarative spec rather than hand-written registration plumbing.
 //
 // Returns an error if the pin tool is missing from the catalog. App wiring is
-// additive: existing curated tools and plain-host text results are preserved.
+// additive: existing direct tools and plain-host text results are preserved.
 func RegisterPinApp(srv *sdk.Server, catalog AppCatalog, pins PinningProvider) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")

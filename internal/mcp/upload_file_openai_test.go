@@ -112,7 +112,7 @@ func TestUploadFileOpenAIMetaCoexistsWithAppUI(t *testing.T) {
 	seedLauncherForTest(t, srv, catalog, upload.OpenUploadManagerToolName, upload.OpenUploadManagerURI, model.CategoryCore)
 	require.NoError(t, upload.RegisterIPFSUploadApp(srv, catalog, cu))
 	require.NoError(t, RegisterOfficialDescriptor(srv, desc))
-	require.NoError(t, RegisterOfficialCuratedTools(srv, catalog))
+	require.NoError(t, RegisterOfficialDirectTools(srv, catalog))
 
 	cs := connectOfficialClient(t, srv)
 	res, err := cs.ListTools(context.Background(), nil)

@@ -31,78 +31,156 @@ type openAppOutput struct {
 	Available []string `json:"available,omitempty"`
 }
 
-// availableOpenApps returns the sorted list of open_* launcher names currently
-// registered in the catalog (entries whose name starts with "open_" and that
-// have an attached MCP App view). It is the single source for both the
-// available list in the result and the schema enum for open_app.
-func availableOpenApps(catalog *ToolCatalog) []string {
-	var names []string
+// installedAppRecords enumerates the app views of THIS server: the finalized
+// MaterializedTooling's captured app records when the assembly plan recorded
+// one — the authoritative server-local source of "which apps are installed
+// and at which ui:// URIs" — falling back to the catalog-scan derivation for
+// catalogs assembled without the plan (documented compatibility fallback; the
+// scan ALSO requires catalog membership, so a stale process-global app
+// registration for a launcher this server never declared can never resolve).
+func installedAppRecords(catalog *ToolCatalog) []InstalledAppView {
+	if finalized := catalog.FinalizedTooling(); finalized != nil {
+		return finalized.AppRecords()
+	}
+	var records []InstalledAppView
 	for _, entry := range catalog.Entries() {
 		if !strings.HasPrefix(entry.Name, "open_") {
 			continue
 		}
-		if _, ok := apps.AppInfoForTool(entry.Name); !ok {
+		info, ok := apps.AppInfoForTool(entry.Name)
+		if !ok {
 			continue
 		}
-		names = append(names, entry.Name)
+		records = append(records, InstalledAppView{
+			Launcher: entry.Name,
+			Screen:   strings.TrimPrefix(entry.Name, "open_"),
+			URI:      info.URI,
+		})
 	}
-	sort.Strings(names)
+	sort.Slice(records, func(i, j int) bool { return records[i].Launcher < records[j].Launcher })
+	return records
+}
+
+// openAppAppNames returns the bare app screen names actually installed on this
+// server (sorted) — the derived open_app inventory.
+func openAppAppNames(catalog *ToolCatalog) []string {
+	var names []string
+	for _, record := range installedAppRecords(catalog) {
+		names = append(names, record.Screen)
+	}
 	return names
 }
 
-// resolveOpenApp resolves an app request (launcher name or bare screen name)
-// to its registered launcher name and ui:// resource URI, or returns false.
+// openAppAppList renders the installed app names for prose; unknown/none
+// installs get an explicit truthful answer rather than a hard-coded inventory.
+func openAppAppList(catalog *ToolCatalog) string {
+	names := openAppAppNames(catalog)
+	if len(names) == 0 {
+		return "none"
+	}
+	return strings.Join(names, ", ")
+}
+
+// availableOpenApps returns the sorted list of open_* launcher names whose app
+// views are installed on this server.
+func availableOpenApps(catalog *ToolCatalog) []string {
+	var names []string
+	for _, record := range installedAppRecords(catalog) {
+		names = append(names, record.Launcher)
+	}
+	return names
+}
+
+// resolveOpenApp resolves an app request (an open_* launcher name or its bare
+// screen name) to the launcher name and ui:// resource URI of an app view
+// installed on THIS server, or returns false. It consults ONLY the server's
+// own installed app records — never the process-global app registry directly —
+// so a full launcher name that this server never installed (or a stale
+// launcher left over from a previous assembly in the same process) is rejected.
 func resolveOpenApp(catalog *ToolCatalog, requested string) (string, string, bool) {
-	req := strings.TrimSpace(requested)
+	req := strings.TrimSpace(strings.ToLower(requested))
 	if req == "" {
 		return "", "", false
 	}
-	// Accept the full launcher name first.
-	if info, ok := apps.AppInfoForTool(req); ok {
-		return req, info.URI, true
-	}
-	// Accept a bare screen name by matching the launcher's suffix.
-	for _, name := range availableOpenApps(catalog) {
-		if strings.TrimPrefix(name, "open_") == req {
-			info, _ := apps.AppInfoForTool(name)
-			return name, info.URI, true
+	for _, record := range installedAppRecords(catalog) {
+		if record.Launcher == req || record.Screen == req {
+			return record.Launcher, record.URI, true
 		}
 	}
 	return "", "", false
 }
 
-// newOpenAppDescriptor builds the consolidated open_app tool. It is the single
-// directly-surfaced launcher for a GUI-capable host: instead of one
-// per-screen open_* tool on tools/list, the agent calls open_app with an app
-// name and receives the ui:// view to render. The handler resolves the app
-// against the live catalog's app-view registry, so availability always tracks
-// what is actually wired.
 // openAppDescriptionFor returns the profile-aware description for the open_app
-// tool. On GUI-capable hosts (FeatMCPApps) the copy steers the agent toward
-// using open_app for human-facing interactions; on agent-only hosts it explains
-// the tool returns a ui:// URI as data (no auto-render) so the agent includes
-// it in a message for a human to open.
-func openAppDescriptionFor(p hostenv.PlatformProfile) string {
+// tool, derived from the server's own installed app views. On GUI-capable hosts
+// (FeatMCPApps) the copy steers the agent toward using open_app for
+// human-facing interactions and names headless primitive examples from the ONE
+// shared availability-gated source (headlessPrimitiveExamplesFor — the same
+// list the agent guide's MCP-Apps rule uses), so a hosted/minimal assembly
+// never suggests a headless primitive its surface never registered; on
+// agent-only hosts it explains the tool returns a ui:// URI as data (no
+// auto-render) so the agent includes it in a message for a human to open. The
+// tool's INPUT SCHEMA is intentionally NOT app-derived (the tools/list schema
+// contract stays stable), only the description copy.
+func openAppDescriptionFor(p hostenv.PlatformProfile, catalog *ToolCatalog) string {
 	if p.Features.Has(hostenv.FeatMCPApps) {
-		return "Open one of Pinner's interactive app views by name (vault_browser, sso_signin, pin_creator, upload_manager, pin_list, account, vault_create, vault_restore, account_password, account_email). The host renders the returned ui:// view as an iframe. Use this for human-facing interactions; prefer headless primitives (vault_status, vault_put_file, pins_list, auth_sso, ...) for autonomous workflows."
+		return "Open one of Pinner's interactive app views by name (" + openAppAppList(catalog) + "). The host renders the returned ui:// view as an iframe. Use this for human-facing interactions; prefer " + headlessPrimitiveExamplesFor(catalogToolAvailable(catalog)) + " for autonomous workflows."
 	}
-	return "Resolve an app name to its ui:// view URI. This host does not render MCP Apps, so the URI is returned as data — include it in a message for a human to open. Available apps: vault_browser, sso_signin, pin_creator, upload_manager, pin_list, account, vault_create, vault_restore, account_password, account_email."
+	return "Resolve an app name to its ui:// view URI. This host does not render MCP Apps, so the URI is returned as data — include it in a message for a human to open. Available apps: " + openAppAppList(catalog) + "."
 }
 
-func openAppTargets() []model.ToolTarget {
+func openAppTargets(catalog *ToolCatalog) []model.ToolTarget {
 	return toolforge.MCPTargets(model.ToolTarget{
-		Visible:  true,
-		DescFunc: toolforge.DescResolver(openAppDescriptionFor),
+		Visible: true,
+		DescFunc: toolforge.DescResolver(func(p hostenv.PlatformProfile) string {
+			return openAppDescriptionFor(p, catalog)
+		}),
 	})
 }
 
-func newOpenAppDescriptor(catalog *ToolCatalog) model.ToolDescriptor {
+// openAppCollectionDescription is the COLLECTION-phase placeholder body:
+// open_app is indexed during collection (searchable, so the construction-time
+// initialize-instruction count equals the final indexed catalog), but NO app
+// view is installed yet at that point, so the placeholder names the tool's
+// resolution contract WITHOUT enumerating an app inventory — an enumerated
+// "Available apps: none" copy would violate the collection invariant and go
+// stale on every assembly. The descriptor is only authoritative after
+// materialization, where the post-surface hook swaps it for the enumerated
+// openAppDescriptionFor copy; the placeholder is never materialized wire
+// text.
+const openAppCollectionDescription = "Resolve an app name to its ui:// view URI. The set of installed app views for this server is resolved at request time; each result names the app and its view, so list the apps installed on this host before opening one."
+
+// newOpenAppDescriptor bakes the startup tools/list description resolved
+// against the EFFECTIVE startup host profile, NOT a hard-coded MCP-Apps
+// profile: a flat agent-only assembly marks open_app DirectVisible without
+// FeatMCPApps, and baking the GUI copy would advertise iframe rendering the
+// host never performs (headless copy whenever the startup host is not
+// gui-capable). Per-request MCPTargets still re-resolve against the
+// requesting profile.
+func newOpenAppDescriptor(catalog *ToolCatalog, startup hostenv.PlatformProfile) model.ToolDescriptor {
+	return openAppDescriptorWithDescription(catalog, openAppDescriptionFor(startup, catalog))
+}
+
+// newOpenAppCollectionPlaceholder builds the collection-phase open_app entry:
+// identical shape (name, schema, handler, per-request profile-aware
+// MCPTargets — those re-resolve post-installation at request time) but with a
+// static, NON-enumerating description, because no app view exists yet to
+// enumerate and the entry is only authoritative after the post-surface hook
+// rebuilds it. Only the materialized descriptor may carry "Available apps:
+// ..." text.
+func newOpenAppCollectionPlaceholder(catalog *ToolCatalog) model.ToolDescriptor {
+	return openAppDescriptorWithDescription(catalog, openAppCollectionDescription)
+}
+
+// openAppDescriptorWithDescription builds the open_app descriptor body shared
+// by the materialized copy (enumerated description baked from the resolved
+// profiles) and the collection-phase placeholder (non-enumerating).
+func openAppDescriptorWithDescription(catalog *ToolCatalog, description string) model.ToolDescriptor {
 	return model.ToolDescriptor{
 		Name:        "open_app",
 		Title:       "Open an app",
-		Description: openAppDescriptionFor(hostenv.ProfileStdioMCPApps),
+		Description: description,
 		Category:    model.CategoryCore,
-		MCPTargets:  openAppTargets(),
+		MCPTargets:  openAppTargets(catalog),
 		InputSchema: toolargs.ToolSchemaFor[openAppInput](),
 		Meta:        nil,
 		Handler: func(ctx context.Context, request model.ToolRequest) (model.ToolResult, error) {

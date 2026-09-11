@@ -35,11 +35,14 @@ func requireHeadlessNoUI(t *testing.T, tool *mcp.Tool) {
 
 // seedLauncherForTest adds a model-facing open_* launcher tool to the catalog
 // so a RegisterXxxApp call whose AttachTo points at the launcher succeeds, and
-// registers it to the server exactly as registerOpenLauncher does in
-// production. App tests that build a catalog + server and then call
-// RegisterXxxApp must seed the launcher first, because in production
-// registerOpenLauncher runs before the app's RegisterAppView (the AttachTo
-// tool must already exist in the catalog).
+// registers it on the server via the TEST-ONLY registerOpenLauncher helper.
+// App tests that build a catalog + server and then call RegisterXxxApp must
+// seed the launcher first, because the app's RegisterAppView (and its AttachTo
+// wiring) requires the launcher entry to exist. Production never registers a
+// launcher this way: production routes every open_* launcher through the
+// serverExtensionRegistry (appLauncherSpec in custom_tools_register.go), which
+// keeps it catalog-searchable, NEVER individually direct, and installs its app
+// view from the same spec.
 func seedLauncherForTest(t *testing.T, srv *sdk.Server, catalog *ToolCatalog, launcher, uri string, category model.ToolCategory) {
 	t.Helper()
 	desc, err := apps.NewOpenLauncherDescriptor(apps.OpenLauncherSpec{

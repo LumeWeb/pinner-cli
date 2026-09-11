@@ -8,6 +8,7 @@ import (
 	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/mintcontract"
 
 	"go.lumeweb.com/mcpplane/model"
 
@@ -30,13 +31,18 @@ type RelayURLUploadInput struct {
 // unconditionally forbids the tool so a model never routes the byte path
 // through a URL fetch when mint + PUT is what works.
 var relayURLUploadDesc = toolforge.Static(
-	"Fetch a public HTTPS URL and upload it to Pinner, pinning the resulting CID. The returned CID is already pinned, so pins_add is not needed afterward; the wait flag waits for this upload's own pin operation. Pinner's credentials are not placed in the URL; Pinner fetches with its own stored auth.",
+	// The completion preamble composes the shared mintcontract upload
+	// completion contract (the returned CID is already pinned → pins_add is
+	// not needed afterward), and the fallback wait clause composes the
+	// canonical UploadMintPoll (which tool, with which handle, until which
+	// terminal status) — neither is ever a hand copy.
+	"Fetch a public HTTPS URL and upload it to Pinner, pinning the resulting CID. "+mintcontract.FirstUpper(mintcontract.UploadPinnedCIDCompletion)+"; the wait flag waits for this upload's own pin operation. Pinner's credentials are not placed in the URL; Pinner fetches with its own stored auth.",
 ).
 	When(hostenv.FeatSourceURL,
 		"Use when the bytes are already on the public web, not for a file in the agent sandbox — that is upload_file(source.mode=mint) plus the host PUT. The server fetches the URL directly (no download-then-re-upload).",
 	).
 	Unless(hostenv.FeatSourceURL,
-		"This transport has no URL-fetch relay. Upload bytes with upload_file(source.mode=mint) by PUTting the agent-local file to the returned url, then poll upload_status.",
+		"This transport has no URL-fetch relay. Upload bytes with upload_file(source.mode=mint) by PUTting the agent-local file to the returned url, then "+mintcontract.UploadMintPoll+".",
 	)
 
 // RelayURLUploadTargets is the per-profile description target for upload_url,

@@ -39,12 +39,12 @@ func ResolveDescription(targets []model.ToolTarget, profile hostenv.PlatformProf
 // At resolution time the shared model profile is reconstructed into the CLI
 // PlatformProfile view (hostenv.FromShared) and handed to the resolver.
 //
-// SHIM NOTE: the reconstructed profile has a zero Surface because the
-// SDK-neutral profile cannot carry the CLI-only Surface field. The resolvers
+// SHIM NOTE: the reconstructed profile has a zero DomainScope because the
+// SDK-neutral profile cannot carry the CLI-only DomainScope field. The resolvers
 // wrapped here (the toolforge DescBuilders and other description composers)
-// gate only on features, transports and hosts — never on Surface, which is a
+// gate only on features, transports and hosts — never on DomainScope, which is a
 // server-construction-time property enforced at registration, not at
-// per-request description resolution. A resolver that gated on Surface would
+// per-request description resolution. A resolver that gated on DomainScope would
 // silently see "full surface" here; keep such resolvers out of ToolTarget
 // DescFuncs.
 func DescResolver(resolve func(hostenv.PlatformProfile) string) func(model.Profile) string {

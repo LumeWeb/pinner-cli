@@ -4,7 +4,7 @@
 // WhenPred*/UnlessPred* convention. The generic DSL tests moved with the
 // machinery to mcpforge's own suite, so they exercise mcpforge with ITS test
 // context — they do not pin that this package's re-exposed gates compose
-// hostenv's predicate constructors (HostIs/TransportIs/SurfaceIs/HostedIs/And/
+// hostenv's predicate constructors (HostIs/TransportIs/DomainScopeIs/HostedIs/And/
 // Not) over the forgeCarrier with the SAME truth tables the in-repo
 // implementations had pre-extraction (f4351d88). Upstream drift in mcpforge's
 // Pred convention would otherwise silently change agent-guide/tool
@@ -40,15 +40,15 @@ var parityProfiles = []struct {
 // fixture profiles for hosted/surface gating (same shapes as the old
 // in-package tests used).
 func parityHostedFull() hostenv.PlatformProfile {
-	return hostenv.PlatformProfile{Surface: hostenv.FullSurface, Hosted: true}
+	return hostenv.PlatformProfile{DomainScope: hostenv.FullDomainScope, Hosted: true}
 }
 
 func parityHostedNoVault() hostenv.PlatformProfile {
-	return hostenv.PlatformProfile{Surface: hostenv.HostedSurface, Hosted: true}
+	return hostenv.PlatformProfile{DomainScope: hostenv.HostedDomainScope, Hosted: true}
 }
 
 func parityLocalFull() hostenv.PlatformProfile {
-	return hostenv.PlatformProfile{Surface: hostenv.FullSurface}
+	return hostenv.PlatformProfile{DomainScope: hostenv.FullDomainScope}
 }
 
 // TestDescPredicateParityHostTransport pins the DescBuilder host/transport
@@ -98,7 +98,7 @@ func TestDescPredicateParityHostTransport(t *testing.T) {
 // TestDescPredicateParitySepExplicit pins that a negated gate with an explicit
 // separator keeps the OLD composing rule: the separator is prepended when the
 // buffer is non-empty, and the branch chosen is still the negated predicate
-// (old UnlessHostSep/UnlessSurfaceSep/WhenTransportSentence truth tables).
+// (old UnlessHostSep/UnlessDomainScopeSep/WhenTransportSentence truth tables).
 func TestDescPredicateParitySepExplicit(t *testing.T) {
 	// Sentence-separator transport gate (the old WhenTransportSentence shape
 	// used by self-punctuated transport copy).
@@ -115,14 +115,14 @@ func TestDescPredicateParitySepExplicit(t *testing.T) {
 	require.Equal(t, "one", d2.Resolve(hostenv.ProfileGrokHTTP))
 }
 
-// TestDescPredicateParitySurfaceHosted pins the surface/deployment gates on
-// the fixture assemblies: Surface gates on domain availability, Hosted gates
+// TestDescPredicateParityDomainScopeHosted pins the surface/deployment gates on
+// the fixture assemblies: DomainScope gates on domain availability, Hosted gates
 // on deployment, independently — the exact expected resolved strings come
 // from the old TestSurfaceAndHostedGating expectations.
-func TestDescPredicateParitySurfaceHosted(t *testing.T) {
+func TestDescPredicateParityDomainScopeHosted(t *testing.T) {
 	desc := Static("P").
-		WhenSurface(hostenv.Surface.VaultOn, "vault on.").
-		UnlessSurface(hostenv.Surface.VaultOn, "vault off.").
+		WhenDomainScope(hostenv.DomainScope.VaultOn, "vault on.").
+		UnlessDomainScope(hostenv.DomainScope.VaultOn, "vault off.").
 		WhenHosted(true, "hosted").
 		UnlessHosted(true, "local.").
 		WhenHostedSentence(true, "Deployment is hosted.")
@@ -132,7 +132,7 @@ func TestDescPredicateParitySurfaceHosted(t *testing.T) {
 		"hosted+full-surface: When* fires, Unless* silent")
 	require.Equal(t, "P vault off. hosted. Deployment is hosted.",
 		desc.Resolve(parityHostedNoVault()),
-		"hosted+no-vault surface: UnlessSurface replaces WhenSurface, hosted copy intact")
+		"hosted+no-vault surface: UnlessDomainScope replaces WhenDomainScope, hosted copy intact")
 	require.Equal(t, "P vault on. local.",
 		desc.Resolve(parityLocalFull()),
 		"unhosted full surface: local copy only, no hosted/sentence clause")
@@ -182,18 +182,18 @@ func TestGuidePredicateParityHostGates(t *testing.T) {
 		"UnlessHost branch must be the only surviving branch off the matched host")
 }
 
-// TestGuidePredicateParitySurfaceHostedTransport pins the guide surface /
+// TestGuidePredicateParityDomainScopeHostedTransport pins the guide surface /
 // hosted gates plus the branch transport gate (old TestSurfaceAndHostedGating
 // expectations, carried into the spec.Resolve-only surface).
-func TestGuidePredicateParitySurfaceHostedTransport(t *testing.T) {
+func TestGuidePredicateParityDomainScopeHostedTransport(t *testing.T) {
 	spec := Guide().
 		RuleWhenHosted(true, "hosted rule").
 		RuleUnlessHosted(true, "local rule").
-		RuleWhenSurface(hostenv.Surface.VaultOn, "vault rule").
-		RuleUnlessSurface(hostenv.Surface.VaultOn, "no vault rule").
+		RuleWhenDomainScope(hostenv.DomainScope.VaultOn, "vault rule").
+		RuleUnlessDomainScope(hostenv.DomainScope.VaultOn, "no vault rule").
 		Flow(Flow("d", "D").
 			Steps("shared").
-			StepWhenSurface(hostenv.Surface.VaultOn, "vault_step").
+			StepWhenDomainScope(hostenv.DomainScope.VaultOn, "vault_step").
 			StepUnlessHosted(true, "local_step").
 			Decision(Decision("hosted or local?",
 				Branch("hosted").WhenHosted(true).Steps("hosted_tool"),

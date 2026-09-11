@@ -30,7 +30,8 @@ import (
 // that handler and returns the pending vault result directly in the response —
 // no async task handle or poll round-trip. Durability on Sia is handled by the
 // background flush (or the explicit vault_flush tool; sharing a pending file
-// requires a flush first).
+// requires a flush first) — canonical contract: internal/mcp/mintcontract
+// (mintcontract.DurabilitySource / mintcontract.FlushJobShape).
 //
 // Like Upload it works over BOTH transports:
 //   - stdio mode: there is no transport server, so mint() spins up a loopback

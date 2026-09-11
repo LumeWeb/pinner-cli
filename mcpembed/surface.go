@@ -15,13 +15,13 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp"
 )
 
-// Surface declares which operation domains/tool families the embedded hosted
-// server exposes. Unlike the internal Surface, the zero value here means
-// "nothing enabled" — callers opt in explicitly (typically via SurfaceHosted).
+// DomainScope declares which operation domains/tool families the embedded hosted
+// server exposes. Unlike the internal DomainScope, the zero value here means
+// "nothing enabled" — callers opt in explicitly (typically via DomainScopeHosted).
 //
 // The Sia vault and portal-admin domains are intentionally not represented:
 // a hosted embed never exposes them.
-type Surface struct {
+type DomainScope struct {
 	// Account enables account, subscription, auth, and API-key operations.
 	Account bool
 	// Pins enables the IPFS pinning operations.
@@ -40,9 +40,9 @@ type Surface struct {
 	Upload bool
 }
 
-// SurfaceHosted is the standard hosted surface: account/subscription plus the
+// DomainScopeHosted is the standard hosted surface: account/subscription plus the
 // full IPFS/websites/DNS/IPNS/ENS/operations set (no vault, no admin).
-var SurfaceHosted = Surface{
+var DomainScopeHosted = DomainScope{
 	Account:    true,
 	Pins:       true,
 	Websites:   true,
@@ -54,15 +54,15 @@ var SurfaceHosted = Surface{
 }
 
 // IsZero reports whether the surface has every flag disabled (the empty
-// value). mcpembed.New treats a zero Surface as SurfaceHosted.
-func (s Surface) IsZero() bool {
-	return s == (Surface{})
+// value). mcpembed.New treats a zero DomainScope as DomainScopeHosted.
+func (s DomainScope) IsZero() bool {
+	return s == (DomainScope{})
 }
 
-// toInternal maps the public hosted surface onto the internal Surface used by
+// toInternal maps the public hosted surface onto the internal DomainScope used by
 // the MCP implementation. The vault and admin domains are always disabled.
-func (s Surface) toInternal() mcp.Surface {
-	return mcp.Surface{
+func (s DomainScope) toInternal() mcp.DomainScope {
+	return mcp.DomainScope{
 		Account:    s.Account,
 		Pins:       s.Pins,
 		Websites:   s.Websites,

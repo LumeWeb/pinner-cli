@@ -13,6 +13,7 @@ import (
 	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
+	"go.lumeweb.com/pinner-cli/internal/mcp/schematext"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
@@ -156,48 +157,49 @@ func TestAgentGuideUploadDetailNamesRelayTools(t *testing.T) {
 // TestCapabilitiesUploadToolsListsRelayTools locks in audit 5 item 2: the
 // capabilities JSON exposes upload_tools so a structured/JSON-only reader sees
 // every upload route (not just source_modes=["mint"]). The list follows the
-// chooser order and reflects what THIS server actually REGISTERED — a relay
-// tool appears only when BOTH the registration-time effective feature set
-// declares the feature AND the relay handler is wired (matching custom_tools.go
-// registration). It is gated on the registration features, never the per-request
-// wire profile, so a server that registered no relay tools never advertises them.
+// chooser order and reflects what THIS server actually REGISTERED — the
+// registered-flag seam custom_tools.go feeds from the single
+// transferToolAvailability calculation (surface + wired handler + effective
+// feature set all applied there). The per-request wire profile plays no part:
+// a server that registered no relay tools never advertises them.
 func TestCapabilitiesUploadToolsListsRelayTools(t *testing.T) {
-	run := func(relayFeatures hostenv.FeatureSet, wired bool) func(*model.RequestCaps) CapabilityReport {
+	run := func(uploadFile, uploadURL, uploadData bool) func(*model.RequestCaps) CapabilityReport {
 		return func(caps *model.RequestCaps) CapabilityReport {
-			desc := NewCapabilitiesDescriptor(false, false, true, false, false, false, false, wired, wired, false, 0, relayFeatures)
+			desc := NewCapabilitiesDescriptor(false, false, uploadFile, false, false, false, false, uploadURL, uploadData, false, 0)
 			res, err := desc.Handler(context.Background(), model.ToolRequest{Arguments: map[string]any{}, Caps: caps})
 			require.NoError(t, err)
 			return res.StructuredContent.(CapabilityReport)
 		}
 	}
 
-	grokReg := hostenv.ProfileGrokHTTP.Features // dedicated Grok server registered with Grok features
 	grokShared := hostenv.ProfileGrokHTTP.Shared()
 	grokReq := &model.RequestCaps{Profile: &grokShared}
+
+	// A dedicated Grok server that registered every upload tool (read the
+	// wire profile, a Grok request is served the full chooser list).
 	require.Equal(t, []UploadToolCapability{UploadToolFile, UploadToolURL, UploadToolData},
-		run(grokReg, true)(grokReq).UploadTools)
-	// Same registration features, handlers NOT wired → no relay tools advertised.
-	require.Equal(t, []UploadToolCapability{UploadToolFile},
-		run(grokReg, false)(grokReq).UploadTools)
+		run(true, true, true)(grokReq).UploadTools)
 
-	// REGRESSION: a generic startup HTTP server (no host profile) registered
-	// relay tools against transport-derived features — which lack url/data — so
-	// even when a REQUEST is detected as Grok, upload_tools must not claim the
-	// unregistered relay tools.
-	genericReg := hostenv.ProfileHTTPGeneric.Features
+	// Same server, no relay tool registered → only the registered upload_file.
 	require.Equal(t, []UploadToolCapability{UploadToolFile},
-		run(genericReg, true)(grokReq).UploadTools,
-		"registration features (not the wire profile) gate upload_tools")
+		run(true, false, false)(grokReq).UploadTools)
 
-	// Generic request + generic registration + wired → only upload_file.
+	// REGRESSION: the relay flags are registration facts, not per-request
+	// profile facts. A generic startup HTTP server that registered only the
+	// unified upload_file must never claim upload_url/upload_data even when a
+	// later request is detected as Grok.
 	genericShared := hostenv.ProfileHTTPGeneric.Shared()
+	genericReq := &model.RequestCaps{Profile: &genericShared}
 	require.Equal(t, []UploadToolCapability{UploadToolFile},
-		run(genericReg, true)(&model.RequestCaps{Profile: &genericShared}).UploadTools)
+		run(true, false, false)(grokReq).UploadTools,
+		"registration (not the wire profile) gates upload_tools")
+	require.Empty(t, run(false, false, false)(genericReq).UploadTools)
 
-	// OpenAI tunnel registration + wired → all three relay tools.
-	tunnelShared := hostenv.ProfileOpenAITunnel.Shared()
-	require.Equal(t, []UploadToolCapability{UploadToolFile, UploadToolURL, UploadToolData},
-		run(hostenv.ProfileOpenAITunnel.Features, true)(&model.RequestCaps{Profile: &tunnelShared}).UploadTools)
+	// Only the relay tools registered (no unified upload tool) → the chooser
+	// lists exactly what was registered, in ordering metadata terms first
+	// upload_file then the relays.
+	require.Equal(t, []UploadToolCapability{UploadToolURL, UploadToolData},
+		run(false, true, true)(genericReq).UploadTools)
 }
 
 // TestAgentGuideByteRouteChooserInSteps locks in audit 6 items 2/3/4: the
@@ -266,7 +268,7 @@ func TestVaultByteRouteTransportGated(t *testing.T) {
 		require.NotContains(t, br.When, "public HTTPS URL", "Grok vault_put_file is mint-only; no URL branch")
 		require.NotContains(t, br.When, "raw inline bytes", "Grok vault_put_file is mint-only; no data branch")
 	}
-	require.Contains(t, grokVault.Detail, "materialize them to an agent-local file first", "Grok vault detail must give the mint materialize path")
+	require.Contains(t, grokVault.Detail, schematext.RelayVaultMaterialize, "Grok vault detail must compose the shared mint materialize path")
 	require.NotContains(t, grokVault.Detail, "via its own url/data source", "Grok must not claim vault_put_file url/data")
 
 	// OpenAI tunnel: vault_put_file HAS url/data source modes, so those branches exist.
@@ -296,7 +298,7 @@ func TestVaultByteRouteTransportGated(t *testing.T) {
 	generic := buildAgentGuide(new(hostenv.ProfileHTTPGeneric))
 	genericVault := guideFlowByName(t, generic, "vault_upload")
 	require.NotNil(t, genericVault.Decision)
-	require.Contains(t, genericVault.Detail, "materialize them to an agent-local file first", "generic HTTP vault detail must give the mint materialize path")
+	require.Contains(t, genericVault.Detail, schematext.RelayVaultMaterialize, "generic HTTP vault detail must compose the shared mint materialize path")
 	require.NotContains(t, genericVault.Detail, "upload_url", "generic HTTP has no relay tools; vault detail must not name them")
 	require.NotContains(t, genericVault.Detail, "upload_data", "generic HTTP has no relay tools; vault detail must not name them")
 
@@ -331,7 +333,8 @@ func TestVaultSourceModeCopyIsVaultSpecific(t *testing.T) {
 	grokVault := listToolsOn(t, mkVault(hostenv.ProfileGrokHTTP.Features))["vault_put_file"]
 	require.NotNil(t, grokVault, "vault_put_file must be registered")
 	grokDesc := sourceModeDescriptionOf(t, grokVault.InputSchema)
-	require.Contains(t, grokDesc, "Do not use upload_url / upload_data", "vault copy must forbid the IPFS-only relays")
+	require.Contains(t, grokDesc, "Do not use the separate relays: "+schematext.RelayToolsNotVaultWrite,
+		"vault copy must forbid the IPFS-only relays")
 	require.Contains(t, grokDesc, "write them to an agent-local file first", "Grok vault copy must give the materialize-then-PUT path")
 	require.NotContains(t, grokDesc, "For a public HTTPS URL use the separate upload_url tool", "upload_file's sibling pointer must not leak onto vault_put_file")
 

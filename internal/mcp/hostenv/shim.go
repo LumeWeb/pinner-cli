@@ -5,7 +5,7 @@
 // detectors, registry) lives in canimcp. This package keeps two
 // pinner-specific concerns out of the library and local to the CLI:
 //
-//   - Surface: which Pinner operation domains a server registers (domain
+//   - DomainScope: which Pinner operation domains a server registers (domain
 //     availability is product policy, not a wire capability fact).
 //   - Hosted: whether this server is a Portal-embedded assembly
 //     (deployment property, likewise product policy).
@@ -126,7 +126,7 @@ type DetectRequest struct {
 }
 
 // PlatformProfile is the pre-extraction profile shape: the canimcp core
-// profile plus the Pinner-only Surface and Hosted deployment properties.
+// profile plus the Pinner-only DomainScope and Hosted deployment properties.
 // It is a shim type; behavior lives in canimcp.
 type PlatformProfile struct {
 	HostType   HostType
@@ -135,12 +135,12 @@ type PlatformProfile struct {
 	Remote     bool
 	Features   FeatureSet
 
-	// Surface and Hosted are Pinner composition-root policies (full for the
+	// DomainScope and Hosted are Pinner composition-root policies (full for the
 	// CLI/local server, restricted/hosted for a Portal-embedded assembly).
 	// They are server-construction-time properties, never wire signals; a
-	// zero Surface means the full surface.
-	Surface Surface
-	Hosted  bool
+	// zero DomainScope means the full surface.
+	DomainScope DomainScope
+	Hosted      bool
 
 	// Raw wire signals, populated by the detector for runtime
 	// introspection by tools that need them at call time.
@@ -220,7 +220,7 @@ func toCoreFeatureSet(fs FeatureSet) canimcp.FeatureSet {
 }
 
 // core converts the shim profile to the canimcp core profile, dropping the
-// Pinner-only Surface/Hosted fields.
+// Pinner-only DomainScope/Hosted fields.
 func (p PlatformProfile) core() canimcp.Profile {
 	return canimcp.Profile{
 		HostType:    canimcp.HostType(p.HostType),
@@ -237,7 +237,7 @@ func (p PlatformProfile) core() canimcp.Profile {
 }
 
 // shimFromCore builds a shim profile from a canimcp core profile, with the
-// Pinner-only Surface/Hosted left at their zero values (full surface, not
+// Pinner-only DomainScope/Hosted left at their zero values (full surface, not
 // hosted) — the same defaults Detect has always produced.
 func shimFromCore(c canimcp.Profile) PlatformProfile {
 	return PlatformProfile{
@@ -273,7 +273,7 @@ func (p PlatformProfile) CloneFeatures() PlatformProfile {
 
 // Shared adapts this CLI profile to the SDK-neutral model.Profile carried
 // on model.ToolRequest / model.RequestCaps. It copies every shared field;
-// the CLI-only Surface field (which domain surfaces this server exposes) is
+// the CLI-only DomainScope field (which domain surfaces this server exposes) is
 // deliberately not representable there: it is a server-construction-time
 // property, only read from CLI-side PlatformProfile values, never from the
 // per-request model profile.
@@ -294,10 +294,10 @@ func (p PlatformProfile) Shared() model.Profile {
 }
 
 // FromShared reconstructs the CLI PlatformProfile view from the SDK-neutral
-// model.Profile. Surface is zero (meaning "full surface") because the model
+// model.Profile. DomainScope is zero (meaning "full surface") because the model
 // profile cannot carry it — only use this where the consumer is
 // surface-independent (feature/transport/host-gated description and schema
-// resolution, which never gate on Surface).
+// resolution, which never gate on DomainScope).
 func FromShared(sp model.Profile) PlatformProfile {
 	return PlatformProfile{
 		HostType:    sp.HostType,
@@ -315,7 +315,7 @@ func FromShared(sp model.Profile) PlatformProfile {
 }
 
 // Predicate is a boolean test over a resolved PlatformProfile. It stays
-// shim-local because Surface/Hosted gating needs the shim shape; generic
+// shim-local because DomainScope/Hosted gating needs the shim shape; generic
 // predicate helpers below mirror the canimcp ones exactly.
 type Predicate func(PlatformProfile) bool
 
@@ -347,7 +347,7 @@ func TransportIs(t TransportKind) Predicate {
 }
 
 // Static profiles re-exported from canimcp. The shim copies carry zero-valued
-// Surface/Hosted, matching the original declarations.
+// DomainScope/Hosted, matching the original declarations.
 var (
 	// ProfileOpenAITunnel is the OpenAI/ChatGPT embedded tunnel.
 	ProfileOpenAITunnel = shimFromCore(canimcp.ProfileOpenAITunnel)
@@ -375,7 +375,7 @@ func ProfileForTransport(t TransportKind) PlatformProfile {
 }
 
 // DetectorRegistry is the shim over the canimcp registry. Detect returns the
-// pre-extraction PlatformProfile with zero-valued Surface/Hosted.
+// pre-extraction PlatformProfile with zero-valued DomainScope/Hosted.
 type DetectorRegistry struct {
 	core *canimcp.DetectorRegistry
 }

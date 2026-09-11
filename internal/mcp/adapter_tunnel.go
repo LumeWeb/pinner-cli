@@ -224,13 +224,36 @@ adapter.`,
 			// it is non-nil for a dedicated per-host HTTP server whose
 			// upload_file / vault_put_file descriptions are re-resolved against
 			// the detected host profile.
+			// normalizedBuild is the immutable, normalized server build config
+			// (deployment axes surface/hosted + the listing policy) captured ONCE
+			// from the startup assembly and reused verbatim by every per-host
+			// REassembly (the hostServerFactory below). Reusing the same capture
+			// is what guarantees a negotiated per-host server can never diverge
+			// from the startup server's surface, deployment mode, listing
+			// strategy, meta-on-flat switch, or onboarding override — the exact
+			// MEDIUM-3 defect (reassembly silently dropping startup
+			// policy/options). It is set after the first assemble() returns.
+			var normalized *normalizedServerBuild
+
 			assemble := func(hostProfile *hostenv.PlatformProfile) (*sdk.Server, *ToolCatalog, error) {
-				srvH, catH, err := OfficialMCPServer(root, stdioMode, seedDrop, oobRestore, oobCreate, handoffReg, authHandles, catalogOpts...)
+				buildOpts := catalogOpts
+				if normalized != nil {
+					// Reassembly: reuse the startup's normalized configuration so a
+					// negotiated server stays byte-identical on its deployment and
+					// listing axes to the startup server.
+					buildOpts = append(buildOpts, normalized.opts()...)
+				}
+				// One-pass materialization: collect every extension BEFORE the
+				// official server exists, so the constructed server's initialize
+				// instructions and the per-server card derive from the completed
+				// per-server catalog (every indexed extension present). This is
+				// the same pipeline BuildServer runs.
+				catH, err := buildCatalog(root, seedDrop, oobRestore, oobCreate, handoffReg, authHandles, buildOpts...)
 				if err != nil {
 					return nil, nil, err
 				}
-				if err := registerCustomTools(customToolDeps{
-					srv:              srvH,
+				plan, err := collectServerExtensions(customToolDeps{
+					srv:              nil,
 					catalog:          catH,
 					store:            store,
 					oob:              oob,
@@ -266,16 +289,37 @@ adapter.`,
 					wizardS:     wizardS,
 					wizardD:     wizardD,
 					hostProfile: hostProfile,
-				}); err != nil {
+				})
+				if err != nil {
+					return nil, nil, err
+				}
+				// Server construction happens after collection: the instructions
+				// read the completed catalog, then the single materialization
+				// pass projects direct tools, apps, resources, and prompts.
+				srvH, err := OfficialServerFromCatalog(catH, catH.Instructions(), stdioMode, seedDrop, oobRestore, oobCreate)
+				if err != nil {
+					return nil, nil, err
+				}
+				if _, err := plan.Materialize(srvH); err != nil {
 					return nil, nil, err
 				}
 				return srvH, catH, nil
 			}
 
-			srv, _, err := assemble(nil)
+			srv, startupCat, err := assemble(nil)
 			if err != nil {
 				return err
 			}
+			// Capture the startup server's normalized build configuration (its
+			// deployment axes + listing policy) so every subsequent per-host
+			// reassembly reuses it verbatim and cannot drift from the startup
+			// server (MEDIUM-3).
+			normalized = captureServerBuild(startupCat)
+			// Capture this startup server's card state ONCE from its assembled
+			// catalog. The card is served from this immutable per-server snapshot
+			// (not package globals read at request time), so sequential/concurrent
+			// servers cannot cross-contaminate each other's card.
+			serverCard := NewServerCard(startupCat)
 
 			// hostServerFactory resolves the server to serve for each detected
 			// host profile over the shared HTTP mux. The startup server (srv)
@@ -314,7 +358,7 @@ adapter.`,
 
 			if cmd.String("tunnel") == "openai" {
 				log.Debug("serving MCP server through embedded OpenAI Secure MCP Tunnel")
-				return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload, dl, wizardS.CfgMgr, hostServerFactory)
+				return serveHTTP(ctx, srv, serverCard, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload, dl, wizardS.CfgMgr, hostServerFactory)
 			}
 
 			if !cmd.Bool("http") {
@@ -322,12 +366,12 @@ adapter.`,
 				return sdk.RunStdio(ctx, srv, os.Stdin, os.Stdout)
 			}
 
-			return serveHTTP(ctx, srv, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload, dl, wizardS.CfgMgr, hostServerFactory)
+			return serveHTTP(ctx, srv, serverCard, cmd, oob, seedDrop, oobRestore, oobCreate, accountOOB, curlUpload, vaultUpload, dl, wizardS.CfgMgr, hostServerFactory)
 		},
 	}
 }
 
-func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth.OutOfBandLogin, seedDrop *oobpkg.SeedDrop, oobRestore *oobpkg.OOBRestore, oobCreate *oobpkg.OOBCreate, accountOOB *auth.OOBAccountChange, curlUpload *mcptransfer.Upload, vaultUpload *transfer.VaultHTTPUpload, dl *mcptransfer.Download, cfgMgr config.Manager, hostServerFactory func(hostenv.PlatformProfile) *sdk.Server) error {
+func serveHTTP(ctx context.Context, srv *sdk.Server, card *ServerCard, cmd *cli.Command, oob *auth.OutOfBandLogin, seedDrop *oobpkg.SeedDrop, oobRestore *oobpkg.OOBRestore, oobCreate *oobpkg.OOBCreate, accountOOB *auth.OOBAccountChange, curlUpload *mcptransfer.Upload, vaultUpload *transfer.VaultHTTPUpload, dl *mcptransfer.Download, cfgMgr config.Manager, hostServerFactory func(hostenv.PlatformProfile) *sdk.Server) error {
 	provider := cmd.String("tunnel")
 	domain := cmd.String("domain")
 	token := cmd.String("token")
@@ -598,7 +642,10 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 	// Static server card for MCP directory scanning (Smithery and others probe
 	// /.well-known/mcp/server-card.json to index tools without a live scan).
 	// Mounted unauthenticated like healthz so directory scanners can read it.
-	mux.HandleFunc("/.well-known/mcp/server-card.json", serverCardHandler)
+	// The handler serves from the immutable per-server ServerCard captured at
+	// construction, so it never re-reads package globals at request time and
+	// cannot be contaminated by another server instance.
+	mux.HandleFunc("/.well-known/mcp/server-card.json", card.ServeHTTP)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
@@ -787,4 +834,52 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, cmd *cli.Command, oob *auth
 // empty (no tunnel). It delegates to the provider registry.
 func tunnelFor(provider, domain, token, name, tunnelID string, cfgMgr config.Manager) (tunnel.Tunnel, error) {
 	return services.TunnelFor(provider, domain, token, name, tunnelID, cfgMgr)
+}
+
+// normalizedServerBuild is the immutable, normalized server build configuration
+// (deployment axes surface/hosted + the listing policy) captured from a built
+// catalog. It lets host-profile REassembly reproduce the startup server exactly,
+// so a negotiated per-host server can never drop or silently change the
+// startup policy/options (MEDIUM-3). It reads only the catalog's own fields,
+// never package globals, so it is immutable and per-server.
+type normalizedServerBuild struct {
+	surface DomainScope
+	hosted  bool
+	listing ListingPolicy
+}
+
+// captureServerBuild snapshots the normalized build config from an assembled
+// catalog. The catalog must already carry DomainScope / Hosted / Strategy /
+// IncludeMetaOnFlat / OnboardingOverride (set by buildCatalog).
+func captureServerBuild(catalog *ToolCatalog) *normalizedServerBuild {
+	if catalog == nil {
+		return &normalizedServerBuild{
+			surface: FullDomainScope,
+			listing: ListingPolicy{
+				Strategy:          ListingProgressive,
+				IncludeMetaOnFlat: boolPtr(true),
+			},
+		}
+	}
+	return &normalizedServerBuild{
+		surface: catalog.DomainScope,
+		hosted:  catalog.Hosted,
+		listing: ListingPolicy{
+			Strategy:          catalog.Strategy,
+			IncludeMetaOnFlat: boolPtr(catalog.IncludeMetaOnFlat),
+			Onboarding:        append([]string(nil), catalog.OnboardingOverride...),
+		},
+	}
+}
+
+// opts returns the buildCatalogOpts that reproduce this normalized build
+// configuration (deployment axes + listing policy). It is what reassembly
+// appends so a negotiated server matches the startup server byte-for-byte on
+// its deployment and listing axes.
+func (n *normalizedServerBuild) opts() []buildCatalogOpt {
+	return []buildCatalogOpt{
+		withDomainScope(n.surface),
+		withHosted(n.hosted),
+		withPolicy(n.listing),
+	}
 }

@@ -15,7 +15,7 @@ import (
 )
 
 // TestSSOContinuationNoPendingIsDone guards the concurrent double-resume path
-// (M2): when pendingOutcome returns no pending request for a still-gated
+// when pendingOutcome returns no pending request for a still-gated
 // handle, the continuation reports a terminal done (the login concluded from
 // the OOB side) rather than a misleading "still pending". It also verifies the
 // continuation's own cleanup drops the registry entry on the done path.

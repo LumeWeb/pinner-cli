@@ -357,9 +357,19 @@ func TestVaultPutFileAnyFolderAcrossAllBranches(t *testing.T) {
 // TestVaultPutFileStampsMetadata verifies the stdio path handler receives the
 // auto-stamped write-context metadata the tool handler builds: src=mcp, host
 // from the request's detected profile, plus caller-supplied agent and KV. It
-// does NOT include profile (the CLI closure stamps that), so the caller-supplied
-// metadata is asserted to carry src + host + agent + kind.
+// does NOT include an explicitly requested profile, so the caller-supplied
+// metadata is asserted to carry src + host + agent + kind. The provisioned
+// unlocked-profile source behind ResolveMintProfile is swapped to an EMPTY
+// registry (hermetic — mirrors internal/mcp/upload/vault_profile_test.go):
+// with the production registry the empty request now PINS the single unlocked
+// profile, so a normal single-profile dev environment would stamp
+// MetaKeyProfile and this test would become machine-dependent without the
+// override. Single-profile pinning itself is exercised by
+// TestVaultPutFileStampsSingleUnlockedProfile below.
 func TestVaultPutFileStampsMetadata(t *testing.T) {
+	prevProfiles := transfer.SetProvisionedVaultProfilesForTest(func() []string { return nil })
+	t.Cleanup(func() { transfer.SetProvisionedVaultProfilesForTest(prevProfiles) })
+
 	var got map[string]any
 	desc := vaultPutDescriptor(true, false, func(ctx context.Context, path, vaultPath, archiveMode string, meta map[string]any) (any, error) {
 		got = meta
@@ -384,9 +394,45 @@ func TestVaultPutFileStampsMetadata(t *testing.T) {
 	require.Equal(t, "orchestrator-a", got["agent"])
 	require.Equal(t, "artifact", got["kind"])
 	require.Equal(t, "reports", got["project"])
-	// No explicit profile argument was passed, so the tool surface must NOT
-	// stamp one; the CLI closure resolves and stamps the active profile.
+	// No explicit profile argument was passed, and the swapped profile source
+	// returned NOTHING unlocked, so ResolveMintProfile resolves to "" and the
+	// stamp omits the key — the unresolved case the CLI closure handles at
+	// write time. (With exactly one unlocked profile the mint surface pins
+	// it — see TestVaultPutFileStampsSingleUnlockedProfile.)
 	require.NotContains(t, got, corevault.MetaKeyProfile, "profile is stamped by the CLI closure, not the tool handler")
+}
+
+// TestVaultPutFileStampsSingleUnlockedProfile pins the mint-time pinning
+// contract on the vault_put_file surface: with NO explicit profile argument
+// and EXACTLY ONE unlocked provisioned profile (provided hermetically via
+// SetProvisionedVaultProfilesForTest, mirroring
+// internal/mcp/upload/vault_profile_test.go), ResolveMintProfile pins that
+// single profile into the stamped metadata — the write can never re-resolve
+// against an ambiguous registry. This is the multi-profile-safe normal case
+// that made the pre-hermetic NotContains assertion machine-dependent.
+func TestVaultPutFileStampsSingleUnlockedProfile(t *testing.T) {
+	prevProfiles := transfer.SetProvisionedVaultProfilesForTest(func() []string { return []string{"work"} })
+	t.Cleanup(func() { transfer.SetProvisionedVaultProfilesForTest(prevProfiles) })
+
+	var got map[string]any
+	desc := vaultPutDescriptor(true, false, func(ctx context.Context, path, vaultPath, archiveMode string, meta map[string]any) (any, error) {
+		got = meta
+		return map[string]any{"vault_path": vaultPath}, nil
+	}, nil, nil)
+
+	shared := hostenv.PlatformProfile{HostType: hostenv.HostCodex}.Shared()
+	req := model.ToolRequest{
+		Arguments: map[string]any{
+			"source":     map[string]any{"mode": "path", "path": "/tmp/x.bin"},
+			"vault_path": "vault:/docs/x.bin",
+		},
+		Caps: &model.RequestCaps{Profile: &shared},
+	}
+	_, err := desc.Handler(context.Background(), req)
+	require.NoError(t, err)
+
+	require.Equal(t, "work", got[corevault.MetaKeyProfile],
+		"a single unlocked profile must be pinned into the metadata by ResolveMintProfile")
 }
 
 // TestVaultPutFileStampsRequestedProfile verifies that when the caller passes

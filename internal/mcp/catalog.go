@@ -69,17 +69,62 @@ type ToolCatalog struct {
 	// from the operation catalog instead of (or alongside) the CLI command
 	// tree.
 	CatalogDeps func() *CatalogDepsBundle
-	// Surface records the server construction surface (which operation domains
+	// DomainScope records the server construction surface (which operation domains
 	// and tool families are exposed). It is set by buildCatalog and read by
-	// registerCustomTools and markCurated so the whole surface agrees on what
+	// registerCustomTools and stampDirectTools so the whole surface agrees on what
 	// was registered. The zero value is the full surface.
-	Surface Surface
+	DomainScope DomainScope
+	// Hosted records whether this is a hosted (Portal-embedded) assembly. It is
+	// set by buildCatalog from the deployment hosted flag (ServerConfig.Hosted)
+	// and captured into the per-server server card along with DomainScope, so a
+	// reassembled (host-profile) server reuses the startup deployment mode
+	// rather than re-deriving it from package globals.
+	Hosted bool
 	// CompilerMode records whether buildCatalog actually entered compiler mode
 	// (opsCat resolved non-nil: the factory was supplied AND returned a
 	// bundle). It is the single source of truth both buildCatalog and
-	// registerCustomTools read to pick the curated tool set, so the two never
+	// registerCustomTools read to pick the direct tool set, so the two never
 	// disagree on which naming surface applies.
 	CompilerMode bool
+	// Strategy records the tools/list listing strategy this catalog was built
+	// with (progressive or flat). It is set by buildCatalog from the withPolicy
+	// option alongside DomainScope and is captured into the per-server server card
+	// so the card is served from immutable per-server state rather than from
+	// package globals at request time. It
+	// is the SOLE production source of truth for materialization: stampDirectTools
+	// and RegisterOfficialMetaTools read it via listingStrategy(), never the
+	// deprecated construction-time globals.
+	Strategy ToolListingStrategy
+	// IncludeMetaOnFlat records whether the progressive-disclosure meta-tools
+	// stay on tools/list under a flat strategy (inert under progressive). It is
+	// set by buildCatalog (resolving the SAFE default true for an omitted
+	// policy value) and captured into the server card with Strategy. It is the
+	// sole production source for the meta-registration gate (metaOnFlat()).
+	IncludeMetaOnFlat bool
+	// OnboardingOverride, when non-empty, is the explicit "start here" set the
+	// policy's Onboarding field selects. Onboarding() honors it instead of the
+	// builtin primary-tool predicate. It is threaded from withPolicy by
+	// buildCatalog so the onboarding path actually reflects the policy rather
+	// than only having the field parsed.
+	OnboardingOverride []string
+	// DirectCustom records the names of direct custom tools registered on
+	// tools/list through the custom-tool registry OUTSIDE catalog indexing
+	// (e.g. upload_file and vault_put_file in their no-app modes). They are not
+	// catalog entries, so the LEGACY (non-finalized) flat server card consults
+	// this set to advertise exactly the direct surface that was registered.
+	// Surfaces finalized through MaterializationPlan.Materialize supersede it: their
+	// single MaterializedTooling.direct membership is the authoritative record
+	// and this side channel is retained only for compatibility with catalogs
+	// assembled without the plan.
+	DirectCustom []string
+
+	// finalized records the one-pass MaterializedTooling this catalog's server
+	// produced (set by MaterializationPlan.Materialize). When non-nil, the ServerCard
+	// and any final-surface survey read it instead of re-deriving membership
+	// from the DirectVisible scan plus the DirectCustom side channel; it is nil
+	// for catalogs assembled without the plan (legacy/tests), which fall back
+	// to that derivation.
+	finalized *MaterializedTooling
 }
 
 // NewToolCatalog returns an empty catalog.
@@ -131,10 +176,67 @@ func (c *ToolCatalog) Entries() []*model.ToolEntry {
 	return entries
 }
 
+// listingStrategy returns this catalog's normalized tools/list listing
+// strategy: the captured Strategy when it is a valid value, ListingProgressive
+// otherwise (an invalid value must never silently serve a flat surface). This
+// — together with metaOnFlat — makes the ToolCatalog the sole production
+// source of listing policy for materialization (stampDirectTools),
+// meta-tool registration (RegisterOfficialMetaTools), and server
+// instructions, so two servers built sequentially or interleaved can never
+// cross-contaminate through a package global.
+func (c *ToolCatalog) listingStrategy() ToolListingStrategy {
+	if c != nil && c.Strategy.Valid() {
+		return c.Strategy
+	}
+	return ListingProgressive
+}
+
+// metaOnFlat returns this catalog's captured meta-on-flat switch: whether the
+// progressive-disclosure meta-tools stay on tools/list under this catalog's
+// flat strategy. Inert under progressive (meta tools are always present
+// there). An explicitly-constructed catalog that never opted into the flat
+// no-meta override carries the zero value... which only matters when Strategy
+// is flat, and every production strategy value is captured by buildCatalog
+// with the SAFE default resolved (see buildCatalogConfig.resolveIncludeMetaOnFlat),
+// so a flat catalog built by production always records its own switch.
+func (c *ToolCatalog) metaOnFlat() bool {
+	return c != nil && c.IncludeMetaOnFlat
+}
+
+// servesMetaTools reports whether this catalog's captured listing policy keeps
+// the progressive-disclosure discovery meta-tools on tools/list: always under
+// progressive, and under flat only when IncludeMetaOnFlat keeps them. It is
+// the single shared predicate for the meta registration gate
+// (RegisterOfficialMetaTools) and the finalized-surface card derivation, so
+// registration and card membership can never disagree about meta tools.
+func (c *ToolCatalog) servesMetaTools() bool {
+	return !(c.listingStrategy() == ListingFlat && !c.metaOnFlat())
+}
+
+// setFinalized records the one-pass MaterializedTooling under the catalog
+// lock so a racing FinalizedTooling reader never observes a torn write.
+func (c *ToolCatalog) setFinalized(m *MaterializedTooling) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.finalized = m
+}
+
+// FinalizedTooling returns the one-pass MaterializedTooling recorded when this
+// catalog's plan materialized, or nil when the catalog was assembled without
+// the plan (legacy/tests).
+func (c *ToolCatalog) FinalizedTooling() *MaterializedTooling {
+	if c == nil {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.finalized
+}
+
 // isOnboardingQuery reports whether a query selects the onboarding listing.
 // Both an empty query and the literal "help" keyword do. It is the single
 // routing predicate the search_tools handler uses to pick between the search
-// surface (keyword matching) and the onboarding surface (curated start-here
+// surface (keyword matching) and the onboarding surface (start-here
 // listing).
 func isOnboardingQuery(query string) bool {
 	return query == "" || query == "help"
@@ -148,7 +250,7 @@ type SearchResult struct {
 }
 
 // OnboardingResult is the wire envelope for the onboarding path (empty/help
-// query, no category): the curated primary start-here tools matching the
+// query, no category): the onboarding primary start-here tools matching the
 // agent_guide flows, plus a hint pointing the agent onward.
 type OnboardingResult struct {
 	Tools []ToolSummary `json:"tools"`
@@ -158,13 +260,22 @@ type OnboardingResult struct {
 	Hint string `json:"hint,omitempty"`
 }
 
-// Onboarding returns the curated "start here" listing for an empty/help
+// Onboarding returns the onboarding "start here" listing for an empty/help
 // search: exactly the tool steps in the four agent_guide primary flows (auth,
 // vault_create, vault_restore, pins), so a fresh agent sees a bounded set to
 // begin with instead of the full catalog dump. It is the onboarding surface,
 // distinct from Search; the handler routes to it via isOnboardingQuery when
 // no category filter is given.
 func (c *ToolCatalog) Onboarding() OnboardingResult {
+	// The "start here" membership: an explicit policy Onboarding override (threaded
+	// through withPolicy → buildCatalog → c.OnboardingOverride) replaces the builtin
+	// primary-tool predicate. With no override the builtin 13-name primary set is
+	// used, so the names are never duplicated in policy. The override semantics
+	// (non-empty membership set replaces isPrimaryTool, else defer) are evaluated
+	// by the ONE shared helper onboardingPredicate — the same one
+	// ListingPolicy.IsOnboarded consults — so the two entry points cannot
+	// drift apart.
+	onboarded := onboardingPredicate(c.OnboardingOverride)
 	var tools []ToolSummary
 	c.mu.RLock()
 	for _, t := range c.tools {
@@ -174,7 +285,7 @@ func (c *ToolCatalog) Onboarding() OnboardingResult {
 		if t.Category == model.CategoryWizard {
 			continue
 		}
-		if !isPrimaryTool(t.Name) {
+		if !onboarded(t.Name) {
 			continue
 		}
 		tools = append(tools, ToolSummary{
@@ -290,22 +401,6 @@ func (c *ToolCatalog) Search(query, category string, limit int) []ToolSummary {
 		summaries = summaries[:limit]
 	}
 	return summaries
-}
-
-// isPrimaryTool reports whether a tool belongs to the curated "start here"
-// set surfaced on an empty/help search. It mirrors exactly the tool steps in
-// the four agent_guide primary flows (auth, vault_create, vault_restore,
-// pins), so a fresh agent sees the tools it needs to begin.
-func isPrimaryTool(name string) bool {
-	switch name {
-	case "agent_guide",
-		"auth_status", "auth_sso", "auth_resume",
-		"vault_create", "vault_create_resume", "vault_status",
-		"vault_restore", "vault_restore_resume",
-		"pins_add", "pins_list", "pins_status", "pins_rm":
-		return true
-	}
-	return false
 }
 
 // Suggest returns up to max tool names close to the given (unknown) name,

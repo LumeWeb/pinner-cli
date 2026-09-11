@@ -36,8 +36,8 @@ func newAuthSSOAppServer(t *testing.T) *mcp.Server {
 	if err := mcpauth.RegisterAuthSSOApp(srv, catalog, reg, handles); err != nil {
 		t.Fatalf("mcpauth.RegisterAuthSSOApp: %v", err)
 	}
-	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
-		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
+	if err := RegisterOfficialDirectTools(srv, catalog); err != nil {
+		t.Fatalf("RegisterOfficialDirectTools: %v", err)
 	}
 	return srv
 }

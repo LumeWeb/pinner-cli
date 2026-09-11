@@ -31,8 +31,8 @@ func buildDownloadServers(t *testing.T) *mcp.Server {
 	if err := download.RegisterVaultDownloadApp(srv, catalog); err != nil {
 		t.Fatalf("download.RegisterVaultDownloadApp: %v", err)
 	}
-	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
-		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
+	if err := RegisterOfficialDirectTools(srv, catalog); err != nil {
+		t.Fatalf("RegisterOfficialDirectTools: %v", err)
 	}
 	return srv
 }

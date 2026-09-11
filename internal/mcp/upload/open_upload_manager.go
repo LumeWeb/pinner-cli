@@ -2,13 +2,14 @@ package upload
 
 import (
 	"context"
-	"fmt"
-	"time"
 
 	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/mcpplane/toolargs"
 	"go.lumeweb.com/mcpplane/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
+	coretransfer "go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/mintcontract"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 
@@ -22,11 +23,17 @@ const OpenUploadManagerURI = IPFSUploadAppURI
 const OpenUploadManagerToolName = "open_upload_manager"
 
 // openUploadManagerDescription is shared between the static Description and
-// the Fallback MCPTarget so the launcher descriptor carries a target list.
-const openUploadManagerDescription = "Open the interactive Upload to IPFS file picker. This is a UI launcher: it renders an HTML iframe so the user can pick a file. It is not a headless primitive. " +
-	"Pass an optional 'handle' from a prior upload_file mint call to continue that exact operation; if the handle is stale/expired a fresh one is prepared. " +
-	"Returns an upload_handle; poll upload_status to retrieve the final CID. " +
-	"The headless equivalent is upload_file for autonomous uploads without a rendered file picker."
+// the Fallback MCPTarget so the launcher descriptor carries a target list. It
+// is composed from the shared launcher skeleton
+// (apps.OpenLauncherDescriptionBody) so the scaffold wording cannot drift from
+// the other open_* launchers.
+var openUploadManagerDescription = apps.OpenLauncherDescriptionBody("Upload to IPFS file picker", "pick a file",
+	// The returned-handle/poll tail composes the canonical mintcontract
+	// UploadMintPoll (which tool, with which handle, until which terminal
+	// status) — never a paraphrase that drops the completed contract.
+	"Pass an optional 'handle' from a prior upload_file mint call to continue that exact operation; if the handle is stale/expired a fresh one is prepared. "+
+		"Returns an upload_handle; "+mintcontract.UploadMintPoll+".",
+	"upload_file for autonomous uploads without a rendered file picker")
 
 // OpenUploadManagerInput is the typed argument shape for the model-facing
 // Upload to IPFS launcher. handle is optional: when provided, the launcher
@@ -35,7 +42,9 @@ const openUploadManagerDescription = "Open the interactive Upload to IPFS file p
 // handle is stale/expired), the launcher prepares a fresh operation itself.
 type OpenUploadManagerInput struct {
 	Handle string `json:"handle,omitempty" jsonschema:"description=Optional upload handle from a prior upload_file mint result."`
-	TTL    string `json:"ttl,omitempty" jsonschema:"description=Optional presigned endpoint lifetime, e.g. 5m (default 5 minutes). Only used when a fresh operation is prepared."`
+	// TTL's tag composes schematext.TTLLauncherFresh (struct tags cannot embed
+	// constants; TestSchemaTextFragmentsPinned pins this literal to it).
+	TTL string `json:"ttl,omitempty" jsonschema:"description=Optional presigned endpoint lifetime, e.g. 5m (default 5m). Only used when a fresh operation is prepared."`
 }
 
 // NewOpenUploadManagerDescriptor builds the model-facing Upload to IPFS
@@ -65,15 +74,12 @@ func NewOpenUploadManagerDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 			if err != nil {
 				return model.ToolResult{}, err
 			}
-			ttl := transfer.DefaultHTTPUploadTTL
-			if in.TTL != "" {
-				d, derr := time.ParseDuration(in.TTL)
-				if derr != nil {
-					return model.ToolResult{}, fmt.Errorf("invalid ttl %q: %w", in.TTL, derr)
-				}
-				if d > 0 {
-					ttl = d
-				}
+			// ONE shared presign-TTL parser (core/transfer.ParsePresignTTL):
+			// empty → default, non-positive → default, unparseable → wrapped
+			// error with the stable `invalid ttl "..."` wording.
+			ttl, terr := coretransfer.ParsePresignTTL(in.TTL)
+			if terr != nil {
+				return model.ToolResult{}, terr
 			}
 			// continued indicates we fulfilled the caller's EXISTING operation.
 			// It is true only when the supplied handle resolved to a live
@@ -93,21 +99,21 @@ func NewOpenUploadManagerDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 					handle = in.Handle
 					continued = true
 				} else {
-					url, handle = hp.Prepare(ctx, "upload", ttl)
+					url, handle = hp.Prepare(ctx, transfer.DefaultUploadName, ttl)
 				}
 			} else {
 				// Fresh operation: mint a presigned endpoint AND its canonical
 				// upload_handle so the app picker continues this exact task.
-				url, handle = hp.Prepare(ctx, "upload", ttl)
+				url, handle = hp.Prepare(ctx, transfer.DefaultUploadName, ttl)
 			}
 			if url == "" || handle == "" {
-				return model.ToolResult{}, fmt.Errorf("failed to prepare one-time upload endpoint")
+				return model.ToolResult{}, coretransfer.ErrUploadPrepare
 			}
 			sc := map[string]any{
-				"upload_handle":      handle,
-				"upload_handle_poll": "upload_status",
-				"presigned_url":      url,
-				"continued":          continued,
+				"upload_handle":                  handle,
+				coretransfer.UploadHandlePollKey: coretransfer.UploadStatusTool,
+				"presigned_url":                  url,
+				"continued":                      continued,
 			}
 			return model.ToolResult{
 				StructuredContent: sc,

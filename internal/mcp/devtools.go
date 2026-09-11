@@ -171,7 +171,7 @@ func capsInitializeParams(request model.ToolRequest) map[string]any {
 
 // registerDevTools adds the dev_* introspection tools to the catalog. It is
 // called only when dev tools are enabled; each entry carries DirectVisible so
-// the curated loop surfaces it on tools/list.
+// the direct loop surfaces it on tools/list.
 func registerDevTools(catalog *ToolCatalog) {
 	if catalog == nil {
 		return

@@ -7,8 +7,8 @@ import (
 	"go.lumeweb.com/mcpplane/model"
 )
 
-// TestNewOpenLauncherDescriptorRejectsUnmarshalableMeta pins the Stage-5
-// de-fork behavior: NewOpenLauncherDescriptor PROPAGATES the _meta.ui marshal
+// TestNewOpenLauncherDescriptorRejectsUnmarshalableMeta pins the error-return
+// behavior: NewOpenLauncherDescriptor PROPAGATES the _meta.ui marshal
 // failure (an empty ResourceURI) instead of silently registering a launcher
 // with nil metadata — a nil-meta launcher would pass registration and then
 // fail to render its app view with no error. Characterization introduced with

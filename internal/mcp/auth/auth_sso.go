@@ -99,7 +99,7 @@ func NewAuthSSODescriptor(oob *OutOfBandLogin, handles *session.AsyncHandleStore
 				ActionURL:  url,
 				Handle:     id,
 				ResumeTool: "auth_resume",
-				Detail:     "Ask the user to open the approval URL in their browser and complete sign-in. Then call auth_resume with the handle.",
+				Detail:     "Ask the user to open the approval URL in their browser and complete sign-in. Then call auth_resume with the handle; if auth_resume is not in your visible tool list, it is progressively discoverable via the search_tools meta-tool (auth_sso itself stays directly listed on tools/list).",
 			}), nil
 		},
 	}

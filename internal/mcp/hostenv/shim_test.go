@@ -24,19 +24,19 @@ func TestAndPredicateHostedConjunct(t *testing.T) {
 	require.False(t, And(isGrok, Not(HostedIs(true)))(hosted), "hosted grok must not match the !hosted conjunct")
 }
 
-// TestDetectDefaultsToFullSurface pins that registry detection keeps
-// producing profiles with a zero Surface (implicit full surface) and
+// TestDetectDefaultsToFullDomainScope pins that registry detection keeps
+// producing profiles with a zero DomainScope (implicit full surface) and
 // Hosted=false, which is the pre-extraction behavior every caller relied on.
-func TestDetectDefaultsToFullSurface(t *testing.T) {
+func TestDetectDefaultsToFullDomainScope(t *testing.T) {
 	stdio := NewRegistry().Detect(DetectRequest{CoLocated: true})
 	require.Equal(t, HostGeneric, stdio.HostType)
-	require.True(t, stdio.Surface.IsZero(), "detect must leave Surface zero (full surface)")
+	require.True(t, stdio.DomainScope.IsZero(), "detect must leave DomainScope zero (full surface)")
 	require.False(t, stdio.Hosted)
-	require.True(t, stdio.Surface.AccountOn() && stdio.Surface.VaultOn() && stdio.Surface.PinsOn(), "zero surface reads as full surface")
+	require.True(t, stdio.DomainScope.AccountOn() && stdio.DomainScope.VaultOn() && stdio.DomainScope.PinsOn(), "zero surface reads as full surface")
 
 	tunnel := NewRegistry().Detect(DetectRequest{TunnelOpenAI: true})
 	require.Equal(t, HostChatGPT, tunnel.HostType)
-	require.True(t, tunnel.Surface.IsZero())
+	require.True(t, tunnel.DomainScope.IsZero())
 	require.Equal(t, ProfileOpenAITunnel.Features, tunnel.Features)
 }
 

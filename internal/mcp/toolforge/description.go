@@ -29,7 +29,7 @@ import (
 // feature/predicate-gated segments (mcpforge.DescBuilder specialized over the
 // CLI platform profile via the forgeCarrier adapter). See mcpforge.DescBuilder
 // for the full method set; hostenv supplies the predicate constructors
-// (HostIs, TransportIs, SurfaceIs, HostedIs) for the gates no single Feature
+// (HostIs, TransportIs, DomainScopeIs, HostedIs) for the gates no single Feature
 // expresses, and this shim keeps the historical host/transport/surface/hosted
 // convenience gates reading as prose.
 type DescBuilder struct {
@@ -257,26 +257,26 @@ func (d DescBuilder) UnlessTransport(t hostenv.TransportKind, text string) DescB
 	return d.UnlessPred(hostenv.TransportIs(t), text)
 }
 
-// WhenSurface appends text included only when the profile's surface passes
-// get (a Surface accessor).
-func (d DescBuilder) WhenSurface(get func(hostenv.Surface) bool, text string) DescBuilder {
-	return d.WhenPred(hostenv.SurfaceIs(get), text)
+// WhenDomainScope appends text included only when the profile's surface passes
+// get (a DomainScope accessor).
+func (d DescBuilder) WhenDomainScope(get func(hostenv.DomainScope) bool, text string) DescBuilder {
+	return d.WhenPred(hostenv.DomainScopeIs(get), text)
 }
 
-// WhenSurfaceSep is WhenSurface with a custom separator.
-func (d DescBuilder) WhenSurfaceSep(sep string, get func(hostenv.Surface) bool, text string) DescBuilder {
-	return d.WhenPredSep(sep, hostenv.SurfaceIs(get), text)
+// WhenDomainScopeSep is WhenDomainScope with a custom separator.
+func (d DescBuilder) WhenDomainScopeSep(sep string, get func(hostenv.DomainScope) bool, text string) DescBuilder {
+	return d.WhenPredSep(sep, hostenv.DomainScopeIs(get), text)
 }
 
-// UnlessSurface appends text included only when the profile's surface fails
+// UnlessDomainScope appends text included only when the profile's surface fails
 // get.
-func (d DescBuilder) UnlessSurface(get func(hostenv.Surface) bool, text string) DescBuilder {
-	return d.UnlessPred(hostenv.SurfaceIs(get), text)
+func (d DescBuilder) UnlessDomainScope(get func(hostenv.DomainScope) bool, text string) DescBuilder {
+	return d.UnlessPred(hostenv.DomainScopeIs(get), text)
 }
 
-// UnlessSurfaceSep is UnlessSurface with a custom separator.
-func (d DescBuilder) UnlessSurfaceSep(sep string, get func(hostenv.Surface) bool, text string) DescBuilder {
-	return d.UnlessPredSep(sep, hostenv.SurfaceIs(get), text)
+// UnlessDomainScopeSep is UnlessDomainScope with a custom separator.
+func (d DescBuilder) UnlessDomainScopeSep(sep string, get func(hostenv.DomainScope) bool, text string) DescBuilder {
+	return d.UnlessPredSep(sep, hostenv.DomainScopeIs(get), text)
 }
 
 // WhenHosted appends text included only when the profile's deployment matches
