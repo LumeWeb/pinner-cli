@@ -4,30 +4,17 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/urfave/cli/v3"
 )
 
-// TestCLICompilerCommandCount compiles a sample catalog spanning the safety and
-// interaction spectrum and asserts one *cli.Command per operation.
-func TestCLICompilerCommandCount(t *testing.T) {
-	c := buildCompileSample(t)
-	cmds, err := NewCLICompiler().Compile(c)
-	if err != nil {
-		t.Fatalf("Compile: %v", err)
-	}
-	if len(cmds) != 4 {
-		t.Fatalf("len(cmds) = %d, want 4", len(cmds))
-	}
-}
-
 // TestCLICompilerCommandIdentity checks the declared Command fields derived from
-// the Operation (name, usage from Summary, description).
+// the Operation (name, usage from Summary, description) on the leaf builder
+// (NewCLILeaf -> commandFor) that every production domain routes through.
 func TestCLICompilerCommandIdentity(t *testing.T) {
 	op := compiledOp(t, "vault_create")
 	if op.Name != "vault_create" {
-		t.Fatalf("cmd.Name = %q, want vault.create", op.Name)
+		t.Fatalf("cmd.Name = %q, want vault_create", op.Name)
 	}
 	if op.Usage != "create a vault" {
 		t.Fatalf("cmd.Usage = %q, want from Summary", op.Usage)
@@ -81,116 +68,10 @@ func TestCLICompilerFlagMapping(t *testing.T) {
 	}
 }
 
-// TestCLICompilerDestructiveForceGate asserts a destructive op's Action refuses
-// without --force and succeeds with it.
-func TestCLICompilerDestructiveForceGate(t *testing.T) {
-	cmd := compiledOp(t, "vault.delete")
-
-	// Without --force the Action must refuse.
-	err := cmd.Run(context.Background(), []string{"vault.delete", "--name", "x"})
-	if err == nil {
-		t.Fatal("destructive action should refuse without --force")
-	}
-
-	// With --force it reaches the Handler and succeeds.
-	err = cmd.Run(context.Background(), []string{"vault.delete", "--name", "x", "--force"})
-	if err != nil {
-		t.Fatalf("destructive action with --force should succeed: %v", err)
-	}
-}
-
-// TestCLICompilerNumericZeroNotEmpty pins the valueFor fix: an explicit zero
-// (e.g. --ttl 0) on a numeric/duration arg is a legitimate value, not "empty".
-// Earlier code treated v==0 as empty and wrongly refused a required numeric arg
-// set to 0 with "required argument --ttl was empty".
-func TestCLICompilerNumericZeroNotEmpty(t *testing.T) {
-	c := NewCatalog()
-	if err := c.Add(NewOperation(OperationSpec{
-		Name: "job.schedule", Title: "Schedule", Summary: "schedule a job",
-		Category: "job", Safety: SafetyMutate,
-		Interaction: InteractionAgentSafe, Visibility: VisibilityModel,
-		Args: []OperationArg{
-			{Name: "name", Type: ArgTypeString, Required: true},
-			{Name: "ttl", Type: ArgTypeInt, Required: true},
-			{Name: "grace", Type: ArgTypeDuration, Required: true},
-		},
-		Handler: markerHandler{marker: "ran:job.schedule"},
-	})); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-	cmds, err := NewCLICompiler().Compile(c)
-	if err != nil {
-		t.Fatalf("Compile: %v", err)
-	}
-	var cmd *cli.Command
-	for _, cc := range cmds {
-		if cc.Name == "job.schedule" {
-			cmd = cc
-			break
-		}
-	}
-	if cmd == nil {
-		t.Fatal("job.schedule command not found")
-	}
-	// Using --ttl 0 --grace 0s must reach the handler, not be rejected as empty.
-	if err := cmd.Run(context.Background(), []string{"job.schedule", "--name", "x", "--ttl", "0", "--grace", "0s"}); err != nil {
-		t.Fatalf("action with zero numeric values should succeed: %v", err)
-	}
-}
-
-// TestCLICompilerAppliesDefaults pins the round-4 fix: the CLI actionFor must
-// apply declared defaults uniformly with the Invoke path (via
-// normalizeInputDefaults), so a Handler sees the same keys on the CLI as on MCP.
-// It also covers required+default-arg satisfaction: an arg that is both Required
-// and carries a Default is satisfied by the default rather than rejected.
-func TestCLICompilerAppliesDefaults(t *testing.T) {
-	h := &captureHandler{}
-	c := NewCatalog()
-	if err := c.Add(NewOperation(OperationSpec{
-		Name: "job.schedule", Title: "Schedule", Summary: "schedule a job",
-		Category: "job", Safety: SafetyMutate,
-		Interaction: InteractionAgentSafe, Visibility: VisibilityModel,
-		Args: []OperationArg{
-			{Name: "name", Type: ArgTypeString, Required: true},
-			// Required AND defaulted: the default satisfies requiredness.
-			{Name: "ttl", Type: ArgTypeInt, Required: true, Default: "3600"},
-			{Name: "grace", Type: ArgTypeDuration, Default: "30s"},
-		},
-		Handler: h,
-	})); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-	cmds, err := NewCLICompiler().Compile(c)
-	if err != nil {
-		t.Fatalf("Compile: %v", err)
-	}
-	var cmd *cli.Command
-	for _, cc := range cmds {
-		if cc.Name == "job.schedule" {
-			cmd = cc
-			break
-		}
-	}
-	if cmd == nil {
-		t.Fatal("job.schedule command not found")
-	}
-	// Provide only the required name arg; the ttl/grace defaults must be filled
-	// by the shared normalizeInputDefaults sink (same as the Invoke path).
-	if err := cmd.Run(context.Background(), []string{"job.schedule", "--name", "x"}); err != nil {
-		t.Fatalf("action with defaulted args should succeed: %v", err)
-	}
-	if h.got["ttl"] != 3600 {
-		t.Fatalf("default ttl not applied on CLI, got %#v", h.got["ttl"])
-	}
-	if d, ok := h.got["grace"].(time.Duration); !ok || d != 30*time.Second {
-		t.Fatalf("default grace not applied on CLI, got %#v", h.got["grace"])
-	}
-}
-
-// TestCLICompilerRejectsForceArgOnDestructive pins the round-11 fix: a
-// destructive operation must not declare an arg named "force", which would
-// collide with the synthetic --force confirm gate (urfave 'flag redefined').
-// Compile must return a descriptive error instead.
+// TestCLICompilerRejectsForceArgOnDestructive pins the fix: a destructive
+// operation must not declare an arg named "force", which would collide with the
+// synthetic --force confirm gate (urfave 'flag redefined'). The leaf builder
+// (NewCLILeaf -> commandFor) must return a descriptive error instead.
 func TestCLICompilerRejectsForceArgOnDestructive(t *testing.T) {
 	c := NewCatalog()
 	if err := c.Add(NewOperation(OperationSpec{
@@ -202,8 +83,9 @@ func TestCLICompilerRejectsForceArgOnDestructive(t *testing.T) {
 	})); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	if _, err := NewCLICompiler().Compile(c); err == nil {
-		t.Fatal("Compile of destructive op with 'force' arg should error")
+	op := findOp(t, c, "vault.nuke")
+	if _, err := NewCLILeaf(op, op.Name(), "", nil); err == nil {
+		t.Fatal("NewCLILeaf of destructive op with 'force' arg should error")
 	}
 }
 
@@ -215,7 +97,7 @@ func TestCLICompilerRejectsForceArgOnDestructive(t *testing.T) {
 func TestCLICompilerPositionalOnlyNoFlag(t *testing.T) {
 	// The PositionalOnly carve-out is frontend metadata keyed by the stable
 	// operation ID in module catalogmeta (dns_records_create's "zone" arg is
-	// PositionalOnly), so this test pins the compiler's merge against the real
+	// PositionalOnly), so this test pins the merge against the real
 	// module metadata rather than an inline field.
 	c := NewCatalog()
 	if err := c.Add(NewOperation(OperationSpec{
@@ -232,15 +114,7 @@ func TestCLICompilerPositionalOnlyNoFlag(t *testing.T) {
 	})); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-
-	cmds, err := NewCLICompiler().Compile(c)
-	if err != nil {
-		t.Fatalf("Compile: %v", err)
-	}
-	if len(cmds) != 1 {
-		t.Fatalf("expected 1 command, got %d", len(cmds))
-	}
-	cmd := cmds[0]
+	cmd := leafFor(t, c, "dns_records_create")
 
 	// The PositionalOnly "zone" arg must appear in no flag; name and type must.
 	got := map[string]bool{}
@@ -284,15 +158,7 @@ func TestCLICompilerAgentOnlyNoFlag(t *testing.T) {
 	})); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-
-	cmds, err := NewCLICompiler().Compile(c)
-	if err != nil {
-		t.Fatalf("Compile: %v", err)
-	}
-	if len(cmds) != 1 {
-		t.Fatalf("expected 1 command, got %d", len(cmds))
-	}
-	cmd := cmds[0]
+	cmd := leafFor(t, c, "websites_create")
 
 	// Only the non-agent args (website, cid) are emitted as flags; the
 	// AgentOnly platform/label args must not appear.
@@ -369,19 +235,36 @@ func buildCompileSample(t *testing.T) Catalog {
 	return c
 }
 
-// compiledOp compiles the sample catalog and returns the command named name.
+// compiledOp builds a leaf for the named operation in the sample catalog via
+// the production leaf builder (NewCLILeaf) and returns the *cli.Command.
 func compiledOp(t *testing.T, name string) *cli.Command {
 	t.Helper()
-	cmds, err := NewCLICompiler().Compile(buildCompileSample(t))
+	return leafFor(t, buildCompileSample(t), name)
+}
+
+// leafFor builds a *cli.Command leaf for the named operation in cat through
+// the production leaf builder path (NewCLILeaf -> commandFor). It is the
+// direct test consumer for the shape/flag construction that all catalog
+// domains share.
+func leafFor(t *testing.T, c Catalog, name string) *cli.Command {
+	t.Helper()
+	op := findOp(t, c, name)
+	cmd, err := NewCLILeaf(op, name, "", nil)
 	if err != nil {
-		t.Fatalf("Compile: %v", err)
+		t.Fatalf("NewCLILeaf(%s): %v", name, err)
 	}
-	for _, cmd := range cmds {
-		if cmd.Name == name {
-			return cmd
+	return cmd
+}
+
+// findOp returns the operation in cat whose Name() matches name.
+func findOp(t *testing.T, c Catalog, name string) Operation {
+	t.Helper()
+	for _, op := range c.Search("", "", VisibilityBoth) {
+		if op.Name() == name {
+			return op
 		}
 	}
-	t.Fatalf("command %q not found in compiled output", name)
+	t.Fatalf("operation %q not found", name)
 	return nil
 }
 

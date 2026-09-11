@@ -27,16 +27,14 @@ func TestAgentRequiredNotRequiredCLIFlag(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 
-	cmds, err := NewCLICompiler().Compile(c)
+	cmd, err := NewCLILeaf(findOp(t, c, "job.submit"), "job.submit", "", nil)
 	if err != nil {
-		t.Fatalf("Compile CLI: %v", err)
+		t.Fatalf("NewCLILeaf: %v", err)
 	}
-	for _, cmd := range cmds {
-		for _, f := range cmd.Flags {
-			if f.Names()[0] == "cids" {
-				if r, ok := f.(interface{ IsRequired() bool }); ok && r.IsRequired() {
-					t.Error("AgentRequired arg cids must NOT be a required CLI flag")
-				}
+	for _, f := range cmd.Flags {
+		if f.Names()[0] == "cids" {
+			if r, ok := f.(interface{ IsRequired() bool }); ok && r.IsRequired() {
+				t.Error("AgentRequired arg cids must NOT be a required CLI flag")
 			}
 		}
 	}

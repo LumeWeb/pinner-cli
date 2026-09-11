@@ -18,6 +18,11 @@ import (
 // keeps the CLI-only compiler (and its urfave dependency) separate so the
 // shared surface never imports urfave/cli or pterm.
 
+// ForceFlagName is the boolean confirm flag the CLI leaf builder adds to every
+// SafetyDestructive operation. The consuming CLI mount's gate factories read
+// it to decide whether to require --force before running a destructive op.
+const ForceFlagName = "force"
+
 // Compiler turns a Catalog into one frontend's native command/tool surface. T
 // is the frontend-specific element type: the CLI compiler is a
 // Compiler[*cli.Command], the MCP compiler (in the pinner module) is a
@@ -31,13 +36,10 @@ type Compiler[T any] interface {
 	Compile(cat opmesh.Catalog) ([]T, error)
 }
 
-// ForceFlagName is the boolean confirm flag the CLI compiler adds to every
-// SafetyDestructive operation. When it is not set the command's Action refuses
-// to run, matching how the existing CLI gates force operations behind --force.
-const ForceFlagName = "force"
-
 // NewCLICompiler returns an urfave/cli/v3 compiler (a Compiler[*cli.Command])
-// that maps a Catalog to []*cli.Command.
+// that maps a Catalog to []*cli.Command. This is the legacy whole-catalog
+// compile API, retained for the pre-shared-adapter internal/cli wiring; the new
+// declarative command-shape compiler is available separately via NewCLILeaf.
 func NewCLICompiler() Compiler[*cli.Command] { return &cliCompiler{} }
 
 // cliCompiler maps a Catalog's operations to urfave/cli/v3 *cli.Command values.
@@ -65,15 +67,44 @@ func (c *cliCompiler) Compile(cat opmesh.Catalog) ([]*cli.Command, error) {
 		if err != nil {
 			return nil, err
 		}
+		// The shared commandFor leaves Action nil for the declarative
+		// NewCLILeaf path; the legacy whole-catalog compiler wires the action
+		// adapter itself so internal/cli keeps its prior behavior.
+		cmd.Action = actionFor(op)
 		cmds = append(cmds, cmd)
 	}
 	return cmds, nil
 }
 
+// NewCLILeaf builds an urfave/cli/v3 *cli.Command shape node for one catalog
+// operation using the resolved shape fields (primary display name, category,
+// aliases) from the declarative shape model. It wires everything the compiler
+// owns — usage, description, args-usage, flags (incl. the destructive --force
+// gate) and the HumanOnly usage note — via commandFor, which leaves Action nil
+// so the consuming CLI package's leaf builder can attach its catalog action
+// adapter (flags and behavior stay mount-owned). This is the
+// only place clicatalog constructs a *cli.Command from a resolved LeafLocator;
+// it is neutral with respect to internal/cli — cfg is never named here, and
+// the caller (internal/cli) sets the Action and relaxFlagRequired.
+func NewCLILeaf(op opmesh.Operation, name, category string, aliases []string) (*cli.Command, error) {
+	cmd, err := commandFor(op)
+	if err != nil {
+		return nil, err
+	}
+	cmd.Name = name
+	cmd.Category = category
+	cmd.Aliases = aliases
+	return cmd, nil
+}
+
 // commandFor builds a single *cli.Command from an Operation descriptor. It
-// returns an error if a destructive operation declares an arg whose name collides
-// with the reserved --force confirm gate, which would otherwise produce a
-// duplicate --force flag and a urfave 'flag redefined' error at runtime.
+// keeps Action nil: behavior is attached by the consuming CLI mount via its
+// catalog action adapter (see NewCLILeaf), never here. The legacy whole-catalog
+// compiler (cliCompiler.Compile) sets the Action itself via actionFor after the
+// fact. commandFor returns an error if a destructive operation declares an arg
+// whose name collides with the reserved --force confirm gate, which would
+// otherwise produce a duplicate --force flag and a urfave 'flag redefined'
+// error at runtime.
 func commandFor(op opmesh.Operation) (*cli.Command, error) {
 	destructive := op.Safety() == opmesh.SafetyDestructive
 
@@ -83,7 +114,6 @@ func commandFor(op opmesh.Operation) (*cli.Command, error) {
 		Description: op.Description(),
 		ArgsUsage:   op.Positional(),
 		Flags:       flagsFor(op),
-		Action:      actionFor(op),
 	}
 
 	// A destructive operation always gets a --force confirm gate. Guard
@@ -123,8 +153,8 @@ func commandFor(op opmesh.Operation) (*cli.Command, error) {
 // PositionalOnly/AgentOnly carve-outs (and the per-arg env-var Sources) are
 // read from the module's frontend-metadata boundary
 // (catalogmeta.ArgFrontendForArg), keyed by the stable operation ID. Absent
-// entries mean "no frontend specialization", matching the pre-migration
-// default on every operation that declared none.
+// entries mean "no frontend specialization", which is the default for every
+// operation that declares none.
 func flagsFor(op opmesh.Operation) []cli.Flag {
 	args := op.Args()
 	if len(args) == 0 {
@@ -204,7 +234,9 @@ func isRequiredArg(a opmesh.OperationArg) bool {
 // actionFor returns the urfave ActionFunc adapter that dispatches to the
 // operation's Handler. It builds an input map from the parsed flags, enforces
 // the --force confirm gate for destructive operations and the required-arg
-// contract, then prints the Handler's result.
+// contract, then prints the Handler's result. It is used by the legacy
+// whole-catalog compiler (cliCompiler) so internal/cli keeps its prior
+// command behavior; the declarative NewCLILeaf path leaves Action unset.
 func actionFor(op opmesh.Operation) cli.ActionFunc {
 	destructive := op.Safety() == opmesh.SafetyDestructive
 
@@ -282,10 +314,9 @@ func cliRequiredArgError(op opmesh.Operation, err error) error {
 }
 
 // cliArgValue is the single source of truth for how each ArgType surfaces from
-// a parsed urfave command into the operation input map. Both the compiled
-// command path (actionFor) and the wiring adapters (FlagValue) delegate to it,
-// so a new ArgType needs exactly one mapping instead of a copy per presentation
-// adapter.
+// a parsed urfave command into the operation input map. Every wiring adapter
+// (FlagValue / FlagsToInput) delegates to it, so a new ArgType needs exactly
+// one mapping instead of a copy per presentation adapter.
 //
 // It returns:
 //   - value: the input-map value. When not set, nullable bool yields nil
