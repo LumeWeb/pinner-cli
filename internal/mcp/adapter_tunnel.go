@@ -1,7 +1,7 @@
 // Tunnel is the default build. The heavy cloudflared / openai tunnel-client
 // dependencies are only excluded when the host opts out via the "no_tunnel"
-// build tag (the mcpembed hosted-server library) — the portal carries that
-// cost, not end users.
+// build tag — hosts that do not need the CLI's public-tunnel serving (the
+// streamable-HTTP MCP transport) can build without that dependency.
 //go:build !no_tunnel
 
 package mcp

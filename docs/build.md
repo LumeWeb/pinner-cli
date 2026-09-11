@@ -38,18 +38,16 @@ Running from source: `go run ./cmd/pinner <command>`.
 
 | Target | Depends on | Action |
 |---|---|---|
-| `make build` (default) | `mcpembed` | `CGO_ENABLED=1 go build -ldflags="$(LDFLAGS)" -o pinner ./cmd/pinner` |
-| `make install` | `mcpembed` | `CGO_ENABLED=1 go install -ldflags="$(LDFLAGS)" ./cmd/pinner` |
-| `make test` | `mcpembed` | `go test ./...` |
-| `make mcpembed` | `templinstall generate jsbuild cssbuild` | Regenerates every embeddable asset (templ + JS + CSS) |
+| `make build` (default) | `assets` | `CGO_ENABLED=1 go build -ldflags="$(LDFLAGS)" -o pinner ./cmd/pinner` |
+| `make install` | `assets` | `CGO_ENABLED=1 go install -ldflags="$(LDFLAGS)" ./cmd/pinner` |
+| `make test` | `assets` | `go test ./...` |
+| `make assets` | `templinstall generate jsbuild cssbuild` | Regenerates every embeddable asset (templ + JS + CSS) |
 | `make generate` | — | `templ generate` (recurses the repo from the root; *not* `go generate ./...`) |
 | `make templinstall` | — | `go install github.com/a-h/templ/cmd/templ@v0.3.1020` |
 | `make clean` | — | `rm -f pinner` |
 
-`mcpembed` is what `go generate ./mcpembed` invokes (`make -C .. mcpembed`).
-It is declared `.PHONY` because a real source directory named `mcpembed/`
-exists; without that, `make` would treat the directory as an up-to-date target
-and skip regeneration.
+`assets` is declared `.PHONY` so `make` never treats the asset targets as
+up-to-date and always regenerates the embeddable templ/JS/CSS assets.
 
 The default goal is pinned to `build` so a bare `make` always produces a
 binary.
