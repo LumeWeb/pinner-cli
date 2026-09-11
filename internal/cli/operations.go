@@ -100,6 +100,53 @@ func allOperationsSettled(result *OperationsListResult) bool {
 	return true
 }
 
+// watchOperation polls a single operation until it reaches a terminal
+// (settled) status, printing status/progress/message updates as they change
+// and finally rendering the full detail. It mirrors the historical hand-written
+// `operations get --watch` loop: human-output only, driven by the typed Get
+// through a fixed 2s ticker, exiting early on context cancellation.
+func watchOperation(ctx context.Context, service OperationsService, output Output, id int64) error {
+	output.PrintFields(FieldGroup{
+		Title:  fmt.Sprintf("Watching operation %d", id),
+		Fields: []Field{{"Instructions", "Press Ctrl+C to stop"}},
+	})
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	var lastStatus string
+
+	for {
+		select {
+		case <-ctx.Done():
+			output.Printfln("Watch stopped")
+			return nil
+		case <-ticker.C:
+			op, err := service.Get(ctx, id)
+			if err != nil {
+				return err
+			}
+
+			if lastStatus != op.Status {
+				fields := []Field{
+					{"Status", formatOperationStatusWithColor(op.Status)},
+					{"Progress", fmt.Sprintf("%.0f%%", op.ProgressPercent)},
+				}
+				if op.StatusMessage != "" {
+					fields = append(fields, Field{"Message", op.StatusMessage})
+				}
+				output.PrintFields(FieldGroup{PadTop: 1, Fields: fields})
+				lastStatus = op.Status
+			}
+
+			if portalsdk.OperationStatus(op.Status).IsSettled() {
+				output.Printfln("Operation has reached terminal status: %s", op.Status)
+				return renderOperationDetail(output, op)
+			}
+		}
+	}
+}
+
 func renderOperationDetail(output Output, op *OperationDetail) error {
 	headers := []string{"Property", "Value"}
 	rows := [][]string{

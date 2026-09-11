@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/opmesh"
 	"go.lumeweb.com/pinner/catalogops"
 	configmocks "go.lumeweb.com/pinner/core/config/mocks"
 	"go.lumeweb.com/pinner/core/operations"
@@ -937,4 +938,77 @@ func TestWatchCatalogOperationsList_ForwardsSearch(t *testing.T) {
 	cmd := &cli.Command{Writer: &buf}
 	err := watchCatalogOperationsList(context.Background(), cmd, nil, map[string]any{"search": "foo"})
 	require.NoError(t, err)
+}
+
+// TestWatchCatalogOperationGet_LiveWiring proves `operations get --watch` is
+// handled by the shared catalog adapter (Kody regression: the PreNormalizeWatch
+// hook only wired list, so the compiled get --watch flag was silently ignored
+// and the plain one-shot Get ran instead). Running the operations_get leaf
+// through the production catalogActionAdapter + operationsCatalogConfig drives
+// the typed Get watch poll loop: the pipeline short-circuits into
+// watchCatalogOperationGet, polls Get until the operation settles, and prints
+// the watch status lines before the terminal render.
+func TestWatchCatalogOperationGet_LiveWiring(t *testing.T) {
+	opsSvc := NewMockOperationsService(t)
+	opsSvc.EXPECT().RequireAuthenticated().Return(nil)
+	opsSvc.EXPECT().Get(mock.Anything, int64(7)).Return(&OperationDetail{
+		ID:                   7,
+		CID:                  "QmTest",
+		Status:               "completed",
+		StatusDisplayName:    "Completed",
+		Operation:            "pin",
+		OperationDisplayName: "Pin",
+		Protocol:             "ipfs",
+		ProtocolDisplayName:  "IPFS",
+		ProgressPercent:      100,
+		StartedAt:            "2024-01-01",
+		UpdatedAt:            "2024-01-01",
+	}, nil)
+
+	prev := operationsCatalogDepsVar
+	operationsCatalogDepsVar = catalogops.OperationsDeps{
+		Service: func(map[string]any) operations.Service { return opsSvc },
+	}
+	defer func() { operationsCatalogDepsVar = prev }()
+
+	var getOp opmesh.Operation
+	for _, o := range catalogops.OperationsOperations(operationsCatalogDepsVar) {
+		if o.Name() == "operations_get" {
+			getOp = o
+			break
+		}
+	}
+	require.NotNil(t, getOp, "operations_get op should be found")
+
+	var buf bytes.Buffer
+	cmd := newPipelineCommand(getOp, operationsCatalogConfig())
+	cmd.Writer = &buf
+
+	// The watcher settles on the first 2s tick (Get returns a completed op).
+	err := runPipeline(cmd, "--watch", "7")
+	require.NoError(t, err)
+
+	out := buf.String()
+	assert.Contains(t, out, "Watching operation 7", "get --watch should enter the typed watch loop")
+	assert.Contains(t, out, "Operation has reached terminal status", "get --watch should observe settlement")
+}
+
+// TestWatchCatalogOperationGet_RequiresAuth verifies that an unauthenticated
+// service short-circuits the get watch path with the auth error before any Get
+// call (mirroring the list watcher's auth guard).
+func TestWatchCatalogOperationGet_RequiresAuth(t *testing.T) {
+	opsSvc := NewMockOperationsService(t)
+	opsSvc.EXPECT().RequireAuthenticated().Return(errors.New("not authenticated"))
+
+	prev := operationsCatalogDepsVar
+	operationsCatalogDepsVar = catalogops.OperationsDeps{
+		Service: func(map[string]any) operations.Service { return opsSvc },
+	}
+	defer func() { operationsCatalogDepsVar = prev }()
+
+	var buf bytes.Buffer
+	cmd := &cli.Command{Writer: &buf}
+	err := watchCatalogOperationGet(context.Background(), cmd, nil, map[string]any{"id": int64(7)})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not authenticated")
 }

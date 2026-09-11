@@ -119,12 +119,16 @@ func operationsCatalogConfig() CatalogAdapterConfig {
 			return nil
 		},
 
-		// `operations list --watch` polls until the list settles. Driving it
-		// from the wiring (not the catalogops handler) keeps catalogops
-		// IO-agnostic.
+		// `operations list --watch` / `operations get --watch` poll until the
+		// target settles. Driving them from the wiring (not the catalogops
+		// handler) keeps catalogops IO-agnostic and preserves the historical
+		// human-output watch loops.
 		PreNormalizeWatch: func(ic *CatalogInvokeContext) (bool, error) {
 			if ic.Op.Name() == "operations_list" && ic.C.Bool(FlagWatch) && !ic.Output.IsJSON() {
 				return true, watchCatalogOperationsList(ic.Ctx, ic.C, ic.Op, ic.Input)
+			}
+			if ic.Op.Name() == "operations_get" && ic.C.Bool(FlagWatch) && !ic.Output.IsJSON() {
+				return true, watchCatalogOperationGet(ic.Ctx, ic.C, ic.Op, ic.Input)
 			}
 			return false, nil
 		},
@@ -166,6 +170,27 @@ func watchCatalogOperationsList(ctx context.Context, c *cli.Command, op opmesh.O
 	}
 	opts.IsWatch = true
 	return watchOperationsList(ctx, svc, output, opts)
+}
+
+// watchCatalogOperationGet runs the operations get watcher for the
+// catalog-driven command, with an OperationsService resolved from the
+// catalogops deps closure. It requires authentication up front and reads the
+// positional/flag <id> from the normalized input, then drives the typed
+// watchOperation poll loop until the single operation settles.
+func watchCatalogOperationGet(ctx context.Context, c *cli.Command, op opmesh.Operation, input map[string]any) error {
+	output := setupOutput(c)
+	svc := operationsCatalogDepsVar.Service(input)
+	if svc == nil {
+		return fmt.Errorf("operations service unavailable")
+	}
+	if err := svc.RequireAuthenticated(); err != nil {
+		return err
+	}
+	id := int64(opmesh.IntArg(input, "id", 0))
+	if id == 0 {
+		return fmt.Errorf("operations_get: operation ID is required")
+	}
+	return watchOperation(ctx, svc, output, id)
 }
 
 // renderOperationsResult renders an operations handler's typed DATA through the
