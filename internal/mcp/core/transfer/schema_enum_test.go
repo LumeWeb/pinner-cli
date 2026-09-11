@@ -8,6 +8,7 @@ import (
 
 	"go.lumeweb.com/mcpplane/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
+	"go.lumeweb.com/pinner-cli/internal/mcp/schematext"
 )
 
 // uploadFileSchemaShape is the typed shape of the upload_file tool schema we
@@ -172,6 +173,74 @@ func TestArchiveModeDescriptionNamesOnlyAcceptedRoutes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestArchiveModeSchemaFragmentsComposed pins the archive-mode parity between
+// the two schema paths: the static property copy (archiveModeSchemaDesc, dead
+// on the wire because archiveModeSchemaTransform always overwrites it) and the
+// live transformed copy (archiveModeDesc / mintOnlyArchiveModeDesc resolution)
+// must both compose the SAME shared sentence fragments — the static copy is a
+// composition of every fragment, never an independently maintained literal.
+func TestArchiveModeSchemaFragmentsComposed(t *testing.T) {
+	// Every shared fragment appears in the static property copy.
+	fragments := []string{
+		archiveModeLead, archiveModeBase, archiveDefaultLead,
+		archiveDefaultHostFile, archiveDefaultPath, archiveDefaultMint,
+		archiveDefaultRelay, archiveWebsiteMintClause,
+	}
+	for _, frag := range fragments {
+		require.Contains(t, archiveModeSchemaDesc, frag,
+			"the static archive_mode copy must compose the shared fragment %q", frag)
+	}
+
+	// The transformed copy for every non-mint-only profile composes the SAME
+	// base fragments plus only its accepted routes' default fragments. The
+	// mint-only (Grok) shape is pinned by the existing route-acceptance table
+	// (TestArchiveModeDescriptionNamesOnlyAcceptedRoutes).
+	specs := []struct {
+		name  string
+		fs    hostenv.FeatureSet
+		want  []string // fragments the transformed copy must contain
+		notIn []string
+	}{
+		{name: "openai-http", fs: hostenv.ProfileOpenAIHTTP.Features,
+			want:  []string{archiveModeLead, archiveModeBase, archiveDefaultLead, archiveDefaultHostFile, archiveDefaultMint, archiveWebsiteMintClause},
+			notIn: []string{archiveDefaultPath, archiveDefaultRelay}},
+		{name: "stdio", fs: hostenv.ProfileStdioGeneric.Features,
+			want:  []string{archiveModeLead, archiveModeBase, archiveDefaultLead, archiveDefaultPath},
+			notIn: []string{archiveDefaultHostFile, archiveDefaultMint, archiveDefaultRelay, archiveWebsiteMintClause}},
+		{name: "openai-tunnel", fs: hostenv.ProfileOpenAITunnel.Features,
+			want:  []string{archiveModeLead, archiveModeBase, archiveDefaultLead, archiveDefaultHostFile, archiveDefaultRelay},
+			notIn: []string{archiveDefaultPath, archiveDefaultMint, archiveWebsiteMintClause}},
+	}
+	for _, spec := range specs {
+		spec := spec
+		t.Run(spec.name, func(t *testing.T) {
+			var s uploadFileSchemaShape
+			require.NoError(t, json.Unmarshal(uploadFileSchema(spec.fs), &s))
+			desc := s.Properties.ArchiveMode.Description
+			for _, want := range spec.want {
+				require.Contains(t, desc, want, "%s: transformed archive_mode must compose fragment %q", spec.name, want)
+			}
+			for _, banned := range spec.notIn {
+				require.NotContains(t, desc, banned, "%s: transformed archive_mode must not include fragment %q", spec.name, banned)
+			}
+		})
+	}
+}
+
+// TestVaultSourceModeRelayFragmentsComposed pins vaultSourceModeDesc's
+// mint-only clause to the shared schematext relay-not-vault fragments — the
+// same fragments the agent guide's vault upload flow composes (pinned in that
+// package by TestRelayVaultGuidanceComposed), so the relay guidance has one
+// source across both copies.
+func TestVaultSourceModeRelayFragmentsComposed(t *testing.T) {
+	prof := hostenv.PlatformProfile{Features: hostenv.ProfileGrokHTTP.Features}
+	desc := vaultSourceModeDesc.Resolve(prof)
+	require.Contains(t, desc, schematext.RelayVaultMaterialize,
+		"vaultSourceModeDesc must compose the shared materialize-then-mint fragment")
+	require.Contains(t, desc, schematext.RelayToolsNotVaultWrite,
+		"vaultSourceModeDesc must compose the shared relay-not-vault fragment")
 }
 
 // TestSourceModeEnumValuesContract verifies SourceModeEnumValues stays the
