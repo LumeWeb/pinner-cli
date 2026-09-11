@@ -215,7 +215,7 @@ func TestIsNilPointerResultTypedNil(t *testing.T) {
 // TestRenderVerifyGuidance checks the websites_domains_verify failure path
 // renders DNS self-service guidance in human output, suppresses it in JSON mode
 // (so machine output stays clean), and renders nothing for non-verify ops —
-// locking in the behavior the catalog migration dropped.
+// locking in the behavior.
 func TestRenderVerifyGuidance(t *testing.T) {
 	capture := func(json bool) (*bytes.Buffer, Output) {
 		var buf bytes.Buffer
@@ -250,47 +250,5 @@ func TestRenderVerifyGuidance(t *testing.T) {
 	renderVerifyGuidance(outOther, opOther, dnsErr)
 	if bufOther.Len() != 0 {
 		t.Errorf("expected no guidance for a non-verify op, got: %q", bufOther.String())
-	}
-}
-
-// TestApplyPositionalArgsSurplusRejected guards against silently dropping extra
-// CLI arguments: `domains rm good.example bogus` must reject `bogus` rather than
-// deleting good.example while ignoring the surplus (restores legacy validation).
-func TestApplyPositionalArgsSurplusRejected(t *testing.T) {
-	makeOp := func(positional string) opmesh.Operation {
-		return opmesh.NewOperation(opmesh.OperationSpec{
-			Name:       "websites_domains_remove",
-			Positional: positional,
-			Args: []opmesh.OperationArg{
-				{Name: "domain", Type: opmesh.ArgTypeString, Required: true},
-			},
-		})
-	}
-
-	// Single-slot op (remove): one arg maps, two args are rejected.
-	input := map[string]any{}
-	if err := applyPositionalArgs(makeOp("<domain>"), input, &mockArgs{args: []string{"good.example"}}); err != nil {
-		t.Fatalf("single arg should map cleanly, got err: %v", err)
-	}
-	if input["domain"] != "good.example" {
-		t.Errorf("domain = %v, want good.example", input["domain"])
-	}
-
-	input2 := map[string]any{}
-	err := applyPositionalArgs(makeOp("<domain>"), input2, &mockArgs{args: []string{"good.example", "bogus"}})
-	if err == nil {
-		t.Fatal("expected surplus-arg error, got nil")
-	}
-	if !strings.Contains(err.Error(), "bogus") {
-		t.Errorf("error should name the surplus argument, got: %v", err)
-	}
-
-	// Two-slot op with optional lead (add): two args are valid, three are not.
-	input3 := map[string]any{}
-	err = applyPositionalArgs(opmesh.NewOperation(opmesh.OperationSpec{
-		Name: "websites_domains_add", Positional: "[<website>] <domain>",
-	}), input3, &mockArgs{args: []string{"my-site", "good.example", "bogus"}})
-	if err == nil {
-		t.Fatal("expected surplus-arg error for add with 3 args, got nil")
 	}
 }

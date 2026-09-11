@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
@@ -12,8 +11,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/opmesh"
 	"go.lumeweb.com/pinner/catalogops"
-	"go.lumeweb.com/pinner/core/config"
 	configmocks "go.lumeweb.com/pinner/core/config/mocks"
 	"go.lumeweb.com/pinner/core/operations"
 	portalsdk "go.lumeweb.com/portal-sdk"
@@ -556,8 +555,8 @@ func TestNewOperationsListCommand(t *testing.T) {
 		assert.True(t, flagNames[FlagPage])
 		assert.True(t, flagNames[FlagPageSize])
 		// NOTE: the legacy list command exposed --watch, but the core
-		// operations.Service.List has no watch capability; list-watch was
-		// dropped in the catalog migration (get --watch is preserved).
+		// operations.Service.List has no watch capability; list-watch is not
+		// available (get --watch is preserved).
 	})
 }
 
@@ -573,259 +572,6 @@ func TestNewOperationsGetCommand(t *testing.T) {
 		}
 		require.NotNil(t, cmd, "operations parent must expose a 'get' subcommand")
 		assert.Equal(t, "get", cmd.Name)
-	})
-}
-
-func TestOperationsList(t *testing.T) {
-	t.Run("successful list with results", func(t *testing.T) {
-		cfgMgr := newTestConfigMgr(t)
-		output := newTestOutput()
-		opsSvc := NewMockOperationsService(t)
-
-		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-			OperationFilter: "",
-			ProtocolFilter:  "",
-			CIDFilter:       "",
-			Start:           0,
-			Limit:           10,
-		}).Return(&OperationsListResult{
-			Operations: []OperationListItem{
-				{ID: 1, CID: "QmTest", Status: "completed", Operation: "pin", OperationDisplayName: "Pin", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},
-			},
-			Total: 1,
-		}, nil)
-
-		cmd := newMockCommand()
-
-		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
-		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
-
-		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
-		require.NoError(t, err)
-	})
-
-	t.Run("successful list with empty results", func(t *testing.T) {
-		cfgMgr := newTestConfigMgr(t)
-		output := newTestOutput()
-		opsSvc := NewMockOperationsService(t)
-
-		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{Start: 0, Limit: 10}).Return(&OperationsListResult{
-			Operations: []OperationListItem{},
-			Total:      0,
-		}, nil)
-
-		cmd := newMockCommand()
-
-		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
-		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
-
-		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
-		require.NoError(t, err)
-	})
-
-	t.Run("returns error when not authenticated", func(t *testing.T) {
-		cfgMgr := newTestConfigMgr(t)
-		output := newTestOutput()
-		opsSvc := NewMockOperationsService(t)
-
-		opsSvc.EXPECT().RequireAuthenticated().Return(ErrNotAuthenticated)
-
-		cmd := newMockCommand()
-
-		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
-		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
-
-		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
-		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrNotAuthenticated))
-	})
-
-	t.Run("returns error when list fails", func(t *testing.T) {
-		cfgMgr := newTestConfigMgr(t)
-		output := newTestOutput()
-		opsSvc := NewMockOperationsService(t)
-
-		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{Start: 0, Limit: 10}).Return(nil, errors.New("server error"))
-
-		cmd := newMockCommand()
-
-		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
-		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
-
-		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "server error")
-	})
-
-	t.Run("passes filters to service", func(t *testing.T) {
-		cfgMgr := newTestConfigMgr(t)
-		output := newTestOutput()
-		opsSvc := NewMockOperationsService(t)
-
-		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-			StatusFilters:   []string{"processing"},
-			OperationFilter: "upload",
-			ProtocolFilter:  "ipfs",
-			CIDFilter:       "QmTest",
-			Start:           0,
-			Limit:           5,
-		}).Return(&OperationsListResult{
-			Operations: []OperationListItem{},
-			Total:      0,
-		}, nil)
-
-		cmd := newMockCommand().
-			withStringSlice(FlagStatus, []string{"processing"}).
-			withString(FlagOperation, "upload").
-			withString(FlagProtocol, "ipfs").
-			withString(FlagCID, "QmTest").
-			withInt(FlagPageSize, 5)
-
-		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
-		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
-
-		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
-		require.NoError(t, err)
-	})
-
-	t.Run("returns error when cfgMgr factory fails", func(t *testing.T) {
-		output := newTestOutput()
-		cmd := newMockCommand()
-
-		cfgMgrFactory := func() (config.Manager, error) { return nil, errors.New("config error") }
-		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
-		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return nil }
-
-		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "config error")
-	})
-}
-
-func TestOperationsGet(t *testing.T) {
-	t.Run("successful get operation", func(t *testing.T) {
-		cfgMgr := newTestConfigMgr(t)
-		output := newTestOutput()
-		opsSvc := NewMockOperationsService(t)
-
-		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().Get(mock.Anything, int64(42)).Return(&OperationDetail{
-			ID:                   42,
-			CID:                  "QmTest",
-			Status:               "completed",
-			StatusDisplayName:    "Completed",
-			Operation:            "pin",
-			OperationDisplayName: "Pin",
-			Protocol:             "ipfs",
-			ProtocolDisplayName:  "IPFS",
-			ProgressPercent:      100,
-			StartedAt:            "2024-01-01T00:00:00Z",
-			UpdatedAt:            "2024-01-01T00:00:00Z",
-		}, nil)
-
-		cmd := newMockCommand().withArgs("42")
-
-		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
-		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
-
-		err := operationsGet(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
-		require.NoError(t, err)
-	})
-
-	t.Run("returns error when no operation ID provided", func(t *testing.T) {
-		cfgMgr := newTestConfigMgr(t)
-		output := newTestOutput()
-		opsSvc := NewMockOperationsService(t)
-
-		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-
-		cmd := newMockCommand()
-
-		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
-		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
-
-		err := operationsGet(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
-		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrOperationNotFound))
-	})
-
-	t.Run("returns error for invalid operation ID", func(t *testing.T) {
-		cfgMgr := newTestConfigMgr(t)
-		output := newTestOutput()
-		opsSvc := NewMockOperationsService(t)
-
-		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-
-		cmd := newMockCommand().withArgs("not-a-number")
-
-		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
-		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
-
-		err := operationsGet(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid operation ID")
-	})
-
-	t.Run("returns error when get fails", func(t *testing.T) {
-		cfgMgr := newTestConfigMgr(t)
-		output := newTestOutput()
-		opsSvc := NewMockOperationsService(t)
-
-		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().Get(mock.Anything, int64(999)).Return(nil, fmt.Errorf("not found"))
-
-		cmd := newMockCommand().withArgs("999")
-
-		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
-		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
-
-		err := operationsGet(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not found")
-	})
-
-	t.Run("returns error when not authenticated", func(t *testing.T) {
-		cfgMgr := newTestConfigMgr(t)
-		output := newTestOutput()
-		opsSvc := NewMockOperationsService(t)
-
-		opsSvc.EXPECT().RequireAuthenticated().Return(ErrNotAuthenticated)
-
-		cmd := newMockCommand().withArgs("1")
-
-		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
-		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
-
-		err := operationsGet(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
-		require.Error(t, err)
-		assert.True(t, errors.Is(err, ErrNotAuthenticated))
-	})
-
-	t.Run("returns error when cfgMgr factory fails", func(t *testing.T) {
-		output := newTestOutput()
-		cmd := newMockCommand().withArgs("1")
-
-		cfgMgrFactory := func() (config.Manager, error) { return nil, errors.New("config error") }
-		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
-		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return nil }
-
-		err := operationsGet(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "config error")
 	})
 }
 
@@ -1024,134 +770,6 @@ func TestWatchOperationsList(t *testing.T) {
 	})
 }
 
-func TestWatchOperation(t *testing.T) {
-	t.Run("exits cleanly when context cancelled", func(t *testing.T) {
-		opsSvc := NewMockOperationsService(t)
-		output := newTestOutput()
-
-		ctx, cancel := context.WithCancel(context.Background())
-		// Cancel quickly so the ticker loop exits via ctx.Done()
-		go func() {
-			time.Sleep(100 * time.Millisecond)
-			cancel()
-		}()
-
-		err := watchOperation(ctx, opsSvc, output, 42)
-		require.NoError(t, err)
-	})
-
-	t.Run("exits when operation is complete on first ticker check", func(t *testing.T) {
-		opsSvc := NewMockOperationsService(t)
-		output := newTestOutput()
-
-		opsSvc.EXPECT().Get(mock.Anything, int64(7)).Return(&OperationDetail{
-			ID:                   7,
-			CID:                  "QmDone",
-			Status:               "completed",
-			StatusDisplayName:    "Completed",
-			Operation:            "pin",
-			OperationDisplayName: "Pin",
-			Protocol:             "ipfs",
-			ProtocolDisplayName:  "IPFS",
-			ProgressPercent:      100,
-			StartedAt:            "2024-01-01T00:00:00Z",
-			UpdatedAt:            "2024-01-01T00:01:00Z",
-		}, nil)
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		err := watchOperation(ctx, opsSvc, output, 7)
-		require.NoError(t, err)
-	})
-
-	t.Run("returns error when get fails during ticker loop", func(t *testing.T) {
-		opsSvc := NewMockOperationsService(t)
-		output := newTestOutput()
-
-		opsSvc.EXPECT().Get(mock.Anything, int64(99)).Return(nil, errors.New("not found"))
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		err := watchOperation(ctx, opsSvc, output, 99)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not found")
-	})
-
-	t.Run("exits when operation reaches failed status", func(t *testing.T) {
-		opsSvc := NewMockOperationsService(t)
-		output := newTestOutput()
-
-		opsSvc.EXPECT().Get(mock.Anything, int64(5)).Return(&OperationDetail{
-			ID:                   5,
-			CID:                  "QmFail",
-			Status:               "failed",
-			StatusDisplayName:    "Failed",
-			Operation:            "upload",
-			OperationDisplayName: "Upload",
-			Protocol:             "ipfs",
-			ProtocolDisplayName:  "IPFS",
-			ProgressPercent:      30,
-			StartedAt:            "2024-01-01T00:00:00Z",
-			UpdatedAt:            "2024-01-01T00:01:00Z",
-			Error:                "disk full",
-		}, nil)
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		err := watchOperation(ctx, opsSvc, output, 5)
-		require.NoError(t, err)
-	})
-
-	t.Run("detects status change between checks", func(t *testing.T) {
-		opsSvc := NewMockOperationsService(t)
-		output := newTestOutput()
-
-		callCount := 0
-		opsSvc.EXPECT().Get(mock.Anything, int64(10)).RunAndReturn(
-			func(ctx context.Context, id int64) (*OperationDetail, error) {
-				callCount++
-				if callCount == 1 {
-					return &OperationDetail{
-						ID:                   10,
-						CID:                  "QmProgress",
-						Status:               "processing",
-						StatusDisplayName:    "Processing",
-						Operation:            "upload",
-						OperationDisplayName: "Upload",
-						Protocol:             "ipfs",
-						ProtocolDisplayName:  "IPFS",
-						ProgressPercent:      50,
-						StartedAt:            "2024-01-01T00:00:00Z",
-						UpdatedAt:            "2024-01-01T00:01:00Z",
-					}, nil
-				}
-				return &OperationDetail{
-					ID:                   10,
-					CID:                  "QmProgress",
-					Status:               "completed",
-					StatusDisplayName:    "Completed",
-					Operation:            "upload",
-					OperationDisplayName: "Upload",
-					Protocol:             "ipfs",
-					ProtocolDisplayName:  "IPFS",
-					ProgressPercent:      100,
-					StartedAt:            "2024-01-01T00:00:00Z",
-					UpdatedAt:            "2024-01-01T00:02:00Z",
-				}, nil
-			},
-		)
-
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		err := watchOperation(ctx, opsSvc, output, 10)
-		require.NoError(t, err)
-	})
-}
-
 func TestParseSortOptions(t *testing.T) {
 	t.Run("single field default desc", func(t *testing.T) {
 		sorts := parseSortOptions("id")
@@ -1242,168 +860,6 @@ func TestValidateOperationStatus(t *testing.T) {
 	})
 }
 
-func TestOperationsList_SortFlag(t *testing.T) {
-	t.Run("passes sort to service", func(t *testing.T) {
-		cfgMgr := newTestConfigMgr(t)
-		output := newTestOutput()
-		opsSvc := NewMockOperationsService(t)
-
-		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-			Sort:  "id:desc",
-			Start: 0,
-			Limit: 10,
-		}).Return(&OperationsListResult{
-			Operations: []OperationListItem{},
-			Total:      0,
-		}, nil)
-
-		cmd := newMockCommand().
-			withString(FlagSort, "id:desc")
-
-		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
-		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
-
-		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
-		require.NoError(t, err)
-	})
-
-	t.Run("passes custom sort to service", func(t *testing.T) {
-		cfgMgr := newTestConfigMgr(t)
-		output := newTestOutput()
-		opsSvc := NewMockOperationsService(t)
-
-		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-			Sort:  "started:asc",
-			Start: 0,
-			Limit: 10,
-		}).Return(&OperationsListResult{
-			Operations: []OperationListItem{},
-			Total:      0,
-		}, nil)
-
-		cmd := newMockCommand().
-			withString(FlagSort, "started:asc")
-
-		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
-		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
-
-		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
-		require.NoError(t, err)
-	})
-}
-
-func TestOperationsList_StatusValidation(t *testing.T) {
-	t.Run("rejects invalid status", func(t *testing.T) {
-		cfgMgr := newTestConfigMgr(t)
-		output := newTestOutput()
-		opsSvc := NewMockOperationsService(t)
-
-		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-
-		cmd := newMockCommand().
-			withStringSlice(FlagStatus, []string{"invalid"})
-
-		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
-		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
-
-		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid status")
-	})
-
-	t.Run("accepts valid status", func(t *testing.T) {
-		cfgMgr := newTestConfigMgr(t)
-		output := newTestOutput()
-		opsSvc := NewMockOperationsService(t)
-
-		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-			StatusFilters: []string{"processing"},
-			Start:         0,
-			Limit:         10,
-		}).Return(&OperationsListResult{
-			Operations: []OperationListItem{},
-			Total:      0,
-		}, nil)
-
-		cmd := newMockCommand().
-			withStringSlice(FlagStatus, []string{"processing"})
-
-		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
-		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
-
-		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
-		require.NoError(t, err)
-	})
-}
-
-func TestOperationsList_Pagination(t *testing.T) {
-	t.Run("passes page and page-size to service", func(t *testing.T) {
-		cfgMgr := newTestConfigMgr(t)
-		output := newTestOutput()
-		opsSvc := NewMockOperationsService(t)
-
-		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-			Start: 40,
-			Limit: 20,
-		}).Return(&OperationsListResult{
-			Operations: []OperationListItem{
-				{ID: 21, CID: "Qm21", Status: "completed", Operation: "pin", OperationDisplayName: "Pin", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},
-			},
-			Total: 50,
-		}, nil)
-
-		cmd := newMockCommand().
-			withInt(FlagPage, 3).
-			withInt(FlagPageSize, 20)
-
-		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
-		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
-
-		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
-		require.NoError(t, err)
-	})
-
-	t.Run("shows showing X-Y of Z in output", func(t *testing.T) {
-		cfgMgr := newTestConfigMgr(t)
-		output := newTestOutput()
-		var buf bytes.Buffer
-		output.SetWriter(&buf)
-		opsSvc := NewMockOperationsService(t)
-
-		opsSvc.EXPECT().RequireAuthenticated().Return(nil)
-		opsSvc.EXPECT().List(mock.Anything, OperationsListOptions{
-			Start: 10,
-			Limit: 10,
-		}).Return(&OperationsListResult{
-			Operations: []OperationListItem{
-				{ID: 11, CID: "Qm11", Status: "completed", Operation: "pin", OperationDisplayName: "Pin", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},
-				{ID: 12, CID: "Qm12", Status: "completed", Operation: "pin", OperationDisplayName: "Pin", Protocol: "ipfs", ProtocolDisplayName: "IPFS", ProgressPercent: 100, StartedAt: "2024-01-01"},
-			},
-			Total: 25,
-		}, nil)
-
-		cmd := newMockCommand().
-			withInt(FlagPage, 2)
-
-		cfgMgrFactory := func() (config.Manager, error) { return cfgMgr, nil }
-		authSvcFactory := func(cm config.Manager, endpoint string) AuthService { return nil }
-		svcFactory := func(cm config.Manager, out Output, as AuthService) OperationsService { return opsSvc }
-
-		err := operationsList(context.Background(), cmd, output, cfgMgrFactory, authSvcFactory, svcFactory)
-		require.NoError(t, err)
-		assert.Contains(t, buf.String(), "Showing 11-12 of 25 operation(s)")
-	})
-}
-
 // TestWatchCatalogOperationsList_PaginationAndAuth verifies the wiring-level
 // regressions that Kody flagged on the watch path: watchCatalogOperationsList
 // must (1) require authentication before polling and (2) clamp unset/zero
@@ -1482,4 +938,77 @@ func TestWatchCatalogOperationsList_ForwardsSearch(t *testing.T) {
 	cmd := &cli.Command{Writer: &buf}
 	err := watchCatalogOperationsList(context.Background(), cmd, nil, map[string]any{"search": "foo"})
 	require.NoError(t, err)
+}
+
+// TestWatchCatalogOperationGet_LiveWiring proves `operations get --watch` is
+// handled by the shared catalog adapter (Kody regression: the PreNormalizeWatch
+// hook only wired list, so the compiled get --watch flag was silently ignored
+// and the plain one-shot Get ran instead). Running the operations_get leaf
+// through the production catalogActionAdapter + operationsCatalogConfig drives
+// the typed Get watch poll loop: the pipeline short-circuits into
+// watchCatalogOperationGet, polls Get until the operation settles, and prints
+// the watch status lines before the terminal render.
+func TestWatchCatalogOperationGet_LiveWiring(t *testing.T) {
+	opsSvc := NewMockOperationsService(t)
+	opsSvc.EXPECT().RequireAuthenticated().Return(nil)
+	opsSvc.EXPECT().Get(mock.Anything, int64(7)).Return(&OperationDetail{
+		ID:                   7,
+		CID:                  "QmTest",
+		Status:               "completed",
+		StatusDisplayName:    "Completed",
+		Operation:            "pin",
+		OperationDisplayName: "Pin",
+		Protocol:             "ipfs",
+		ProtocolDisplayName:  "IPFS",
+		ProgressPercent:      100,
+		StartedAt:            "2024-01-01",
+		UpdatedAt:            "2024-01-01",
+	}, nil)
+
+	prev := operationsCatalogDepsVar
+	operationsCatalogDepsVar = catalogops.OperationsDeps{
+		Service: func(map[string]any) operations.Service { return opsSvc },
+	}
+	defer func() { operationsCatalogDepsVar = prev }()
+
+	var getOp opmesh.Operation
+	for _, o := range catalogops.OperationsOperations(operationsCatalogDepsVar) {
+		if o.Name() == "operations_get" {
+			getOp = o
+			break
+		}
+	}
+	require.NotNil(t, getOp, "operations_get op should be found")
+
+	var buf bytes.Buffer
+	cmd := newPipelineCommand(getOp, operationsCatalogConfig())
+	cmd.Writer = &buf
+
+	// The watcher settles on the first 2s tick (Get returns a completed op).
+	err := runPipeline(cmd, "--watch", "7")
+	require.NoError(t, err)
+
+	out := buf.String()
+	assert.Contains(t, out, "Watching operation 7", "get --watch should enter the typed watch loop")
+	assert.Contains(t, out, "Operation has reached terminal status", "get --watch should observe settlement")
+}
+
+// TestWatchCatalogOperationGet_RequiresAuth verifies that an unauthenticated
+// service short-circuits the get watch path with the auth error before any Get
+// call (mirroring the list watcher's auth guard).
+func TestWatchCatalogOperationGet_RequiresAuth(t *testing.T) {
+	opsSvc := NewMockOperationsService(t)
+	opsSvc.EXPECT().RequireAuthenticated().Return(errors.New("not authenticated"))
+
+	prev := operationsCatalogDepsVar
+	operationsCatalogDepsVar = catalogops.OperationsDeps{
+		Service: func(map[string]any) operations.Service { return opsSvc },
+	}
+	defer func() { operationsCatalogDepsVar = prev }()
+
+	var buf bytes.Buffer
+	cmd := &cli.Command{Writer: &buf}
+	err := watchCatalogOperationGet(context.Background(), cmd, nil, map[string]any{"id": int64(7)})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not authenticated")
 }

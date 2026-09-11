@@ -8,6 +8,8 @@ import (
 
 	"github.com/manifoldco/promptui"
 	"github.com/urfave/cli/v3"
+	portalsdk "go.lumeweb.com/portal-sdk"
+
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/flag"
 	"go.lumeweb.com/pinner/core/auth"
 	"go.lumeweb.com/pinner/core/config"
@@ -259,15 +261,25 @@ func validateJWTFormat(token string) error {
 	return nil
 }
 
-// saveAuthTokenWithFactories is the testable implementation of saveAuthToken.
-func saveAuthTokenWithFactories(output Output, token string, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
+// newAuthFor loads the config manager, reads the API endpoint, and builds the
+// auth service. It wraps config-manager initialization failures so all callers
+// report the same error.
+func newAuthFor(cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) (auth.AuthService, error) {
 	cfgMgr, err := cfgMgrFactory()
 	if err != nil {
-		return fmt.Errorf("failed to initialize config manager: %w", err)
+		return nil, fmt.Errorf("failed to initialize config manager: %w", err)
 	}
 
 	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
-	authService := authServiceFactory(cfgMgr, apiEndpoint)
+	return authServiceFactory(cfgMgr, apiEndpoint), nil
+}
+
+// saveAuthTokenWithFactories is the testable implementation of saveAuthToken.
+func saveAuthTokenWithFactories(output Output, token string, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
+	authService, err := newAuthFor(cfgMgrFactory, authServiceFactory)
+	if err != nil {
+		return err
+	}
 
 	res, err := authService.SaveToken(token)
 	if err != nil {
@@ -315,13 +327,10 @@ func authLoginWithFactories(ctx context.Context, cmd flagGetter, output Output, 
 	force := cmd.Bool("force")
 
 	// Initialize config manager and auth service
-	cfgMgr, err := cfgMgrFactory()
+	authService, err := newAuthFor(cfgMgrFactory, authServiceFactory)
 	if err != nil {
-		return fmt.Errorf("failed to initialize config manager: %w", err)
+		return err
 	}
-
-	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
-	authService := authServiceFactory(cfgMgr, apiEndpoint)
 
 	// Use provided prompter or default to promptui
 	if prompter == nil {
@@ -345,32 +354,8 @@ func authLoginWithFactories(ctx context.Context, cmd flagGetter, output Output, 
 			return fmt.Errorf("%s", FormatError(err, output.IsVerbose()))
 		}
 
-		// Check if 2FA is required
-		if loginResult.OTPRequired {
-			output.Print("Two-factor authentication required.")
-			if otpCode == "" {
-				// Semi-interactive: prompt for OTP only
-				otpCode, err = prompter.PromptOTP()
-				if err != nil {
-					return fmt.Errorf("failed to read OTP code: %w", err)
-				}
-			}
-
-			res, err := authService.LoginWithOTP(ctx, loginResult.IntermediateJWT, otpCode, keyName, noCreateKey)
-			if err != nil {
-				return err
-			}
-			renderLoginComplete(output, res)
-			return nil
-		}
-
-		// No 2FA required, complete login
-		res, err := authService.CompleteLogin(ctx, loginResult.Token, keyName, noCreateKey)
-		if err != nil {
-			return err
-		}
-		renderLoginComplete(output, res)
-		return nil
+		// Check if 2FA is required and finish login
+		return finishAuthLogin(ctx, authService, loginResult, keyName, noCreateKey, otpCode, prompter, output)
 	}
 
 	// Fully interactive mode
@@ -395,13 +380,26 @@ func interactiveLogin(ctx context.Context, authService auth.AuthService, output 
 		return fmt.Errorf("%s", FormatError(err, output.IsVerbose()))
 	}
 
-	// Check if 2FA is required
+	// Check if 2FA is required and finish login. interactiveLogin always
+	// prompts for the OTP (there is no flag/env source here), so pass an empty
+	// otpCode and let the helper prompt.
+	return finishAuthLogin(ctx, authService, loginResult, keyName, noCreateKey, "", prompter, output)
+}
+
+// finishAuthLogin completes a login, handling 2FA when required. It prints the
+// 2FA notice and prompts for the OTP only when otpCode is empty, preserving the
+// caller's source for the code (flag/env vs interactive prompt). It then either
+// completes login with the OTP or finishes the non-2FA path, rendering the
+// result through renderLoginComplete either way.
+func finishAuthLogin(ctx context.Context, authService auth.AuthService, loginResult *portalsdk.LoginResult, keyName string, noCreateKey bool, otpCode string, prompter AuthPrompter, output Output) error {
 	if loginResult.OTPRequired {
 		output.Print("Two-factor authentication required.")
-		// Prompt for OTP code (intermediate JWT handled internally)
-		otpCode, err := prompter.PromptOTP()
-		if err != nil {
-			return fmt.Errorf("failed to read OTP code: %w", err)
+		if otpCode == "" {
+			var err error
+			otpCode, err = prompter.PromptOTP()
+			if err != nil {
+				return fmt.Errorf("failed to read OTP code: %w", err)
+			}
 		}
 
 		res, err := authService.LoginWithOTP(ctx, loginResult.IntermediateJWT, otpCode, keyName, noCreateKey)
@@ -481,13 +479,10 @@ Examples:
 
 // authStatus checks if the user is authenticated.
 func authStatus(ctx context.Context, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory) error {
-	cfgMgr, err := cfgMgrFactory()
+	authService, err := newAuthFor(cfgMgrFactory, authServiceFactory)
 	if err != nil {
-		return fmt.Errorf("failed to initialize config manager: %w", err)
+		return err
 	}
-
-	apiEndpoint := cfgMgr.Config().GetAPIEndpoint()
-	authService := authServiceFactory(cfgMgr, apiEndpoint)
 
 	res, err := authService.Status(ctx)
 	if err != nil {

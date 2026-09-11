@@ -15,6 +15,15 @@ import (
 	"go.lumeweb.com/pinner/core/vault"
 )
 
+// stampedCLIMetadata is the ONE CLI write stamp for vault_cp: src=cli (a
+// person running the command, not an agent), empty host/agent context, the
+// receiving profile, and no caller KV (a hand-typed `vault cp` has none). Both
+// the local->vault and vault->vault copy paths compose THIS helper so the
+// stamp shape cannot drift between them.
+func stampedCLIMetadata(profile string) map[string]any {
+	return vault.StampedMetadata("cli", "", profile, nil)
+}
+
 // createVaultDownloadTemp creates a uniquely-named temp file in dir for a
 // vault download/copy, opening with O_CREATE|O_EXCL and the given mode so the
 // kernel applies the process umask atomically at open (as os.Create would),
@@ -189,7 +198,7 @@ func vaultUpload(ctx context.Context, c *cli.Command, output Output, localEp, va
 	// caller KV — a hand-typed `vault cp` has none. Resolve the actual profile
 	// (an empty authority means the active profile) to record the real one.
 	profileName, _ := vault.ResolveProfile(vaultEp.profile)
-	record, err := svc.Put(ctx, reader, stat.Size(), vaultPath, vault.StampedMetadata("cli", "", profileName, nil))
+	record, err := svc.Put(ctx, reader, stat.Size(), vaultPath, stampedCLIMetadata(profileName))
 	if err != nil {
 		return err
 	}
@@ -380,7 +389,7 @@ func vaultVaultCopy(ctx context.Context, c *cli.Command, output Output, srcEp, d
 	// Stamp write context on the destination write: src=cli (this is a person
 	// running `vault cp`) and the receiving profile. No caller KV.
 	dstProfile, _ := vault.ResolveProfile(dstEp.profile)
-	record, err := dstSvc.Put(ctx, reader, stat.Size(), dstPath, vault.StampedMetadata("cli", "", dstProfile, nil))
+	record, err := dstSvc.Put(ctx, reader, stat.Size(), dstPath, stampedCLIMetadata(dstProfile))
 	if err != nil {
 		return err
 	}

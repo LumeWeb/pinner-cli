@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
@@ -19,12 +18,13 @@ import (
 // (internal/catalogops/dns.go) to urfave/cli/v3 commands. The catalog never
 // imports pkg/cli; this file maps CLI concerns (positional <domain> zone
 // argument, the destructive --force gate for zone/record delete) onto the
-// catalog and renders each handler's DATA result through the CLI Output
+// catalog and renders each handler's data result through the CLI Output
 // formatter.
 //
-// The DNS operations are canonically dotted ("dns.zones.list",
-// "dns.records.create", ...). The CLI nests them as "dns" -> ("zones" |
-// "records") -> leaf. That nesting lives here, not in the catalog model.
+// The DNS operations are canonically underscore-separated ("dns_zones_list",
+// "dns_records_create", ...). The CLI nests them as "dns" -> ("zones" |
+// "records") -> leaf. That nesting is declared in internal/clicatalog/shapes_dns.go,
+// not hardcoded here.
 //
 // The catalog compiler builds its input map from flags only. Commands that
 // take a <domain> positionally (zones get/delete/validate, records
@@ -78,159 +78,109 @@ func catalogDNSDeps(factory ...ConfigManagerFactory) catalogops.DNSDeps {
 // dnsCatalogDeps holds the catalog's registered DNS operation deps.
 var dnsCatalogDeps = catalogops.DNSDeps(catalogDNSDeps())
 
-// newDNSCommand is the catalog-driven "dns" parent command. It compiles the
-// DNS operations via the catalog's CLI compiler and nests the resulting leaf
-// commands under "dns" -> ("zones" | "records").
+// newDNSCommand is the catalog-driven "dns" parent command. It declares the
+// DNS operations' command shape in internal/clicatalog/shapes_dns.go and
+// materializes the tree through mount-owned leaf and parent builders.
 func newDNSCommand() *cli.Command {
-	cat := opmesh.NewCatalog()
-	for _, op := range catalogops.DNSOperations(dnsCatalogDeps) {
-		_ = cat.Add(op)
-	}
+	root := clicatalog.DNSDomainRoot
+	ops := catalogops.DNSOperations(dnsCatalogDeps)
 
-	compiler := clicatalog.NewCLICompiler()
-	compiled, err := compiler.Compile(cat)
+	cmds, err := clicatalog.CompileCommandTree(
+		ops,
+		clicatalog.DNSShapes,
+		root,
+		dnsCatalogConfig(),
+		buildDNSLeaf,
+		buildCLIParent,
+	)
 	if err != nil {
 		panic(fmt.Sprintf("catalog compile dns: %v", err))
 	}
 
-	// Group compiled leaf commands by their second dotted segment
-	// ("zones" | "records") so we can nest them under the dns parent.
-	leaves := compiled
-	groups := map[string][]*cli.Command{}
-	for _, c := range leaves {
-		if !strings.HasPrefix(c.Name, "dns_") {
-			continue // skip anything not in the dns domain
-		}
-		rest := strings.TrimPrefix(c.Name, "dns_")
-		seg := strings.SplitN(rest, "_", 2)
-		if len(seg) != 2 {
-			continue
-		}
-		group, leaf := seg[0], seg[1]
-		c.Name = leaf
-		c.Category = "DNS"
-		// Positional-supplied required args must not be urfave-parse-time
-		// required (see relaxFlagRequired); call before wrapping the Action.
-		relaxFlagRequired(c)
-		c.Action = dnsCatalogActionAdapter(c, group, leaf)
-		groups[group] = append(groups[group], c)
-	}
-
-	subCommands := make([]*cli.Command, 0, 2)
-	for _, group := range []string{"zones", "records"} {
-		cmds := groups[group]
-		if len(cmds) == 0 {
-			continue
-		}
-		usage := "Manage DNS zones"
-		desc := "Manage DNS zones, the containers that hold DNS records for a domain."
-		if group == "records" {
-			usage = "Manage DNS records"
-			desc = "Manage DNS records (A, AAAA, CNAME, TXT, MX, NS) inside an existing DNS zone."
-		}
-		subCommands = append(subCommands, &cli.Command{
-			Name:        group,
-			Category:    "DNS",
-			Usage:       usage,
-			Description: desc,
-			Commands:    cmds,
-		})
-	}
-
 	return &cli.Command{
-		Name:        "dns",
-		Category:    "Management",
-		Usage:       "Manage DNS zones and records",
-		Description: "Manage raw DNS zones and records for your domains (A/AAAA/CNAME/TXT/MX/NS, _dnslink, apex vs subdomain). Zones hold records; create the zone first ('dns zones create'), then manage records in it ('dns records *'). These subcommands are compiled from the canonical operation catalog (internal/catalogops).",
-		Commands:    subCommands,
+		Name:        root.Name,
+		Category:    root.Category,
+		Usage:       root.Usage,
+		Description: root.Desc,
+		Commands:    cmds,
 	}
 }
 
-// dnsCatalogActionAdapter returns the per-invocation ActionFunc for a DNS
-// catalog operation. It resolves the positional <domain> into the operation's
-// "zone" input, enforces the destructive --force gate for delete operations,
-// then invokes the handler and renders the result via renderDNSResult.
-func dnsCatalogActionAdapter(c *cli.Command, group, leaf string) cli.ActionFunc {
-	canonicalName := "dns_" + group + "_" + leaf
+// buildDNSLeaf is the mount-owned leaf builder materializing one DNS leaf into
+// an urfave *cli.Command. Shape (name/category/aliases/flags/usage) comes from
+// the clicatalog model via NewCLILeaf; behavior (the catalog action adapter +
+// relaxFlagRequired) stays mount-owned here.
+func buildDNSLeaf(loc clicatalog.LeafLocator, cfg any) (*cli.Command, error) {
+	base, err := clicatalog.NewCLILeaf(loc.Op, loc.Name, loc.Category, loc.Aliases)
+	if err != nil {
+		return nil, err
+	}
+	relaxFlagRequired(base)
+	base.Action = catalogActionAdapter(loc.Op, cfg.(CatalogAdapterConfig))
+	return base, nil
+}
 
-	return func(ctx context.Context, cmd *cli.Command) error {
-		// Build the input map from the compiler-declared flags plus the
-		// resolved positional <domain> in the "zone" input.
-		var op opmesh.Operation
-		for _, cand := range catalogops.DNSOperations(dnsCatalogDeps) {
-			if cand.Name() == canonicalName {
-				op = cand
-				break
+// dnsCatalogConfig returns the CatalogAdapterConfig that expresses dns' exact
+// per-invocation behavior on top of the shared catalogActionAdapter pipeline.
+// DNS needs four hooks: the result renderer, the per-invocation --auth-token
+// override, the positional <domain>/<zone-id> mapping onto the "zone" input
+// (unconditional overwrite, surplus args silently ignored), and the destructive
+// --force gate for zone/record delete (refuse only when a zone target is
+// present, message "dns <leaf>: ..."). The records-update "disabled" drop lands
+// in MutateInput. All remaining fields stay nil so the shared pipeline's safe
+// defaults apply.
+//
+// The leaf (and thus group/leaf-derived inputs the old adapter took from its
+// `c`, `group`, `leaf` parameters) is reachable per-invocation via ic.Op (op
+// leaf = last underscore segment of the canonical name) and ic.C (the mounted
+// command), so this config needs no arguments — see describe comment below.
+func dnsCatalogConfig() CatalogAdapterConfig {
+	return CatalogAdapterConfig{
+		Renderer:               renderDNSResult,
+		HonorAuthTokenOverride: true,
+
+		// Map the positional <domain>/<zone-id> into the "zone" input. The zone
+		// arg is PositionalOnly on the DNS ops (no --zone flag), so the <domain>
+		// positional is the only way to supply it. Surplus args are silently
+		// ignored (the stricter MapPositionalArgs double-supply rejection is not
+		// applied here).
+		ResolvePositional: func(ic *CatalogInvokeContext) error {
+			if ic.C.Args().Len() > 0 {
+				ic.Input["zone"] = ic.C.Args().First()
 			}
-		}
-		if op == nil {
-			return fmt.Errorf("catalog command %q not found", canonicalName)
-		}
-
-		input := clicatalog.FlagsToInput(cmd, op)
+			return nil
+		},
 
 		// dns_records_update: disabled is an omitempty field on the wire, and
 		// omitting it must leave the record's current disabled state unchanged.
 		// flagValue returns false for an unset bool, so drop the key entirely
 		// when the flag was not given; the handler then leaves it nil (unchanged)
 		// instead of forcing re-enable.
-		if canonicalName == "dns_records_update" && !cmd.IsSet(FlagDisabled) {
-			delete(input, "disabled")
-		}
-
-		// The per-invocation --auth-token flag takes precedence over the config
-		// token. Only set it when provided so deps.service() falls back to the
-		// config-read GetAuthToken.
-		if tok := cmd.String(FlagAuthToken); tok != "" {
-			input[catalogops.AuthTokenInputKey] = tok
-		}
-
-		// Map the positional <domain>/<zone-id> into the "zone" input. The zone
-		// arg is PositionalOnly on the DNS ops (no --zone flag), so the <domain>
-		// positional is the only way to supply it.
-		if cmd.Args().Len() > 0 {
-			input["zone"] = cmd.Args().First()
-		}
-
-		// Destructive gate (zones delete, records delete). The catalog compiler
-		// injects a --force flag; since we replace the Action we enforce it
-		// ourselves, honoring both --force and the hidden --confirm alias.
-		if op.Safety() == opmesh.SafetyDestructive {
-			confirm := cmd.Bool(FlagForce) || cmd.Bool(FlagConfirm)
-			input["confirm"] = confirm
-			// With a target zone and no --force, refuse loudly (non-zero exit)
-			// rather than silently succeeding; with no zone, fall through so the
-			// handler's required-argument validation produces a non-zero exit.
-			if !confirm && opmesh.StrArg(input, "zone", "") != "" {
-				return fmt.Errorf("dns %s: pass --force to confirm this destructive operation", leaf)
+		MutateInput: func(ic *CatalogInvokeContext) error {
+			if ic.Op.Name() == "dns_records_update" && !ic.C.IsSet(FlagDisabled) {
+				delete(ic.Input, "disabled")
 			}
-		}
+			return nil
+		},
 
-		// Apply the configured per-command timeout so a hanging backend fails
-		// after the configured timeout instead of blocking.
-		dctx, cancel := applyDefaultTimeout(ctx)
-		defer cancel()
-
-		result, err := op.Handler().Execute(dctx, input)
-		if err != nil {
-			return err
-		}
-		return renderDNSResult(ctx, cmd, op, result)
+		// Destructive gate (zones delete, records delete). The shared pipeline
+		// enforces --force, honoring both --force and the hidden --confirm alias.
+		// With a target zone and no --force, refuse loudly (non-zero exit) with
+		// the "dns <leaf>:" message; with no zone, fall through so the handler's
+		// required-argument validation produces a non-zero exit.
+		DestructiveGate: GateForceReject(
+			func(ic *CatalogInvokeContext) bool {
+				return opmesh.StrArg(ic.Input, "zone", "") != ""
+			},
+			func(ic *CatalogInvokeContext) string {
+				return "dns " + opLeafName(ic.Op) + ": pass --force to confirm this destructive operation"
+			},
+		),
 	}
-}
-
-// describeDNSAction produces a human phrase describing what a destructive DNS
-// operation would have done (used by the --force guard hint).
-func describeDNSAction(group, leaf string, input map[string]any) string {
-	what := "the " + group + " " + leaf + " operation"
-	if z := opmesh.StrArg(input, "zone", ""); z != "" {
-		what = fmt.Sprintf("%s on %s", what, z)
-	}
-	return what
 }
 
 // renderDNSResult is the catalog.RenderFunc that renders a DNS handler's typed
-// DATA result through the CLI Output formatter. It is the single rendering
+// data result through the CLI Output formatter. It is the single rendering
 // home for catalog-driven DNS commands and never touches core services.
 func renderDNSResult(_ context.Context, c *cli.Command, op opmesh.Operation, result any) error {
 	output := setupOutput(c)

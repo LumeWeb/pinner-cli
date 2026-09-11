@@ -36,8 +36,9 @@ func fakeAccountDeps(t *testing.T) catalogops.AccountDeps {
 }
 
 // buildSubscriptionCmd assembles the account_subscription catalog operation
-// wrapped by the same accountActionAdapter used in production, with the CLI-only
-// --open flag appended (as accountWiringParent does).
+// wrapped by the same accountCatalogConfig / catalogActionAdapter used in
+// production, with the CLI-only --open flag appended (as buildAccountLeaf
+// does).
 func buildSubscriptionCmd(t *testing.T) *cli.Command {
 	t.Helper()
 	var op opmesh.Operation
@@ -51,7 +52,7 @@ func buildSubscriptionCmd(t *testing.T) *cli.Command {
 		t.Fatal("account_subscription operation not found")
 	}
 	cmd := &cli.Command{Name: "account_subscription"}
-	cmd.Action = accountActionAdapter(op)
+	cmd.Action = catalogActionAdapter(op, accountCatalogConfig())
 	cmd.Flags = append(cmd.Flags, &cli.BoolFlag{Name: "open"})
 	return cmd
 }
@@ -131,8 +132,8 @@ func fakeAccountQuotaDeps(t *testing.T) catalogops.AccountDeps {
 func ptrInt(v int) *int { return &v }
 
 // buildQuotaCmd assembles the account_quota catalog operation wrapped by the
-// same accountActionAdapter used in production, with the CLI-only --open flag
-// appended (as accountWiringParent does).
+// same accountCatalogConfig / catalogActionAdapter used in production, with the
+// CLI-only --open flag appended (as buildAccountLeaf does).
 func buildQuotaCmd(t *testing.T) *cli.Command {
 	t.Helper()
 	var op opmesh.Operation
@@ -146,7 +147,7 @@ func buildQuotaCmd(t *testing.T) *cli.Command {
 		t.Fatal("account_quota operation not found")
 	}
 	cmd := &cli.Command{Name: "account_quota"}
-	cmd.Action = accountActionAdapter(op)
+	cmd.Action = catalogActionAdapter(op, accountCatalogConfig())
 	cmd.Flags = append(cmd.Flags, &cli.BoolFlag{Name: "open"})
 	return cmd
 }

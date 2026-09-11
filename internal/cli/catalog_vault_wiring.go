@@ -14,17 +14,16 @@ import (
 )
 
 // catalog_vault_wiring.go adapts the vault domain operations in
-// internal/catalogops to the urfave CLI: it compiles catalog operations into
-// commands under the "vault" parent, renders each handler's result through the
-// Output formatter, and maps positional args, profile selection, and the
-// destructive --force gate onto operation inputs. IO and CLI concerns
-// (positional path/name mapping, profile resolution, force gate, result
-// rendering) live here, not in catalogops.
-//
-// Name mapping: canonical catalog names use dots ("vault.status"). The "vault."
-// group prefix is stripped and leaves are mounted under a "vault" parent;
-// two-level ops ("vault.profile.use", "vault.cache.rebuild", "vault.cache.clear")
-// nest under their "profile"/"cache" parent commands.
+// internal/catalogops to the urfave CLI: it compiles the vault catalog's
+// command tree through the shape model in internal/clicatalog/shapes_vault.go
+// and CompileCommandTree, mounts it under
+// the "vault" parent, renders each handler's result through the Output
+// formatter, and maps positional args, profile selection, and the destructive
+// --force gate onto operation inputs. IO and CLI concerns (positional
+// path/name mapping, profile resolution, force gate, result rendering) live
+// here, not in catalogops. Naming and nesting (the nested version/tag/cache/
+// profile parents and the fold of flat flush/share leaves) are declared in the
+// shape model, not hardcoded here.
 //
 // The commands that are fundamentally interactive/IO (create, restore, cp, cat)
 // are not compiled from the catalog (see catalogops.VaultOperations for why)
@@ -107,134 +106,67 @@ func requireUnambiguousVaultProfile() error {
 	return nil
 }
 
-// vaultParentUsage returns the CLI Usage line for a two-level vault parent
-// command (e.g. "profile", "cache"), kept non-empty to satisfy registration
-// assertions and give users a one-line summary.
-func vaultParentUsage(parent string) string {
-	switch parent {
-	case "profile":
-		return "Manage vault profiles"
-	case "cache":
-		return "Manage the vault SQLite cache"
-	default:
-		return "Manage vault " + parent
-	}
-}
-
 // newVaultCatalogCommands compiles the vault catalog operations and returns
 // the top-level "vault" subcommands they produce (status, ls, stat, verify,
-// rm, sync, share, forget, profile→use, cache→rebuild/clear). The interactive/
-// IO hand-written commands (create, restore, cp, cat) are appended by
-// newVaultCommand.
+// rm, sync, share, forget, profile→use, cache→rebuild/clear, and the
+// nested version/tag/flush/share parents). The interactive/IO hand-written
+// commands (create, restore, cp, cat) are appended by newVaultCommand.
+//
+// Naming, nesting, aliases, ordering, and the fold of the flat flush/share
+// leaves into their parents are declared in internal/clicatalog/shapes_vault.go,
+// not hardcoded here; this mount only supplies the DomainRoot, the shared
+// parent builder, and the vault leaf builder/config.
 func newVaultCatalogCommands() []*cli.Command {
-	cat := opmesh.NewCatalog()
+	root := clicatalog.VaultDomainRoot
 	ops := catalogops.VaultOperations(vaultCatalogDepsVar)
-	for _, op := range ops {
-		_ = cat.Add(op)
-	}
 
-	compiler := clicatalog.NewCLICompiler()
-	compiled, err := compiler.Compile(cat)
+	cmds, err := clicatalog.CompileCommandTree(
+		ops,
+		clicatalog.VaultShapes,
+		root,
+		vaultCatalogConfig(),
+		buildVaultLeaf,
+		buildCLIParent,
+	)
 	if err != nil {
 		// Compilation of well-formed catalog operations cannot fail; if it
 		// does we must not silently skip the vault group.
 		panic(fmt.Sprintf("catalog compile vault: %v", err))
 	}
-
-	// Leaf commands compiled flat with dotted names; nest the two-level ones.
-	// A flat leaf whose name is later used as a two-level parent (e.g. the
-	// one-level `vault_share` issuing command and the two-level
-	// `vault_share_accept`) is folded INTO that parent: the parent keeps its
-	// top-level Action (so `vault share <path>` still issues) while the accept
-	// leaf nests under it (`vault share accept ...`). urfave/cli runs a
-	// command's Action when no matching subcommand name is supplied, so the two
-	// coexist as one `share` entry.
-	parents := map[string]*cli.Command{}
-	var out []*cli.Command
-	flatLeaf := map[string]*cli.Command{} // mounted flat leaf by display name
-	for _, c := range compiled {
-		canonical := c.Name // e.g. "vault_cache_rebuild", BEFORE mount mutates it
-		mounted := mountVaultCatalogCommand(c)
-		rest := strings.TrimPrefix(canonical, "vault_")
-		if idx := strings.Index(rest, "_"); idx > 0 {
-			// Two-level: parent_child (profile_use, cache_rebuild, cache_clear)
-			parentName := rest[:idx]
-			parent, ok := parents[parentName]
-			if !ok {
-				parent = &cli.Command{Name: parentName, Category: "Vault", Usage: vaultParentUsage(parentName), Commands: []*cli.Command{}}
-				if flat, exists := flatLeaf[parentName]; exists {
-					// Fold the flat leaf into the parent as its top-level Action.
-					parent.Action = flat.Action
-					parent.Flags = append(parent.Flags, flat.Flags...)
-					parent.Usage = flat.Usage
-					parent.ArgsUsage = flat.ArgsUsage
-					out = removeCommand(out, flat)
-				}
-				parents[parentName] = parent
-				out = append(out, parent)
-			}
-			parent.Commands = append(parent.Commands, mounted)
-			continue
-		}
-		flatLeaf[rest] = mounted
-		out = append(out, mounted)
-	}
-	return out
+	return cmds
 }
 
-// removeCommand returns out with cmd removed (matched by pointer identity).
-func removeCommand(out []*cli.Command, cmd *cli.Command) []*cli.Command {
-	for i, c := range out {
-		if c == cmd {
-			return append(out[:i], out[i+1:]...)
-		}
+// buildVaultLeaf is the mount-owned leaf builder materializing one vault leaf
+// into an urfave *cli.Command. Shape (name/category/aliases/flags/usage) comes
+// from the clicatalog model via NewCLILeaf; behavior (the catalog action
+// adapter + relaxFlagRequired + the blocking flush override) stays mount-owned
+// here.
+//
+// `vault flush` MUST block. The catalog vault_flush op is non-blocking: it
+// launches the durability work on a detached background goroutine and returns
+// "accepted" immediately. That is the right shape for the long-lived MCP
+// server, but for a one-shot CLI command the background goroutine dies when
+// the process exits — leaving every pending file forever pending. So the flush
+// leaf's Action is replaced with the blocking sync action (which also becomes
+// the folded "flush" parent's top-level Action via buildCLIParent).
+func buildVaultLeaf(loc clicatalog.LeafLocator, cfg any) (*cli.Command, error) {
+	base, err := clicatalog.NewCLILeaf(loc.Op, loc.Name, loc.Category, loc.Aliases)
+	if err != nil {
+		return nil, err
 	}
-	return out
-}
-
-// mountVaultCatalogCommand adapts a single catalog-compiled command (dotted
-// name like "vault_status") into a live vault subcommand: it strips the
-// "vault_" group prefix, sets the vault category, and wraps the Action with the
-// CLI-input adapter (positional → operation input, profile, destructive gate)
-// and the vault result renderer.
-func mountVaultCatalogCommand(cmd *cli.Command) *cli.Command {
-	canonical := cmd.Name
-	display := strings.TrimPrefix(canonical, "vault_")
-	// Two-level ops (profile_use, cache_rebuild, cache_clear) keep their leaf
-	// name; the parent is handled by newVaultCatalogCommands.
-	if idx := strings.Index(display, "_"); idx > 0 {
-		display = display[idx+1:]
-	}
-	cmd.Name = display
-	cmd.Category = "Vault"
-
 	// Positional-supplied required args must not be urfave-parse-time required
 	// (see relaxFlagRequired); call before wrapping the Action.
-	relaxFlagRequired(cmd)
+	relaxFlagRequired(base)
 
-	var op opmesh.Operation
-	for _, cand := range catalogops.VaultOperations(vaultCatalogDepsVar) {
-		if cand.Name() == canonical {
-			op = cand
-			break
-		}
-	}
-	if op != nil {
-		cmd.Action = vaultActionAdapter(op)
-	}
-	// `vault flush` MUST block. The catalog vault_flush op is non-blocking: it
-	// launches the durability work on a detached background goroutine and
-	// returns "accepted" immediately. That is the right shape for the long-lived
-	// MCP server, but for a one-shot CLI command the background goroutine dies
-	// when the process exits — leaving every pending file forever pending.
-	// Override the mounted action so the CLI waits on the flush synchronously
-	// and reports the real flushed count.
-	if canonical == "vault_flush" {
-		cmd.Action = vaultFlushSyncAction()
+	if loc.Op.Name() == "vault_flush" {
 		// The sync action reads the positional path itself; keep the catalog
 		// flags (--profile) as mounted.
+		base.Action = vaultFlushSyncAction()
+		return base, nil
 	}
-	return cmd
+
+	base.Action = catalogActionAdapter(loc.Op, cfg.(CatalogAdapterConfig))
+	return base, nil
 }
 
 // vaultFlushSyncAction returns a blocking Action for `pinner vault flush`: it
@@ -242,6 +174,7 @@ func mountVaultCatalogCommand(cmd *cli.Command) *cli.Command {
 // and reports the number of files made durable before the process exits. It is
 // the CLI counterpart to the catalog's non-blocking MCP vault_flush.
 func vaultFlushSyncAction() cli.ActionFunc {
+	// Note: vault_flush intentionally bypasses NormalizeOperationInput — it runs a synchronous flush flow; normalization for this special path is handled by its own arg pre-validation.
 	return func(ctx context.Context, c *cli.Command) error {
 		output := setupOutput(c)
 
@@ -320,55 +253,41 @@ func vaultFlushSyncAction() cli.ActionFunc {
 	}
 }
 
-// vaultActionAdapter returns the per-invocation ActionFunc for a vault catalog
-// operation. It builds the operation input map from flags plus the resolved
-// positional path/name and profile, applies the destructive --force gate, and
-// renders the handler's result through renderVaultResult.
-func vaultActionAdapter(op opmesh.Operation) cli.ActionFunc {
-	return func(ctx context.Context, c *cli.Command) error {
-		// Build the input map from the compiler-declared flags.
-		input := clicatalog.FlagsToInput(c, op)
-
-		// Map the positional argument into the operation's path/name input.
-		// The catalog CLI compiler reads flags only, so the adapter resolves
-		// the positional <path>/<name> into the declared string arg. The
-		// mapping rule (right-aligned, surplus rejection, name resolution from
-		// the Positional declaration) lives in the catalog framework and is
-		// shared with every frontend.
-		if err := opmesh.MapPositionalArgs(op.Args(), op.Positional(), c.Args().Slice(), input); err != nil {
-			return err
-		}
+// vaultCatalogConfig returns the CatalogAdapterConfig that expresses vault's
+// exact per-invocation behavior on top of the shared catalogActionAdapter
+// pipeline. Compared with the generic pins/admin adapters, vault only needs
+// three hooks: the result renderer, the --profile flag mapping (vault mounts a
+// --profile flag used broadly across commands, which must be copied into the
+// op's "profile" input when declared), and the destructive --force gate. All
+// remaining fields stay nil so the shared pipeline's safe defaults apply:
+// positional args use the canonical opmesh.MapPositionalArgs, no input
+// mutation/id-resolution/cascade runs, no auth-token override is honored, and
+// errors are surfaced verbatim.
+func vaultCatalogConfig() CatalogAdapterConfig {
+	return CatalogAdapterConfig{
+		Renderer: renderVaultResult,
 
 		// Map the --profile flag (used broadly by vault commands) into the
 		// operation's "profile" input when declared.
-		if hasArg(op, "profile") && c.IsSet(FlagProfile) {
-			input["profile"] = c.String(FlagProfile)
-		}
-
-		// Destructive gate (vault rm). Enforce --force.
-		//
-		// Destructive confirmation gate (vault rm / vault forget). The required
-		// --profile argument guards against auto-resolving the wrong profile;
-		// --force guards the irreversible registry/cache/seed deletion. Both
-		// destructive ops enforce confirmation at the handler level too, so the
-		// CLI maps --force into input["confirm"] for programmatic parity.
-		if op.Safety() == opmesh.SafetyDestructive {
-			confirm := c.Bool(FlagForce) || c.Bool(FlagConfirm)
-			input["confirm"] = confirm
-			if !confirm {
-				return fmt.Errorf("vault %s: pass --force to confirm this destructive operation", strings.TrimPrefix(op.Name(), "vault_"))
+		MutateInput: func(ic *CatalogInvokeContext) error {
+			if hasArg(ic.Op, "profile") && ic.C.IsSet(FlagProfile) {
+				ic.Input["profile"] = ic.C.String(FlagProfile)
 			}
-		}
+			return nil
+		},
 
-		// Apply the legacy per-call deadline (shared with every catalog domain).
-		dctx, cancel := applyDefaultTimeout(ctx)
-		defer cancel()
-
-		result, err := op.Handler().Execute(dctx, input)
-		if err != nil {
-			return err
-		}
-		return renderVaultResult(ctx, c, op, result)
+		// Destructive confirmation gate (vault rm / vault forget /
+		// vault version-restore). The required --profile argument guards
+		// against auto-resolving the wrong profile; --force guards the
+		// irreversible registry/cache/seed deletion. Both destructive ops
+		// enforce confirmation at the handler level too, so the CLI maps
+		// --force into input["confirm"] for programmatic parity.
+		DestructiveGate: GateForceReject(
+			func(*CatalogInvokeContext) bool { return true },
+			func(ic *CatalogInvokeContext) string {
+				return "vault " + strings.TrimPrefix(ic.Op.Name(), "vault_") + ": pass --force to confirm this destructive operation"
+			},
+		),
 	}
 }
 

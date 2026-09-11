@@ -30,8 +30,8 @@ func TestAdminPlatformDomainsTree(t *testing.T) {
 }
 
 // captureHandler is a opmesh.Handler stub that records invocation and returns
-// a routable admin result, letting the tests exercise adminActionAdapter's
-// input mapping and destructive gate without a real admin service.
+// a routable admin result, letting the tests exercise the admin catalog
+// config's input mapping and destructive gate without a real admin service.
 type captureHandler struct {
 	called *bool
 	input  map[string]any
@@ -69,7 +69,7 @@ func TestAdminActionAdapterPlatformDomainDeleteConfirmation(t *testing.T) {
 	cmd := &cli.Command{
 		Name:   "delete",
 		Flags:  []cli.Flag{&cli.BoolFlag{Name: FlagForce}, &cli.BoolFlag{Name: FlagConfirm}, &cli.BoolFlag{Name: FlagJSON}},
-		Action: adminActionAdapter(op),
+		Action: catalogActionAdapter(op, adminCatalogConfig()),
 	}
 
 	// No --force in a non-interactive context: refused, handler never invoked.
@@ -108,7 +108,7 @@ func TestAdminActionAdapterPlatformDomainDeleteInteractiveConfirmed(t *testing.T
 	cmd := &cli.Command{
 		Name:   "delete",
 		Flags:  []cli.Flag{&cli.BoolFlag{Name: FlagForce}, &cli.BoolFlag{Name: FlagConfirm}, &cli.BoolFlag{Name: FlagJSON}},
-		Action: adminActionAdapter(op),
+		Action: catalogActionAdapter(op, adminCatalogConfig()),
 	}
 
 	require.NoError(t, cmd.Run(context.Background(), []string{"pinner", "7"}))
@@ -125,7 +125,7 @@ func TestAdminActionAdapterForwardsPositionalAndFlags(t *testing.T) {
 	cmd := &cli.Command{
 		Name:   "delete",
 		Flags:  []cli.Flag{&cli.BoolFlag{Name: FlagForce}, &cli.BoolFlag{Name: FlagConfirm}},
-		Action: adminActionAdapter(op),
+		Action: catalogActionAdapter(op, adminCatalogConfig()),
 	}
 	require.NoError(t, cmd.Run(context.Background(), []string{"pinner", "--force", "42"}))
 	require.True(t, deleted)

@@ -8,11 +8,11 @@ import (
 )
 
 // TestIPNSKeysDeleteConfirmFlagDefaultsTrue guards the CLI delete-without-force
-// contract against the handler-side confirm gate. ipnsActionAdapter reads
-// c.Bool("confirm") from the compiled --confirm flag and then runs the input
-// through NormalizeOperationInput before Execute; the gate passes only if the
-// flag (and normalized input) resolve confirm=true when the user does not pass
-// --confirm. This asserts the compiled flag default is true, so a plain
+// contract against the handler-side confirm gate. The ipns catalog config
+// (ipnsCatalogConfig) uses a no-gate (GateNone) destructive gate and runs the
+// input through NormalizeOperationInput before Execute; the gate passes only if
+// the flag (and normalized input) resolve confirm=true when the user does not
+// pass --confirm. This asserts the compiled flag default is true, so a plain
 // `ipns keys delete <id>` still deletes.
 func TestIPNSKeysDeleteConfirmFlagDefaultsTrue(t *testing.T) {
 	cmd := newIPNSCommandCatalog()

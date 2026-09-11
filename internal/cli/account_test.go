@@ -108,7 +108,8 @@ func TestAccountOTPEnable(t *testing.T) {
 
 func TestAccountOTPDisableWired(t *testing.T) {
 	// The `account otp disable` flow is catalog-driven: route it through the
-	// same accountActionAdapter used in production, backed by a hermetic
+	// same accountCatalogConfig / catalogActionAdapter used in production,
+	// backed by a hermetic
 	// AccountDeps whose auth service is a mock. This pins the wiring contract:
 	// the --password flag reaches core auth.DisableOTP and the
 	// AccountOTPDisableResult message is rendered.
@@ -174,7 +175,7 @@ func TestAccountOTPDisableWired_RequiresPassword(t *testing.T) {
 
 	err := root.Run(context.Background(), []string{"pinner", "disable"})
 	require.Error(t, err, "account otp disable without a password must fail")
-	require.Contains(t, err.Error(), "password is required")
+	require.Contains(t, err.Error(), "missing required argument \"password\"")
 }
 
 func TestAccountOTPEnable_MockCommand_Success(t *testing.T) {

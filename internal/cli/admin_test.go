@@ -67,6 +67,7 @@ func TestNewQuotaCommand(t *testing.T) {
 			}
 		}
 		require.NotNil(t, plans)
+		assert.Equal(t, "Admin", plans.Category)
 		for _, want := range []string{CmdList, CmdGet, CmdCreate, CmdUpdate, CmdDelete, CmdSetDefault} {
 			assert.Contains(t, getSubcommandNames(plans), want)
 		}

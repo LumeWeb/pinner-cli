@@ -194,7 +194,7 @@ func TestCommandRegistration_PinsSubcommands(t *testing.T) {
 	pins := findCommand(root.Commands, "pins")
 	require.NotNil(t, pins, "pins command should exist")
 
-	expectedPinsSubs := []string{"add", "rm", "ls", "status", "update"}
+	expectedPinsSubs := []string{"add", "rm", "list", "status", "update"}
 	names := commandNames(pins.Commands)
 	nameSet := make(map[string]bool, len(names))
 	for _, n := range names {
@@ -395,6 +395,20 @@ func TestCommandRegistration_WebsitesSubcommands(t *testing.T) {
 	for _, expected := range expectedSubs {
 		assert.True(t, nameSet[expected], "websites should have subcommand %q", expected)
 	}
+}
+
+func TestCommandRegistration_WebsitesListAlias(t *testing.T) {
+	root := NewRootCommand()
+	websites := findCommand(root.Commands, "websites")
+	require.NotNil(t, websites, "websites command should exist")
+
+	list := findCommand(websites.Commands, "list")
+	require.NotNil(t, list, "websites list command should exist")
+
+	// Ideal naming rule: `list` is canonical, `ls` stays a muscle-memory alias
+	// (matches websites domains list and the pins domain).
+	assert.Equal(t, []string{"ls"}, list.Aliases,
+		"websites list should have the 'ls' alias")
 }
 
 func TestCommandRegistration_WebsitesSSLSubcommands(t *testing.T) {

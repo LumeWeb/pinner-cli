@@ -8,144 +8,11 @@ import (
 	"github.com/pterm/pterm"
 	"github.com/urfave/cli/v3"
 	portalsdk "go.lumeweb.com/portal-sdk"
-
-	opmesh "go.lumeweb.com/opmesh"
 )
 
 func newOperationsCommand() *cli.Command {
 	// The operations parent is catalog-driven (see operations_wiring.go).
 	return newOperationsCommandCatalog()
-}
-
-func operationsList(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory, serviceFactory OperationsServiceFactory) error {
-	cfgMgr, err := cfgMgrFactory()
-	if err != nil {
-		return err
-	}
-
-	setupCtx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
-	defer cancel()
-
-	authService := authServiceFactory(cfgMgr, cfgMgr.Config().GetAPIEndpoint())
-	service := serviceFactory(cfgMgr, output, authService)
-
-	if err := service.RequireAuthenticated(); err != nil {
-		return err
-	}
-
-	// Resolve pagination through the shared list cursor so this hand-written
-	// operations command and the catalog operations_list op share the same
-	// page/page-size → start/limit mapping (page is 1-based; an absent or
-	// zero page-size falls back to the shared default).
-	list := opmesh.ParseListPage(map[string]any{
-		"page":      cmd.Int(FlagPage),
-		"page-size": cmd.Int(FlagPageSize),
-	}, 10)
-
-	opts := OperationsListOptions{
-		StatusFilters:   cmd.StringSlice(FlagStatus),
-		IncludeAll:      cmd.Bool(FlagAll),
-		OperationFilter: cmd.String(FlagOperation),
-		ProtocolFilter:  cmd.String(FlagProtocol),
-		CIDFilter:       cmd.String(FlagCID),
-		Sort:            cmd.String(FlagSort),
-		Start:           list.Start,
-		Limit:           list.Limit,
-	}
-
-	if err := validateOperationStatuses(opts.StatusFilters); err != nil {
-		return err
-	}
-
-	watch := cmd.Bool(FlagWatch)
-
-	if watch {
-		opts.IsWatch = true
-		return watchOperationsList(ctx, service, output, opts)
-	}
-
-	// Determine whether the default active-status filter was applied (no
-	// explicit statuses and no --all). The service layer handles the
-	// actual filtering; this is purely for the user-facing hint.
-	usingDefault := len(opts.StatusFilters) == 0 && !opts.IncludeAll
-
-	result, err := service.List(setupCtx, opts)
-	if err != nil {
-		return err
-	}
-
-	if len(result.Operations) == 0 {
-		if usingDefault {
-			output.Printfln("No active operations found (pending, processing). Use --all to include completed, failed, and duplicate operations.")
-		} else {
-			output.Printfln("No operations found")
-		}
-		return nil
-	}
-
-	start := opts.Start + 1
-	end := start + len(result.Operations) - 1
-	output.Printfln("Showing %d-%d of %d operation(s)", start, end, result.Total)
-	if usingDefault {
-		output.Printfln("Showing active operations only (pending, processing). Use --all to see all operations.")
-	}
-
-	headers := []string{"ID", "OPERATION", "PROTOCOL", "STATUS", "CID", "PROGRESS", "STARTED"}
-	rows := make([][]string, len(result.Operations))
-	for i, op := range result.Operations {
-		rows[i] = []string{
-			fmt.Sprintf("%d", op.ID),
-			op.OperationDisplayName,
-			op.ProtocolDisplayName,
-			formatOperationStatusWithColor(op.Status),
-			op.CID,
-			fmt.Sprintf("%.0f%%", op.ProgressPercent),
-			op.StartedAt,
-		}
-	}
-	output.PrintTable(headers, rows)
-
-	return nil
-}
-
-func operationsGet(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgrFactory ConfigManagerFactory, authServiceFactory AuthServiceFactory, serviceFactory OperationsServiceFactory) error {
-	cfgMgr, err := cfgMgrFactory()
-	if err != nil {
-		return err
-	}
-
-	setupCtx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
-	defer cancel()
-
-	authService := authServiceFactory(cfgMgr, cfgMgr.Config().GetAPIEndpoint())
-	service := serviceFactory(cfgMgr, output, authService)
-
-	if err := service.RequireAuthenticated(); err != nil {
-		return err
-	}
-
-	args := cmd.Args().Slice()
-	if len(args) == 0 {
-		return fmt.Errorf("%w. Usage: pinner operations get <operation-id>", ErrOperationNotFound)
-	}
-
-	var id int64
-	if _, err := fmt.Sscanf(args[0], "%d", &id); err != nil {
-		return fmt.Errorf("invalid operation ID: %s", args[0])
-	}
-
-	watch := cmd.Bool(FlagWatch)
-
-	if watch {
-		return watchOperation(ctx, service, output, id)
-	}
-
-	op, err := service.Get(setupCtx, id)
-	if err != nil {
-		return err
-	}
-
-	return renderOperationDetail(output, op)
 }
 
 func watchOperationsList(ctx context.Context, service OperationsService, output Output, opts OperationsListOptions) error {
@@ -233,6 +100,11 @@ func allOperationsSettled(result *OperationsListResult) bool {
 	return true
 }
 
+// watchOperation polls a single operation until it reaches a terminal
+// (settled) status, printing status/progress/message updates as they change
+// and finally rendering the full detail. It mirrors the historical hand-written
+// `operations get --watch` loop: human-output only, driven by the typed Get
+// through a fixed 2s ticker, exiting early on context cancellation.
 func watchOperation(ctx context.Context, service OperationsService, output Output, id int64) error {
 	output.PrintFields(FieldGroup{
 		Title:  fmt.Sprintf("Watching operation %d", id),
