@@ -23,7 +23,7 @@ import (
 // the Sia vault drops the vault lifecycle/share entries, leaving auth status
 // and website publishing — the hosted (account/IPFS/websites) facing set.
 func curatedToolNamesFor(s Surface) []string {
-	return mcp.CuratedToolNames(assembly.Surface(s))
+	return mcp.DirectToolNames(assembly.DomainScope(s))
 }
 
 // markCurated stamps DirectVisible=true on the entries named by the curated

@@ -42,12 +42,12 @@ func PromptDescriptors() []model.PromptDescriptor {
 }
 
 // PromptDescriptorsForSurface returns the prompt descriptors enabled for the
-// given surface, delegated to the module's mcp.PromptDescriptorsForSurface.
+// given surface, delegated to the module's mcp.PromptDescriptorsForScope.
 // Each prompt maps to a domain flag: website onboarding/update need the
 // websites surface, setup needs the account surface, and ENS publish needs the
 // ENS surface. A restricted surface (e.g. hosted) omits the prompts whose
 // underlying tools are not registered. The conversion is lossless: Surface and
-// assembly.Surface share the same underlying construction-time shape.
+// assembly.DomainScope share the same underlying construction-time shape.
 func PromptDescriptorsForSurface(surface Surface) []model.PromptDescriptor {
-	return mcp.PromptDescriptorsForSurface(assembly.Surface(surface))
+	return mcp.PromptDescriptorsForScope(assembly.DomainScope(surface))
 }

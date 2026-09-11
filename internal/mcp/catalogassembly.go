@@ -56,5 +56,5 @@ func AssembleCatalogOps(deps *CatalogDepsBundle, surface Surface, hosted bool) (
 		Admin:              catalogops.AdminDeps(deps.Admin),
 	}
 
-	return assembly.AssembleCatalogOps(moduleDeps, assembly.Surface(surface), hosted)
+	return assembly.AssembleCatalogOps(moduleDeps, assembly.DomainScope(surface), hosted)
 }

@@ -34,8 +34,8 @@ func AssemblePresentation(deps *CatalogDepsBundle, surface Surface, hosted bool)
 		return nil, err
 	}
 	return mcp.Assemble(mcp.Config{
-		Surface: assembly.Surface(surface),
-		Hosted:  hosted,
+		DomainScope: assembly.DomainScope(surface),
+		Hosted:      hosted,
 		// The startup profile is adapted through the same lossless
 		// FeatureCarrier bridge the catalog compiler uses (see
 		// compileProfileFor): ProfileFromHas probes every feature the module's
