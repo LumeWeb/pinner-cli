@@ -58,7 +58,8 @@ var accountCatalogDepsVar = catalogops.AccountDeps(accountCatalogDeps())
 // accountOTPDisableWired returns the `otp disable` subcommand. It keeps the
 // hand-written command shape (the --password sensitive flag with the
 // Stdin/env source chain) but routes its Action through the catalog's
-// account_otp_disable operation via accountActionAdapter, so the disable flow
+// account_otp_disable operation via accountCatalogConfig / catalogActionAdapter,
+// so the disable flow
 // is catalog-driven (reaching core auth.DisableOTP and rendering
 // AccountOTPDisableResult) just like the account operations, while the op is
 // NOT emitted as a flat top-level `otp-disable` under the account parent.
@@ -89,122 +90,114 @@ WARNING: This reduces your account security. Consider re-enabling 2FA.`,
 		},
 	}
 	if op != nil {
-		cmd.Action = accountActionAdapter(op)
+		cmd.Action = catalogActionAdapter(op, accountCatalogConfig())
 	}
 	return cmd
 }
 
-// accountWiringParent builds the catalog-driven subcommands for the `account`
-// parent (info, email, password, subscription, portal). newAccountCommand
-// merges these with the existing hand-written otp/api-keys subcommands.
-func accountWiringParent() []*cli.Command {
-	cat := opmesh.NewCatalog()
-	for _, op := range catalogops.AccountOperations(accountCatalogDepsVar) {
-		_ = cat.Add(op)
-	}
+// newAccountCatalogCommands compiles the account catalog operations into the
+// subcommands mounted under the `account` parent (info, update-email,
+// update-password, subscription, quota) via the shape model in
+// internal/clicatalog/shapes_account.go. The account_otp_disable op is
+// EXCLUDED here by the shape registry (ExcludeFromFlatMount): it is not a flat
+// `account otp-disable` leaf — it nests under the hand-written `otp` parent as
+// `account otp disable` (see accountOTPDisableWired). newAccountCommand merges
+// these with the hand-written otp/api-keys subcommands.
+func newAccountCatalogCommands() []*cli.Command {
+	root := clicatalog.AccountDomainRoot
+	ops := catalogops.AccountOperations(accountCatalogDepsVar)
 
-	compiler := clicatalog.NewCLICompiler()
-	compiled, err := compiler.Compile(cat)
+	cmds, err := clicatalog.CompileCommandTree(
+		ops,
+		clicatalog.AccountShapes,
+		root,
+		accountCatalogConfig(),
+		buildAccountLeaf,
+		buildCLIParent,
+	)
 	if err != nil {
+		// Compilation of well-formed catalog operations cannot fail; if it
+		// does we must not silently skip the account group.
 		panic(fmt.Sprintf("catalog compile account: %v", err))
 	}
-
-	out := make([]*cli.Command, 0, len(compiled))
-	for _, c := range compiled {
-		canonical := c.Name // e.g. "account_info"
-		leaf := canonical[len("account_"):]
-		// The OTP ops (account_otp_disable) are NOT emitted as flat account
-		// subcommands: they nest under the existing hand-written `otp` parent
-		// (account otp disable) to preserve the CLI surface, so skip them
-		// here to avoid a duplicate flat `otp-disable` command.
-		if strings.HasPrefix(leaf, "otp") {
-			continue
-		}
-		// Catalog canonical names use underscores; expose the CLI command with
-		// kebab-case names (update_email -> update-email), matching the other
-		// hand-written subcommands (otp, api-keys).
-		c.Name = strings.ReplaceAll(leaf, "_", "-")
-		c.Category = "Management"
-		relaxFlagRequired(c)
-
-		var op opmesh.Operation
-		for _, cand := range catalogops.AccountOperations(accountCatalogDepsVar) {
-			if cand.Name() == canonical {
-				op = cand
-				break
-			}
-		}
-		if op != nil {
-			c.Action = accountActionAdapter(op)
-			// The `--open` convenience is CLI-only (spawns the default browser
-			// at the returned web URL); it is not part of the data contract and
-			// never appears on the MCP surface. Add it to read commands that
-			// surface a web URL.
-			switch op.Name() {
-			case "account_subscription":
-				c.Flags = append(c.Flags, &cli.BoolFlag{
-					Name:  "open",
-					Usage: "Open the subscription page in your default browser",
-				})
-			case "account_quota":
-				c.Flags = append(c.Flags, &cli.BoolFlag{
-					Name:  "open",
-					Usage: "Open the account/usage page in your default browser",
-				})
-			}
-		}
-		out = append(out, c)
-	}
-	return out
+	return cmds
 }
 
-// accountActionAdapter wraps a catalog account command's Action: maps the
-// positional <email> / password flags into the operation input, threads the
-// --auth-token override, and renders the typed result. It also handles the
-// `--open` convenience on read commands that return a web URL.
-func accountActionAdapter(op opmesh.Operation) cli.ActionFunc {
-	return func(ctx context.Context, c *cli.Command) error {
-		input := clicatalog.FlagsToInput(c, op)
+// buildAccountLeaf is the mount-owned leaf builder materializing one account
+// leaf into an urfave *cli.Command. Shape (name/category/aliases/flags/usage)
+// comes from the clicatalog model via NewCLILeaf; behavior (the catalog action
+// adapter + relaxFlagRequired) stays mount-owned here.
+//
+// The one account-specific addition beyond the generic leaf builder is the
+// CLI-only `--open` convenience on the read commands that surface a web URL
+// (subscription, quota): it spawns the default browser at the returned deep
+// link. It is not part of the data contract (never on the MCP surface), so it
+// lives here in the wiring layer with the hand-written mount.
+func buildAccountLeaf(loc clicatalog.LeafLocator, cfg any) (*cli.Command, error) {
+	base, err := clicatalog.NewCLILeaf(loc.Op, loc.Name, loc.Category, loc.Aliases)
+	if err != nil {
+		return nil, err
+	}
+	switch loc.Op.Name() {
+	case "account_subscription":
+		base.Flags = append(base.Flags, &cli.BoolFlag{
+			Name:  "open",
+			Usage: "Open the subscription page in your default browser",
+		})
+	case "account_quota":
+		base.Flags = append(base.Flags, &cli.BoolFlag{
+			Name:  "open",
+			Usage: "Open the account/usage page in your default browser",
+		})
+	}
+	relaxFlagRequired(base)
+	base.Action = catalogActionAdapter(loc.Op, cfg.(CatalogAdapterConfig))
+	return base, nil
+}
 
-		// Per-invocation --auth-token override.
-		if tok := c.String(FlagAuthToken); tok != "" {
-			input[catalogops.AuthTokenInputKey] = tok
-		}
+// accountCatalogConfig returns the CatalogAdapterConfig that expresses
+// account's exact per-invocation behavior on top of the shared
+// catalogActionAdapter pipeline. Account needs four hooks: the result
+// renderer, the per-invocation --auth-token override, the positional <email>
+// mapping onto the "email" arg, and the post-execute `--open` convenience that
+// spawns the default browser at a returned web URL. All remaining fields stay
+// nil so the shared pipeline's safe defaults apply (account ops are
+// read/mutate, never destructive, so no destructive gate runs).
+func accountCatalogConfig() CatalogAdapterConfig {
+	return CatalogAdapterConfig{
+		Renderer:               renderAccountResult,
+		HonorAuthTokenOverride: true,
 
-		// Map the positional <email> into the "email" arg when empty.
-		if c.Args().Len() > 0 {
-			if hasArg(op, "email") && opmesh.StrArg(input, "email", "") == "" {
-				input["email"] = c.Args().First()
+		// Map the positional <email> into the "email" arg when empty (the
+		// account email op accepts the new email positionally).
+		ResolvePositional: func(ic *CatalogInvokeContext) error {
+			if ic.C.Args().Len() > 0 {
+				if hasArg(ic.Op, "email") && opmesh.StrArg(ic.Input, "email", "") == "" {
+					ic.Input["email"] = ic.C.Args().First()
+				}
 			}
-		}
-
-		dctx, cancel := applyDefaultTimeout(ctx)
-		defer cancel()
-
-		result, err := op.Handler().Execute(dctx, input)
-		if err != nil {
-			return err
-		}
+			return nil
+		},
 
 		// --open convenience: print, then spawn the default browser at the URL.
 		// Human-readable browser messages must never pollute stdout in
 		// --json / --agent modes (they would corrupt the structured result);
 		// the browser still opens, only the chatter is suppressed.
-		if shouldOpen(c) {
-			output := setupOutput(c)
-			if url := accountResultURL(result); url != "" {
-				if perr := urlopen.Open(url); perr != nil {
-					// Non-fatal: the URL is printed regardless.
-					if !output.IsJSON() {
-						output.Printfln("Could not auto-open the browser: %v", perr)
+		PostExecute: func(ic *CatalogInvokeContext, result any) error {
+			if shouldOpen(ic.C) {
+				if url := accountResultURL(result); url != "" {
+					if perr := urlopen.Open(url); perr != nil {
+						// Non-fatal: the URL is printed regardless.
+						if !ic.Output.IsJSON() {
+							ic.Output.Printfln("Could not auto-open the browser: %v", perr)
+						}
+					} else if !ic.Output.IsJSON() {
+						ic.Output.Printfln("Opened %s in your browser.", url)
 					}
-				} else if !output.IsJSON() {
-					output.Printfln("Opened %s in your browser.", url)
 				}
 			}
-		}
-
-		return renderAccountResult(ctx, c, op, result)
+			return nil
+		},
 	}
 }
 

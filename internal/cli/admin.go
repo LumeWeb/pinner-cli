@@ -5,6 +5,13 @@ import (
 )
 
 func newAdminCommand() *cli.Command {
+	// The admin parent is catalog-driven: the quota, billing, websites,
+	// platform-domains and social-providers sections are compiled from the
+	// canonical operation catalog in one CompileCommandTree pass (see
+	// newAdminCatalogSections in catalog_admin_wiring.go and the shape model in
+	// internal/clicatalog/shapes_admin.go). The `pprof` section is hand-written
+	// (admin_pprof.go) and merged in because it has no catalog operation
+	// backing.
 	return &cli.Command{
 		Name:     "admin",
 		Category: "Admin",
@@ -42,27 +49,19 @@ Examples:
   pinner admin billing subscribers list
   pinner admin pprof status
   pinner admin pprof heap > heap.prof`,
-		Commands: []*cli.Command{
-			newQuotaCommand(),
-			newBillingCommand(),
-			newAdminWebsitesCommand(),
-			newAdminPprofCommand(),
-			newAdminPlatformDomainsCommand(),
-			newAdminSocialProvidersCommand(),
-		},
+		Commands: append(newAdminCatalogSections(), newAdminPprofCommand()),
 	}
 }
 
-// newQuotaCommand returns the admin quota command. It is compiled from the
-// operation catalog in catalog_admin_wiring.go, so the CLI command tree and the
-// MCP tool surface share one source of truth.
+// newQuotaCommand returns the admin `quota` section compiled from the catalog.
+// It is a thin, single-seam getter over adminSectionByName; the CLI command
+// tree and the MCP tool surface share one source of truth via the catalog.
 func newQuotaCommand() *cli.Command {
-	return newAdminQuotaCatalogCommand()
+	return adminSectionByName(CmdQuota)
 }
 
-// newBillingCommand returns the admin billing command. It is compiled from the
-// operation catalog in catalog_admin_wiring.go, so the CLI command tree and the
-// MCP tool surface share one source of truth.
+// newBillingCommand returns the admin `billing` section compiled from the
+// catalog. It is a thin, single-seam getter over adminSectionByName.
 func newBillingCommand() *cli.Command {
-	return newAdminBillingCatalogCommand()
+	return adminSectionByName(CmdBilling)
 }

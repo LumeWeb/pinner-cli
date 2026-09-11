@@ -62,41 +62,48 @@ Examples:
 	}
 }
 
-func point(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+// resolveIPNSName validates that a positional name is present and builds the
+// IPNS service, deriving a context with the configured default timeout. It
+// returns the name, the service, the derived context (with the caller's cancel
+// func to defer), and an error.
+func resolveIPNSName(ctx context.Context, cmd argsFlagGetter, cfgMgr config.Manager, authToken string, secure bool) (string, IPNSService, context.Context, context.CancelFunc, error) {
 	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
-	defer cancel()
 
 	args := cmd.Args()
 	if args.Len() == 0 {
-		return fmt.Errorf("name is required (e.g., vitalik.eth)")
+		cancel()
+		return "", nil, ctx, cancel, fmt.Errorf("name is required (e.g., vitalik.eth)")
 	}
 
 	name := args.First()
-	cid := cmd.String(FlagCID)
 
 	ipnsService, err := newIPNSAPI(cfgMgr, authToken, secure)
 	if err != nil {
+		cancel()
+		return "", nil, ctx, cancel, err
+	}
+
+	return name, ipnsService, ctx, cancel, nil
+}
+
+func point(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
+	name, ipnsService, ctx, cancel, err := resolveIPNSName(ctx, cmd, cfgMgr, authToken, secure)
+	if err != nil {
 		return err
 	}
+	defer cancel()
+
+	cid := cmd.String(FlagCID)
 
 	return pointWithServices(ctx, name, cid, ipnsService, output)
 }
 
 func unpoint(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, secure bool) error {
-	ctx, cancel := context.WithTimeout(ctx, cfgMgr.Config().GetDefaultTimeout())
-	defer cancel()
-
-	args := cmd.Args()
-	if args.Len() == 0 {
-		return fmt.Errorf("name is required (e.g., vitalik.eth)")
-	}
-
-	name := args.First()
-
-	ipnsService, err := newIPNSAPI(cfgMgr, authToken, secure)
+	name, ipnsService, ctx, cancel, err := resolveIPNSName(ctx, cmd, cfgMgr, authToken, secure)
 	if err != nil {
 		return err
 	}
+	defer cancel()
 
 	return unpointWithServices(ctx, name, ipnsService, output)
 }
@@ -168,12 +175,4 @@ func unpointWithServices(ctx context.Context, name string, ipnsService IPNSServi
 	}})
 
 	return nil
-}
-
-// resolveVerifyURL returns the gateway URL to confirm an onchain/ENS name
-// resolves. It delegates to the shared catalogops helper so the CLI and MCP
-// surfaces agree on the verify URL. Kept as a package function for the CLI
-// tests.
-func resolveVerifyURL(name, ipnsName string) string {
-	return catalogops.ResolveVerifyURL(name, ipnsName)
 }

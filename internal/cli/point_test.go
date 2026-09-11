@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	"go.lumeweb.com/pinner/catalogops"
 )
 
 func TestPoint(t *testing.T) {
@@ -259,7 +260,7 @@ func TestResolveVerifyURL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := resolveVerifyURL(tt.domain, tt.ipnsName)
+			got := catalogops.ResolveVerifyURL(tt.domain, tt.ipnsName)
 			require.Equal(t, tt.want, got)
 		})
 	}

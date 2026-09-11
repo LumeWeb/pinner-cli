@@ -19,17 +19,22 @@ import (
 )
 
 // catalog_websites_wiring.go adapts the websites domain operations in
-// internal/catalogops to the urfave CLI: it compiles catalog operations into
-// commands under the "websites" parent, renders each handler's result through
-// the Output formatter, and maps positional args and the destructive --force
-// gate onto operation inputs. IO and CLI concerns (positional <domain>
-// mapping, force gate, update at-least-one-field gate, result rendering) live
-// here, not in catalogops.
+// internal/catalogops to the urfave CLI: it compiles the operations' command
+// tree through the shape model in internal/clicatalog/shapes_websites.go and
+// CompileCommandTree, renders each handler's result
+// through the Output formatter, and maps positional args and the destructive
+// --force gate onto operation inputs. IO and CLI concerns (positional <domain>
+// mapping, force gate, update at-least-one-field gate, result rendering,
+// ssl status --watch) live here, not in catalogops.
 //
-// Name mapping: canonical catalog names use dots ("websites.list"). The
-// "websites." group prefix is stripped and leaves are mounted under a
-// "websites" parent; the two-level op "websites.ssl.status" nests under an
-// "ssl" parent command.
+// Name mapping: canonical catalog names are underscore-separated
+// ("websites_list"); nesting, aliases and naming are declared in
+// shapes_websites.go (websites_ssl_status -> ssl -> status, websites_domains_*
+// under a "domains" parent, websites_platform_domain* under a
+// "platform-domain" parent, websites_enable_ipns -> "enable-ipns" with the
+// legacy "ipns" alias), not inferred here. Only the websites-specific leaf
+// behavior (the --watch flag and the shared catalog action adapter) stays
+// mount-owned in buildWebsitesLeaf and websitesCatalogConfig.
 //
 // The websites wizard and websites domains wizard commands are not compiled
 // from the catalog (they drive an interactive stepwise session) and are
@@ -100,248 +105,141 @@ var websitesCatalogDepsVar = catalogops.WebsitesDeps(catalogWebsitesDeps())
 
 // newWebsitesCatalogCommands compiles the websites catalog operations and
 // returns the top-level "websites" subcommands they produce (list, create,
-// get, update, enable-ipns, delete, validate, ssl→status, config). The
-// interactive hand-written commands (wizard, domains wizard) are appended by
+// get, update, enable-ipns, delete, validate, ssl→status, config) plus the
+// synthesized parents (domains, platform-domain). It declares the operations'
+// command shape in internal/clicatalog/shapes_websites.go and materializes the
+// tree through mount-owned leaf and parent builders. The interactive
+// hand-written commands (wizard, domains wizard) are appended by
 // newWebsitesCommand.
 func newWebsitesCatalogCommands() []*cli.Command {
-	cat := opmesh.NewCatalog()
+	root := clicatalog.WebsitesDomainRoot
 	ops := catalogops.WebsitesOperations(websitesCatalogDepsVar)
-	for _, op := range ops {
-		_ = cat.Add(op)
-	}
 
-	compiler := clicatalog.NewCLICompiler()
-	compiled, err := compiler.Compile(cat)
+	cmds, err := clicatalog.CompileCommandTree(
+		ops,
+		clicatalog.WebsitesShapes,
+		root,
+		websitesCatalogConfig(),
+		buildWebsitesLeaf,
+		buildCLIParent,
+	)
 	if err != nil {
 		// Compilation of well-formed catalog operations cannot fail; if it
 		// does we must not silently skip the websites group.
 		panic(fmt.Sprintf("catalog compile websites: %v", err))
 	}
-
-	// Leaf commands compile flat with dotted names; nest the two-level ones
-	// (websites.ssl.status -> ssl -> status) and the three-level ones
-	// (websites.domains.dane.republish -> domains -> dane -> republish).
-	parents := map[string]*cli.Command{}
-	var out []*cli.Command
-	for _, c := range compiled {
-		mounted := mountWebsitesCatalogCommand(c)
-		rest := strings.TrimPrefix(c.Name, "websites_")
-		// Only nest genuine multi-level ops (ssl_status, domains_*).
-		// websites_enable_ipns is a single-level leaf whose underscore is part
-		// of the leaf name, so it must NOT be split (it would mount as
-		// `websites enable ipns` and clobber the enable-ipns remap in
-		// mountWebsitesCatalogCommand).
-		if idx := strings.Index(rest, "_"); idx > 0 && rest != "enable_ipns" {
-			// parent_child... : ssl_status -> ssl -> status, domains_list ->
-			// domains -> list, domains_dane_republish -> domains -> dane ->
-			// republish.
-			parentName := rest[:idx]
-			remainder := rest[idx+1:]
-			parent, ok := parents[parentName]
-			if !ok {
-				parent = &cli.Command{Name: parentName, Category: "Management", Usage: "Manage website " + parentName, Commands: []*cli.Command{}}
-				// The domains parent exposes a singular `domain` alias alongside
-				// the canonical plural name.
-				if parentName == "domains" {
-					parent.Usage = "Manage domain bindings for a website"
-					parent.Aliases = []string{"domain"}
-					// The platform-domain concept is a single feature, so the
-					// "platform" segment from websites_platform_domain_* renders
-					// as the hyphenated "platform-domain" parent, matching the
-					// CLI expectation (websites platform-domain availability).
-				} else if parentName == "platform" {
-					parent.Name = "platform-domain"
-					parent.Usage = "Manage platform (free-subdomain) domain availability"
-				}
-				parents[parentName] = parent
-				out = append(out, parent)
-			}
-
-			// The DANE republish op maps its dotted name to a three-level path:
-			// websites.domains.dane.republish -> domains -> dane -> republish.
-			if parentName == "domains" && remainder == "dane_republish" {
-				var dane *cli.Command
-				for _, sub := range parent.Commands {
-					if sub.Name == "dane" {
-						dane = sub
-						break
-					}
-				}
-				if dane == nil {
-					dane = &cli.Command{Name: "dane", Category: "Management", Usage: "Manage a domain's DANE TLSA records", Commands: []*cli.Command{}}
-					parent.Commands = append(parent.Commands, dane)
-				}
-				mounted.Name = "republish"
-				dane.Commands = append(dane.Commands, mounted)
-				continue
-			}
-
-			// The leaf keeps only its final segment when nested under a parent
-			// (websites_ssl_status -> ssl -> status). Underscores in a leaf
-			// name render as hyphens on the CLI (domains_dns_requirements ->
-			// domains dns-requirements), matching the historical command names.
-			mounted.Name = strings.ReplaceAll(remainder, "_", "-")
-			// The domains leaves expose the conventional `rm`/`ls` aliases.
-			if remainder == "remove" {
-				mounted.Aliases = []string{"rm"}
-			}
-			if remainder == "list" {
-				mounted.Aliases = []string{"ls"}
-			}
-			parent.Commands = append(parent.Commands, mounted)
-			continue
-		}
-		out = append(out, mounted)
-	}
-	return out
+	return cmds
 }
 
-// mountWebsitesCatalogCommand adapts a single catalog-compiled command
-// (dotted name like "websites.list") into a live websites subcommand: it
-// strips the "websites." group prefix, sets the category, applies the legacy
-// CLI alias ("enable-ipns" is the canonical leaf; the CLI also exposed "ipns"),
-// and wraps the Action with the CLI-input adapter and renderer.
-func mountWebsitesCatalogCommand(cmd *cli.Command) *cli.Command {
-	canonical := cmd.Name
-	// Strip ONLY the "websites_" domain prefix. Two-level ops (ssl_status) keep
-	// their intermediate segment (ssl_status) so newWebsitesCatalogCommands can
-	// nest them under the "ssl" parent; only the websites_ group goes away here.
-	display := strings.TrimPrefix(canonical, "websites_")
-	// Keep the CLI leaf names stable: the renamed MCP tool websites_enable_ipns
-	// still renders on the CLI as `websites enable-ipns` (hyphen) per its
-	// historical CLI name.
-	if display == "enable_ipns" {
-		display = "enable-ipns"
+// buildWebsitesLeaf is the mount-owned leaf builder materializing one websites
+// leaf into an urfave *cli.Command. Shape (name/category/aliases/flags/usage)
+// comes from the clicatalog model via NewCLILeaf; behavior (the catalog action
+// adapter + relaxFlagRequired) stays mount-owned here. The one
+// websites-specific addition beyond the generic leaf builder is the
+// legacy `ssl status --watch` presentational polling flag (not part of the
+// data contract — it lives here in the wiring layer).
+func buildWebsitesLeaf(loc clicatalog.LeafLocator, cfg any) (*cli.Command, error) {
+	base, err := clicatalog.NewCLILeaf(loc.Op, loc.Name, loc.Category, loc.Aliases)
+	if err != nil {
+		return nil, err
 	}
-	cmd.Name = display
-	cmd.Category = "Management"
-	// Legacy alias: the websites group exposed `enable-ipns` with alias `ipns`.
-	if display == "enable-ipns" {
-		cmd.Aliases = []string{"ipns"}
+	if loc.Op.Name() == "websites_ssl_status" {
+		base.Flags = append(base.Flags, &cli.BoolFlag{Name: "watch", Usage: "Watch for SSL status changes"})
 	}
-
-	var op opmesh.Operation
-	for _, cand := range catalogops.WebsitesOperations(websitesCatalogDepsVar) {
-		if cand.Name() == canonical {
-			op = cand
-			break
-		}
-	}
-	if op != nil {
-		// Positional-supplied required args must not be urfave-parse-time
-		// required (see relaxFlagRequired); call before wrapping the Action.
-		relaxFlagRequired(cmd)
-		// Preserve the legacy `ssl status --watch` presentational polling flag
-		// (not part of the data contract — it lives here in the wiring layer).
-		if canonical == "websites_ssl_status" {
-			cmd.Flags = append(cmd.Flags, &cli.BoolFlag{Name: "watch", Usage: "Watch for SSL status changes"})
-		}
-		cmd.Action = websitesActionAdapter(op)
-	}
-	return cmd
+	relaxFlagRequired(base)
+	base.Action = catalogActionAdapter(loc.Op, cfg.(CatalogAdapterConfig))
+	return base, nil
 }
 
-// websitesActionAdapter returns the per-invocation ActionFunc for a websites
-// catalog operation. It builds the operation input map from flags plus the
-// resolved positional <domain>, applies the CLI-only gates (destructive
-// --force for delete, at-least-one-field for update), and renders the
-// handler's result through renderWebsitesResult.
+// websitesCatalogConfig returns the CatalogAdapterConfig that expresses the
+// websites domain's exact per-invocation behavior on top of the shared
+// catalogActionAdapter pipeline. It mirrors the former per-domain websites
+// adapter faithfully: the result renderer, the per-invocation --auth-token
+// override,
+// the canonical positional mapping, the destructive --force gate (websites
+// delete only), the at-least-one-field update guard, the ssl status --watch
+// post-normalize loop, and the domains-verify error guidance. All remaining
+// fields stay nil so the shared pipeline's safe defaults apply.
+func websitesCatalogConfig() CatalogAdapterConfig {
+	return CatalogAdapterConfig{
+		Renderer:               renderWebsitesResult,
+		HonorAuthTokenOverride: true,
 
-// applyPositionalArgs maps supplied CLI positional arguments into the
-// operation's declared string arguments by name, delegating the canonical
-// mapping rule (right-aligned to declared <arg> slots, surplus rejection) to
-// the catalog framework so every frontend interprets a Positional declaration
-// identically. The adapter only translates the urfave args into a []string.
-// Flag-populated values are never overwritten.
-func applyPositionalArgs(op opmesh.Operation, input map[string]any, args cli.Args) error {
-	return opmesh.MapPositionalArgs(op.Args(), op.Positional(), args.Slice(), input)
-}
-
-func websitesActionAdapter(op opmesh.Operation) cli.ActionFunc {
-	return func(ctx context.Context, c *cli.Command) error {
-		output := setupOutput(c)
-
-		// Build the input map from the compiler-declared flags.
-		input := clicatalog.FlagsToInput(c, op)
-
-		// Thread the per-invocation --auth-token flag into the operation's
-		// service construction (flag -> config precedence, mirroring the
-		// legacy GetAuthToken(c, cfgMgr)). Only set when provided so the
-		// config-read fallback in deps.service() still applies otherwise.
-		if tok := c.String(FlagAuthToken); tok != "" {
-			input[catalogops.AuthTokenInputKey] = tok
-		}
-
-		// Map the positional arguments into the operation's declared string
-		// args by position order (op.Positional() describes them, e.g.
-		// "<domain>", "[<website>] <domain>", or "<website>"). The catalog CLI
-		// compiler reads flags only, so the adapter resolves any supplied
-		// positionals into their declared input names.
-		if err := applyPositionalArgs(op, input, c.Args()); err != nil {
-			return err
-		}
-
-		// Destructive gate (websites delete). Enforce --force when a target is
-		// present; with no target, fall through so the handler's required-arg
-		// validation produces a non-zero exit instead of silently succeeding.
-		if op.Safety() == opmesh.SafetyDestructive {
-			confirm := c.Bool(FlagForce) || c.Bool(FlagConfirm)
-			input["confirm"] = confirm
-			if !confirm && opmesh.StrArg(input, "website", "") != "" {
-				return fmt.Errorf("websites delete: pass --force to confirm this destructive operation")
-			}
-		}
+		// Destructive gate (websites delete). The shared pipeline enforces
+		// --force/--confirm; with a target website and no --force, refuse
+		// loudly (non-zero exit) with the "websites delete:" message. With no
+		// target (no "website" arg), fall through so the handler's required-arg
+		// validation produces a non-zero exit. `websites domains
+		// convert-onchain` is also SafetyDestructive but declares a "domain"
+		// arg (no "website"), so StrArg(input, "website", "") stays empty and
+		// it falls through to the handler's own confirm check — never gated
+		// here.
+		DestructiveGate: GateForceReject(
+			func(ic *CatalogInvokeContext) bool {
+				return opmesh.StrArg(ic.Input, "website", "") != ""
+			},
+			func(ic *CatalogInvokeContext) string {
+				return "websites delete: pass --force to confirm this destructive operation"
+			},
+		),
 
 		// At-least-one-field gate for update (mirrors requireUpdateFields).
-		if op.Name() == "websites_update" {
-			if !c.IsSet(FlagRenameTo) && !c.IsSet(FlagCID) && !c.IsSet(FlagTargetType) &&
-				!c.IsSet(FlagDNSHosting) {
-				return fmt.Errorf("at least one field must be provided for update (--rename-to, --cid, --target-type, --dns-hosting)")
+		UpdateGuard: func(ic *CatalogInvokeContext) error {
+			if ic.Op.Name() == "websites_update" {
+				c := ic.C
+				if !c.IsSet(FlagRenameTo) && !c.IsSet(FlagCID) && !c.IsSet(FlagTargetType) &&
+					!c.IsSet(FlagDNSHosting) {
+					return fmt.Errorf("at least one field must be provided for update (--rename-to, --cid, --target-type, --dns-hosting)")
+				}
 			}
-		}
+			return nil
+		},
 
-		// Presentational watch loop for `ssl status --watch`: re-invoke the
-		// handler (which returns the typed *ipfs.WebsiteResponse) and render
-		// its SSL portion repeatedly. The data call stays in the handler; the
-		// polling/formatting is CLI-IO, so it lives here.
-		if op.Name() == "websites_ssl_status" && c.Bool("watch") {
-			return output.Watch(ctx,
-				func(ctx context.Context) (any, error) {
-					return op.Handler().Execute(ctx, input)
-				},
-				func(data any) (string, []string, [][]string) {
-					website, ok := data.(*ipfs.WebsiteResponse)
-					if !ok || website == nil {
-						return "SSL Status - No data", nil, nil
-					}
-					title := fmt.Sprintf("SSL Status for %s", website.Domain)
-					if website.Ssl == nil {
-						return title + "\n  No SSL information available", nil, nil
-					}
-					headers := []string{"Field", "Value"}
-					rows := [][]string{
-						{"Status", string(website.Ssl.Status)},
-						{"Issued At", formatTimePtr(website.Ssl.IssuedAt)},
-						{"Last Updated", formatTimePtr(website.Ssl.LastUpdatedAt)},
-					}
-					if website.Ssl.Error != nil && *website.Ssl.Error != "" {
-						rows = append(rows, []string{"Error", *website.Ssl.Error})
-					}
-					return title, headers, rows
-				},
-			)
-		}
+		// ssl status --watch: presentational poll loop that re-invokes the
+		// handler on the NORMALIZED input (the data call stays in the
+		// handler; the polling/formatting is CLI-IO). It runs as a
+		// PostNormalizeWatch hook so normalize computes once and both the
+		// single-execute and the watch re-execute paths share the same input.
+		// handled=true stops the pipeline before Execute/Render, exactly as the
+		// old adapter returned the Watch result directly.
+		PostNormalizeWatch: func(ic *CatalogInvokeContext, normalized map[string]any) (bool, error) {
+			if ic.Op.Name() == "websites_ssl_status" && ic.C.Bool(FlagWatch) {
+				return true, ic.Output.Watch(ic.Ctx,
+					func(ctx context.Context) (any, error) {
+						return ic.Op.Handler().Execute(ctx, normalized)
+					},
+					func(data any) (string, []string, [][]string) {
+						website, ok := data.(*ipfs.WebsiteResponse)
+						if !ok || website == nil {
+							return "SSL Status - No data", nil, nil
+						}
+						title := fmt.Sprintf("SSL Status for %s", website.Domain)
+						if website.Ssl == nil {
+							return title + "\n  No SSL information available", nil, nil
+						}
+						headers := []string{"Field", "Value"}
+						rows := [][]string{
+							{"Status", string(website.Ssl.Status)},
+							{"Issued At", formatTimePtr(website.Ssl.IssuedAt)},
+							{"Last Updated", formatTimePtr(website.Ssl.LastUpdatedAt)},
+						}
+						if website.Ssl.Error != nil && *website.Ssl.Error != "" {
+							rows = append(rows, []string{"Error", *website.Ssl.Error})
+						}
+						return title, headers, rows
+					},
+				)
+			}
+			return false, nil
+		},
 
-		// Apply the legacy per-call deadline (shared with every catalog domain).
-		dctx, cancel := applyDefaultTimeout(ctx)
-		defer cancel()
-
-		result, err := op.Handler().Execute(dctx, input)
-		if err != nil {
-			renderVerifyGuidance(output, op, err)
+		// On execute failure, print DNS self-service guidance for the
+		// websites_domains_verify op (human output only) and return the error
+		// unchanged.
+		OnExecuteError: func(ic *CatalogInvokeContext, err error) error {
+			renderVerifyGuidance(ic.Output, ic.Op, err)
 			return err
-		}
-		return renderWebsitesResult(ctx, c, op, result)
+		},
 	}
 }
 

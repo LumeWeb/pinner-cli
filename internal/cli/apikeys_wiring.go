@@ -29,8 +29,9 @@ func catalogAPIKeysDeps(factory ...ConfigManagerFactory) catalogops.APIKeysDeps 
 			if err != nil {
 				return nil
 			}
-			// The per-invocation --auth-token flag (put in the input map by
-			// apiKeysActionAdapter) takes precedence over the config token.
+			// The per-invocation --auth-token flag (put in the input map by the
+			// shared pipeline's HonorAuthTokenOverride) takes precedence over the
+			// config token.
 			// When present, pin the authService to the override so
 			// List/Create/Delete authenticate with it (not just the self-delete
 			// gating helpers).
@@ -50,94 +51,88 @@ func catalogAPIKeysDeps(factory ...ConfigManagerFactory) catalogops.APIKeysDeps 
 
 var apiKeysCatalogDepsVar = catalogops.APIKeysDeps(catalogAPIKeysDeps())
 
-// apiKeysParent builds and returns the catalog-driven "api-keys" parent.
-// newAccountAPIKeysCommand (in account_api_keys.go) delegates to this.
-func apiKeysParent() *cli.Command {
-	cat := opmesh.NewCatalog()
-	for _, op := range catalogops.APIKeysOperations(apiKeysCatalogDepsVar) {
-		_ = cat.Add(op)
-	}
+// newAPIKeysCommand builds the catalog-driven "api-keys" parent command. It
+// declares the api-keys operations' command shape in internal/clicatalog/shapes_apikeys.go
+// and materializes the tree through mount-owned leaf and parent builders. The
+// positional <name>/<id> mapping, the --force gate for delete, the
+// per-invocation --auth-token override and the renderer all stay mount-owned
+// here via apikeysCatalogConfig. newAccountAPIKeysCommand (in
+// account_api_keys.go) delegates to this.
+func newAPIKeysCommand() *cli.Command {
+	root := clicatalog.APIKeysDomainRoot
+	ops := catalogops.APIKeysOperations(apiKeysCatalogDepsVar)
 
-	compiler := clicatalog.NewCLICompiler()
-	compiled, err := compiler.Compile(cat)
+	cmds, err := clicatalog.CompileCommandTree(
+		ops,
+		clicatalog.APIKeysShapes,
+		root,
+		apikeysCatalogConfig(),
+		buildAPIKeysLeaf,
+		buildCLIParent,
+	)
 	if err != nil {
 		panic(fmt.Sprintf("catalog compile api-keys: %v", err))
 	}
 
-	out := make([]*cli.Command, 0, len(compiled))
-	for _, c := range compiled {
-		canonical := c.Name // e.g. "api-keys.list"
-		leaf := canonical[len("api_keys_"):]
-		c.Name = leaf
-		c.Category = "Management"
-		relaxFlagRequired(c)
-
-		var op opmesh.Operation
-		for _, cand := range catalogops.APIKeysOperations(apiKeysCatalogDepsVar) {
-			if cand.Name() == canonical {
-				op = cand
-				break
-			}
-		}
-		if op != nil {
-			c.Action = apiKeysActionAdapter(op)
-		}
-		out = append(out, c)
-	}
-
 	return &cli.Command{
-		Name:        "api-keys",
-		Aliases:     []string{"apikey", "api-key"},
-		Category:    "Management",
-		Usage:       "Manage API keys",
-		Description: "Manage API keys for your Pinner.xyz account. These subcommands are compiled from the canonical operation catalog (internal/catalogops).",
-		Commands:    out,
+		Name:        root.Name,
+		Aliases:     root.Aliases,
+		Category:    root.Category,
+		Usage:       root.Usage,
+		Description: root.Desc,
+		Commands:    cmds,
 	}
 }
 
-// apiKeysActionAdapter wraps a catalog api-keys command's Action: maps the
-// positional <name>/<id> into the operation input, enforces the --force gate
-// for delete, then invokes the handler and renders the result.
-func apiKeysActionAdapter(op opmesh.Operation) cli.ActionFunc {
-	return func(ctx context.Context, c *cli.Command) error {
-		input := clicatalog.FlagsToInput(c, op)
+// buildAPIKeysLeaf is the mount-owned leaf builder materializing one api-keys
+// leaf into an urfave *cli.Command. Shape (name/category/aliases/flags/usage)
+// comes from the clicatalog model via NewCLILeaf; behavior (the catalog action
+// adapter + relaxFlagRequired) stays mount-owned here. api-keys needs no
+// mount-added flags beyond the compiled leaf flags.
+func buildAPIKeysLeaf(loc clicatalog.LeafLocator, cfg any) (*cli.Command, error) {
+	base, err := clicatalog.NewCLILeaf(loc.Op, loc.Name, loc.Category, loc.Aliases)
+	if err != nil {
+		return nil, err
+	}
+	relaxFlagRequired(base)
+	base.Action = catalogActionAdapter(loc.Op, cfg.(CatalogAdapterConfig))
+	return base, nil
+}
 
-		// The per-invocation --auth-token override takes precedence over the
-		// config token. Put it in the input so the Service closure honors it;
-		// otherwise api-keys authenticate with the config token.
-		if tok := c.String(FlagAuthToken); tok != "" {
-			input[catalogops.AuthTokenInputKey] = tok
-		}
+// apikeysCatalogConfig returns the CatalogAdapterConfig that expresses the
+// api-keys domain's exact per-invocation behavior on top of the shared
+// catalogActionAdapter pipeline. API keys needs four hooks: the result
+// renderer, the per-invocation --auth-token override, the positional
+// <name>/<id> mapping onto both the "name" and "id" args when empty, and the
+// delete passthrough gate. All remaining fields stay nil so the shared
+// pipeline's safe defaults apply.
+func apikeysCatalogConfig() CatalogAdapterConfig {
+	return CatalogAdapterConfig{
+		Renderer:               renderAPIKeysResult,
+		HonorAuthTokenOverride: true,
 
-		// Map the positional <name>/<id> into the "name"/"id" arg when empty.
-		if c.Args().Len() > 0 {
-			if hasArg(op, "name") && opmesh.StrArg(input, "name", "") == "" {
-				input["name"] = c.Args().First()
+		// Map the positional <name>/<id> into the "name" and "id" args when
+		// empty. Both are checked so a single positional serves api_keys_create
+		// (name arg) and api_keys_delete (id arg) alike, without clobbering a
+		// value already supplied via a flag.
+		ResolvePositional: func(ic *CatalogInvokeContext) error {
+			if ic.C.Args().Len() > 0 {
+				if hasArg(ic.Op, "name") && opmesh.StrArg(ic.Input, "name", "") == "" {
+					ic.Input["name"] = ic.C.Args().First()
+				}
+				if hasArg(ic.Op, "id") && opmesh.StrArg(ic.Input, "id", "") == "" {
+					ic.Input["id"] = ic.C.Args().First()
+				}
 			}
-			if hasArg(op, "id") && opmesh.StrArg(input, "id", "") == "" {
-				input["id"] = c.Args().First()
-			}
-		}
+			return nil
+		},
 
-		// Destructive gate (delete). Unlike pins rm, api-keys delete does not
-		// require --force in general: the core service enforces the rule that
-		// deleting the currently-authenticating key needs confirmation. So we
-		// pass the flag through to the handler (input["confirm"]) and let the
-		// service decide. The compiler still injects --force onto the
-		// destructive command; here we just map it into the operation input.
-		if op.Safety() == opmesh.SafetyDestructive {
-			input["confirm"] = c.Bool(FlagForce)
-		}
-
-		// Apply the configured per-command timeout.
-		dctx, cancel := applyDefaultTimeout(ctx)
-		defer cancel()
-
-		result, err := op.Handler().Execute(dctx, input)
-		if err != nil {
-			return err
-		}
-		return renderAPIKeysResult(ctx, c, op, result)
+		// api keys delete passes --force through to the handler and lets the
+		// core service decide (no CLI refusal; the hidden --confirm alias is
+		// not honored here). GatePassthroughForce writes input["confirm"] from
+		// --force only and never handles, exactly matching the original
+		// adapter's SafetyDestructive branch.
+		DestructiveGate: GatePassthroughForce(),
 	}
 }
 

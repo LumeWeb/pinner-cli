@@ -89,12 +89,14 @@ func TestIntegration_AliasEquivalence_UnpinAndPinsRm(t *testing.T) {
 	assert.Contains(t, pinsRmFlags, FlagAll, "pins rm command should have --all flag")
 }
 
-// TestIntegration_AliasEquivalence_ListAndPinsLs verifies that `list` and `pins ls`
-// produce commands with equivalent filtering flags.
+// TestIntegration_AliasEquivalence_ListAndPinsList verifies that `list` and the
+// catalog-compiled `pins list` (canonical "list", alias "ls") produce commands
+// with equivalent filtering flags.
 func TestIntegration_AliasEquivalence_ListAndPinsLs(t *testing.T) {
 	listCmd := newListCommand()
-	pinsLsCmd := findCommand(newPinsCommand().Commands, "ls")
-	require.NotNil(t, pinsLsCmd, "pins command should compile an 'ls' subcommand")
+	pinsLsCmd := findCommand(newPinsCommand().Commands, "list")
+	require.NotNil(t, pinsLsCmd, "pins command should compile a 'list' (alias 'ls') subcommand")
+	require.Contains(t, pinsLsCmd.Aliases, "ls", "pins list should keep the documented 'ls' alias")
 
 	listFlags := getFlagNames(listCmd)
 	pinsLsFlags := getFlagNames(pinsLsCmd)
@@ -300,12 +302,16 @@ func TestIntegration_PinsSubcommands(t *testing.T) {
 	assert.Equal(t, "pins", cmd.Name)
 	assert.Len(t, cmd.Commands, 5, "pins should have exactly 5 subcommands")
 
-	expected := []string{"add", "rm", "ls", "status", "update"}
+	expected := []string{"add", "rm", "list", "status", "update"}
 	names := getSubcommandNames(cmd)
 
 	for _, name := range expected {
 		assert.Contains(t, names, name, "pins should have %q subcommand", name)
 	}
+	// The canonical "list" leaf keeps "ls" as the documented alias.
+	listCmd := findCommand(cmd.Commands, "list")
+	require.NotNil(t, listCmd, "pins should have a 'list' subcommand")
+	assert.Contains(t, listCmd.Aliases, "ls", "pins list should keep the 'ls' alias")
 }
 
 // TestIntegration_PinsRmFlags verifies that pins rm has --all, --force, --status flags.
@@ -365,7 +371,7 @@ func TestIntegration_ShellCompletion(t *testing.T) {
 
 	assert.True(t, pinsSubNames["add"], "pins should have 'add' subcommand for completion")
 	assert.True(t, pinsSubNames["rm"], "pins should have 'rm' subcommand for completion")
-	assert.True(t, pinsSubNames["ls"], "pins should have 'ls' subcommand for completion")
+	assert.True(t, pinsSubNames["list"], "pins should have 'list' subcommand for completion")
 	assert.True(t, pinsSubNames["status"], "pins should have 'status' subcommand for completion")
 	assert.True(t, pinsSubNames["update"], "pins should have 'update' subcommand for completion")
 

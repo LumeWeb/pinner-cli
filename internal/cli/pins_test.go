@@ -23,7 +23,7 @@ func TestNewPinsCommand(t *testing.T) {
 		}
 		assert.Contains(t, names, "add")
 		assert.Contains(t, names, "rm")
-		assert.Contains(t, names, "ls")
+		assert.Contains(t, names, "list")
 		assert.Contains(t, names, "status")
 		assert.Contains(t, names, "update")
 	})
@@ -77,10 +77,11 @@ func TestNewPinsRmCommand(t *testing.T) {
 }
 
 func TestNewPinsLsCommand(t *testing.T) {
-	t.Run("creates pins ls command with correct flags", func(t *testing.T) {
-		cmd := compiledPinsSubcommand(t, "ls")
+	t.Run("creates pins list command with correct flags and ls alias", func(t *testing.T) {
+		cmd := compiledPinsSubcommand(t, "list")
 
-		assert.Equal(t, "ls", cmd.Name)
+		assert.Equal(t, "list", cmd.Name)
+		assert.Contains(t, cmd.Aliases, "ls", "pins list should keep the documented 'ls' alias")
 
 		flagNames := make([]string, len(cmd.Flags))
 		for i, f := range cmd.Flags {

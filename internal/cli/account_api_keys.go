@@ -11,7 +11,7 @@ import (
 
 func newAccountAPIKeysCommand() *cli.Command {
 	// The api-keys parent is catalog-driven (see apikeys_wiring.go).
-	return apiKeysParent()
+	return newAPIKeysCommand()
 }
 
 func accountAPIKeysList(ctx context.Context, cmd flagGetter, output Output, cfgMgr config.Manager, authToken string, authServiceFactory AuthServiceFactory, svcFactory APIKeyServiceFactory) error {

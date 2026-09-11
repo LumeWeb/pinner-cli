@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/urfave/cli/v3"
 
@@ -33,7 +32,8 @@ func catalogOperationsDeps(factory ...ConfigManagerFactory) catalogops.Operation
 			discard := NewOutputFormatter(false, false, false, false)
 			discard.SetWriter(io.Discard)
 			// The per-invocation --auth-token flag (threaded through the input
-			// map by operationsActionAdapter) takes precedence over the config
+			// map by operationsCatalogConfig (HonorAuthTokenOverride)) takes
+			// precedence over the config
 			// token.
 			if t, ok := input[catalogops.AuthTokenInputKey].(string); ok && t != "" {
 				authService := defaultAuthServiceFactoryWithToken(cfgMgr, cfgMgr.Config().GetAPIEndpoint(), t)
@@ -48,88 +48,86 @@ func catalogOperationsDeps(factory ...ConfigManagerFactory) catalogops.Operation
 var operationsCatalogDepsVar = catalogops.OperationsDeps(catalogOperationsDeps())
 
 // newOperationsCommandCatalog is the catalog-driven "operations" parent
-// command. (newOperationsCommand in operations.go delegates to this.)
+// command. (newOperationsCommand in operations.go delegates to this.) It
+// declares the operations command shape in internal/clicatalog/shapes_operations.go
+// and materializes the tree through mount-owned leaf and the shared parent
+// builders.
 func newOperationsCommandCatalog() *cli.Command {
-	cat := opmesh.NewCatalog()
-	for _, op := range catalogops.OperationsOperations(operationsCatalogDepsVar) {
-		_ = cat.Add(op)
-	}
+	root := clicatalog.OperationsDomainRoot
+	ops := catalogops.OperationsOperations(operationsCatalogDepsVar)
 
-	compiler := clicatalog.NewCLICompiler()
-	compiled, err := compiler.Compile(cat)
+	cmds, err := clicatalog.CompileCommandTree(
+		ops,
+		clicatalog.OperationsShapes,
+		root,
+		operationsCatalogConfig(),
+		buildOperationsLeaf,
+		buildCLIParent,
+	)
 	if err != nil {
 		panic(fmt.Sprintf("catalog compile operations: %v", err))
 	}
 
-	out := make([]*cli.Command, 0, len(compiled))
-	for _, c := range compiled {
-		canonical := c.Name // e.g. "operations.list"
-		c.Name = strings.TrimPrefix(canonical, "operations_")
-		c.Category = "Management"
-		relaxFlagRequired(c)
-
-		var op opmesh.Operation
-		for _, cand := range catalogops.OperationsOperations(operationsCatalogDepsVar) {
-			if cand.Name() == canonical {
-				op = cand
-				break
-			}
-		}
-		if op != nil {
-			c.Action = operationsActionAdapter(op)
-		}
-		out = append(out, c)
-	}
-
 	return &cli.Command{
-		Name:        "operations",
-		Category:    "Management",
-		Usage:       "List and inspect account operations",
-		Description: "View and monitor account operations such as uploads, pins, and other processing tasks. These subcommands are compiled from the canonical operation catalog (internal/catalogops).",
-		Commands:    out,
+		Name:        root.Name,
+		Category:    root.Category,
+		Usage:       root.Usage,
+		Description: root.Desc,
+		Commands:    cmds,
 	}
 }
 
-// operationsActionAdapter wraps a catalog operations command's Action: it maps
-// the positional <id> into the operation input, then invokes the handler and
-// renders the result.
-func operationsActionAdapter(op opmesh.Operation) cli.ActionFunc {
-	return func(ctx context.Context, c *cli.Command) error {
+// buildOperationsLeaf is the mount-owned leaf builder materializing one
+// operations leaf into an urfave *cli.Command. Shape (name/category/aliases/
+// flags/usage) comes from the clicatalog model via NewCLILeaf; behavior (the
+// catalog action adapter + relaxFlagRequired) stays mount-owned here.
+func buildOperationsLeaf(loc clicatalog.LeafLocator, cfg any) (*cli.Command, error) {
+	base, err := clicatalog.NewCLILeaf(loc.Op, loc.Name, loc.Category, loc.Aliases)
+	if err != nil {
+		return nil, err
+	}
+	relaxFlagRequired(base)
+	base.Action = catalogActionAdapter(loc.Op, cfg.(CatalogAdapterConfig))
+	return base, nil
+}
 
-		input := clicatalog.FlagsToInput(c, op)
-
-		// Thread the per-invocation --auth-token override into the operation
-		// input so the Service closure honors it (flag over config).
-		if tok := c.String(FlagAuthToken); tok != "" {
-			input[catalogops.AuthTokenInputKey] = tok
-		}
+// operationsCatalogConfig returns the CatalogAdapterConfig that expresses
+// operations' exact per-invocation behavior on top of the shared
+// catalogActionAdapter pipeline. Operations needs three hooks: the result
+// renderer, the per-invocation --auth-token override, and the positional <id>
+// mapping onto the "id" arg. The `operations list --watch` polling loop runs
+// the service directly (human-output only) and short-circuits BEFORE
+// NormalizeOperationInput, so it lives here as a PreNormalizeWatch hook rather
+// than in the pipeline's normalize/execute path. All remaining fields stay nil
+// so the shared pipeline's safe defaults apply (operations ops are reads,
+// never destructive, so no destructive gate runs).
+func operationsCatalogConfig() CatalogAdapterConfig {
+	return CatalogAdapterConfig{
+		Renderer:               renderOperationsResult,
+		HonorAuthTokenOverride: true,
 
 		// Map the positional <id> into the operation's "id" arg when not already
-		// provided. The id arg is ArgTypeInt, so flagValue stores an int; compare
-		// with IntArg (which coerces string/int) so an explicit --id flag is not
-		// clobbered by a positional.
-		if c.Args().Len() > 0 {
-			if hasArg(op, "id") && opmesh.IntArg(input, "id", 0) == 0 {
-				input["id"] = c.Args().First()
+		// provided. The id arg is ArgTypeInt, so FlagsToInput stores an int;
+		// compare with IntArg (which coerces string/int) so an explicit --id
+		// flag is not clobbered by a positional.
+		ResolvePositional: func(ic *CatalogInvokeContext) error {
+			if ic.C.Args().Len() > 0 {
+				if hasArg(ic.Op, "id") && opmesh.IntArg(ic.Input, "id", 0) == 0 {
+					ic.Input["id"] = ic.C.Args().First()
+				}
 			}
-		}
+			return nil
+		},
 
 		// `operations list --watch` polls until the list settles. Driving it
 		// from the wiring (not the catalogops handler) keeps catalogops
 		// IO-agnostic.
-		if op.Name() == "operations_list" && c.Bool(FlagWatch) && !setupOutput(c).IsJSON() {
-			return watchCatalogOperationsList(ctx, c, op, input)
-		}
-
-		// Apply the legacy per-call deadline (shared with every catalog domain).
-		dctx, cancel := applyDefaultTimeout(ctx)
-		defer cancel()
-
-		result, err := op.Handler().Execute(dctx, input)
-		if err != nil {
-			return err
-		}
-		return renderOperationsResult(ctx, c, op, result)
+		PreNormalizeWatch: func(ic *CatalogInvokeContext) (bool, error) {
+			if ic.Op.Name() == "operations_list" && ic.C.Bool(FlagWatch) && !ic.Output.IsJSON() {
+				return true, watchCatalogOperationsList(ic.Ctx, ic.C, ic.Op, ic.Input)
+			}
+			return false, nil
+		},
 	}
 }
 

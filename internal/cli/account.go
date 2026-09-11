@@ -5,36 +5,30 @@ import (
 	"fmt"
 
 	"github.com/urfave/cli/v3"
+	"go.lumeweb.com/pinner-cli/internal/clicatalog"
 )
 
 func newAccountCommand() *cli.Command {
-	// Catalog-driven account subcommands (info, email, password, subscription,
-	// portal) compile to both the CLI and MCP surfaces; merge them under the
-	// `account` parent alongside the hand-written otp/api-keys subcommands.
-	catalogCmds := accountWiringParent()
+	// The account parent is catalog-driven: the non-interactive subcommands
+	// (info, update-email, update-password, subscription, quota) are compiled
+	// from the canonical operation catalog — see newAccountCatalogCommands in
+	// account_wiring.go and the shape model in internal/clicatalog/shapes_account.go.
+	// The `otp` (its enable is hand-written interactive; disable is
+	// catalog-wired under the parent) and `api-keys` parents are hand-written
+	// and merged under the same root.
+	root := clicatalog.AccountDomainRoot
 	return &cli.Command{
-		Name:     "account",
-		Category: "Setup",
-		Usage:    "Manage account settings",
-		Description: `Manage your Pinner.xyz account profile, email, password, subscription, quota, 2FA configuration, and API keys.
-
-		Examples:
-		pinner account info
-		pinner account update-email you@example.com --password currentpass
-		pinner account update-password
-		pinner account quota
-		pinner account quota --open
-		pinner account subscription
-		pinner account subscription --open
-		pinner account otp enable
-		pinner account otp disable --password mypassword`,
+		Name:        root.Name,
+		Category:    root.Category,
+		Usage:       root.Usage,
+		Description: root.Desc,
 		Commands: append(
 			[]*cli.Command{
 				newAccountOTPCommand(),
 				// api-keys is catalog-driven but kept as its own parent.
 				newAccountAPIKeysCommand(),
 			},
-			catalogCmds...,
+			newAccountCatalogCommands()...,
 		),
 	}
 }

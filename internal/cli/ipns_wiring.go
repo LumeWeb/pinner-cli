@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
@@ -19,12 +18,13 @@ import (
 // (internal/catalogops/ipns.go) to urfave/cli/v3 commands. The catalog never
 // imports pkg/cli; this file maps CLI concerns (positional
 // <key>/<id>/<cid>/<name> args, the destructive --force gate for key delete)
-// onto the catalog and renders each handler's DATA result through the CLI
+// onto the catalog and renders each handler's data result through the CLI
 // Output formatter.
 //
-// The IPNS operations are canonically dotted ("ipns.keys.list",
-// "ipns.publish", ...). The CLI nests ipns.keys.* under a "keys" parent; the
-// rest are direct leaves. That nesting lives here, not in the catalog model.
+// The IPNS operations are canonically underscore-separated
+// ("ipns_keys_list", "ipns_publish", ...). The CLI nests ipns_keys_* under a
+// "keys" parent; the rest are direct leaves. That nesting is declared in
+// internal/clicatalog/shapes_ipns.go, not hardcoded here.
 
 // catalogIPNSDeps builds the catalogops.IPNSDeps from the live CLI wiring.
 func catalogIPNSDeps(factory ...ConfigManagerFactory) catalogops.IPNSDeps {
@@ -61,129 +61,106 @@ func catalogIPNSDeps(factory ...ConfigManagerFactory) catalogops.IPNSDeps {
 var ipnsCatalogDepsVar = catalogops.IPNSDeps(catalogIPNSDeps())
 
 // newIPNSCommandCatalog builds the catalog-driven "ipns" parent command. It
-// compiles the IPNS operations and nests ipns.keys.* under a "keys" parent.
+// declares the IPNS operations' command shape in internal/clicatalog and
+// materializes the tree through mount-owned leaf and parent builders.
 // newIPNSCommand in ipns.go delegates to this.
 func newIPNSCommandCatalog() *cli.Command {
-	cat := opmesh.NewCatalog()
-	for _, op := range catalogops.IPNSOperations(ipnsCatalogDepsVar) {
-		_ = cat.Add(op)
-	}
+	root := clicatalog.IPNSDomainRoot
+	ops := catalogops.IPNSOperations(ipnsCatalogDepsVar)
 
-	compiler := clicatalog.NewCLICompiler()
-	compiled, err := compiler.Compile(cat)
+	cmds, err := clicatalog.CompileCommandTree(
+		ops,
+		clicatalog.IPNSShapes,
+		root,
+		ipnsCatalogConfig(),
+		buildIPNSLeaf,
+		buildCLIParent,
+	)
 	if err != nil {
 		panic(fmt.Sprintf("catalog compile ipns: %v", err))
 	}
 
-	parents := map[string]*cli.Command{}
-	var out []*cli.Command
-	for _, c := range compiled {
-		canonical := c.Name // e.g. "ipns.keys.list", BEFORE mount mutates it
-		mounted := mountIPNSCatalogCommand(c)
-		rest := strings.TrimPrefix(canonical, "ipns_")
-		if idx := strings.Index(rest, "_"); idx > 0 {
-			// Two-level: parent_child (keys_list, keys_create, keys_get, keys_delete)
-			parentName := rest[:idx]
-			parent, ok := parents[parentName]
-			if !ok {
-				parent = &cli.Command{Name: parentName, Category: "Management", Usage: "Manage IPNS " + parentName, Commands: []*cli.Command{}}
-				parents[parentName] = parent
-				out = append(out, parent)
-			}
-			mounted.Name = rest[idx+1:]
-			parent.Commands = append(parent.Commands, mounted)
-			continue
-		}
-		out = append(out, mounted)
-	}
-
 	return &cli.Command{
-		Name:        "ipns",
-		Category:    "Management",
-		Usage:       "Manage IPNS (InterPlanetary Name System) keys and records",
-		Description: "Manage IPNS keys (create/list/get/delete), publish CIDs to IPNS names, republish records, and resolve IPNS names. These subcommands are compiled from the canonical operation catalog (internal/catalogops).",
-		Commands:    out,
+		Name:        root.Name,
+		Category:    root.Category,
+		Usage:       root.Usage,
+		Description: root.Desc,
+		Commands:    cmds,
 	}
 }
 
-// mountIPNSCatalogCommand adapts a single catalog-compiled command (dotted name
-// like "ipns_keys_list") into a live ipns subcommand: it strips the "ipns_"
-// group prefix, relaxes parsed-time required flags so positionals can supply
-// them, and wraps the Action with the CLI-input adapter.
-func mountIPNSCatalogCommand(cmd *cli.Command) *cli.Command {
-	canonical := cmd.Name
-	display := strings.TrimPrefix(canonical, "ipns_")
-	cmd.Name = display
-	cmd.Category = "Management"
-	relaxFlagRequired(cmd)
-
-	var op opmesh.Operation
-	for _, cand := range catalogops.IPNSOperations(ipnsCatalogDepsVar) {
-		if cand.Name() == canonical {
-			op = cand
-			break
-		}
+// buildIPNSLeaf is the mount-owned leaf builder materializing one IPNS leaf
+// into an urfave *cli.Command. Shape (name/category/aliases/flags/usage) comes
+// from the clicatalog model via NewCLILeaf; behavior (the catalog action
+// adapter + relaxFlagRequired) stays mount-owned here.
+func buildIPNSLeaf(loc clicatalog.LeafLocator, cfg any) (*cli.Command, error) {
+	base, err := clicatalog.NewCLILeaf(loc.Op, loc.Name, loc.Category, loc.Aliases)
+	if err != nil {
+		return nil, err
 	}
-	if op != nil {
-		cmd.Action = ipnsActionAdapter(op)
-	}
-	return cmd
+	relaxFlagRequired(base)
+	base.Action = catalogActionAdapter(loc.Op, cfg.(CatalogAdapterConfig))
+	return base, nil
 }
 
-// ipnsActionAdapter returns the per-invocation ActionFunc for an IPNS catalog
-// operation. It maps the positional <key>/<id>/<cid>/<name> into the
-// operation's string arg, threads the --auth-token override into the input,
-// and invokes the handler, then renders the result.
-func ipnsActionAdapter(op opmesh.Operation) cli.ActionFunc {
-	return func(ctx context.Context, c *cli.Command) error {
-		input := clicatalog.FlagsToInput(c, op)
-
-		// The per-invocation --auth-token override takes precedence over the
-		// config token. Put it in the input so IPNSDeps.service() honors it;
-		// otherwise the config token would win and the flag would be ignored.
-		if tok := c.String(FlagAuthToken); tok != "" {
-			input[catalogops.AuthTokenInputKey] = tok
+// buildCLIParent is the mount-owned parent builder materializing a synthesized
+// parent (e.g. ipns "keys") into an urfave *cli.Command wrapping its children.
+// A FoldFlat leaf (ownLeaf) is folded into the parent's top-level Action, with
+// its flags/usage/args-usage merged — reproducing the flat-leaf-into-parent
+// fold. IPNS today has no folded leaf, so ownLeaf is nil here.
+func buildCLIParent(spec clicatalog.NodeSpec, ownLeaf *cli.Command, children []*cli.Command) (*cli.Command, error) {
+	parent := &cli.Command{
+		Name: spec.Name, Category: spec.Category, Usage: spec.Usage,
+		Description: spec.Desc, Aliases: spec.Aliases, Commands: children,
+	}
+	if ownLeaf != nil {
+		parent.Action = ownLeaf.Action
+		parent.Flags = append(parent.Flags, ownLeaf.Flags...)
+		if parent.Usage == "" {
+			parent.Usage = ownLeaf.Usage
 		}
+		parent.ArgsUsage = ownLeaf.ArgsUsage
+	}
+	return parent, nil
+}
 
-		// Map the positional arg into the operation's single string arg where
-		// it is still empty (positional <key>/<id>/<cid>/<name>).
-		if c.Args().Len() > 0 {
-			for _, a := range op.Args() {
-				if (a.Type == opmesh.ArgTypeString || a.Type == opmesh.ArgTypeFlexibleID) && opmesh.StrArg(input, a.Name, "") == "" {
-					input[a.Name] = c.Args().First()
-					break
-				}
-			}
-		}
+// ipnsCatalogConfig returns the CatalogAdapterConfig that expresses ipns'
+// exact per-invocation behavior on top of the shared catalogActionAdapter
+// pipeline. IPNS needs four hooks: the result renderer, the per-invocation
+// --auth-token override, the positional <key>/<id>/<cid>/<name> mapping onto
+// the first declared String/FlexibleID arg, and the deliberate no-gate for
+// ipns keys delete (the op's confirm arg defaults to true and its handler
+// carries the safety, so a confirm-less CLI delete still proceeds). All
+// remaining fields stay nil so the shared pipeline's safe defaults apply.
+func ipnsCatalogConfig() CatalogAdapterConfig {
+	return CatalogAdapterConfig{
+		Renderer:               renderIPNSResult,
+		HonorAuthTokenOverride: true,
 
-		// The catalog marks ipns.keys.delete SafetyDestructive and the compiler
-		// registers a --force flag for it, but the ipns keys delete command
-		// deletes keys without requiring --force. To keep that contract (and not
-		// break existing scripts), the CLI path does not gate on --force here.
-		// The delete op's confirm arg defaults to true, so the normalize step
-		// below fills confirm=true and the handler gate passes.
+		// Map the positional <key>/<id>/<cid>/<name> into the first declared
+		// String/FlexibleID arg when empty (ipns_keys_create name, keys_get/
+		// keys_delete id, publish cid, resolve name). We use the type-based
+		// posFirstToType mapping (not opmesh.MapPositionalArgs) because the
+		// original adapter mapped a positional this way for every op —
+		// including ipns_republish, whose canonical Positional is "" yet which
+		// still accepted a positional into its key-name arg.
+		ResolvePositional: func(ic *CatalogInvokeContext) error {
+			return posFirstToType(ic, func(a opmesh.OperationArg) bool {
+				return a.Type == opmesh.ArgTypeString || a.Type == opmesh.ArgTypeFlexibleID
+			})
+		},
 
-		// Route through the same normalize path as the generic adapter and
-		// Catalog.Invoke so required-arg validation, declared defaults, and
-		// SelectionGroup enforcement apply identically on the CLI surface.
-		normalized, err := opmesh.NormalizeOperationInput(op, input)
-		if err != nil {
-			return err
-		}
-
-		// Apply the configured per-command timeout.
-		dctx, cancel := applyDefaultTimeout(ctx)
-		defer cancel()
-
-		result, err := op.Handler().Execute(dctx, normalized)
-		if err != nil {
-			return err
-		}
-		return renderIPNSResult(ctx, c, op, result)
+		// ipns keys delete uses NO destructive gate: the op's confirm arg
+		// defaults to true and its handler enforces confirmation, so the CLI
+		// must never refuse on a missing --force (that would break the
+		// delete-without-force contract). GateNone writes no confirmation and
+		// never handles, leaving the safety to the op's confirm default +
+		// handler check.
+		DestructiveGate: GateNone(),
 	}
 }
 
-// renderIPNSResult renders an IPNS handler's typed DATA result through the CLI
+// renderIPNSResult renders an IPNS handler's typed data result through the CLI
 // Output formatter. It is a plain function invoked by the wiring's own adapter.
 func renderIPNSResult(_ context.Context, c *cli.Command, op opmesh.Operation, result any) error {
 	output := setupOutput(c)

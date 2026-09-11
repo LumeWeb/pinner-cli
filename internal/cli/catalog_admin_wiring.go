@@ -24,10 +24,16 @@ import (
 // Output formatter, and maps positionals and the destructive --force gate onto
 // operation inputs. IO and CLI concerns live here, not in catalogops.
 //
-// Admin sections are added one at a time. This file currently mounts the
-// platform-domains section (admin_platform_domains_*) under `admin
-// platform-domains`; later sections (websites, quota, billing) add their own
-// parent commands alongside it.
+// The admin command tree (sections: quota, billing, websites, platform-domains,
+// social-providers; plus the quota/billing group parents: plans, allowances,
+// user-configs / credits, price-lines, pricing-plans, pricing-plan-periods,
+// subscribers) is declared in internal/clicatalog/shapes_admin.go (AdminShapes
+// + AdminDomainRoot) and materialized by CompileCommandTree through the shared
+// buildCLIParent parent builder and mount-owned buildAdminLeaf. No
+// string-prefix section/group inference remains here. The only hand-written
+// admin command is `pprof`
+// (admin_pprof.go), merged in by newAdminCommand because it is not
+// catalog-backed.
 
 // catalogAdminDeps builds the catalogops.AdminDeps from the live CLI wiring.
 // Services resolve lazily per invocation via the core factories; config is read
@@ -78,263 +84,148 @@ func catalogAdminDeps() catalogops.AdminDeps {
 // reach the canonical operation list without rebuilding it repeatedly.
 var adminCatalogDepsVar = catalogops.AdminDeps(catalogAdminDeps())
 
-// newAdminPlatformDomainsCatalogCommand compiles the admin platform-domains
-// catalog operations and returns the `platform-domains` command to mount under
-// the `admin` parent: list, register, update, delete, bind.
-func newAdminPlatformDomainsCatalogCommand() *cli.Command {
-	return newAdminSectionCommand("admin_platform_domains_", CmdPlatformDomains, "Manage platform (free-subdomain) root domains")
-}
+// newAdminCatalogSections compiles ALL admin catalog operations into the admin
+// section parent commands under the `admin` root using the shape model in
+// internal/clicatalog/shapes_admin.go. The sections (quota, billing, websites,
+// platform-domains, social-providers) and the quota/billing group parents
+// (plans, allowances, user-configs / credits, price-lines, pricing-plans,
+// pricing-plan-periods, subscribers) are declared in the shape registry +
+// AdminDomainRoot; no string-prefix grouping remains here. CompileCommandTree
+// returns the root's ordered section children; the mount merges in the
+// hand-written `pprof` section afterwards.
+func newAdminCatalogSections() []*cli.Command {
+	root := clicatalog.AdminDomainRoot
+	ops := catalogops.AdminOperations(adminCatalogDepsVar)
 
-// newAdminWebsitesCatalogCommand compiles the admin websites catalog operations
-// into a `websites` command for the `admin` parent: block, unblock.
-func newAdminWebsitesCatalogCommand() *cli.Command {
-	return newAdminSectionCommand("admin_websites_", CmdWebsites, "Manage IPFS websites (admin)")
-}
-
-// newAdminSocialProvidersCatalogCommand compiles the admin social-providers
-// catalog operations and returns the `social-providers` command to mount under
-// the `admin` parent: list, get, create, update, delete, enable, disable.
-func newAdminSocialProvidersCatalogCommand() *cli.Command {
-	return newAdminSectionCommand("admin_social_providers_", CmdSocialProviders, "Manage social login providers")
-}
-
-// adminSectionGroup maps an admin sub-op prefix (after the section prefix) to
-// its CLI subgroup command name. Group and leaf segments can both span multiple
-// underscore tokens (user_configs_list, plans_set_default), so the group is
-// matched by prefix rather than by splitting on the first underscore.
-type adminSectionGroup struct {
-	prefix string
-	name   string
-}
-
-// newAdminGroupedSection compiles the admin catalog operations whose names start
-// with sectionPrefix into a single parent command under `admin`. Ops matching a
-// group prefix mount under that subgroup; the rest mount directly on the parent.
-// Each leaf is stripped of the section prefix and hyphenated.
-func newAdminGroupedSection(parentName, usage, sectionPrefix string, groups []adminSectionGroup) *cli.Command {
-	cat := opmesh.NewCatalog()
-	for _, op := range catalogops.AdminOperations(adminCatalogDepsVar) {
-		if strings.HasPrefix(op.Name(), sectionPrefix) {
-			_ = cat.Add(op)
-		}
-	}
-	compiler := clicatalog.NewCLICompiler()
-	compiled, err := compiler.Compile(cat)
+	cmds, err := clicatalog.CompileCommandTree(
+		ops,
+		clicatalog.AdminShapes,
+		root,
+		adminCatalogConfig(),
+		buildAdminLeaf,
+		buildCLIParent,
+	)
 	if err != nil {
-		panic(fmt.Sprintf("catalog compile admin section %q: %v", parentName, err))
+		// Compilation of well-formed catalog operations cannot fail; if it
+		// does we must not silently skip an admin section.
+		panic(fmt.Sprintf("catalog compile admin: %v", err))
 	}
-
-	parent := &cli.Command{
-		Name:     parentName,
-		Category: "Admin",
-		Usage:    usage,
-		Commands: []*cli.Command{},
-	}
-	subgroups := map[string]*cli.Command{}
-	for _, c := range compiled {
-		remainder := strings.TrimPrefix(c.Name, sectionPrefix)
-		group, leaf := splitAdminGroup(remainder, groups)
-		mounted := mountAdminSectionCommand(c, sectionPrefix)
-		mounted.Name = leaf
-		if group == "" {
-			parent.Commands = append(parent.Commands, mounted)
-			continue
-		}
-		sub, ok := subgroups[group]
-		if !ok {
-			sub = &cli.Command{Name: group, Category: "Admin", Usage: "Manage " + group + " (admin)", Commands: []*cli.Command{}}
-			subgroups[group] = sub
-			parent.Commands = append(parent.Commands, sub)
-		}
-		sub.Commands = append(sub.Commands, mounted)
-	}
-	return parent
+	return cmds
 }
 
-// splitAdminGroup splits an admin op remainder (after the section prefix) into
-// (group, leaf) using the group prefix list. An op matching a group prefix
-// lands in that group; otherwise it is a single leaf.
-func splitAdminGroup(remainder string, groups []adminSectionGroup) (group, leaf string) {
-	for _, g := range groups {
-		if strings.HasPrefix(remainder, g.prefix) {
-			return g.name, hyphenate(strings.TrimPrefix(remainder, g.prefix))
+// adminSectionByName returns the compiled admin section parent with the given
+// name (the same names the DomainRoot.Sections use). It is the SINGLE
+// extraction seam for a named admin section — the per-section builder entry
+// points (newAdminQuotaCommand, newAdminBillingCommand, etc.) and tests alike
+// delegate to it, so there is exactly one deterministic compile and no
+// per-section wrapper duplication.
+func adminSectionByName(name string) *cli.Command {
+	for _, c := range newAdminCatalogSections() {
+		if c.Name == name {
+			return c
 		}
 	}
-	return "", hyphenate(remainder)
+	// Unreachable for a valid AdminDomainRoot; fail loudly in tests and during
+	// command construction rather than mounting a nil parent.
+	panic(fmt.Sprintf("admin catalog compile did not emit required section %q", name))
 }
 
-// quotaGroups maps the admin quota subgroup prefixes to their CLI names.
-var quotaGroups = []adminSectionGroup{
-	{"plans_", CmdPlans},
-	{"allowances_", CmdAllowances},
-	{"user_configs_", CmdUserConfigs},
-}
-
-// newAdminQuotaCatalogCommand compiles the admin quota operations into a
-// `quota` command.
-func newAdminQuotaCatalogCommand() *cli.Command {
-	return newAdminGroupedSection(CmdQuota, "Quota management operations", "admin_quota_", quotaGroups)
-}
-
-// billingGroups maps the admin billing subgroup prefixes to their CLI names.
-var billingGroups = []adminSectionGroup{
-	{"credits_", CmdCredits},
-	{"price_lines_", CmdPriceLines},
-	{"pricing_plan_periods_", CmdPricingPlanPeriods},
-	{"pricing_plans_", CmdPricingPlans},
-	{"subscribers_", CmdSubscribers},
-}
-
-// newAdminBillingCatalogCommand compiles the admin billing operations into a
-// `billing` command. The overview op mounts as a single leaf on billing.
-func newAdminBillingCatalogCommand() *cli.Command {
-	return newAdminGroupedSection(CmdBilling, "Billing management operations", "admin_billing_", billingGroups)
-}
-
-// hyphenate replaces underscores with hyphens for a CLI command name.
-func hyphenate(s string) string {
-	return strings.ReplaceAll(s, "_", "-")
-}
-
-// newAdminSectionCommand compiles the admin catalog operations whose names start
-// with prefix into a single parent command under `admin`, stripping prefix from
-// each leaf name. Leaves have their flag-required markers relaxed so positionals
-// can supply required args, and their Action wrapped with the CLI adapter.
-func newAdminSectionCommand(prefix, parentName, usage string) *cli.Command {
-	cat := opmesh.NewCatalog()
-	for _, op := range catalogops.AdminOperations(adminCatalogDepsVar) {
-		if !strings.HasPrefix(op.Name(), prefix) {
-			continue
-		}
-		_ = cat.Add(op)
-	}
-
-	compiler := clicatalog.NewCLICompiler()
-	compiled, err := compiler.Compile(cat)
+// buildAdminLeaf is the mount-owned leaf builder materializing one admin leaf
+// into an urfave *cli.Command. Shape (name/category/aliases/flags/usage) comes
+// from the clicatalog model via NewCLILeaf; behavior (the catalog action
+// adapter + relaxFlagRequired) stays mount-owned here. The admin section/group
+// parents (Category Admin) are materialized by the shared buildCLIParent.
+func buildAdminLeaf(loc clicatalog.LeafLocator, cfg any) (*cli.Command, error) {
+	base, err := clicatalog.NewCLILeaf(loc.Op, loc.Name, loc.Category, loc.Aliases)
 	if err != nil {
-		panic(fmt.Sprintf("catalog compile admin section %q: %v", parentName, err))
+		return nil, err
 	}
-
-	parent := &cli.Command{
-		Name:     parentName,
-		Category: "Admin",
-		Usage:    usage,
-		Commands: []*cli.Command{},
-	}
-	for _, c := range compiled {
-		parent.Commands = append(parent.Commands, mountAdminSectionCommand(c, prefix))
-	}
-	return parent
+	relaxFlagRequired(base)
+	base.Action = catalogActionAdapter(loc.Op, cfg.(CatalogAdapterConfig))
+	return base, nil
 }
 
-// mountAdminSectionCommand adapts a single catalog-compiled command into a live
-// admin subcommand: strips the section prefix, relaxes flag-required markers so
-// positionals supply required args, and wraps the Action with the CLI adapter.
-func mountAdminSectionCommand(cmd *cli.Command, prefix string) *cli.Command {
-	canonical := cmd.Name
-	display := strings.TrimPrefix(canonical, prefix)
-	cmd.Name = display
-	cmd.Category = "Admin"
+// adminCatalogConfig returns the CatalogAdapterConfig that expresses the admin
+// domain's exact per-invocation behavior on top of the shared
+// catalogActionAdapter pipeline. It mirrors the former per-domain admin
+// adapter faithfully: the result renderer, the canonical positional
+// mapping (MapPositionalArgs, the shared default), the platform-domain /
+// social-provider symbolic-id resolution, the per-op destructive gate
+// (interactive pterm prompt for platform-domains delete, --force error for
+// every other destructive admin op), and normalize/timeout/execute/render.
+// Admin does NOT honor the global --auth-token override (services read the
+// live config manager's token), so HonorAuthTokenOverride stays false (the
+// pipeline default). All remaining fields stay nil so the shared pipeline's
+// safe defaults apply.
+func adminCatalogConfig() CatalogAdapterConfig {
+	return CatalogAdapterConfig{
+		Renderer: renderAdminResult,
 
-	relaxFlagRequired(cmd)
-
-	var op opmesh.Operation
-	for _, cand := range catalogops.AdminOperations(adminCatalogDepsVar) {
-		if cand.Name() == canonical {
-			op = cand
-			break
-		}
-	}
-	if op != nil {
-		cmd.Action = adminActionAdapter(op)
-	}
-	return cmd
-}
-
-// adminActionAdapter returns the per-invocation ActionFunc for an admin catalog
-// operation. It builds the input map from flags plus resolved positionals,
-// threads the --auth-token override, applies the destructive --force gate, and
-// renders the handler result.
-func adminActionAdapter(op opmesh.Operation) cli.ActionFunc {
-	return func(ctx context.Context, c *cli.Command) error {
-		input := clicatalog.FlagsToInput(c, op)
-		// Note: no --auth-token override is threaded here. Admin services read
-		// auth from the live config manager's token, so a per-invocation flag
-		// override is not currently supported for the admin domain.
-		if err := applyPositionalArgs(op, input, c.Args()); err != nil {
-			return err
-		}
-
-		// The platform-domain ops key records by a numeric ID, but an operator may
-		// supply the registered domain name (e.g. pinned.site) instead. Resolve a
-		// non-numeric id to the numeric ID the API expects before execution.
-		var deleteID string
-		switch op.Name() {
-		case catalogops.OpAdminPlatformDomainsDelete,
-			catalogops.OpAdminPlatformDomainsUpdate,
-			catalogops.OpAdminPlatformDomainsBind:
-			if id := opmesh.StrArg(input, "id", ""); id != "" {
-				if op.Name() == catalogops.OpAdminPlatformDomainsDelete {
-					deleteID = id
-				}
-				resolved, err := resolvePlatformDomainID(ctx, adminCatalogDepsVar, id)
-				if err != nil {
-					return err
-				}
-				input["id"] = resolved
-			}
-
-		// The social-provider ops are likewise keyed by numeric ID, but the
-		// provider key (e.g. google) is the natural handle an operator has.
-		case catalogops.OpAdminSocialProvidersGet,
-			catalogops.OpAdminSocialProvidersUpdate,
-			catalogops.OpAdminSocialProvidersDelete,
-			catalogops.OpAdminSocialProvidersEnable,
-			catalogops.OpAdminSocialProvidersDisable:
-			if id := opmesh.StrArg(input, "id", ""); id != "" {
-				resolved, err := resolveSocialProviderID(ctx, adminCatalogDepsVar, id)
-				if err != nil {
-					return err
-				}
-				input["id"] = resolved
-			}
-		}
-
-		// Destructive gate: destructive admin ops require confirm=true. Other
-		// destructive admin ops keep the --force gate. Admin platform-domains
-		// delete is an explicit CLI action, so a human at a terminal confirms
-		// interactively instead of passing --force; non-interactive contexts
-		// (scripts, --json/agent) still require --force so nothing is ever deleted
-		// without an explicit override.
-		if op.Safety() == opmesh.SafetyDestructive {
-			confirm := c.Bool(FlagForce) || c.Bool(FlagConfirm)
-			if !confirm {
-				switch op.Name() {
-				case catalogops.OpAdminPlatformDomainsDelete:
-					interactive := !setupOutput(c).IsJSON() && isatty.IsTerminal(os.Stdin.Fd())
-					ok, err := confirmPlatformDomainDelete(deleteID, interactive)
+		// Symbolic-id resolution. The platform-domain ops key records by a
+		// numeric ID, but an operator may supply the registered domain name
+		// (e.g. pinned.site) instead; the social-provider ops are keyed by
+		// numeric ID but the provider key (e.g. google) is the natural handle.
+		// Numeric values pass through unchanged; a non-numeric value is
+		// resolved to the numeric ID the API expects. The raw (unresolved) id
+		// for platform-domains delete is stashed in Attribs so the
+		// DestructiveGate prompt can address the operator by what they typed.
+		ResolveIDs: func(ic *CatalogInvokeContext) error {
+			switch ic.Op.Name() {
+			case catalogops.OpAdminPlatformDomainsDelete,
+				catalogops.OpAdminPlatformDomainsUpdate,
+				catalogops.OpAdminPlatformDomainsBind:
+				if id := opmesh.StrArg(ic.Input, "id", ""); id != "" {
+					if ic.Op.Name() == catalogops.OpAdminPlatformDomainsDelete {
+						ic.Attribs["deleteID"] = id
+					}
+					resolved, err := resolvePlatformDomainID(ic.Ctx, adminCatalogDepsVar, id)
 					if err != nil {
 						return err
 					}
-					if !ok {
-						return fmt.Errorf("deletion aborted")
+					ic.Input["id"] = resolved
+				}
+			case catalogops.OpAdminSocialProvidersGet,
+				catalogops.OpAdminSocialProvidersUpdate,
+				catalogops.OpAdminSocialProvidersDelete,
+				catalogops.OpAdminSocialProvidersEnable,
+				catalogops.OpAdminSocialProvidersDisable:
+				if id := opmesh.StrArg(ic.Input, "id", ""); id != "" {
+					resolved, err := resolveSocialProviderID(ic.Ctx, adminCatalogDepsVar, id)
+					if err != nil {
+						return err
 					}
-					confirm = true
-				default:
-					return fmt.Errorf("%s: pass --force to confirm this destructive operation", op.Name())
+					ic.Input["id"] = resolved
 				}
 			}
-			input["confirm"] = confirm
-		}
+			return nil
+		},
 
-		dctx, cancel := applyDefaultTimeout(ctx)
-		defer cancel()
-
-		result, err := op.Handler().Execute(dctx, input)
-		if err != nil {
-			return err
-		}
-		return renderAdminResult(ctx, c, op, result)
+		// Destructive gate: destructive admin ops require confirm=true. Most
+		// keep the --force gate; admin platform-domains delete is an explicit
+		// CLI action, so a human at a terminal confirms interactively instead of
+		// passing --force, while non-interactive contexts (scripts, --json/agent)
+		// still require --force so nothing is ever deleted without an explicit
+		// override.
+		DestructiveGate: func(ic *CatalogInvokeContext) (bool, error) {
+			if ic.Op.Name() == catalogops.OpAdminPlatformDomainsDelete {
+				return GateInteractivePrompt(
+					func(ic *CatalogInvokeContext) (bool, error) {
+						interactive := !ic.Output.IsJSON() && isatty.IsTerminal(os.Stdin.Fd())
+						rawID, _ := ic.Attribs["deleteID"].(string)
+						return confirmPlatformDomainDelete(rawID, interactive)
+					},
+					func(*CatalogInvokeContext) string {
+						return "deletion aborted"
+					},
+				)(ic)
+			}
+			return GateForceReject(
+				func(*CatalogInvokeContext) bool { return true },
+				func(ic *CatalogInvokeContext) string {
+					return ic.Op.Name() + ": pass --force to confirm this destructive operation"
+				},
+			)(ic)
+		},
 	}
 }
 

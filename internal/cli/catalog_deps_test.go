@@ -13,9 +13,8 @@ import (
 // TestProductionCatalogOpsBundleAssemblesLiveSurface verifies that the
 // production catalog-ops deps bundle (wired into the MCP server via
 // WithCatalogOps) assembles a real operation catalog exposing model-surface
-// tools. This pins the last mile of the compiler-backed migration: the
-// production dependency graph produces discoverable operations, not an empty
-// or erroring surface. Services are lazy getters, so a stub config manager
+// tools. This pins that the production dependency graph produces discoverable
+// operations, not an empty or erroring surface. Services are lazy getters, so a stub config manager
 // suffices for assembly; only execution would exercise real backends.
 func TestProductionCatalogOpsBundleAssemblesLiveSurface(t *testing.T) {
 	// Assembly is fully lazy: the deps bundle resolves config/services only at

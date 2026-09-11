@@ -9,66 +9,24 @@ import (
 // (quota/billing/website/profiling) and the AdminTokenProvider live in
 // internal/core/admin, which is Output-free. pkg/cli keeps Output-taking
 // factory wrappers so the admin command handlers retain their call shape.
+//
+// Only the profiling service is wired through these Output-taking wrappers
+// today (see admin_pprof.go). The quota/billing/website/platform-domain admin
+// surfaces are driven directly through the Output-free core factories by the
+// catalog wiring (catalog_deps.go, catalog_admin_wiring.go), so their legacy
+// cli::*AdminService aliases/factories/constructors have been removed.
 
-type QuotaAdminService = admin.QuotaAdminService
-type BillingAdminService = admin.BillingAdminService
-type WebsiteAdminService = admin.WebsiteAdminService
 type ProfilingAdminService = admin.ProfilingAdminService
-type PlatformDomainAdminService = admin.PlatformDomainAdminService
-
-// QuotaAdminServiceFactory builds a QuotaAdminService with dependencies.
-type QuotaAdminServiceFactory func(cfgMgr config.Manager, output Output) QuotaAdminService
-
-// BillingAdminServiceFactory builds a BillingAdminService with dependencies.
-type BillingAdminServiceFactory func(cfgMgr config.Manager, output Output) BillingAdminService
-
-// WebsiteAdminServiceFactory builds a WebsiteAdminService with dependencies.
-type WebsiteAdminServiceFactory func(cfgMgr config.Manager, output Output) WebsiteAdminService
 
 // ProfilingAdminServiceFactory builds a ProfilingAdminService with dependencies.
 type ProfilingAdminServiceFactory func(cfgMgr config.Manager, output Output) ProfilingAdminService
 
-// PlatformDomainAdminServiceFactory builds a PlatformDomainAdminService with dependencies.
-type PlatformDomainAdminServiceFactory func(cfgMgr config.Manager, output Output) PlatformDomainAdminService
-
-// default*AdminServiceFactory delegate to the Output-free core factories.
-func defaultQuotaAdminServiceFactory(cfgMgr config.Manager, output Output) QuotaAdminService {
-	return admin.DefaultQuotaAdminServiceFactory(cfgMgr)
-}
-
-func defaultBillingAdminServiceFactory(cfgMgr config.Manager, output Output) BillingAdminService {
-	return admin.DefaultBillingAdminServiceFactory(cfgMgr)
-}
-
-func defaultWebsiteAdminServiceFactory(cfgMgr config.Manager, output Output) WebsiteAdminService {
-	return admin.DefaultWebsiteAdminServiceFactory(cfgMgr)
-}
-
+// defaultProfilingAdminServiceFactory delegates to the Output-free core factory.
 func defaultProfilingAdminServiceFactory(cfgMgr config.Manager, output Output) ProfilingAdminService {
 	return admin.DefaultProfilingAdminServiceFactory(cfgMgr)
 }
 
-func defaultPlatformDomainAdminServiceFactory(cfgMgr config.Manager, output Output) PlatformDomainAdminService {
-	return admin.DefaultPlatformDomainAdminServiceFactory(cfgMgr)
-}
-
-// New*AdminService constructors delegate to the Output-free core constructors.
-func NewQuotaAdminService(cfgMgr config.Manager, output Output, apiEndpoint string) QuotaAdminService {
-	return admin.NewQuotaAdminService(cfgMgr, apiEndpoint)
-}
-
-func NewBillingAdminService(cfgMgr config.Manager, output Output, apiEndpoint string) BillingAdminService {
-	return admin.NewBillingAdminService(cfgMgr, apiEndpoint)
-}
-
-func NewWebsiteAdminService(cfgMgr config.Manager, output Output, apiEndpoint string) WebsiteAdminService {
-	return admin.NewWebsiteAdminService(cfgMgr, apiEndpoint)
-}
-
+// NewProfilingAdminService delegates to the Output-free core constructor.
 func NewProfilingAdminService(cfgMgr config.Manager, output Output, apiEndpoint string) ProfilingAdminService {
 	return admin.NewProfilingAdminService(cfgMgr, apiEndpoint)
-}
-
-func NewPlatformDomainAdminService(cfgMgr config.Manager, output Output, apiEndpoint string) PlatformDomainAdminService {
-	return admin.NewPlatformDomainAdminService(cfgMgr, apiEndpoint)
 }
