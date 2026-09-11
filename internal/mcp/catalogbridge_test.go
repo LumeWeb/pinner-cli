@@ -20,7 +20,7 @@ func (h markerHandler) Execute(_ context.Context, _ map[string]any) (any, error)
 }
 
 // sampleCatalog builds a small op catalog exercising the read/destructive and
-// discovery surfaces used by populateCatalogSurface.
+// discovery surfaces used by populateCatalogTools.
 func sampleCatalog() opmesh.Catalog {
 	c := opmesh.NewCatalog()
 	_ = c.Add(opmesh.NewOperation(opmesh.OperationSpec{
@@ -89,7 +89,7 @@ func sampleCatalog() opmesh.Catalog {
 func TestPopulateCatalogSurfaceRegistersCompiledTools(t *testing.T) {
 	tc := NewToolCatalog()
 	cat := sampleCatalog()
-	names, err := populateCatalogSurface(tc, cat)
+	names, err := populateCatalogTools(tc, cat)
 	require.NoError(t, err)
 	require.Contains(t, names, "vault.get")
 	require.Contains(t, names, "vault.delete")
@@ -111,7 +111,7 @@ func TestPopulateCatalogSurfaceRegistersCompiledTools(t *testing.T) {
 // per-tool describe_tool round-trip.
 func TestSearchSurfacesSafetyTier(t *testing.T) {
 	tc := NewToolCatalog()
-	_, err := populateCatalogSurface(tc, sampleCatalog())
+	_, err := populateCatalogTools(tc, sampleCatalog())
 	require.NoError(t, err)
 
 	summaries := tc.Search("vault", "", 0)
@@ -146,7 +146,7 @@ func TestSearchSurfacesSafetyTier(t *testing.T) {
 
 func TestCompiledReadOpDispatchesThroughInvokeGate(t *testing.T) {
 	tc := NewToolCatalog()
-	_, err := populateCatalogSurface(tc, sampleCatalog())
+	_, err := populateCatalogTools(tc, sampleCatalog())
 	require.NoError(t, err)
 
 	entry, ok := tc.Get("vault.get")
@@ -167,7 +167,7 @@ func TestCompiledReadOpDispatchesThroughInvokeGate(t *testing.T) {
 
 func TestCompiledDestructiveOpReturnsNeedsHumanForModelActor(t *testing.T) {
 	tc := NewToolCatalog()
-	_, err := populateCatalogSurface(tc, sampleCatalog())
+	_, err := populateCatalogTools(tc, sampleCatalog())
 	require.NoError(t, err)
 
 	entry, ok := tc.Get("vault.delete")
@@ -184,7 +184,7 @@ func TestCompiledDestructiveOpReturnsNeedsHumanForModelActor(t *testing.T) {
 
 func TestCompiledOpMissingRequiredArgFailsCleanly(t *testing.T) {
 	tc := NewToolCatalog()
-	_, err := populateCatalogSurface(tc, sampleCatalog())
+	_, err := populateCatalogTools(tc, sampleCatalog())
 	require.NoError(t, err)
 
 	entry, ok := tc.Get("vault.get")
@@ -197,7 +197,7 @@ func TestCompiledOpMissingRequiredArgFailsCleanly(t *testing.T) {
 
 func TestAgentRequiredArgEnforcedAtMCPDispatch(t *testing.T) {
 	tc := NewToolCatalog()
-	_, err := populateCatalogSurface(tc, sampleCatalog())
+	_, err := populateCatalogTools(tc, sampleCatalog())
 	require.NoError(t, err)
 
 	entry, ok := tc.Get("pins.mcp.add")

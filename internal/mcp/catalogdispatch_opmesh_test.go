@@ -30,7 +30,7 @@ func (h *dispatchCaptureHandler) Execute(_ context.Context, input map[string]any
 
 // TestDispatchAgentRequiredRefused pins that an AgentRequired arg missing from
 // the input is refused by the MCP dispatch pre-check (not by the shared
-// Invoke gate) with the exact pre-seam message.
+// Invoke gate) with the exact plain message.
 func TestDispatchAgentRequiredRefused(t *testing.T) {
 	called := dispatchCaptureHandler{}
 	cat := opmesh.NewCatalog()
@@ -109,7 +109,7 @@ func TestDispatchAgentRequiredNotEnforcedOnNonAgent(t *testing.T) {
 	}
 }
 
-// TestDispatchRequiredArgMissingPlainMessage preserves the pre-seam behavior:
+// TestDispatchRequiredArgMissingPlainMessage preserves the behavior:
 // a missing Required-no-default arg is reported by the dispatch pre-check with
 // the plain `missing required argument "x"` text (not opmesh Invoke's
 // `operation "x": ...` wrapper), so model-facing error text is unchanged.
@@ -224,7 +224,7 @@ func TestCatalogAgentOnlyArgsOptional(t *testing.T) {
 		Operations: catalogops.OperationsDeps{},
 		Admin:      catalogops.AdminDeps{},
 	}
-	cat, err := AssembleCatalogOps(bundle, FullSurface, false)
+	cat, err := AssembleCatalogOps(bundle, FullDomainScope, false)
 	if err != nil {
 		t.Fatalf("AssembleCatalogOps: %v", err)
 	}

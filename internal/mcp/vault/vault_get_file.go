@@ -38,8 +38,10 @@ type VaultGetFileInput struct {
 	// OutputPath is the destination for sink=local, resolved RELATIVE to the
 	// configured download root (default <config-dir>/downloads).
 	OutputPath string `json:"output_path,omitempty" jsonschema:"description=Destination path for sink=local, relative to the configured download root (subdirectories are created). If omitted, the source name is used at the root. Paths that escape the root are rejected."`
-	// TTL is the filedrop GET lifetime for sink=drop (e.g. 5m; default 5m).
-	TTL string `json:"ttl,omitempty" jsonschema:"description=Filedrop GET endpoint lifetime for sink=drop (e.g. 5m; default 5 minutes)."`
+	// TTL is the filedrop GET lifetime for sink=drop. Its tag composes
+	// schematext.TTLDownloadGet (struct tags cannot embed constants; pinned by
+	// TestSchemaTextFragmentsPinned).
+	TTL string `json:"ttl,omitempty" jsonschema:"description=Filedrop GET endpoint lifetime for sink=drop (e.g. 5m; default 5m)."`
 }
 
 // NewVaultGetFileDescriptor builds the unified, sink-aware vault_get_file tool.
@@ -105,12 +107,14 @@ func NewVaultGetFileDescriptor(getFn transfer.VaultGetHandler, hd *mcptransfer.D
 }
 
 // vaultGetProfile maps the transport wiring to the feature set the description
-// DSL resolves against. sink=local is always available; sink=drop needs a
-// reachable HTTP mux on a non-OpenAI tunnel.
+// DSL resolves against. sink=local is always available; the FeatSinkDrop value
+// stamps the ONE shared reachability decision (transfer.SinkDropReachable) — the
+// same predicate download_file’s profile builder and the parent capability
+// reporting consume.
 func vaultGetProfile(dropWired, tunnelOpenAI bool) hostenv.PlatformProfile {
 	p := hostenv.ProfileHTTPGeneric.CloneFeatures()
 	p.Features[hostenv.FeatSinkLocal] = true
-	p.Features[hostenv.FeatSinkDrop] = dropWired && !tunnelOpenAI
+	p.Features[hostenv.FeatSinkDrop] = transfer.SinkDropReachable(dropWired, tunnelOpenAI)
 	return p
 }
 

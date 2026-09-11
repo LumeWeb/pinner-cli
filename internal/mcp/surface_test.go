@@ -31,12 +31,12 @@ func TestAssembleCatalogOpsHostedExcludesVault(t *testing.T) {
 		Admin:      catalogops.AdminDeps{},
 	}
 
-	hosted, err := AssembleCatalogOps(bundle, HostedSurface, true)
+	hosted, err := AssembleCatalogOps(bundle, HostedDomainScope, true)
 	require.NoError(t, err, "hosted catalog must assemble")
 	_, vaultHosted := hosted.Get("vault_status")
 	assert.False(t, vaultHosted, "hosted surface must not register the Sia vault domain")
 
-	full, err := AssembleCatalogOps(bundle, FullSurface, false)
+	full, err := AssembleCatalogOps(bundle, FullDomainScope, false)
 	require.NoError(t, err, "full catalog must assemble")
 	_, vaultFull := full.Get("vault_status")
 	assert.True(t, vaultFull, "full surface must register the Sia vault domain")
@@ -56,7 +56,7 @@ func TestAssembleCatalogOpsHostedExcludesEnvLocal(t *testing.T) {
 		Account: catalogops.AccountDeps{},
 	}
 
-	hosted, err := AssembleCatalogOps(hostedBundle, HostedSurface, true)
+	hosted, err := AssembleCatalogOps(hostedBundle, HostedDomainScope, true)
 	require.NoError(t, err, "hosted catalog must assemble")
 	for _, name := range []string{"auth_login", "auth_logout", "account_update_email", "account_update_password"} {
 		if _, ok := hosted.Get(name); ok {
@@ -72,7 +72,7 @@ func TestAssembleCatalogOpsHostedExcludesEnvLocal(t *testing.T) {
 		Account: catalogops.AccountDeps{},
 	}
 
-	full, err := AssembleCatalogOps(localBundle, FullSurface, false)
+	full, err := AssembleCatalogOps(localBundle, FullDomainScope, false)
 	require.NoError(t, err, "full catalog must assemble")
 	// EnvLocalOnly + EnvCLIOnly ops remain in the full/local catalog so the
 	// urfave CLI frontend (and, for auth_login/auth_logout, the local MCP) can
@@ -96,16 +96,16 @@ func TestAssembleCatalogOpsRestrictedLocalKeepsEnvLocal(t *testing.T) {
 		Account: catalogops.AccountDeps{},
 	}
 	// Restricted but NOT hosted: Vault and Admin disabled. This surface field-
-	// equals HostedSurface, but because hosted is passed explicitly as false, it
+	// equals HostedDomainScope, but because hosted is passed explicitly as false, it
 	// must stay local.
-	restricted := FullSurface
+	restricted := FullDomainScope
 	restricted.Vault = false
 	restricted.Admin = false
 	restrictedLocal, err := AssembleCatalogOps(bundle, restricted, false)
 	require.NoError(t, err, "restricted local catalog must assemble")
 	for _, name := range []string{"auth_login", "auth_logout"} {
 		if _, ok := restrictedLocal.Get(name); !ok {
-			t.Errorf("restricted local surface (field-equals HostedSurface, hosted=false) must keep %q", name)
+			t.Errorf("restricted local surface (field-equals HostedDomainScope, hosted=false) must keep %q", name)
 		}
 	}
 }
@@ -121,8 +121,8 @@ func TestAssembleCatalogOpsHostedExplicitRegardlessOfSurface(t *testing.T) {
 		Account: catalogops.AccountDeps{},
 	}
 
-	// FullSurface but hosted=true: still drops EnvLocalOnly/EnvCLIOnly.
-	fullHosted, err := AssembleCatalogOps(bundle, FullSurface, true)
+	// FullDomainScope but hosted=true: still drops EnvLocalOnly/EnvCLIOnly.
+	fullHosted, err := AssembleCatalogOps(bundle, FullDomainScope, true)
 	require.NoError(t, err, "hosted full-surface catalog must assemble")
 	for _, name := range []string{"auth_login", "auth_logout", "account_update_email", "account_update_password"} {
 		if _, ok := fullHosted.Get(name); ok {
@@ -130,9 +130,9 @@ func TestAssembleCatalogOpsHostedExplicitRegardlessOfSurface(t *testing.T) {
 		}
 	}
 
-	// HostedSurface with no resolver and hosted=true: drops EnvLocalOnly. This
+	// HostedDomainScope with no resolver and hosted=true: drops EnvLocalOnly. This
 	// is the construction path mcpembed.New uses by default.
-	hosted, err := AssembleCatalogOps(bundle, HostedSurface, true)
+	hosted, err := AssembleCatalogOps(bundle, HostedDomainScope, true)
 	require.NoError(t, err, "hosted-preset catalog must assemble")
 	for _, name := range []string{"auth_login", "auth_logout"} {
 		if _, ok := hosted.Get(name); ok {
@@ -148,8 +148,8 @@ func TestAssembleCatalogOpsHostedExplicitRegardlessOfSurface(t *testing.T) {
 // DSL drops the Sia vault flows for a hosted surface while keeping account/
 // upload/pins/websites flows.
 func TestAgentGuideFiltersVaultFlowsOnHosted(t *testing.T) {
-	SetSurface(HostedSurface)
-	defer SetSurface(FullSurface)
+	SetDomainScope(HostedDomainScope)
+	defer SetDomainScope(FullDomainScope)
 
 	profile := hostenv.ProfileHTTPGeneric
 	guide := buildAgentGuide(&profile)
@@ -172,7 +172,7 @@ func TestAgentGuideFiltersVaultFlowsOnHosted(t *testing.T) {
 // omits it for a local server — even one on the same hosted surface.
 func TestAgentGuideGatesHostedRuleOnDeployment(t *testing.T) {
 	const rule = "Hosted instance notice"
-	surfaceFor := func() { SetSurface(HostedSurface); defer SetSurface(FullSurface) }
+	surfaceFor := func() { SetDomainScope(HostedDomainScope); defer SetDomainScope(FullDomainScope) }
 
 	SetHosted(true)
 	defer SetHosted(false)
@@ -196,14 +196,14 @@ func containsRule(guide AgentGuide, substr string) bool {
 	return false
 }
 
-// TestSurfaceZeroIsFull verifies the zero Surface behaves as the full surface,
+// TestDomainScopeZeroIsFull verifies the zero DomainScope behaves as the full surface,
 // preserving backward compatibility for call sites that do not opt in.
-func TestSurfaceZeroIsFull(t *testing.T) {
-	var s Surface
+func TestDomainScopeZeroIsFull(t *testing.T) {
+	var s DomainScope
 	assert.True(t, s.AccountOn())
 	assert.True(t, s.VaultOn())
 	assert.True(t, s.AdminOn())
 	assert.True(t, s.UploadOn())
-	assert.False(t, HostedSurface.VaultOn(), "hosted surface must disable vault")
-	assert.False(t, HostedSurface.AdminOn(), "hosted surface must disable admin")
+	assert.False(t, HostedDomainScope.VaultOn(), "hosted surface must disable vault")
+	assert.False(t, HostedDomainScope.AdminOn(), "hosted surface must disable admin")
 }

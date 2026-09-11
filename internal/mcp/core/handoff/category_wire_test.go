@@ -8,11 +8,10 @@ import (
 )
 
 // TestResumeToolSpecCategoryWireValues pins the WIRE values of the tool
-// categories the resume-tool seam emits. The Stage-5 de-fork moved the
-// category vocabulary onto the shared mcpplane/model constants, which renamed
-// the vault family's wire value from the old CLI-era "vault" to "storage"
-// (see mcpplane/model.ToolCategory's documented mapping). This test keeps
-// that wire-visible rename explicit — never silent — so anyone touching the
+// categories the resume-tool seam emits. The category vocabulary comes from
+// the shared mcpplane/model constants, where the vault family's wire value is
+// "storage" (see mcpplane/model.ToolCategory's documented mapping). This test
+// keeps that wire-visible value explicit — never silent — so anyone touching the
 // category values sees the intended strings.
 func TestResumeToolSpecCategoryWireValues(t *testing.T) {
 	require.Equal(t, model.ToolCategory("storage"), model.CategoryStorage,

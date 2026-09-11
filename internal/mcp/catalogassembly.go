@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	opmesh "go.lumeweb.com/opmesh"
-	"go.lumeweb.com/pinner/catalogops"
 	"go.lumeweb.com/pinner/assembly"
+	"go.lumeweb.com/pinner/catalogops"
 )
 
 // AssembleCatalogOps is a thin adapter delegating to the module's
@@ -17,7 +17,7 @@ import (
 // seam so the CLI and the module cannot drift.
 //
 // The local CatalogDepsBundle is the CLI-side wiring shape (its field types
-// come from the pre-seam local operation definitions); it is converted
+// come from the local operation definitions); it is converted
 // field-by-field into the module assembly.CatalogDepsBundle here. The local
 // and module bundle fields are field-identical (same names, same underlying
 // function/service types), so the conversion loses nothing.
@@ -29,7 +29,7 @@ import (
 // module's, unchanged.
 //
 // A nil bundle is a wiring bug and is rejected here.
-func AssembleCatalogOps(deps *CatalogDepsBundle, surface Surface, hosted bool) (opmesh.Catalog, error) {
+func AssembleCatalogOps(deps *CatalogDepsBundle, surface DomainScope, hosted bool) (opmesh.Catalog, error) {
 	if deps == nil {
 		return nil, fmt.Errorf("catalog assembly: nil catalog deps bundle")
 	}

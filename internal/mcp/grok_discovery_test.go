@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.lumeweb.com/mcpplane/model"
-	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 )
 
 // TestGrokColdStartCanResolveAgentGuide regresses the P2 discovery-protocol
@@ -45,7 +44,7 @@ func TestGrokColdStartCanResolveAgentGuide(t *testing.T) {
 // search can discover it. capabilities is registered with index=true.
 func TestCapabilitiesDiscoverableInCatalog(t *testing.T) {
 	catalog := NewToolCatalog()
-	desc := NewCapabilitiesDescriptor(true, false, true, true, true, true, true, true, true, false, 0, hostenv.ProfileStdioGeneric.Features)
+	desc := NewCapabilitiesDescriptor(true, false, true, true, true, true, true, true, true, false, 0)
 	catalog.Add(model.ToolEntryFromDescriptor(desc))
 
 	// "capabilities" matches the tool name exactly; "modes"/"source"/"file"

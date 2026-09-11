@@ -77,7 +77,7 @@ func fromForgeFeatureSet(fs mcpforge.FeatureSet) hostenv.FeatureSet {
 }
 
 // forgePred re-wraps a CLI platform predicate over the mcpforge carrier so
-// hostenv's predicate constructors (HostIs, TransportIs, SurfaceIs, HostedIs,
+// hostenv's predicate constructors (HostIs, TransportIs, DomainScopeIs, HostedIs,
 // And, Not) can gate mcpforge fragments directly. Callers only wrap concrete
 // predicates; the nil check keeps the adapter total.
 func forgePred(p hostenv.Predicate) mcpforge.Predicate[forgeCarrier] {

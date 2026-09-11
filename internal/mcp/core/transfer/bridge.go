@@ -1,17 +1,17 @@
 package transfer
 
-// De-fork seam (Stage 5, slice 2): the transfer COORDINATORS (Upload/Download
-// HTTP coordinators, UploadTaskManager, the ChatGPT relay executor, name
-// wrapping and sink helpers) now live in go.lumeweb.com/mcpplane/transfer —
-// their implementations and future evolution (e.g. the UploadTaskManager
-// ExecTimeout watchdog) are the module's, not this CLI's. This file keeps the
-// CLI-owned descriptor / vault-OOB files compiling against the module via
-// aliases only: nothing here duplicates module logic.
+// This file is the CLI-owned adapter over the transfer COORDINATORS in
+// go.lumeweb.com/mcpplane/transfer (Upload/Download HTTP coordinators,
+// UploadTaskManager, the ChatGPT relay executor, name wrapping and sink
+// helpers) — their implementations and future evolution (e.g. the
+// UploadTaskManager ExecTimeout watchdog) are the module's, not this CLI's.
+// Descriptors and vault-OOB files compile against the module here via aliases
+// only: nothing duplicates module logic.
 //
-// Since the slice-3a alias collapse (hostenv.FeatureSet / hostenv.TransportKind
-// are now mcpplane/model aliases), the upload-source vocabulary's Go types are
-// identical to the module's, so upload_source.go and download_prep.go are
-// deleted and re-pointed here (Stage 5, slice 4). The DESCRIPTOR files
+// The upload-source vocabulary's Go types are identical to the module's
+// (hostenv.FeatureSet / hostenv.TransportKind are mcpplane/model aliases), so
+// the local upload_source.go / download_prep.go copies are gone and re-pointed
+// here. The DESCRIPTOR files
 // (upload_file.go / upload_data.go / download_file.go / upload_vault_http.go)
 // stay CLI-owned: they carry the CLI catalog's per-request MCPTargets
 // DescFunc seam, the vault source/schema transforms, and the deliberate-trust
@@ -82,10 +82,10 @@ const (
 	SinkDrop = mcptransfer.SinkDrop
 )
 
-// Upload-source vocabulary (Stage 5, slice 4 de-fork): the UploadSource
+// Upload-source vocabulary: the UploadSource
 // dialect, its transport mapping, and the SourceResolver are the module's
 // (mcpplane/transfer/upload_source.go); the CLI copy — whose TransportKind /
-// FeatureSet are already mcpplane/model aliases — is deleted and re-pointed
+// FeatureSet are already mcpplane/model aliases — is gone and re-pointed
 // here. Type aliases preserve the methods (Available/Validate/MintURL/
 // OpenBytes); the free functions are forwarded as vars.
 type (
@@ -123,10 +123,10 @@ var (
 	RelayURLName = mcptransfer.RelayURLName
 )
 
-// Download-side executors and presentation helpers (Stage 5, slice 4
-// de-fork): the stream executor type and every sink-routing/naming/
-// size-cap/root-resolution helper live in transfer (pinner module);
-// the CLI's download_prep.go copy is deleted and re-pointed here.
+// Download-side executors and presentation helpers: the stream executor type
+// and every sink-routing/naming/size-cap/root-resolution helper live in
+// transfer (pinner module); the CLI's download_prep.go copy is gone and
+// re-pointed here.
 type (
 	// IPFSDownloadHandler is the authenticated IPFS download executor.
 	IPFSDownloadHandler = transfer.IPFSDownloadHandler

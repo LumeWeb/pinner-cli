@@ -11,6 +11,7 @@ import (
 	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
+	"go.lumeweb.com/pinner-cli/internal/mcp/mintcontract"
 )
 
 func TestAgentGuideDescriptor(t *testing.T) {
@@ -222,6 +223,32 @@ func TestAgentGuideFileHandoffMutuallyExclusive(t *testing.T) {
 	}
 }
 
+// TestAgentGuideUploadMintStepsComposeCanon pins the HIGH DRY fix: the upload
+// flow detail's numbered mint steps (1) PUT, 2) poll upload_status) compose
+// the canonical mintcontract numbered-step fragments
+// (UploadMintStepPut/UploadMintStepPoll) instead of hand copies — the hand
+// copy had already drifted ("your" agent-local file vs the canonical "the").
+// Both must appear
+// verbatim in the resolved guide and no drifted "your agent-local" wording
+// may remain.
+func TestAgentGuideUploadMintStepsComposeCanon(t *testing.T) {
+	// A full HTTP mint host resolves every gate (upload_file AND
+	// upload_status availability) to true on the legacy path.
+	guide := buildAgentGuide(&hostenv.ProfileClaudeHTTP)
+	flow := guideFlowByName(t, guide, "upload")
+	require.Contains(t, flow.Detail, mintcontract.UploadMintStepPut,
+		"upload flow detail must compose the canonical numbered PUT step verbatim")
+	require.Contains(t, flow.Detail, mintcontract.UploadMintStepPoll,
+		"upload flow detail must compose the canonical numbered upload_status poll step verbatim")
+	require.NotContains(t, flow.Detail, "your agent-local file",
+		"the drifted hand-copy wording must not return")
+	// The vault mint flow never mentions an upload_status poll (the canonical
+	// NoUploadStatus fact) — sanity that the pinned fragments stay
+	// upload-only in the numbered form.
+	vflow := guideFlowByName(t, guide, "vault_upload")
+	require.NotContains(t, vflow.Detail, mintcontract.UploadMintStepPoll)
+}
+
 func guideFlowByName(t *testing.T, guide AgentGuide, name string) GuideFlow {
 	t.Helper()
 	for _, f := range guide.Flows {
@@ -265,7 +292,7 @@ func flowStepsContain(f GuideFlow, s string) bool {
 }
 
 // TestAgentGuideSummaryNeverPrefersFileForGrok regresses the shared-compiler
-// residue: a host without a `file` parameter must never see a "prefer the file
+// copy leak: a host without a `file` parameter must never see a "prefer the file
 // parameter when your host has one" clause, which previously let Grok invent a
 // {download_url, file_id} even after the schema dropped `file`. Grok's summary
 // must instead say it has no file parameter and lead with mint + PUT + poll.
@@ -557,7 +584,7 @@ func TestAgentGuideMintSummaryScopedByTool(t *testing.T) {
 		require.Contains(t, summary, "upload_file is asynchronous", "%s: summary must scope the poll to upload_file", p.Transport)
 		require.Contains(t, summary, "poll upload_status", "%s: summary must keep upload_file's poll", p.Transport)
 		require.Contains(t, summary, "vault_put_file is non-blocking", "%s: summary must scope vault mint as non-blocking", p.Transport)
-		require.Contains(t, summary, "no upload_status poll", "%s: summary must reject upload_status for vault mint", p.Transport)
+		require.Contains(t, summary, "no upload_status to poll", "%s: summary must reject upload_status for vault mint (the canonical no-poll phrasing shared with the capabilities contract and flow detail)", p.Transport)
 		// The old unqualified rule must be gone.
 		require.NotContains(t, summary, "For source.mode=mint, PUT the file to the returned url and poll upload_status",
 			"%s: unqualified mint poll rule must be removed from the summary", p.Transport)

@@ -32,8 +32,8 @@ func TestRegisterVaultCreateAppWire(t *testing.T) {
 	if err := vault.RegisterVaultCreateApp(srv, catalog, handoff.NewHandoffRegistry(), session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)); err != nil {
 		t.Fatalf("vault.RegisterVaultCreateApp: %v", err)
 	}
-	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
-		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
+	if err := RegisterOfficialDirectTools(srv, catalog); err != nil {
+		t.Fatalf("RegisterOfficialDirectTools: %v", err)
 	}
 	cs := connectOfficialClient(t, srv)
 	ctx := context.Background()

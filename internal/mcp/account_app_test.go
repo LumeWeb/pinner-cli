@@ -40,7 +40,7 @@ func newAccountAppsServer(t *testing.T) *mcp.Server {
 	seedLauncherForTest(t, srv, catalog, mcpauth.OpenAccountEmailToolName, mcpauth.AccountEmailAppURI, model.CategoryAccount)
 	require.NoError(t, mcpauth.RegisterAccountPasswordApp(srv, catalog), "mcpauth.RegisterAccountPasswordApp")
 	require.NoError(t, mcpauth.RegisterAccountEmailApp(srv, catalog), "mcpauth.RegisterAccountEmailApp")
-	require.NoError(t, RegisterOfficialCuratedTools(srv, catalog), "RegisterOfficialCuratedTools")
+	require.NoError(t, RegisterOfficialDirectTools(srv, catalog), "RegisterOfficialDirectTools")
 	return srv
 }
 

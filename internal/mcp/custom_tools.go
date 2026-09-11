@@ -33,7 +33,7 @@ type customToolDeps struct {
 	srv *sdk.Server
 	// catalog is the internal ToolCatalog carrying every invocable tool. The
 	// wizard and SSO tools are appended here (they are built after buildCatalog
-	// returns); markCurated then stamps which of them are directly visible.
+	// returns); stampDirectTools then stamps which of them are directly visible.
 	catalog *ToolCatalog
 	// store backs wizard sessions and resource providers.
 	store *session.SessionStore
@@ -120,41 +120,70 @@ type customToolDeps struct {
 	wizardD   wizard.DomainWizardDeps
 }
 
-// registerCustomTools registers every custom/direct tool, resource, and prompt
-// onto the server. It is the single named home for the adhoc registration that
-// used to live inline in the MCPCommand transport closure, so the wiring is
-// cognitively isolated from the server pump:
-//
-//   - wizard tools (wizard.RegisterWizardTools) — sessions + step handlers
-//   - the agent-facing out-of-band sign-in tools, which join the catalog as
-//     DirectVisible tools instead of a separate RegisterOfficialDescriptor path
-//   - the markCurated + curated tools/list surface
-//   - the MCP App launchers (open_*) and their ui:// views
-//   - the upload/download/vault transport tools (upload_file, upload_url,
-//     upload_data, upload_status/cancel/list, download_file, vault_get_file,
-//     vault_put_file) and the capability-detection tool + agent guide
-//   - the pinner:// resources and (optionally) the prompt templates
-//
-// The wiring itself is delegated to a fixed, phase-based customToolRegistry
-// (see custom_tools_register.go): specs are declared here, then the pipeline
-// indexes the catalog, installs app views, stamps the curated surface, and
-// projects the direct tools/list — in that order — so ordering dependencies
-// (an app view attaching _meta.ui to a launcher that must be catalog-indexed
-// first) resolve regardless of declaration order.
-func registerCustomTools(deps customToolDeps) error {
-	// Wizard tools and dev-introspection tools register directly into the
-	// catalog (wizard via its own toolAdder, dev tools as DirectVisible
-	// entries). Both must already be present when the pipeline stamps the
-	// curated surface, so they are registered before customToolRegistry.run().
-	if deps.hasWizard {
-		if err := wizard.RegisterWizardTools(deps.catalog, deps.store, deps.wizardW, deps.wizardS, deps.wizardD); err != nil {
-			return err
-		}
-	}
-	if deps.devTools {
-		registerDevTools(deps.catalog)
-	}
+// transferToolAvailability is the single Pinner-owned registration-availability
+// calculation for the byte-transfer tool families (upload_file, vault_put_file,
+// upload_url, upload_data, download_file, vault_get_file). It combines the
+// three inputs registration itself uses — the assembly surface, the wired
+// handler/executors, and the effective host feature set — into one value, so
+// the extension registration gates and the capabilities descriptor can never
+// disagree: a tool is advertised by capabilities exactly when this value says
+// it was registered, and this value is the same predicate the registration
+// branches below consult.
+type transferToolAvailability struct {
+	// uploadFile / vaultPutFile: the unified transport tools are registered.
+	uploadFile, vaultPutFile bool
+	// uploadURL / uploadData: the separate relay tools are registered (the
+	// handler is wired AND the effective feature set declares the feature AND
+	// the upload surface is enabled).
+	uploadURL, uploadData bool
+	// downloadFile / vaultGetFile: the unified download tools are registered.
+	downloadFile, vaultGetFile bool
+}
 
+// computeTransferAvailability applies the exact registration predicates
+// (uploadFileAvailable / vaultPutFileAvailable plus the surface + feature +
+// handler gates custom_tools.go registers under) once, so registration and
+// the capabilities descriptor share one answer. It stays handler-faithful:
+// wiring booleans are read from the same deps/options fields the branches use.
+func computeTransferAvailability(deps customToolDeps, opts *mcpServerOptions, surface DomainScope, feats hostenv.FeatureSet) transferToolAvailability {
+	uploadOn := surface.UploadOn()
+	vaultOn := surface.VaultOn()
+	featsCopy := feats
+	return transferToolAvailability{
+		uploadFile:   uploadOn && uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, opts.uploadHandler != nil, deps.tunnelOpenAI),
+		vaultPutFile: vaultOn && vaultPutFileAvailable(deps.coLocated, opts.localPathVaultPut != nil, deps.vaultUpload != nil, opts.vaultPutHandler != nil, deps.tunnelOpenAI),
+		uploadURL:    uploadOn && opts.relayURLUpload != nil && featsCopy.Has(hostenv.FeatSourceURL),
+		uploadData:   uploadOn && opts.dataURIUpload != nil && featsCopy.Has(hostenv.FeatSourceData),
+		downloadFile: uploadOn && opts.ipfsDownload != nil,
+		vaultGetFile: vaultOn && opts.vaultGet != nil,
+	}
+}
+
+// collectServerExtensions declares every custom/direct tool, resource, prompt,
+// and app extension for the deps bundle and completes the extension-plan
+// COLLECTION phase. It is the single named home for the adhoc registration
+// that used to live inline in the MCPCommand transport closure. It needs no
+// official server to run: the projection closures (app installers, direct
+// registrations, resources/prompts) read deps.srv only at materialize time, so
+// a deps bundle with a nil srv collects fine and the caller injects the server
+// via MaterializationPlan.Materialize — which is exactly what lets BuildServer collect
+// BEFORE construction and derive instructions/card from the completed catalog.
+//
+// The wiring is delegated to a fixed, phase-based serverExtensionRegistry (see
+// custom_tools_register.go): specs declare explicit registration roles
+// (catalog-searchable membership, the direct SDK projection, app launchers,
+// app-only helpers) instead of a boolean role matrix, and the collection phase
+// validates the declared roles, provisions the direct catalog additions
+// (wizard/dev tools), and indexes every searchable extension — in that order —
+// so the final indexed membership exists before any projection is derived.
+// The extension families it covers: wizard tools (sessions + step handlers),
+// the agent-facing out-of-band sign-in tools, direct/stamped catalog
+// additions, the MCP App launchers (open_*) and their ui:// views, the
+// upload/download/vault transport tools (upload_file, upload_url, upload_data,
+// upload_status/cancel/list, download_file, vault_get_file, vault_put_file),
+// the capability-detection tool + agent guide, and the pinner:// resources and
+// (optionally) the prompt templates.
+func collectServerExtensions(deps customToolDeps) (*MaterializationPlan, error) {
 	opts := deps.opts
 	if opts == nil {
 		opts = &mcpServerOptions{}
@@ -164,7 +193,7 @@ func registerCustomTools(deps customToolDeps) error {
 	// on the ToolCatalog by buildCatalog; a zero surface is the full surface.
 	// Restricting a family here (rather than at call time) means an omitted
 	// tool cannot be called and never appears in search/discovery/guide copy.
-	surface := deps.catalog.Surface
+	surface := deps.catalog.DomainScope
 	vaultOn := surface.VaultOn()
 	accountOn := surface.AccountOn()
 	uploadOn := surface.UploadOn()
@@ -176,32 +205,66 @@ func registerCustomTools(deps customToolDeps) error {
 	// profile.
 	guiCapable := effectiveFeaturesFor(deps).Has(hostenv.FeatMCPApps)
 
-	reg := newCustomToolRegistry(deps.srv, deps.catalog)
+	reg := newServerExtensionRegistry(deps.srv, deps.catalog)
+
+	// The consolidated open_app launcher is INDEXED during the collection
+	// phase (searchable, exactly like every other extension spec) so the
+	// construction-time initialize-instruction count equals the FINAL indexed
+	// catalog — the post-surface replace below swaps the entry's descriptor
+	// (rebuilt after app views are installed, with the enumerated description)
+	// without changing the catalog's size. The collection-time descriptor is
+	// newOpenAppCollectionPlaceholder: a non-enumerating copy whose static
+	// description names NO app inventory — no app view is installed yet at
+	// collection time, so an enumerated "Available apps: none" copy would
+	// violate the no-enumeration invariant and go stale on any assembly. Only
+	// the materialized descriptor (post-surface) carries the enumerated
+	// openAppDescriptionFor copy.
+	reg.add(serverExtensionSpec{
+		desc:  newOpenAppCollectionPlaceholder(deps.catalog),
+		roles: serverExtensionRoles{roleCatalogSearch},
+	})
+
+	// Direct-phase provisions: wizard tools and dev-introspection tools
+	// append catalog entries whose direct visibility rides the DirectVisible
+	// DirectVisible projection (the wizard's own toolAdder, dev tools as
+	// DirectVisible entries). The provisions run first so the direct stamp
+	// sees them exactly as the former pre-run registration did.
+	if deps.hasWizard {
+		reg.beforeDirectTools(func(cat *ToolCatalog) error {
+			return wizard.RegisterWizardTools(cat, deps.store, deps.wizardW, deps.wizardS, deps.wizardD)
+		})
+	}
+	if deps.devTools {
+		reg.beforeDirectTools(func(cat *ToolCatalog) error {
+			registerDevTools(cat)
+			return nil
+		})
+	}
 
 	// "Create a Pin" MCP App: open_pin_creator is the ONLY tool that opens the
 	// Create a Pin app view. pins_add stays headless.
 	if opts.pinnerPins != nil {
 		pins, err := opts.pinnerPins()
 		if err != nil {
-			return fmt.Errorf("failed to build pinning provider: %w", err)
+			return nil, fmt.Errorf("failed to build pinning provider: %w", err)
 		}
 		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        apps.OpenPinCreatorToolName,
 			Title:       "Create a Pin",
-			Description: "Open the interactive Create a Pin app. This is a UI launcher: it renders an iframe for a human to enter a CID and pin it. It is not a headless primitive; the headless equivalent is pins_add for autonomous pin creation without a rendered form.",
+			Description: apps.OpenLauncherDescription("Create a Pin app", "enter a CID and pin it", "pins_add for autonomous pin creation without a rendered form"),
 			Category:    model.CategoryCore,
 			ResourceURI: apps.PinCreateAppURI,
 		}, func(srv *sdk.Server, catalog apps.AppCatalog) error {
 			return apps.RegisterPinApp(srv, catalog, pins)
 		}); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	// Agent-facing out-of-band sign-in tools (start + resume) are part of the
 	// direct surface AND indexed for progressive discovery. Adding them to the
 	// catalog with DirectVisible means a single registration path (the
-	// DirectVisible scan in RegisterOfficialCuratedTools) exposes them on
+	// DirectVisible scan in RegisterOfficialDirectTools) exposes them on
 	// tools/list while the catalog entry supplies search/describe/invoke. When
 	// the wizard transport is absent oob is nil and both tools return a
 	// structured not-configured hand-off instead of hanging.
@@ -216,22 +279,22 @@ func registerCustomTools(deps customToolDeps) error {
 		authSSO.DirectVisible = true
 		authResume := auth.NewAuthResumeDescriptor(deps.handoffReg, deps.authHandles)
 		authSSORevoke := auth.NewAuthSSORevokeDescriptor(deps.oob, deps.authHandles, deps.handoffReg)
-		reg.add(customToolSpec{desc: authSSO, index: true})
-		reg.add(customToolSpec{desc: authResume, index: true})
-		reg.add(customToolSpec{desc: authSSORevoke, index: true})
+		reg.add(searchableOnly(authSSO))
+		reg.add(searchableOnly(authResume))
+		reg.add(searchableOnly(authSSORevoke))
 
 		// auth_sso stays headless (it returns a needs_human URL+handle handoff);
 		// open_sso_signin is the ONLY tool that opens the Sign In app view.
 		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        auth.OpenSSOSigninToolName,
 			Title:       "Sign In (App)",
-			Description: "Open the interactive Sign In app. This is a UI launcher: it renders an iframe for a human to complete SSO approval. It is not a headless primitive; the headless equivalent is auth_sso, which returns the approval URL + resume handle without rendering a card.",
+			Description: apps.OpenLauncherDescription("Sign In app", "complete SSO approval", "auth_sso, which returns the approval URL + resume handle without rendering a card"),
 			Category:    model.CategoryAccount,
 			ResourceURI: auth.AuthSSOAppURI,
 		}, func(srv *sdk.Server, catalog apps.AppCatalog) error {
 			return auth.RegisterAuthSSOApp(srv, catalog, deps.handoffReg, deps.authHandles)
 		}); err != nil {
-			return err
+			return nil, err
 		}
 
 		// Out-of-band account credential tools: change the password (hosted browser
@@ -242,9 +305,9 @@ func registerCustomTools(deps customToolDeps) error {
 		accountUpdate := auth.NewAccountPasswordUpdateDescriptor(deps.accountOOB, deps.wizardS.AuthService, deps.authHandles, deps.handoffReg)
 		accountReset := auth.NewAccountPasswordResetDescriptor(deps.wizardS.AuthService, deps.accountWebAppURL)
 		accountEmail := auth.NewAccountEmailChangeDescriptor(deps.accountOOB, deps.wizardS.AuthService)
-		reg.add(customToolSpec{desc: accountUpdate, index: true})
-		reg.add(customToolSpec{desc: accountReset, index: true})
-		reg.add(customToolSpec{desc: accountEmail, index: true})
+		reg.add(searchableOnly(accountUpdate))
+		reg.add(searchableOnly(accountReset))
+		reg.add(searchableOnly(accountEmail))
 
 		// account_password_update / account_email_change stay headless (they return
 		// a needs_human URL handoff); open_account_password / open_account_email
@@ -252,20 +315,20 @@ func registerCustomTools(deps customToolDeps) error {
 		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        auth.OpenAccountPasswordToolName,
 			Title:       "Change Password (App)",
-			Description: "Open the interactive Change Password app. This is a UI launcher: it renders an iframe for a human to change their password. It is not a headless primitive; the headless equivalent is account_password_update.",
+			Description: apps.OpenLauncherDescription("Change Password app", "change their password", "account_password_update"),
 			Category:    model.CategoryAccount,
 			ResourceURI: auth.AccountPasswordAppURI,
 		}, auth.RegisterAccountPasswordApp); err != nil {
-			return err
+			return nil, err
 		}
 		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        auth.OpenAccountEmailToolName,
 			Title:       "Change Email (App)",
-			Description: "Open the interactive Change Email app. This is a UI launcher: it renders an iframe for a human to change their email. It is not a headless primitive; the headless equivalent is account_email_change.",
+			Description: apps.OpenLauncherDescription("Change Email app", "change their email", "account_email_change"),
 			Category:    model.CategoryAccount,
 			ResourceURI: auth.AccountEmailAppURI,
 		}, auth.RegisterAccountEmailApp); err != nil {
-			return err
+			return nil, err
 		}
 	} // end of CLI OOB / account-credential tool gating
 
@@ -285,30 +348,30 @@ func registerCustomTools(deps customToolDeps) error {
 	if vaultOn {
 		vaultCreateResume := oob.NewVaultCreateResumeDescriptor(deps.handoffReg, deps.authHandles)
 		vaultRestoreResume := oob.NewVaultRestoreResumeDescriptor(deps.handoffReg, deps.authHandles)
-		reg.add(customToolSpec{desc: vaultCreateResume, index: true})
-		reg.add(customToolSpec{desc: vaultRestoreResume, index: true})
+		reg.add(searchableOnly(vaultCreateResume))
+		reg.add(searchableOnly(vaultRestoreResume))
 
 		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        vault.OpenVaultCreateToolName,
 			Title:       "Create Vault (App)",
-			Description: "Open the interactive Create Vault app. This is a UI launcher: it renders an iframe for a human to create a vault (Sia approval + recovery seed). It is not a headless primitive; the headless equivalent is vault_create, which returns the create URL + resume handle without rendering a card.",
+			Description: apps.OpenLauncherDescription("Create Vault app", "create a vault (Sia approval + recovery seed)", "vault_create, which returns the create URL + resume handle without rendering a card"),
 			Category:    model.CategoryStorage,
 			ResourceURI: vault.VaultCreateAppURI,
 		}, func(srv *sdk.Server, catalog apps.AppCatalog) error {
 			return vault.RegisterVaultCreateApp(srv, catalog, deps.handoffReg, deps.authHandles)
 		}); err != nil {
-			return err
+			return nil, err
 		}
 		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        vault.OpenVaultRestoreToolName,
 			Title:       "Restore Vault (App)",
-			Description: "Open the interactive Restore Vault app. This is a UI launcher: it renders an iframe for a human to restore a vault from its recovery seed. It is not a headless primitive; the headless equivalent is vault_restore, which returns the restore URL + resume handle without rendering a card.",
+			Description: apps.OpenLauncherDescription("Restore Vault app", "restore a vault from its recovery seed", "vault_restore, which returns the restore URL + resume handle without rendering a card"),
 			Category:    model.CategoryStorage,
 			ResourceURI: vault.VaultRestoreAppURI,
 		}, func(srv *sdk.Server, catalog apps.AppCatalog) error {
 			return vault.RegisterVaultRestoreApp(srv, catalog, deps.handoffReg, deps.authHandles)
 		}); err != nil {
-			return err
+			return nil, err
 		}
 
 		// vault_status stays headless (returns raw JSON); open_vault_browser
@@ -316,11 +379,11 @@ func registerCustomTools(deps customToolDeps) error {
 		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        vault.OpenVaultBrowserToolName,
 			Title:       "Vault Browser (App)",
-			Description: "Open the interactive Vault browser app. This is a UI launcher: it renders an iframe for a human to browse the vault. It is not a headless primitive; the headless equivalents are vault_status / vault_ls for autonomous access.",
+			Description: apps.OpenLauncherDescription("Vault browser app", "browse the vault", "vault_status / vault_ls for autonomous access"),
 			Category:    model.CategoryStorage,
 			ResourceURI: vault.VaultBrowserAppURI,
 		}, vault.RegisterVaultBrowserApp); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -329,11 +392,11 @@ func registerCustomTools(deps customToolDeps) error {
 	if err := reg.addLauncher(apps.OpenLauncherSpec{
 		Name:        download.OpenPinListToolName,
 		Title:       "Pin List (App)",
-		Description: "Open the interactive Pin list app. This is a UI launcher: it renders an iframe for a human to browse pins. It is not a headless primitive; the headless equivalent is pins_list for autonomous access.",
+		Description: apps.OpenLauncherDescription("Pin list app", "browse pins", "pins_list for autonomous access"),
 		Category:    model.CategoryCore,
 		ResourceURI: download.PinListAppURI,
 	}, download.RegisterPinListApp); err != nil {
-		return err
+		return nil, err
 	}
 
 	// auth_status stays headless (returns raw JSON); open_account is the ONLY
@@ -342,11 +405,11 @@ func registerCustomTools(deps customToolDeps) error {
 		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        auth.OpenAccountToolName,
 			Title:       "Account (App)",
-			Description: "Open the interactive Account app. This is a UI launcher: it renders an iframe for a human to view authentication status. It is not a headless primitive; the headless equivalent is auth_status for autonomous access.",
+			Description: apps.OpenLauncherDescription("Account app", "view authentication status", "auth_status for autonomous access"),
 			Category:    model.CategoryAccount,
 			ResourceURI: auth.AuthStatusAppURI,
 		}, auth.RegisterAuthStatusApp); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -358,34 +421,51 @@ func registerCustomTools(deps customToolDeps) error {
 		reg.afterSurface(func() error {
 			provs := deps.resourceFactory(deps.store)
 			provs.Sessions = deps.store
-			resources, templates := ResourceDescriptorsForSurface(provs, surface.VaultOn())
-			return sdk.RegisterResources(deps.srv, resources, templates)
+			resources, templates := ResourceDescriptorsForScope(provs, surface.VaultOn())
+			return sdk.RegisterResources(reg.srv, resources, templates)
 		})
 	}
 
 	// The consolidated open_app launcher: the single directly-surfaced UI
 	// launcher for a GUI-capable host (all per-app open_* launchers are
-	// search-only, see launcherSpec). It is registered after the direct tool
-	// surface so the catalog holds every installed app view, which the handler
-	// resolves to build an accurate app list. On an agent-only host it is still
-	// catalog-indexed (discoverable) so the agent can tell a human to open an
-	// app, but it is NOT projected onto tools/list.
+	// search-only, see appLauncherSpec). The tool is already catalog-indexed
+	// (and, under a FLAT strategy, stamped and projected direct by the direct
+	// pass) from the COLLECTION phase; this post-surface hook REPLACES the
+	// entry so its descriptor is rebuilt after every app view is installed —
+	// the enumerated static description must bake post-install, never from the
+	// pre-install collection stage — re-registering the wire descriptor when
+	// the entry is direct so the flat wire carries the enumerated copy too.
+	// Under the progressive default, open_app is direct only on a GUI-capable
+	// host; on an agent-only host it stays search-only.
 	reg.afterSurface(func() error {
-		openApp := newOpenAppDescriptor(deps.catalog)
+		openApp := newOpenAppDescriptor(deps.catalog, *effectiveProfileFor(deps))
 		openAppEntry := model.ToolEntryFromDescriptor(openApp)
-		openAppEntry.DirectVisible = guiCapable
+		openAppEntry.DirectVisible = guiCapable || deps.catalog.listingStrategy() == ListingFlat
 		deps.catalog.Add(openAppEntry)
-		if guiCapable {
-			return RegisterOfficialDescriptor(deps.srv, openApp)
+		if openAppEntry.DirectVisible {
+			// reg.srv is injected at materialize time (MaterializationPlan.Materialize),
+			// so the hook works on both the collect-then-materialize build path
+			// and the legacy single-pass registerCustomTools call. The SDK map
+			// keys by name, so this replaces the collection-time registration
+			// in place (exactly one wire slot — the uniqueness tests pin that).
+			return RegisterOfficialDescriptor(reg.srv, openApp)
 		}
 		return nil
 	})
+
+	// The single byte-transfer availability calculation (surface + handlers +
+	// effective features) both the registration branches below and the
+	// capabilities descriptor consume: a tool is registered exactly when this
+	// value says so, so capabilities can never advertise a tool absent from a
+	// restricted surface.
+	feats := effectiveFeaturesFor(deps)
+	avail := computeTransferAvailability(deps, opts, surface, feats)
 
 	// --- Vault put file (unified, transport-aware) ---
 	// Every vault file/copy tool is gated on the Sia vault surface: a hosted
 	// server without vault must never advertise vault_put_file or the vault
 	// upload app.
-	if vaultOn && vaultPutFileAvailable(deps.coLocated, opts.localPathVaultPut != nil, deps.vaultUpload != nil, opts.vaultPutHandler != nil, deps.tunnelOpenAI) {
+	if avail.vaultPutFile {
 		var pathFn vault.LocalPathVaultPutHandler
 		if deps.coLocated {
 			pathFn = opts.localPathVaultPut
@@ -413,10 +493,21 @@ func registerCustomTools(deps customToolDeps) error {
 		// open_vault_manager launcher, which is registered only when the
 		// presigned vault-upload coordinator (deps.vaultUpload) can mint a PUT
 		// endpoint for the Uppy XHR uploader.
-		vaultPutSpec := customToolSpec{desc: vaultPutDesc, direct: true}
+		vaultPutSpec := serverExtensionSpec{
+			desc:  vaultPutDesc,
+			roles: []serverExtensionRole{roleDirectTool},
+		}
+		// The Vault Mint App's catalog-search role tracks the presigned route
+		// WIRING; the launcher and app register only when the presigned PUT
+		// route is REACHABLE — the single shared transfer.SinkDropReachable
+		// gate (wired coordinator AND a reachable HTTP mux; the
+		// OpenAI-tunnel rationale lives above), the same decision as
+		// vaultPutFileAvailable's presigned branch below.
 		if deps.vaultUpload != nil {
-			vaultPutSpec.index = true
-			reg.add(launcherSpec(upload.NewOpenVaultManagerDescriptor(deps.vaultUpload), func(srv *sdk.Server, catalog apps.AppCatalog) error {
+			vaultPutSpec.roles = append(vaultPutSpec.roles, roleCatalogSearch)
+		}
+		if transfer.SinkDropReachable(deps.vaultUpload != nil, deps.tunnelOpenAI) {
+			reg.add(appLauncherSpec(upload.NewOpenVaultManagerDescriptor(deps.vaultUpload), func(srv *sdk.Server, catalog apps.AppCatalog) error {
 				return upload.RegisterVaultUploadApp(srv, catalog, deps.vaultUpload)
 			}))
 		}
@@ -431,7 +522,7 @@ func registerCustomTools(deps customToolDeps) error {
 	// HTTP) does not get the tool at all — an omitted tool cannot be called,
 	// whereas a visible tool with only a "do not call" sentence still gets
 	// tried. Registration, not copy, is the gate.
-	if uploadOn && opts.relayURLUpload != nil && effectiveFeaturesFor(deps).Has(hostenv.FeatSourceURL) {
+	if avail.uploadURL {
 		relayDesc := upload.RelayURLUploadDescriptor(opts.relayURLUpload, opts.relayAllowedHosts, opts.maxRelayBytes)
 		// Re-resolve the baked tools/list description against the effective
 		// profile (the URL relay bakes against generic HTTP, whose no-relay
@@ -443,7 +534,7 @@ func registerCustomTools(deps customToolDeps) error {
 		if d, ok := toolforge.ResolveDescription(upload.RelayURLUploadTargets, *effectiveProfileFor(deps)); ok {
 			relayDesc.Description = d
 		}
-		reg.add(customToolSpec{desc: relayDesc, index: true, direct: true})
+		reg.add(directSearchable(relayDesc))
 	}
 
 	// --- Consolidated download_file: a single sink-aware IPFS download tool. ---
@@ -455,7 +546,7 @@ func registerCustomTools(deps customToolDeps) error {
 	// coordinator (downloadDrop) is wired alongside when any download executor
 	// exists, but the drop sink is only honored on transports with a reachable
 	// HTTP mux (tunnelOpenAI=false) — see downloadFileDescription.
-	if uploadOn && opts.ipfsDownload != nil {
+	if avail.downloadFile {
 		downloadRoot := transfer.ResolveDownloadRoot(opts.downloadRoot)
 		dlDesc := transfer.NewDownloadFileDescriptor(opts.ipfsDownload, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
 		// download_file is headless; the app's view attaches to the explicit
@@ -463,18 +554,18 @@ func registerCustomTools(deps customToolDeps) error {
 		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        download.OpenDownloadManagerToolName,
 			Title:       "Download from IPFS",
-			Description: "Open the interactive Download from IPFS app. This is a UI launcher: it renders an iframe for a human to initiate a download. It is not a headless primitive; the headless equivalent is download_file for autonomous downloads without a rendered form.",
+			Description: apps.OpenLauncherDescription("Download from IPFS app", "initiate a download", "download_file for autonomous downloads without a rendered form"),
 			Category:    model.CategoryCore,
 			ResourceURI: download.IPFSDownloadAppURI,
 		}, download.RegisterIPFSDownloadApp); err != nil {
-			return err
+			return nil, err
 		}
-		reg.add(customToolSpec{desc: dlDesc, index: true, direct: true})
+		reg.add(directSearchable(dlDesc))
 	}
 
 	// --- Consolidated vault_get_file: a single sink-aware vault download tool. ---
 	// Gated on the Sia vault surface like every other vault tool.
-	if vaultOn && opts.vaultGet != nil {
+	if avail.vaultGetFile {
 		downloadRoot := transfer.ResolveDownloadRoot(opts.downloadRoot)
 		dlDesc := vault.NewVaultGetFileDescriptor(opts.vaultGet, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
 		// vault_get_file is headless; the app's view attaches to the explicit
@@ -482,13 +573,13 @@ func registerCustomTools(deps customToolDeps) error {
 		if err := reg.addLauncher(apps.OpenLauncherSpec{
 			Name:        download.OpenVaultDownloadManagerToolName,
 			Title:       "Download from Vault",
-			Description: "Open the interactive Download from Vault app. This is a UI launcher: it renders an iframe for a human to initiate a vault download. It is not a headless primitive; the headless equivalent is vault_get_file for autonomous vault downloads without a rendered form.",
+			Description: apps.OpenLauncherDescription("Download from Vault app", "initiate a vault download", "vault_get_file for autonomous vault downloads without a rendered form"),
 			Category:    model.CategoryStorage,
 			ResourceURI: download.VaultDownloadAppURI,
 		}, download.RegisterVaultDownloadApp); err != nil {
-			return err
+			return nil, err
 		}
-		reg.add(customToolSpec{desc: dlDesc, index: true, direct: true})
+		reg.add(directSearchable(dlDesc))
 	}
 
 	// --- upload_data: SEP-2356 data: URI relay (draft x-mcp-file mode) ---
@@ -497,7 +588,7 @@ func registerCustomTools(deps customToolDeps) error {
 	// declares data: support (e.g. Grok, the OpenAI tunnel). A host without
 	// FeatSourceData does not get the tool at all — registration, not a "do not
 	// call" sentence, is the gate.
-	if uploadOn && opts.dataURIUpload != nil && effectiveFeaturesFor(deps).Has(hostenv.FeatSourceData) {
+	if avail.uploadData {
 		dataDesc := transfer.DataURIUploadDescriptor(opts.dataURIUpload, opts.maxRelayBytes)
 		// Re-resolve the baked tools/list description against the effective
 		// profile (mirroring upload_file/vault_put_file/upload_url), so a host
@@ -506,7 +597,7 @@ func registerCustomTools(deps customToolDeps) error {
 		if d, ok := toolforge.ResolveDescription(transfer.DataURIUploadTargets, *effectiveProfileFor(deps)); ok {
 			dataDesc.Description = d
 		}
-		reg.add(customToolSpec{desc: dataDesc, index: true, direct: true})
+		reg.add(directSearchable(dataDesc))
 	}
 
 	// --- Consolidated upload_file: a single transport-aware IPFS upload tool. ---
@@ -517,7 +608,7 @@ func registerCustomTools(deps customToolDeps) error {
 	//     coordinator (deps.curlUpload).
 	//   - openai tunnel: source mode url/data via the file-relay executor
 	//     (opts.uploadHandler), since no reachable HTTP mux exists.
-	if uploadOn && uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, opts.uploadHandler != nil, deps.tunnelOpenAI) {
+	if avail.uploadFile {
 		var pathFn transfer.UploadFileHandler
 		if deps.coLocated {
 			pathFn = opts.localPathUpload
@@ -545,10 +636,20 @@ func registerCustomTools(deps customToolDeps) error {
 		// presigned Upload coordinator (deps.curlUpload) can mint a PUT
 		// endpoint for the Uppy XHR uploader. In co-located stdio local-path
 		// mode there is no presigned endpoint, so no app is registered.
-		uploadFileSpec := customToolSpec{desc: uploadFileDesc, direct: true}
+		uploadFileSpec := serverExtensionSpec{
+			desc:  uploadFileDesc,
+			roles: []serverExtensionRole{roleDirectTool},
+		}
+		// Mirror of the vault launcher gate: the Upload to IPFS App's
+		// catalog-search role tracks the presigned route WIRING; the launcher
+		// and app register only on REACHABILITY — the single shared
+		// transfer.SinkDropReachable gate (see its rationale above), the same
+		// decision as uploadFileAvailable's presigned branch below.
 		if deps.curlUpload != nil {
-			uploadFileSpec.index = true
-			reg.add(launcherSpec(upload.NewOpenUploadManagerDescriptor(deps.curlUpload), func(srv *sdk.Server, catalog apps.AppCatalog) error {
+			uploadFileSpec.roles = append(uploadFileSpec.roles, roleCatalogSearch)
+		}
+		if transfer.SinkDropReachable(deps.curlUpload != nil, deps.tunnelOpenAI) {
+			reg.add(appLauncherSpec(upload.NewOpenUploadManagerDescriptor(deps.curlUpload), func(srv *sdk.Server, catalog apps.AppCatalog) error {
 				return upload.RegisterIPFSUploadApp(srv, catalog, deps.curlUpload)
 			}))
 		}
@@ -560,7 +661,7 @@ func registerCustomTools(deps customToolDeps) error {
 	// as a step, so an agent following the guide discovers it via search_tools.
 	if uploadOn && opts.uploadTasks != nil {
 		for _, desc := range upload.NewAsyncUploadTools(opts.uploadTasks) {
-			reg.add(customToolSpec{desc: desc, index: true})
+			reg.add(searchableOnly(desc))
 		}
 	}
 
@@ -571,51 +672,141 @@ func registerCustomTools(deps customToolDeps) error {
 	// tools/list never promises a `file` parameter the host cannot fill. The
 	// re-resolve threads the same tool-wiring flags so the description drops the
 	// file-handoff prose when no upload/vault tool is wired, matching the report.
-	uploadWired := uploadFileAvailable(deps.coLocated, opts.localPathUpload != nil, deps.curlUpload != nil, opts.uploadHandler != nil, deps.tunnelOpenAI)
-	vaultWired := vaultPutFileAvailable(deps.coLocated, opts.localPathVaultPut != nil, deps.vaultUpload != nil, opts.vaultPutHandler != nil, deps.tunnelOpenAI)
+	// Every capabilities fact comes from the SAME availability calculation the
+	// registration branches above consumed (avail), so the report equals the
+	// eligible registration by construction — including on restricted
+	// surfaces where a wired handler exists but its family is disabled.
+	uploadWired := avail.uploadFile
+	vaultWired := avail.vaultPutFile
 	capDesc := NewCapabilitiesDescriptor(
 		deps.coLocated,
 		deps.tunnelOpenAI,
 		uploadWired,
 		vaultWired,
-		opts.ipfsDownload != nil,
-		opts.vaultGet != nil,
+		avail.downloadFile,
+		avail.vaultGetFile,
 		deps.downloadDrop != nil,
-		opts.relayURLUpload != nil, // upload_url relay tool wiring (gates upload_tools + URL registration)
-		opts.dataURIUpload != nil,  // upload_data relay tool wiring (gates upload_tools + data registration)
-		opts.dataURIUpload != nil,  // the data: URI upload tool carries the draft x-mcp-file metadata
+		avail.uploadURL,  // upload_url relay tool registration (gates upload_tools + URL registration)
+		avail.uploadData, // upload_data relay tool registration (gates upload_tools + data registration)
+		avail.uploadData, // the data: URI upload tool carries the draft x-mcp-file metadata
 		opts.maxRelayBytes,
-		// The registration-time effective feature set, so upload_tools is gated
-		// on the same features that decided relay tool registration — never the
-		// per-request wire profile.
-		effectiveFeaturesFor(deps),
 	)
 	if deps.hostProfile != nil {
-		capDesc.Description = capabilitiesDescriptionFor(*deps.hostProfile, uploadWired, vaultWired, opts.ipfsDownload != nil, opts.vaultGet != nil)
+		capDesc.Description = capabilitiesDescriptionFor(*deps.hostProfile, uploadWired, vaultWired, avail.downloadFile, avail.vaultGetFile)
 	}
 	// capabilities is both directly visible on tools/list and indexed in the
 	// catalog so a cold-start host following search_tools(help) can resolve it.
-	reg.add(customToolSpec{desc: capDesc, direct: true, index: true})
+	reg.add(directSearchable(capDesc))
 
 	// Always expose the agent guide so a model can orient to the primary flows
 	// without probing each tool's description. It is both directly visible on
 	// tools/list and indexed in the catalog so a cold-start host that follows
 	// search_tools(help) can resolve and read it via describe_tool / the typed invoke dispatchers.
-	reg.add(customToolSpec{desc: NewAgentGuideDescriptor(), index: true, direct: true})
+	//
+	// The guide handler is built from THIS server's captured DomainScope/Hosted (the
+	// immutable context recorded on the assembled catalog by buildCatalog), so an
+	// active agent_guide request is never crossed by a concurrent host-profile
+	// REassembly that rewrites the package construction globals. It deliberately
+	// does NOT use NewAgentGuideDescriptor, whose handler reads those globals.
+	// deps.catalog.DomainScope is the same value registered against the catalog by
+	// buildCatalog (see the surface declaration above); deps.catalog.Hosted is
+	// its deployment-mode counterpart. The completed-catalog availability makes
+	// the guide a derived projection of the FINAL per-server surface: steps
+	// naming tools this assembly never registered (e.g. the OOB pair on a
+	// hosted server) are removed at request time.
+	reg.add(directSearchable(agentGuideDescriptorFor(deps.catalog.DomainScope, deps.catalog.Hosted, catalogGuideAvailability(deps.catalog))))
 
 	// Optionally expose the prompt templates, filtered to the surface so a
 	// hosted server never exposes a prompt whose underlying tools are absent.
+	// The wizard-workflow prompts additionally require their wizard START
+	// tools: a hosted (or otherwise wizard-free) assembly with the
+	// websites/account domain surfaces enabled still must not advertise a
+	// website-onboarding/setup prompt whose script calls tools it never
+	// registered — so those prompts are dropped unless the finalized catalog
+	// carries the wizard tools.
 	if opts.prompts {
 		reg.afterSurface(func() error {
-			return sdk.RegisterPrompts(deps.srv, PromptDescriptorsForSurface(surface))
+			prompts := dropWizardPromptsWithoutWizardTools(deps.catalog, PromptDescriptorsForScope(surface))
+			if len(prompts) == 0 {
+				return nil
+			}
+			return sdk.RegisterPrompts(reg.srv, prompts)
 		})
 	}
 
-	return reg.run()
+	// Complete the collection phase NOW: when this returns, the plan is
+	// finished (roles validated, direct-phase provisions indexed, every
+	// searchable extension indexed into the catalog) and no server-facing
+	// projection has run yet. The caller materializes the returned plan against
+	// the official server exactly once (MaterializationPlan.Materialize), which is what
+	// lets BuildServer collect before construction and derive the
+	// instructions/card from the completed per-server catalog.
+	plan := &MaterializationPlan{reg: reg}
+	if err := reg.complete(); err != nil {
+		return nil, err
+	}
+	return plan, nil
+}
+
+// registerCustomTools is the legacy single-pass path: it collects the
+// extension plan and immediately materializes it against deps.srv. Production
+// construction (BuildServer via ServerConfig.CollectExtensions, the hosted
+// constructor, the tunnel assembly) routes through collectServerExtensions +
+// MaterializationPlan.Materialize instead, so instructions and the server card derive
+// from the completed plan; registerCustomTools remains for tests and callers
+// that hold an already-constructed server.
+func registerCustomTools(deps customToolDeps) error {
+	plan, err := collectServerExtensions(deps)
+	if err != nil {
+		return err
+	}
+	_, err = plan.Materialize(deps.srv)
+	return err
+}
+
+// MINT LAUNCHER REACHABILITY: presigned mint routes (the upload_file curl PUT
+// coordinator and the vault_put_file presigned vault-upload coordinator) are
+// usable for a LAUNCHER/app view only when the coordinator is wired AND the
+// transport exposes a reachable HTTP mux. The embedded OpenAI tunnel exposes
+// no mux (all RPC flows through the tunnel protocol), so its minted URL would
+// fall back to an unreachable loopback — the launcher and app must not be
+// advertised there. The single gate is transfer.SinkDropReachable — the ONE
+// mux-reachability predicate, shared verbatim with the filedrop-sink decision
+// (sink=drop advertisement vs. download acceptance) so the launcher gates,
+// transferBranchAvailable (both transfer predicates' presigned branch), and
+// the sink advertisement can never drift.
+//
+// Keep calling transfer.SinkDropReachable directly at every gate below; do
+// not reintroduce a local same-truth-table copy.
+
+// transferBranchAvailable is the ONE branch decision shared by
+// uploadFileAvailable and vaultPutFileAvailable (the two differ only in the
+// presigned-route wiring name). The tool has at least one real file-input
+// branch when —
+//
+//   - co-located (stdio): a local path handler is wired; or
+//   - an HTTP / real tunnel transport exposes the reachable presigned route
+//     (transfer.SinkDropReachable); or
+//   - an OpenAI tunnel transport has a relay executor wired (no reachable HTTP
+//     mux — all RPC flows through the tunnel protocol — so only the url/data
+//     relay path can carry bytes).
+//
+// Routing both predicates' presigned branch through transfer.SinkDropReachable
+// keeps the tool-registration decision, the launcher gates, and the
+// transferToolAvailability report on one code path.
+func transferBranchAvailable(coLocated, localPathWired, presignedWired, relayWired, tunnelOpenAI bool) bool {
+	if coLocated {
+		return localPathWired
+	}
+	if transfer.SinkDropReachable(presignedWired, tunnelOpenAI) {
+		return true
+	}
+	return tunnelOpenAI && relayWired
 }
 
 // uploadFileAvailable reports whether the consolidated upload_file tool has at
-// least one real file-input branch for the running transport:
+// least one real file-input branch for the running transport (the shared
+// transferBranchAvailable decision):
 //
 //   - co-located (stdio): a local path upload handler is wired.
 //   - HTTP / real tunnel: a reachable presigned HTTP PUT coordinator is wired
@@ -627,13 +818,7 @@ func registerCustomTools(deps customToolDeps) error {
 // It is the single decision used both when registering the tool and when
 // reporting the upload_file capability, so the two can never drift.
 func uploadFileAvailable(coLocated, localPathWired, curlWired, relayWired, tunnelOpenAI bool) bool {
-	if coLocated {
-		return localPathWired
-	}
-	if curlWired && !tunnelOpenAI {
-		return true
-	}
-	return tunnelOpenAI && relayWired
+	return transferBranchAvailable(coLocated, localPathWired, curlWired, relayWired, tunnelOpenAI)
 }
 
 // effectiveFeaturesFor returns the feature set that determines tool registration
@@ -666,7 +851,9 @@ func effectiveProfileFor(deps customToolDeps) *hostenv.PlatformProfile {
 
 // vaultPutFileAvailable reports whether the unified vault_put_file tool has at
 // least one usable branch for the running transport, mirroring
-// uploadFileAvailable for the vault surface:
+// uploadFileAvailable for the vault surface (same shared
+// transferBranchAvailable decision; see the Mint LAUNCHER REACHABILITY note
+// above for the OpenAI-tunnel presigned-route rationale):
 //
 //   - co-located (stdio): a local-path vault handler is wired.
 //   - HTTP / real tunnel: a reachable presigned vault-upload coordinator
@@ -680,31 +867,27 @@ func effectiveProfileFor(deps customToolDeps) *hostenv.PlatformProfile {
 // It is the single decision used both when registering the tool and when
 // reporting the vault_put_file capability, so the two can never drift.
 func vaultPutFileAvailable(coLocated, localPathWired, mintWired, relayWired, tunnelOpenAI bool) bool {
-	if coLocated {
-		return localPathWired
-	}
-	if mintWired && !tunnelOpenAI {
-		return true
-	}
-	return tunnelOpenAI && relayWired
+	return transferBranchAvailable(coLocated, localPathWired, mintWired, relayWired, tunnelOpenAI)
 }
 
-// registerOpenLauncher registers a model-facing open_* UI launcher tool. A
-// launcher is an explicit, intentional way to open an MCP App view: it carries
-// _meta.ui.resourceUri so a supporting host renders the app's iframe, and it
-// is model-visible so the agent can choose to open the app. It is the ONLY tool
-// that advertises the app's resourceUri — the operational primitives the app is
-// attached to (upload_file, vault_status, pins_list, ...) remain headless (no
-// resourceUri), so ordinary mid-workflow calls never render a card.
+// registerOpenLauncher is a TEST-ONLY launcher registration helper (only
+// seedLauncherForTest calls it; no production assembly path does). It registers
+// a model-facing open_* UI launcher tool: one that carries
+// _meta.ui.resourceUri so a supporting host renders the app's iframe and stays
+// the ONLY tool advertising that resourceUri — the operational primitives the
+// app is attached to (upload_file, vault_status, pins_list, ...) remain
+// headless (no resourceUri), so ordinary mid-workflow calls never render a
+// card.
 //
-// The launcher is added to the catalog (for progressive discovery) AND
-// registered directly on tools/list (model-visible). The app's RegisterAppView
-// later attaches its _meta.ui to this launcher's catalog entry (via AttachTo),
-// which is exactly where the UI linkage should live.
-//
-// Production registration routes launchers through the customToolRegistry
-// (launcherSpec); this helper remains for tests and callers that register a
-// single launcher immediately.
+// CONTRACT NOTE: this helper's catalog + direct registration is NOT the
+// production launcher contract. Production routes every open_* launcher
+// through the serverExtensionRegistry (appLauncherSpec in
+// custom_tools_register.go), which keeps launchers catalog-searchable and
+// attached to their app view but NEVER individually projected onto tools/list
+// — the consolidated open_app tool is the single direct launcher, and the role
+// validation rejects any direct+launcher combination. This helper exists only
+// so tests can seed a launcher the production indexer does before calling a
+// RegisterXxxApp view.
 func registerOpenLauncher(deps customToolDeps, launcher model.ToolDescriptor) error {
 	if launcher.Meta == nil {
 		return fmt.Errorf("open_* launcher %q must declare _meta.ui (resourceUri)", launcher.Name)

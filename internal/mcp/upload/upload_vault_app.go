@@ -4,17 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
 	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
-	corevault "go.lumeweb.com/pinner/core/vault"
 
 	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/mcpplane/toolargs"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
+	"go.lumeweb.com/pinner-cli/internal/mcp/schematext"
 	"go.lumeweb.com/pinner/canvas"
 )
 
@@ -25,20 +24,35 @@ import (
 // channel. Instead it mirrors the Upload to IPFS app: a helper mints a
 // one-time presigned PUT endpoint bound to the destination vault path, and the
 // iframe's Uppy XHR uploader PUTs the raw file body straight to that endpoint
-// (formData off, HTTP PUT). The vault write is non-blocking: the PUT response
-// returns after staging the bytes locally (status: staged) — durability on
-// Sia happens in the background or via the vault_flush tool; there is no async
-// handle or poll round trip.
+// (formData off, HTTP PUT). Durability/backgrounding semantics follow the
+// canonical internal/mcp/mintcontract contract (see
+// mintcontract.DurabilitySource/FlushJobShape); authoritative there. The
+// normative prose (staging status, durability source, vault_flush job shape,
+// polling, no upload_status) is composed from mintcontract fragments; the
+// launcher and tool copy never restate them by hand.
 
 // VaultUploadAppURI is the ui:// resource serving the "Upload to Vault" app.
 const VaultUploadAppURI = "ui://uploads/vault.html"
 
 // VaultUploadSubmitInput is the typed argument shape for the app-only
-// vault_upload_submit helper. It carries only the destination path and TTL;
-// the file bytes themselves never cross the tool channel.
+// vault_upload_submit helper. It carries the destination path, TTL, and
+// destination vault profile; the file bytes themselves never cross the tool
+// channel.
 type VaultUploadSubmitInput struct {
-	VaultPath string `json:"vault_path" jsonschema:"description=Vault destination path, e.g. vault:/uploads/report.pdf. Required."`
-	TTL       string `json:"ttl,omitempty" jsonschema:"description=Optional presigned endpoint lifetime, e.g. 5m (default 5m)."`
+	// VaultPath carries no jsonschema description tag: this helper's schema
+	// is the LIVE, hand-authored InputSchema baked into
+	// vaultUploadSubmitDescriptor (single description copy, tag/wire parity
+	// by construction).
+	VaultPath string `json:"vault_path"`
+	// TTL's tag composes schematext.TTLOptional and Profile's tag composes
+	// schematext.ProfileWriteExtended (struct tags cannot embed constants;
+	// TestSchemaTextFragmentsPinned pins these literals to them).
+	TTL string `json:"ttl,omitempty" jsonschema:"description=Optional presigned endpoint lifetime, e.g. 5m (default 5m)."`
+	// Profile is the vault profile to write into, carried through when the
+	// app mints a fresh endpoint (e.g. after a refresh). On a multi-profile
+	// server it is required and validated with the same profile_required
+	// guard as the launcher and vault_put_file.
+	Profile string `json:"profile,omitempty" jsonschema:"description=Vault profile name to write into. Required when more than one profile is unlocked (omitting it returns profile_required and mints nothing); on a single-profile server it defaults to the active profile. Specify a different profile to store in another vault without changing the default."`
 }
 
 // renderVaultUploadAppHTML renders the complete "Upload to Vault" app document
@@ -59,7 +73,7 @@ func vaultUploadSubmitDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescrip
 		Name:        "vault_upload_submit",
 		Title:       "Prepare a vault upload endpoint",
 		Description: "Mint a one-time presigned PUT endpoint that writes the uploaded file body into the encrypted vault at the given path. App-only helper for the Upload to Vault view.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"vault_path":{"type":"string","description":"Vault destination file path, e.g. vault:/uploads/report.pdf. Required."},"ttl":{"type":"string","description":"Optional presigned endpoint lifetime, e.g. 5m (default 5m)."}},"required":["vault_path"]}`),
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"vault_path":{"type":"string","description":"Vault destination file path, e.g. vault:/uploads/report.pdf. Required."},"ttl":{"type":"string","description":"` + schematext.TTLOptional + `"},"profile":{"type":"string","description":"` + schematext.ProfileWriteExtended + `"}},"required":["vault_path"]}`),
 		// OpenAI tool invocation labels shown by UI-capable hosts while the
 		// tool runs and after it finishes. Required alongside the openai
 		// outputTemplate this app helper carries.
@@ -77,21 +91,31 @@ func vaultUploadSubmitDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescrip
 			if in.VaultPath == "" {
 				return model.ToolResult{}, fmt.Errorf("vault_path is required")
 			}
-			var ttl time.Duration
-			if in.TTL != "" {
-				ttl, err = time.ParseDuration(in.TTL)
-				if err != nil {
-					return model.ToolResult{}, fmt.Errorf("invalid ttl: %w", err)
-				}
+			// Multi-profile guard, mirroring the launcher and vault_put_file:
+			// never silently default to the active profile on a multi-profile
+			// server — fail with the structured profile_required error here.
+			if gr, failed := vaultProfileGuard(in.Profile); failed {
+				return gr, nil
+			}
+			// ONE shared presign-TTL parser (core/transfer.ParsePresignTTL):
+			// the previously divergent copy here accepted no-ttl without the
+			// default lifetime and used a different error wording. This
+			// matches the open_vault_manager launcher and vault_put_file mint
+			// path exactly (empty/non-positive → default lifetime).
+			ttl, terr := transfer.ParsePresignTTL(in.TTL)
+			if terr != nil {
+				return model.ToolResult{}, terr
 			}
 			// mint validates the destination (file path, inside the uploads
 			// scope, no traversal) before minting, refusing to mint a PUT
 			// endpoint that could write anywhere else in the vault.
-			var hostType string
-			if req.Caps != nil && req.Caps.Profile != nil {
-				hostType = string(req.Caps.Profile.HostType)
-			}
-			url, err := vu.Mint(ctx, in.VaultPath, ttl, corevault.StampedMetadata("mcp", hostType, "", nil))
+			// Pin the resolved profile identity into the sealed metadata via
+			// the ONE canonical assembly (transfer.StampedMCPMetadata) —
+			// explicit profile passes through; an empty one resolves to the
+			// single unlocked profile at mint time, so the later PUT can
+			// never re-resolve against an ambiguous registry. Identical on
+			// every mint surface.
+			url, err := vu.Mint(ctx, in.VaultPath, ttl, transfer.StampedMCPMetadata(req.Caps, in.Profile, nil))
 			if err != nil {
 				return model.ToolResult{}, err
 			}

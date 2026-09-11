@@ -61,12 +61,14 @@ func TestAgentFacingCategoryVocabularyUsesRenamedWireValues(t *testing.T) {
 		"category=core|vault", // onboarding hint pipelines
 		"CategoryVault",       // removed upstream constant
 	}
-	// New wire values each file must advertise.
+	// New wire values each file must advertise. The vault_sync discovery hint
+	// ("search_tools(category=storage)") moved with its flow definition into
+	// guide_flows.go, so the runner-surface requirements are split per file.
 	required := map[string]string{
 		"sdk_official.go": "'storage' (vault files/cache), 'names' (IPNS keys)",
-		"agent_guide.go":  "search_tools(category=storage)",
+		"guide_flows.go":  "search_tools(category=storage)",
 	}
-	for _, file := range []string{"sdk_official.go", "agent_guide.go"} {
+	for _, file := range []string{"sdk_official.go", "agent_guide.go", "guide_flows.go"} {
 		src, err := os.ReadFile(file)
 		require.NoError(t, err, "test reads its own package sources")
 		for _, s := range stale {

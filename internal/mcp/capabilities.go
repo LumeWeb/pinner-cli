@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
+	"go.lumeweb.com/pinner-cli/internal/mcp/mintcontract"
+	"go.lumeweb.com/pinner-cli/internal/mcp/schematext"
 
 	"github.com/samber/lo"
 
@@ -141,7 +143,7 @@ func sourceModesFor(t transfer.TransportKind) []FileInputCapability {
 // transport has a reachable HTTP mux (not the embedded OpenAI tunnel).
 func sinkModesFor(dropWired, tunnelOpenAI bool) []FileOutputCapability {
 	modes := []FileOutputCapability{CapabilitySinkLocal}
-	if dropWired && !tunnelOpenAI {
+	if transfer.SinkDropReachable(dropWired, tunnelOpenAI) {
 		modes = append(modes, CapabilitySinkDrop)
 	}
 	return modes
@@ -215,50 +217,88 @@ var capabilitiesLeadIn = toolforge.Static(
 		"This client has no `file` parameter it can fill: call upload_file/vault_put_file with a transport-scoped source.",
 	).
 	StaticSentence("download_file/vault_get_file take a sink: local writes to a path on the MCP server's own disk (not visible to a remote agent)").
+	// The drop clause composes the canonical schematext drop-link fragments
+	// (mechanism + pull guidance) — the same canonical prose the agent guide's
+	// download flows and the toolforge descriptions compose.
 	WhenSentence(hostenv.FeatSinkDrop,
-		"or drop returns a one-time filedrop link to pull from out of band.",
+		"or drop returns "+schematext.DropLinkBenefit+".",
 	)
 
-// capabilitiesByteChooser is the upload byte-route chooser surfaced when
-// upload_file is wired. It names upload_file and the optional upload_url /
-// upload_data relay tools, so it must never render when no IPFS upload tool is
-// available (vault-only wiring) — that gating happens in
-// capabilitiesDescriptionFor. The mint item is upload_file-specific, so its
-// PUT + upload_status tail is correct here and never implies vault mints poll.
-var capabilitiesByteChooser = toolforge.List(toolforge.ListNumbered).
-	Intro("Pick the byte route in this order:").
-	ItemWhen(hostenv.FeatSourceMint, "a file the agent can read locally → upload_file(source.mode=mint), then the host transfers the bytes, then poll upload_status").
-	ItemWhen(hostenv.FeatSourceURL, "bytes already at a public HTTPS URL → upload_url (server fetch; do not download then re-upload)").
-	ItemWhen(hostenv.FeatSourceData, "only raw bytes, no file, no URL → upload_data (an RFC 2397 data: URI) — last resort; never base64-encode a real file")
+// byteRouteChooser is the ONE shared upload byte-route chooser: the
+// capabilities report and the agent guide's upload-flow detail (both wired via
+// capabilitiesByteChooser / uploadDetailDescFor) compose THESE route items, so
+// the byte-route order and each item's contract can never drift between the
+// two surfaces. The mint item composes the canonical short-form upload-mint
+// PUT-plus-poll fragment (mintcontract.UploadMintPutPoll =
+// UploadMintPutAction + UploadMintPoll), so no consuming surface can drop the
+// poll-with-upload_handle-until-completed contract — the route-item composer
+// is parity-pinned by TestByteRouteChooserComposed. It returns a FRESH builder
+// per call: ListBuilder appends to a backing slice, so a single shared value
+// could race across concurrent resolutions.
+func byteRouteChooser() toolforge.ListBuilder {
+	return toolforge.List(toolforge.ListNumbered).
+		Intro("Pick the byte route in this order:").
+		ItemWhen(hostenv.FeatSourceMint, "a file the agent can read locally → upload_file(source.mode=mint), then "+mintcontract.UploadMintPutPoll).
+		ItemWhen(hostenv.FeatSourceURL, "bytes already at a public HTTPS URL → upload_url (server fetch; do not download then re-upload)").
+		ItemWhen(hostenv.FeatSourceData, "only raw bytes, no file, no URL → upload_data (an RFC 2397 data: URI) — last resort; never base64-encode a real file")
+}
 
-// mintUploadCompletion is the upload_file(source.mode=mint) completion contract.
-// It is emitted only when upload_file is registered.
-const mintUploadCompletion = "upload_file(source.mode=mint) is asynchronous: it returns a url + upload_handle but has NOT stored bytes — transfer the agent-local file to the returned url, then poll upload_status until it reports completed (the returned CID is already pinned, so pins_add is unnecessary)."
+// capabilitiesByteChooser is the byte-route chooser surfaced when upload_file
+// is wired (the shared byteRouteChooser(), specialized for the capabilities
+// report). It names upload_file and the optional upload_url / upload_data
+// relay tools, so it must never render when no IPFS upload tool is available
+// (vault-only wiring) — that gating happens in capabilitiesDescriptionFor. The
+// mint item is upload_file-specific, so its PUT + upload_status tail is
+// correct here and never implies vault mints poll.
+var capabilitiesByteChooser = byteRouteChooser()
+
+// mintUploadCompletion is the upload_file(source.mode=mint) completion
+// contract. It is emitted only when upload_file is registered. Every
+// completion fact composes the shared upload-mint canon
+// (internal/mcp/mintcontract fragments: UploadMintNoBytes/UploadMintPutAction/
+// UploadMintPoll/UploadMintNoPinsAdd) — the hand-paraphrase this const
+// carried before ("transfer the agent-local file...", a poll without the
+// returned upload_handle) was exactly the drift the shared canon removes.
+const mintUploadCompletion = "upload_file(source.mode=mint) is asynchronous: it returns a url + upload_handle but " + mintcontract.UploadMintNoBytes + " — " + mintcontract.UploadMintPutAction + ", then " + mintcontract.UploadMintPoll + " — " + mintcontract.UploadMintNoPinsAdd + "."
 
 // mintVaultCompletion is the vault_put_file(source.mode=mint, vault_path=...)
 // completion contract. It is emitted only when vault_put_file is registered.
 // The PUT response is the completed vault write and there is NO upload_status
 // poll: upload_status tracks upload_file's IPFS uploads, not vault writes.
-const mintVaultCompletion = "vault_put_file(source.mode=mint, vault_path=...) is non-blocking: it returns a one-time presigned upload url bound to vault_path — transfer the agent-local file to it and the upload returns quickly after staging the bytes locally (status: staged). The file is immediately readable from this instance; durability on Sia (upload + pin) happens in the background, or via the vault_flush tool (itself non-blocking — returns an accepted job { job_id, profile, path? }), so poll vault_flush_status(job_id) or vault_stat until status: durable when durability is needed before sharing. If a file stays non-durable across polls, read vault_stat's flush_attempts and flush_error to tell a failing flush (a flushing file: rising attempts, no error; a failed file: attempts + a non-empty error; a staged file that never started: zero attempts, no error). There is no upload_status to poll (upload_status tracks upload_file's IPFS uploads, not vault writes)."
+//
+// The staged-write, durability source (with its "(upload + pin)" qualifier
+// composed through mintcontract.DurabilitySourceWith — never hand-paraphrased
+// here), flush job shape, polling loop, flush triage, and no-upload_status
+// clauses compose the SHARED vault-mint canon (the dependency-neutral
+// internal/mcp/mintcontract fragments re-exported in vault_mint_contract.go)
+// so the capabilities description cannot drift from the guide's
+// flow-detail/summary/branch prose or the toolforge/vault/upload copy. The
+// flush triage is the SAME mintcontract.VaultFlushTriage fragment the guide
+// share flow composes, so adding a diagnostic field is a single edit there.
+// A variable (not a const) only because the qualifier and no-upload_status
+// fragments need mintcontract calls (DurabilitySourceWith / FirstUpper) to
+// compose; the fragment texts themselves are still the single constant
+// sources. The vault-mint lead clause (it returns a one-time presigned PUT
+// url bound to vault_path, never bytes stored) composes the ONE
+// mintcontract.VaultMintLead clause.
+var mintVaultCompletion = "vault_put_file(source.mode=mint, vault_path=...) is non-blocking: it returns " + vaultMintLead + " — transfer the agent-local file to it and " + vaultMintStagedWrite + ". " + firstUpper(vaultDurabilitySourceQualified) + " (" + vaultFlushJobShape + "), so " + vaultDurabilityPoll + ". " + vaultFlushTriage + " " + firstUpper(vaultNoUploadStatusWhy) + "."
 
 // uploadToolsFor lists the upload tools actually registered on THIS server, in
-// chooser order: upload_file first, then the relay tools. It gates each tool
-// on the EXACT condition custom_tools.go uses to register it — the handler must
-// be wired AND the registration-time effective feature set must declare the
-// feature (relayURLWired&&FeatSourceURL / dataURIWired&&FeatSourceData) — so
-// the capabilities JSON never advertises a tool that was not registered. feats
-// is the registration-time effectiveFeaturesFor(deps), NOT the per-request
-// wire profile, so a startup server that registered no relay tools for a host
-// never claims them even if a later request detects that host.
-func uploadToolsFor(feats hostenv.FeatureSet, uploadFile, relayURLWired, dataURIWired bool) []UploadToolCapability {
+// chooser order: upload_file first, then the relay tools. The three flags are
+// the single transferToolAvailability calculation custom_tools.go feeds both
+// registration and this descriptor (surface + handler wiring + effective
+// feature set already applied there), so the capabilities JSON can never
+// advertise a tool that the assembly did not register — including on a
+// restricted surface whose handlers are wired but whose family is disabled.
+func uploadToolsFor(uploadFile, uploadURL, uploadData bool) []UploadToolCapability {
 	var out []UploadToolCapability
 	if uploadFile {
 		out = append(out, UploadToolFile)
 	}
-	if relayURLWired && feats.Has(hostenv.FeatSourceURL) {
+	if uploadURL {
 		out = append(out, UploadToolURL)
 	}
-	if dataURIWired && feats.Has(hostenv.FeatSourceData) {
+	if uploadData {
 		out = append(out, UploadToolData)
 	}
 	return out
@@ -311,9 +351,8 @@ func capabilitiesDescriptionFor(profile hostenv.PlatformProfile, uploadFile, vau
 // specific tool-wiring decision. It is a direct-only tool outside the catalog,
 // so it carries a single DescFunc target for uniformity.
 //
-// PARITY NOTE (Stage 5, slice 4 characterization, see
-// capabilities_characterization_test.go): this per-request DescFunc seam is a
-// deliberate CLI divergence from mcp.NewCapabilitiesDescriptor, which
+// PARITY NOTE (see capabilities_characterization_test.go): this per-request
+// DescFunc seam is a deliberate CLI divergence from mcp.NewCapabilitiesDescriptor, which
 // bakes ONE startup description (mechanism set with the embedded OpenAI
 // tunnel's ChatGPT host capabilities merged — the same mechanism+host merge
 // hostenv.ProfileForTransport performs for the tunnel) and exposes no
@@ -332,7 +371,7 @@ func capabilitiesTargets(uploadFile, vaultPutFile, downloadFile, vaultGetFile bo
 	})
 }
 
-func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, relayURLWired, dataURIWired, draftXFile bool, maxBytes int64, relayFeatures hostenv.FeatureSet) model.ToolDescriptor {
+func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile, downloadFile, vaultGetFile, dropWired, uploadURLRegistered, uploadDataRegistered, draftXFile bool, maxBytes int64) model.ToolDescriptor {
 	// The baked tools/list description is resolved for the startup transport's
 	// generic profile; describe_tool re-resolves it against the actual profile
 	// via the wiring-aware targets.
@@ -372,12 +411,12 @@ func NewCapabilitiesDescriptor(coLocated, tunnelOpenAI, uploadFile, vaultPutFile
 			if !report.HostFileInput {
 				report.FileInputPolicy = ""
 			}
-			// upload_tools reflects THIS server's registered tools, gated on the
-			// registration-time effective feature set (relayFeatures) — never the
+			// upload_tools reflects THIS server's registered tools (the single
+			// transferToolAvailability fed at registration) — never the
 			// per-request wire profile. A server that registered no relay tools
 			// for a host therefore never advertises them, keeping the report
 			// identical to what tools/list actually exposed on this server.
-			report.UploadTools = uploadToolsFor(relayFeatures, report.UploadFile, relayURLWired, dataURIWired)
+			report.UploadTools = uploadToolsFor(report.UploadFile, uploadURLRegistered, uploadDataRegistered)
 			// Text carries the same canonical JSON as StructuredContent so a
 			// text-only MCP client still sees the source/sink mode data instead
 			// of an unhelpful stub ("Pinner capabilities.").

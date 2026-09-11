@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	planetransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
 	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/mcpplane/transfer"
+	coretransfer "go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/schematext"
 
 	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/mcpplane/toolargs"
@@ -36,6 +37,11 @@ import (
 // IPFSUploadAppURI is the ui:// resource serving the "Upload to IPFS" app.
 const IPFSUploadAppURI = "ui://uploads/ipfs.html"
 
+// appPutPollTail is the ONE PUT-plus-poll instruction tail the app helpers
+// append to their text-only JSON echo (submitted/fresh prepare both return
+// the same contract: PUT the file bytes to the presigned url, then poll).
+const appPutPollTail = " PUT the file bytes and poll for the CID."
+
 // IPFSUploadSubmitInput is the typed argument shape for the app-only
 // ipfs_upload_submit helper. It continues or prepares a single canonical
 // upload operation and returns the one-time presigned PUT endpoint bound to it;
@@ -49,11 +55,17 @@ type IPFSUploadSubmitInput struct {
 	// returns the same endpoint+handle for that operation instead of minting a
 	// new one. When given but already claimed/completed, it reports the
 	// already-claimed state so the app just polls instead of re-uploading.
-	Handle string `json:"handle,omitempty" jsonschema:"description=Optional canonical upload handle prepared by upload_file to continue the same operation."`
+	// Handle/Name carry no jsonschema description tags: this helper's
+	// schema is the LIVE, hand-authored InputSchema baked into
+	// ipfsUploadSubmitDescriptor (single description copy, tag/wire parity
+	// by construction).
+	Handle string `json:"handle,omitempty"`
 	// Name is the upload label (defaults to the source base name or 'upload').
-	Name string `json:"name,omitempty" jsonschema:"description=Optional upload name (defaults to the file name)."`
-	// TTL is the presigned endpoint lifetime (e.g. 5m; default 5 minutes).
-	TTL string `json:"ttl,omitempty" jsonschema:"description=Presigned endpoint lifetime (e.g. 5m; default 5 minutes)."`
+	Name string `json:"name,omitempty"`
+	// TTL is the presigned endpoint lifetime. Its tag composes
+	// schematext.TTLLifetime (struct tags cannot embed constants;
+	// TestSchemaTextFragmentsPinned pins this literal to it).
+	TTL string `json:"ttl,omitempty" jsonschema:"description=Presigned endpoint lifetime (e.g. 5m; default 5m)."`
 }
 
 // renderIPFSUploadAppHTML renders the complete "Upload to IPFS" app document
@@ -80,7 +92,7 @@ func ipfsUploadSubmitDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 		Name:        "ipfs_upload_submit",
 		Title:       "Prepare a one-time upload endpoint",
 		Description: "Prepare (or continue) a one-time presigned HTTP PUT endpoint bound to a canonical upload handle; the app's Uppy XHR uploader writes file bytes to it out of band. Passing a handle prepared by upload_file fulfills that same operation. App-only helper for the Upload to IPFS view.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"handle":{"type":"string","description":"Optional canonical upload handle prepared by upload_file; when given and still unfulfilled, the same endpoint+handle for that operation is returned instead of minting a new one."},"name":{"type":"string","description":"Optional upload name (defaults to the file name or 'upload')."},"ttl":{"type":"string","description":"Presigned endpoint lifetime as a duration string (e.g. 5m; default 5 minutes)."}}}`),
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"handle":{"type":"string","description":"Optional canonical upload handle prepared by upload_file; when given and still unfulfilled, the same endpoint+handle for that operation is returned instead of minting a new one."},"name":{"type":"string","description":"Optional upload name (defaults to the file name or 'upload')."},"ttl":{"type":"string","description":"` + schematext.TTLDurationString + `"}}}`),
 		// OpenAI tool invocation labels shown by UI-capable hosts while the
 		// tool runs and after it finishes.
 		Meta: map[string]any{
@@ -94,15 +106,13 @@ func ipfsUploadSubmitDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 			if err != nil {
 				return model.ToolResult{}, err
 			}
-			ttl := transfer.DefaultHTTPUploadTTL
-			if in.TTL != "" {
-				d, derr := time.ParseDuration(in.TTL)
-				if derr != nil {
-					return model.ToolResult{}, fmt.Errorf("invalid ttl %q: %w", in.TTL, derr)
-				}
-				if d > 0 {
-					ttl = d
-				}
+			// ONE shared presign-TTL parser (core/transfer.ParsePresignTTL),
+			// so the app helper accepts exactly the TTL format the tool and
+			// launcher surfaces accept (empty → default, non-positive →
+			// default, unparseable → wrapped `invalid ttl` error).
+			ttl, terr := coretransfer.ParsePresignTTL(in.TTL)
+			if terr != nil {
+				return model.ToolResult{}, terr
 			}
 
 			// Continue an operation the model-facing upload_file already
@@ -121,7 +131,7 @@ func ipfsUploadSubmitDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 					}
 					return model.ToolResult{
 						StructuredContent: sc,
-						Text:              toolargs.ResultJSONText(sc) + " PUT the file bytes and poll for the CID.",
+						Text:              toolargs.ResultJSONText(sc) + appPutPollTail,
 					}, nil
 				}
 				// The task is still tracked, but its presigned endpoint is gone:
@@ -166,7 +176,7 @@ func ipfsUploadSubmitDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 			}
 			url, handle := hp.Prepare(ctx, name, ttl)
 			if url == "" || handle == "" {
-				return model.ToolResult{}, fmt.Errorf("failed to prepare one-time upload endpoint")
+				return model.ToolResult{}, coretransfer.ErrUploadPrepare
 			}
 			sc := map[string]any{
 				"url":           url,
@@ -180,7 +190,7 @@ func ipfsUploadSubmitDescriptor(hp *transfer.Upload) model.ToolDescriptor {
 				StructuredContent: sc,
 				// Text carries the same JSON so a text-only client sees the
 				// actual presigned URL plus poll instructions, not a stub.
-				Text: toolargs.ResultJSONText(sc) + " PUT the file bytes and poll for the CID.",
+				Text: toolargs.ResultJSONText(sc) + appPutPollTail,
 			}, nil
 		},
 	}

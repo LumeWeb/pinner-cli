@@ -120,7 +120,10 @@ func OfficialMCPServer(root *cli.Command, stdioMode bool, seedDrop *oob.SeedDrop
 	if err != nil {
 		return nil, nil, err
 	}
-	srv, err := OfficialServerFromCatalog(catalog, buildInstructions(catalog.Len()), stdioMode, seedDrop, oobRestore, oobCreate)
+	// The instructions are selected from this catalog's own captured listing
+	// policy — never the deprecated construction-time globals — so the
+	// initialize response matches the policy the catalog was built with.
+	srv, err := OfficialServerFromCatalog(catalog, catalog.Instructions(), stdioMode, seedDrop, oobRestore, oobCreate)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -299,15 +302,33 @@ func registerTool(srv *sdk.Server, desc model.ToolDescriptor, handler model.Tool
 // RegisterOfficialMetaTools registers the progressive-disclosure meta-tools
 // (search_tools, describe_tool, and the typed invoke dispatchers
 // invoke_read_tool / invoke_write_tool / invoke_destructive_tool) on an
-// official-SDK server. The catalog itself stays hidden; the tools visible via
-// tools/list are these five, preserving progressive disclosure while keeping
-// each invoke tool's hints truthful about the safety class it executes.
+// official-SDK server, unless the active listing strategy is flat WITHOUT
+// IncludeMetaOnFlat: on a fully-direct flat catalog the discovery meta-tools are only kept
+// when the operator opts in via IncludeMetaOnFlat. Under progressive (the
+// default) they are always present — the catalog stays hidden and these five
+// are the only tools visible via tools/list, keeping each invoke tool's hints
+// truthful about the safety class it executes.
 func RegisterOfficialMetaTools(srv *sdk.Server, catalog *ToolCatalog, stdioMode bool, seedDrop *oob.SeedDrop, oobRestore *oob.OOBRestore, oobCreate *oob.OOBCreate) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
 	if catalog == nil {
 		return fmt.Errorf("nil tool catalog")
+	}
+
+	// Under a flat strategy WITHOUT the meta-on-flat opt-in, every agent-safe
+	// catalog op is already a direct tool and the gated ops are deliberately not
+	// direct, so the discovery meta-tools are omitted from tools/list. This is
+	// the explicit override that intentionally hides gated operations (admin/
+	// wizard/interactive) from the MCP channel entirely; it is NOT the default.
+	// The decision reads the CATALOG's own captured policy through the shared
+	// servesMetaTools predicate (set by buildCatalog from the withPolicy option,
+	// resolving the SAFE default true for an omitted value) — never the
+	// deprecated construction-time globals — so the gate on
+	// this server cannot be flipped by another server's construction, and the
+	// finalized-surface card derivation cannot disagree with this gate.
+	if !catalog.servesMetaTools() {
+		return nil
 	}
 
 	if err := registerOfficialSearchTools(srv, catalog); err != nil {
@@ -382,7 +403,7 @@ func registerOfficialSearchTools(srv *sdk.Server, catalog *ToolCatalog) error {
 	discoveryNote := "Search the internal tool catalog by a single keyword. No boolean (AND/OR) syntax: pass one keyword at a time (e.g. 'pin', not 'pin OR upload'). Name matches are ranked exact, then starts-with, contains, then within-segment subsequence (a fuzzy abbreviation within a single word of the name), then whole-word description matches; tools that never match are omitted. Use the 'category' filter to narrow scope and 'limit' to cap results. Leave query empty or use 'help' for an onboarding listing of just the primary start-here tools, which also carries agent_guide for the full flows and a hint pointing at category browsing for a specific domain. Workflow: after discovering a tool here, call describe_tool(name) for its input schema; the describe response carries an invokeTool field naming the typed dispatcher that executes it (invoke_read_tool for read-only tools, invoke_write_tool for mutating tools, invoke_destructive_tool for destructive tools — each dispatcher refuses out-of-class tools, so route by the named one). Capability and file-transfer tools are exposed directly on the tool surface AND indexed here, so they are discoverable by name (e.g. 'upload', 'capabilities'). Interactive wizard flows (category 'wizard') are excluded unless you filter for them specifically."
 
 	desc := model.ToolDescriptor{
-		Name:          "search_tools",
+		Name:          toolSearchTools,
 		Title:         "Search tool catalog",
 		Description:   discoveryNote,
 		OpenWorldHint: false,
@@ -431,7 +452,7 @@ func registerOfficialDescribeTool(srv *sdk.Server, catalog *ToolCatalog) error {
 	})
 
 	desc := model.ToolDescriptor{
-		Name:          "describe_tool",
+		Name:          toolDescribeTool,
 		Title:         "Describe a catalog tool",
 		Description:   "Get the full input schema for a single tool by name. Use the tool name returned by search_tools. The inputSchema field contains the JSON Schema that the tool's arguments conform to.",
 		OpenWorldHint: false,
@@ -488,12 +509,17 @@ const (
 
 // classifyEntry maps a catalog entry's platform hints onto the typed-invoke
 // safety class. The hint values (not the raw catalog Safety) drive the split
-// because they are the platform-truthful classification — e.g. the auth_status
-// override (an out-of-band sign-in email cannot be unsent) moves it into the
-// destructive bucket despite its SafetyRead origin. A readOnly entry that
-// still declares openWorld contradicts the read contract (validators reject
-// readOnly+openWorld), so it is conservatively reachable only through the
-// write dispatcher, whose hints cover it.
+// because they are the platform-truthful classification. A readOnly entry that
+// still declares openWorld would contradict the read contract (validators
+// reject readOnly+openWorld), so it is conservatively reachable only through
+// the write dispatcher, whose hints cover it.
+// dispatcherForEntry names the typed invoke dispatcher classifyingEntry
+// assigns to entry — the authoritative routing contract shared by the
+// describe_tool response and the dispatcher's own admission gate.
+func dispatcherForEntry(entry *model.ToolEntry) string {
+	return classifyEntry(entry).dispatcher()
+}
+
 func classifyEntry(entry *model.ToolEntry) invokeClass {
 	switch {
 	case entry.Destructive:
@@ -505,15 +531,17 @@ func classifyEntry(entry *model.ToolEntry) invokeClass {
 	}
 }
 
-// dispatcher is the MCP tool name of the typed invoke tool for this class.
+// dispatcher is the MCP tool name of the typed invoke tool for this class. It
+// returns the authoritative name constants so dispatch pointers always match
+// the names actually registered.
 func (c invokeClass) dispatcher() string {
 	switch c {
 	case invokeClassRead:
-		return "invoke_read_tool"
+		return toolInvokeReadTool
 	case invokeClassDestructive:
-		return "invoke_destructive_tool"
+		return toolInvokeDestructiveTool
 	default:
-		return "invoke_write_tool"
+		return toolInvokeWriteTool
 	}
 }
 
@@ -532,21 +560,21 @@ func registerOfficialInvokeTools(srv *sdk.Server, catalog *ToolCatalog, stdioMod
 		openWorld   bool
 	}{
 		{
-			name:        "invoke_read_tool",
+			name:        toolInvokeReadTool,
 			title:       "Invoke a read-only catalog tool",
 			description: "Execute a read-only catalog tool by name with the given arguments. This is the third step of the discovery workflow: search_tools(name) to find a tool, describe_tool(name) for its input schema (the describe response names the dispatcher to invoke), then invoke_read_tool(name, arguments) for any tool whose describe response names invoke_read_tool — read-only tools with readOnlyHint=true and no open-world interaction. The dispatcher refuses non-read-only tools; use invoke_write_tool or invoke_destructive_tool for those. The arguments object is validated against the tool's inputSchema returned by describe_tool.",
 			class:       invokeClassRead,
 			readOnly:    true,
 		},
 		{
-			name:        "invoke_write_tool",
+			name:        toolInvokeWriteTool,
 			title:       "Invoke a mutating catalog tool",
 			description: "Execute a state-mutating (but not destructive, and generally not read-only) catalog tool by name with the given arguments. This is the third step of the discovery workflow: search_tools(name) to find a tool, describe_tool(name) for its input schema (the describe response names the dispatcher to invoke), then invoke_write_tool(name, arguments) for any tool whose describe response names invoke_write_tool — every tool that is neither read-only (invoke_read_tool) nor destructive (invoke_destructive_tool). The dispatcher refuses read-only and destructive tools; use invoke_read_tool or invoke_destructive_tool for those. The arguments object is validated against the tool's inputSchema returned by describe_tool.",
 			class:       invokeClassWrite,
 			openWorld:   true,
 		},
 		{
-			name:        "invoke_destructive_tool",
+			name:        toolInvokeDestructiveTool,
 			title:       "Invoke a destructive catalog tool",
 			description: "Execute a destructive (irreversible / deletion) catalog tool by name with the given arguments. This is the third step of the discovery workflow: search_tools(name) to find a tool, describe_tool(name) for its input schema (the describe response names the dispatcher to invoke), then invoke_destructive_tool(name, arguments) for any tool whose describe response names invoke_destructive_tool — tools whose hints carry destructiveHint=true. Destructive operations additionally require human confirmation (the server returns a needs_human hand-off before running). The dispatcher refuses non-destructive tools; use invoke_read_tool or invoke_write_tool for those. The arguments object is validated against the tool's inputSchema returned by describe_tool.",
 			class:       invokeClassDestructive,
@@ -677,6 +705,18 @@ func classNoun(c invokeClass) string {
 }
 
 // RegisterOfficialDescriptor adds one Pinner-owned tool directly to tools/list.
+//
+// It applies the same direct-surface safety gate as direct/flat registration
+// (agentDirectSafe): a descriptor flagged CategoryAdmin or CategoryWizard is
+// refused rather than wired straight onto tools/list, because registering a
+// tool's own handler directly would bypass the admin refusal / needs_human
+// hand-off that the progressive meta-tools enforce. All current callers
+// (upload_file, capabilities, agent_guide, open_app, launchers, dev tools)
+// are agent-safe non-admin/non-wizard, so the gate is a no-op for them; it
+// exists so an unsafe descriptor can never slip onto the direct surface
+// through this seam. The descriptor carries no interaction field, so the
+// interaction half of agentDirectSafe (InteractonInteractive) is effectively
+// inert here — the category gate is what protects this seam.
 func RegisterOfficialDescriptor(srv *sdk.Server, desc model.ToolDescriptor) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
@@ -684,15 +724,32 @@ func RegisterOfficialDescriptor(srv *sdk.Server, desc model.ToolDescriptor) erro
 	if desc.Name == "" || desc.Handler == nil {
 		return fmt.Errorf("direct tool requires name and handler")
 	}
+	// Convert to an entry solely to apply the shared direct-surface safety
+	// predicate (CategoryAdmin / CategoryWizard -> not agentDirectSafe). The
+	// conversion is metadata-only and does not mutate desc or register anything.
+	if !agentDirectSafe(model.ToolEntryFromDescriptor(desc)) {
+		return fmt.Errorf("direct tool %q must not bypass the safety gate (admin/wizard category tools stay behind the meta-tools)", desc.Name)
+	}
 	return sdk.RegisterTool(srv, sdkHandlerDeps, desc)
 }
 
-// RegisterOfficialCuratedTools exposes the catalog's directly-visible tools
-// (those with DirectVisible set) as standard tools/list tools. Remaining
-// catalog entries stay behind the progressive-disclosure meta-tools
-// (search_tools / describe_tool / invoke_read_tool / invoke_write_tool /
-// invoke_destructive_tool) which index the whole catalog.
-func RegisterOfficialCuratedTools(srv *sdk.Server, catalog *ToolCatalog) error {
+// RegisterOfficialDirectTools exposes the catalog's direct-surface entries as
+// standard tools/list tools. Remaining catalog entries stay behind the
+// progressive-disclosure meta-tools (search_tools / describe_tool /
+// invoke_read_tool / invoke_write_tool / invoke_destructive_tool) which index
+// the whole catalog.
+//
+// Membership is decided by the ONE shared direct-surface predicate
+// (isDirectCatalogEntry = DirectVisible && agentDirectSafe) — the same rule
+// the direct list and flat materialization apply — so tools/list, cards, and
+// the registered handlers can never disagree about what belongs on the direct
+// surface. Defense in depth: even if a DirectVisible flag was stamped on an
+// unsafe entry (admin, wizard-category, or interactive), it is not registered
+// directly here, so the direct surface can never bypass the admin refusal /
+// needs_human policy no matter how the flag was set. The direct set under
+// progressive is already agent-safe, so this is a no-op there; it exists
+// to make the flat carve-out robust even against a stray stamp.
+func RegisterOfficialDirectTools(srv *sdk.Server, catalog *ToolCatalog) error {
 	if srv == nil {
 		return fmt.Errorf("nil official server")
 	}
@@ -700,7 +757,7 @@ func RegisterOfficialCuratedTools(srv *sdk.Server, catalog *ToolCatalog) error {
 		return fmt.Errorf("nil tool catalog")
 	}
 	for _, entry := range catalog.Entries() {
-		if !entry.DirectVisible {
+		if !isDirectCatalogEntry(entry) {
 			continue
 		}
 		desc := model.ToolDescriptorFromEntry(entry)

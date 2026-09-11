@@ -13,7 +13,7 @@ import (
 
 // The prompt surface (descriptors, embedded templates, handlers) is owned by
 // the module's mcp package; the CLI's local duplicate prompt handlers
-// were removed (prompts.go now delegates to mcp.PromptDescriptorsForSurface).
+// were removed (prompts.go now delegates to mcp.PromptDescriptorsForScope).
 // These tests re-point the same characterizations onto the module-owned
 // descriptors, resolved through the CLI's surface gate, so the behavioral
 // contract stays pinned here where the CLI registers the prompts.
@@ -22,7 +22,7 @@ import (
 // surface-gated prompt descriptor set the CLI registers.
 func promptHandlerByName(t *testing.T, name string) func(context.Context, model.PromptRequest) (model.PromptResult, error) {
 	t.Helper()
-	for _, p := range PromptDescriptorsForSurface(FullSurface) {
+	for _, p := range PromptDescriptorsForScope(FullDomainScope) {
 		if p.Name == name {
 			require.NotNil(t, p.Handler, "prompt %q must carry a handler", name)
 			return p.Handler

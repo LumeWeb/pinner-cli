@@ -1,8 +1,8 @@
 package mcp
 
 import (
-	"go.lumeweb.com/pinner/mcp"
 	"go.lumeweb.com/pinner/assembly"
+	"go.lumeweb.com/pinner/mcp"
 )
 
 // AssemblePresentation is the CLI-side composition seam onto the module's
@@ -10,10 +10,10 @@ import (
 // Config and produces the module-assembled presentation surface:
 //
 //   - Tools: the compiled catalog surface (catalogmcp over the adapted
-//     profile), curated set stamped DirectVisible;
+//     profile), direct set stamped DirectVisible;
 //   - Direct: the direct-only tools outside the catalog (agent_guide,
 //     capabilities, and any wired transfer tools);
-//   - Curated: the curated tools/list names;
+//   - DirectToolNames: the direct tools/list names;
 //   - Prompts / Resources / ResourceTemplates: the surface-gated sets.
 //
 // The CLI's per-request dispatch plumbing (ToolEntry handlers, credential
@@ -28,7 +28,7 @@ import (
 //
 // deps is converted exactly as AssembleCatalogOps does (the module's
 // assembly bundle); a nil bundle is rejected there.
-func AssemblePresentation(deps *CatalogDepsBundle, surface Surface, hosted bool) (*mcp.Server, error) {
+func AssemblePresentation(deps *CatalogDepsBundle, surface DomainScope, hosted bool) (*mcp.Server, error) {
 	cat, err := AssembleCatalogOps(deps, surface, hosted)
 	if err != nil {
 		return nil, err

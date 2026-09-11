@@ -222,13 +222,13 @@ func DispatchCatalogOp(ctx context.Context, cat opmesh.Catalog, actor opmesh.Act
 
 // firstMissingDispatchRequiredArg reports the name of the first declared
 // MCP-dispatch-required arg that the input does not satisfy, or "" when every
-// such arg is satisfied. It replicates the pre-opmesh-seam ValidateMCPRequired
+// such arg is satisfied. It replicates the module's ValidateMCPRequired
 // semantics: an arg is required here when AgentRequired (agent-surface-only
 // requiredness, deliberately absent from the shared Invoke gate so it can
 // never leak into a non-MCP invocation) or Required with no Default. An arg
 // counts as missing when its value is absent, present-but-null, or
 // present-but-empty. Required-no-default args are re-checked here (not left
-// to Invoke) so the user-visible text stays the pre-seam plain
+// to Invoke) so the user-visible text stays the plain
 // `missing required argument "x"` message rather than Invoke's
 // `operation "x": missing required argument "x"` wrapper.
 func firstMissingDispatchRequiredArg(op opmesh.Operation, input map[string]any) string {

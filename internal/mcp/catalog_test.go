@@ -38,7 +38,10 @@ func TestHumanTitle(t *testing.T) {
 }
 
 func TestBuildInstructionsEmbedsCount(t *testing.T) {
-	got := buildInstructions(42)
+	// The production selection is ToolCatalog.Instructions (strategy + meta
+	// captured per catalog, count from the catalog); buildInstructionsFor is
+	// its pure core, driven here with the default progressive policy.
+	got := buildInstructionsFor(ListingProgressive, true, 42)
 	require.Contains(t, got, "42 tools")
 	require.Contains(t, got, "curated set of common Pinner tools")
 	require.Contains(t, got, "progressive disclosure")
@@ -60,7 +63,7 @@ func TestBuildInstructionsEmbedsCount(t *testing.T) {
 // curation, not a credential safeguard. This test keeps the copy and the schema
 // from drifting apart again.
 func TestInstructionsDoNotClaimSetupWizardAcceptsCredentials(t *testing.T) {
-	got := buildInstructions(42)
+	got := buildInstructionsFor(ListingProgressive, true, 42)
 	require.NotContains(t, got, "accept credentials",
 		"instructions must not claim setup wizard tools accept credentials")
 	require.Contains(t, got, "search_tools",

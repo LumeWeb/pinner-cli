@@ -24,7 +24,7 @@ import (
 // stubNgrokAPI returns an *http.Client that routes api.ngrok.com requests to a
 // handler scripted by handler, letting tests exercise the reserved_domains
 // client without network access. It stubs the tunnel sub-package's shared HTTP
-// client (duplicated here from the tunnel test package until Stage 1).
+// client (duplicated here from the tunnel test package).
 func stubNgrokAPI(t *testing.T, handler http.HandlerFunc) *http.Client {
 	t.Helper()
 	srv := httptest.NewServer(handler)

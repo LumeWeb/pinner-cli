@@ -2,8 +2,8 @@ package mcp
 
 import (
 	"go.lumeweb.com/mcpplane/model"
-	"go.lumeweb.com/pinner/mcp"
 	"go.lumeweb.com/pinner/assembly"
+	"go.lumeweb.com/pinner/mcp"
 )
 
 // Prompt name constants are re-exported from the module's mcp package,
@@ -41,13 +41,36 @@ func PromptDescriptors() []model.PromptDescriptor {
 	return mcp.PromptDescriptors()
 }
 
-// PromptDescriptorsForSurface returns the prompt descriptors enabled for the
-// given surface, delegated to the module's mcp.PromptDescriptorsForScope.
+// dropWizardPromptsWithoutWizardTools filters out every wizard-workflow prompt
+// when the wizard start tools are absent from the (finalized) catalog. The
+// surface-based filter alone cannot catch this: a hosted assembly may expose
+// the websites/account domain surfaces while provisioning NO wizard tools.
+func dropWizardPromptsWithoutWizardTools(catalog *ToolCatalog, prompts []model.PromptDescriptor) []model.PromptDescriptor {
+	if catalog == nil {
+		return prompts
+	}
+	_, websitesWizard := catalog.Get("websites_wizard_start")
+	_, setupWizard := catalog.Get("setup_wizard_start")
+	out := prompts[:0]
+	for _, p := range prompts {
+		switch {
+		case p.Name == PromptWebsiteOnboarding && !websitesWizard:
+			continue
+		case p.Name == PromptSetup && !setupWizard:
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// PromptDescriptorsForScope returns the prompt descriptors enabled for the
+// given scope, delegated to the module's mcp.PromptDescriptorsForScope.
 // Each prompt maps to a domain flag: website onboarding/update need the
 // websites surface, setup needs the account surface, and ENS publish needs the
-// ENS surface. A restricted surface (e.g. hosted) omits the prompts whose
-// underlying tools are not registered. The conversion is lossless: Surface and
-// assembly.DomainScope share the same underlying construction-time shape.
-func PromptDescriptorsForSurface(surface Surface) []model.PromptDescriptor {
-	return mcp.PromptDescriptorsForScope(assembly.DomainScope(surface))
+// ENS surface. A restricted scope (e.g. hosted) omits the prompts whose
+// underlying tools are not registered. The conversion is lossless: DomainScope
+// and assembly.DomainScope share the same underlying construction-time shape.
+func PromptDescriptorsForScope(scope DomainScope) []model.PromptDescriptor {
+	return mcp.PromptDescriptorsForScope(assembly.DomainScope(scope))
 }

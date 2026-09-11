@@ -6,16 +6,16 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.lumeweb.com/pinner/assembly"
 	"go.lumeweb.com/pinner/catalogops"
 	"go.lumeweb.com/pinner/mcp"
-	"go.lumeweb.com/pinner/assembly"
 )
 
 // TestPinnerMcpAssemblePresentationParity pins the composition-root contract
 // the CLI has onto the module's mcp.Assemble, exercised through the
 // CLI's own seam (AssemblePresentation → AssembleCatalogOps →
-// mcp.Assemble). It is a characterization-first gate for the Slice-3b
-// presentation de-fork: the artifacts mcp produces must agree with the
+// mcp.Assemble). It is a characterization-first parity gate: the artifacts
+// mcp produces must agree with the
 // surface the CLI registers on its protocol server. A minimal but real
 // operation-catalog bundle (pins ops compile off their declared targets) is
 // enough — the presentation artifacts under test (curated set, prompts,
@@ -23,19 +23,19 @@ import (
 // wiring beyond a non-nil bundle.
 func TestPinnerMcpAssemblePresentationParity(t *testing.T) {
 	tests := []struct {
-		name        string
-		surface     Surface
-		hosted      bool
-		wantCurated []string
-		wantPrompt  []string
+		name       string
+		surface    DomainScope
+		hosted     bool
+		wantDirect []string
+		wantPrompt []string
 	}{
 		{
 			name:    "full surface (CLI / local MCP)",
-			surface: FullSurface,
+			surface: FullDomainScope,
 			hosted:  false,
 			// The full-surface curated front door: auth status + vault
 			// lifecycle + vault share + website publishing.
-			wantCurated: []string{
+			wantDirect: []string{
 				"auth_status",
 				"vault_create",
 				"vault_restore",
@@ -48,12 +48,12 @@ func TestPinnerMcpAssemblePresentationParity(t *testing.T) {
 		},
 		{
 			name:    "hosted surface (Portal-embedded)",
-			surface: HostedSurface,
+			surface: HostedDomainScope,
 			hosted:  true,
 			// A surface without the Sia vault drops the vault entries; the
 			// hosted facing set is auth status + website publishing.
-			wantCurated: []string{"auth_status", "websites_create", "websites_get"},
-			// The hosted surface keeps ENS on (HostedSurface excludes only the
+			wantDirect: []string{"auth_status", "websites_create", "websites_get"},
+			// The hosted surface keeps ENS on (HostedDomainScope excludes only the
 			// Sia vault and admin), so the ENS publish prompt stays registered.
 			wantPrompt: []string{"website-onboarding", "website-update", "setup", "ens-publish"},
 		},
@@ -65,32 +65,32 @@ func TestPinnerMcpAssemblePresentationParity(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, srv)
 
-			// The module's curated set matches the CLI's curated registration
-			// set for the surface (curatedToolNamesFor now delegates to the
+			// The module's direct set matches the CLI's direct registration
+			// set for the scope (directToolNamesFor now delegates to the
 			// same module seam, so this pins the composition seam end-to-end).
-			require.Equal(t, tc.wantCurated, srv.DirectToolNames)
-			require.Equal(t, tc.wantCurated, curatedToolNamesFor(tc.surface))
+			require.Equal(t, tc.wantDirect, srv.DirectToolNames)
+			require.Equal(t, tc.wantDirect, directToolNamesFor(tc.surface))
 
-			// Every curated name is stamped DirectVisible on the compiled
-			// catalog surface; nothing else is. (A curated name the surface
-			// gate excluded — e.g. a vault tool on the hosted surface — is
+			// Every direct name is stamped DirectVisible on the compiled
+			// catalog surface; nothing else is. (A direct name the scope
+			// gate excluded — e.g. a vault tool on the hosted scope — is
 			// simply not present in Tools at all.)
 			present := make(map[string]bool, len(srv.Tools))
 			for _, d := range srv.Tools {
 				present[d.Name] = d.DirectVisible
 			}
-			for _, name := range tc.wantCurated {
-				require.Truef(t, present[name], "curated tool %q must be present on the compiled surface", name)
+			for _, name := range tc.wantDirect {
+				require.Truef(t, present[name], "direct tool %q must be present on the compiled surface", name)
 			}
 			for name, visible := range present {
-				isCurated := false
-				for _, c := range tc.wantCurated {
+				isDirect := false
+				for _, c := range tc.wantDirect {
 					if name == c {
-						isCurated = true
+						isDirect = true
 						break
 					}
 				}
-				require.Equalf(t, isCurated, visible, "tool %q DirectVisible=%v disagrees with the curated set", name, visible)
+				require.Equalf(t, isDirect, visible, "tool %q DirectVisible=%v disagrees with the direct set", name, visible)
 			}
 
 			// The prompt set matches the expected surface-gated workflow set
@@ -135,14 +135,14 @@ func TestPinnerMcpAssemblePresentationParity(t *testing.T) {
 // TestAssemblePresentationRejectsNilDeps pins that a nil deps bundle is a
 // wiring bug at the CLI seam, mirroring AssembleCatalogOps' contract.
 func TestAssemblePresentationRejectsNilDeps(t *testing.T) {
-	_, err := AssemblePresentation(nil, FullSurface, false)
+	_, err := AssemblePresentation(nil, FullDomainScope, false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "nil catalog deps bundle")
 }
 
 // TestAssemblePresentationCompiledSurfaceUsesModuleCompiler pins that the
 // compiled surface mcp assembles agrees with the CLI's own
-// populateCatalogSurface projection for the same catalog and startup profile:
+// populateCatalogTools projection for the same catalog and startup profile:
 // same model-visible compiled name set, same safety-derived annotations for
 // the sampled read operation. This is the bridge assertion that keeps the
 // module's projection (catalogDescriptorToPresentation) from drifting from
@@ -155,7 +155,7 @@ func TestAssemblePresentationRejectsNilDeps(t *testing.T) {
 //     never compiles) is caught too. moduleOnlyAllowlist below is the explicit
 //     set of deliberate module-only descriptors (empty today).
 func TestAssemblePresentationCompiledSurfaceUsesModuleCompiler(t *testing.T) {
-	srv, err := AssemblePresentation(&CatalogDepsBundle{Pins: catalogops.PinsDeps{}}, FullSurface, false)
+	srv, err := AssemblePresentation(&CatalogDepsBundle{Pins: catalogops.PinsDeps{}}, FullDomainScope, false)
 	require.NoError(t, err)
 
 	moduleNames := make(map[string]bool, len(srv.Tools))
@@ -170,9 +170,9 @@ func TestAssemblePresentationCompiledSurfaceUsesModuleCompiler(t *testing.T) {
 		}
 	}
 
-	cat, err := AssembleCatalogOps(&CatalogDepsBundle{Pins: catalogops.PinsDeps{}}, FullSurface, false)
+	cat, err := AssembleCatalogOps(&CatalogDepsBundle{Pins: catalogops.PinsDeps{}}, FullDomainScope, false)
 	require.NoError(t, err)
-	cliNames, err := populateCatalogSurface(NewToolCatalog(), cat)
+	cliNames, err := populateCatalogTools(NewToolCatalog(), cat)
 	require.NoError(t, err)
 	for name := range cliNames {
 		require.Truef(t, moduleNames[name], "CLI-compiled operation %q missing from the module-assembled surface", name)
@@ -201,11 +201,11 @@ func TestAssemblePresentationCompiledSurfaceUsesModuleCompiler(t *testing.T) {
 // must match the transfer descriptors the CLI registers on its own server.
 func TestPinnerMcpAssembleTransferWiredParity(t *testing.T) {
 	deps := &CatalogDepsBundle{Pins: catalogops.PinsDeps{}}
-	cat, err := AssembleCatalogOps(deps, FullSurface, false)
+	cat, err := AssembleCatalogOps(deps, FullDomainScope, false)
 	require.NoError(t, err)
 
 	srv, err := mcp.Assemble(mcp.Config{
-		DomainScope: assembly.DomainScope(FullSurface),
+		DomainScope: assembly.DomainScope(FullDomainScope),
 		Catalog:     cat,
 		Transfer: mcp.TransferDeps{
 			UploadFile:   true,

@@ -49,7 +49,8 @@ func buildIPFSUploadAppServer(t *testing.T) (*mcp.Server, *mcptransfer.Upload) {
 		},
 	}
 	catalog.Add(model.ToolEntryFromDescriptor(uploadFileDesc))
-	// Seed the launcher exactly as registerOpenLauncher does in production;
+	// Seed the launcher via the TEST-ONLY registerOpenLauncher helper
+	// (production routes launchers through the appLauncherSpec registry path);
 	// the app's AttachTo now points at open_upload_manager, not upload_file.
 	seedLauncherForTest(t, srv, catalog, upload.OpenUploadManagerToolName, upload.OpenUploadManagerURI, model.CategoryCore)
 	if err := upload.RegisterIPFSUploadApp(srv, catalog, cu); err != nil {
@@ -58,8 +59,8 @@ func buildIPFSUploadAppServer(t *testing.T) (*mcp.Server, *mcptransfer.Upload) {
 	if err := RegisterOfficialDescriptor(srv, uploadFileDesc); err != nil {
 		t.Fatalf("RegisterOfficialDescriptor: %v", err)
 	}
-	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
-		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
+	if err := RegisterOfficialDirectTools(srv, catalog); err != nil {
+		t.Fatalf("RegisterOfficialDirectTools: %v", err)
 	}
 	return srv, cu
 }
@@ -491,8 +492,8 @@ func buildIPFSUploadSharedServer(t *testing.T) (*mcp.Server, *mcptransfer.Upload
 			t.Fatalf("RegisterOfficialDescriptor(%s): %v", desc.Name, err)
 		}
 	}
-	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
-		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
+	if err := RegisterOfficialDirectTools(srv, catalog); err != nil {
+		t.Fatalf("RegisterOfficialDirectTools: %v", err)
 	}
 	return srv, cu, mgr
 }

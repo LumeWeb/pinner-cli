@@ -26,8 +26,8 @@ func buildAppViewServer(t *testing.T, v apps.AppView, catalogTools ...*model.Too
 	if err := apps.RegisterAppView(srv, catalog, v); err != nil {
 		t.Fatalf("RegisterAppView: %v", err)
 	}
-	if err := RegisterOfficialCuratedTools(srv, catalog); err != nil {
-		t.Fatalf("RegisterOfficialCuratedTools: %v", err)
+	if err := RegisterOfficialDirectTools(srv, catalog); err != nil {
+		t.Fatalf("RegisterOfficialDirectTools: %v", err)
 	}
 	return srv
 }

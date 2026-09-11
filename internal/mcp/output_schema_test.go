@@ -116,7 +116,7 @@ func TestCatalogSurfaceOutputSchemaEnvelope(t *testing.T) {
 	})))
 
 	tc := NewToolCatalog()
-	_, err := populateCatalogSurface(tc, cat)
+	_, err := populateCatalogTools(tc, cat)
 	require.NoError(t, err)
 
 	entry, ok := tc.Get("pins_list")
