@@ -120,7 +120,6 @@ func TestCommandRegistration_RootSubcommands(t *testing.T) {
 		"list",
 		"status",
 		"unpin",
-		"metadata",
 		"operations",
 		"config",
 		"doctor",
@@ -170,7 +169,6 @@ func TestCommandRegistration_Categories(t *testing.T) {
 		"list":          "Pinning",
 		"status":        "Pinning",
 		"unpin":         "Pinning",
-		"metadata":      "Pinning",
 		"operations":    "Management",
 		"dns":           "Management",
 		"ipns":          "Management",
@@ -758,14 +756,6 @@ func TestCommandRegistration_AccountAPIKeysAliases(t *testing.T) {
 	expectedAliases := []string{"apikey", "api-key"}
 	assert.Equal(t, expectedAliases, apiKeys.Aliases,
 		"api-keys should have aliases %v, got %v", expectedAliases, apiKeys.Aliases)
-}
-
-func TestCommandRegistration_MetadataHidden(t *testing.T) {
-	root := NewRootCommand()
-	metadata := findCommand(root.Commands, "metadata")
-	require.NotNil(t, metadata, "metadata command should exist")
-
-	assert.True(t, metadata.Hidden, "metadata command should be hidden")
 }
 
 func TestCommandRegistration_AllCommandsHaveUsage(t *testing.T) {
