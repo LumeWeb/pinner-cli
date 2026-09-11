@@ -31,7 +31,7 @@ func TestRootCommandAllSubcommands(t *testing.T) {
 		"setup", "auth", "register", "confirm-email", "account",
 		"upload", "download", "cat", "ls",
 		"pin", "pins", "list", "status", "unpin",
-		"metadata", "operations", "config", "doctor", "bench",
+		"operations", "config", "doctor", "bench",
 		"dns", "ipns", "websites", "admin",
 	}
 

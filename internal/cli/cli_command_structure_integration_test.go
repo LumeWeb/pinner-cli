@@ -131,21 +131,6 @@ func TestIntegration_AliasEquivalence_StatusAndPinsStatus(t *testing.T) {
 	assert.Contains(t, pinsStatusFlags, "watch", "pins status command should have --watch flag")
 }
 
-// TestIntegration_MetadataRemoved verifies that `pinner metadata` returns an error
-// suggesting `pins update` instead.
-func TestIntegration_MetadataRemoved(t *testing.T) {
-	cmd := newMetadataRemovedCommand()
-
-	assert.Equal(t, "metadata", cmd.Name)
-	assert.True(t, cmd.Hidden, "metadata command should be hidden")
-	assert.NotNil(t, cmd.Action, "metadata command should have an action that returns an error")
-
-	// The action should return an error suggesting pins update
-	err := cmd.Action(nil, nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "pins update", "error should suggest 'pins update' as alternative")
-}
-
 // TestIntegration_NoWaitBehavior verifies that upload and pins add commands have
 // --no-wait as the primary flag. The hand-written upload/pin commands hide the
 // backward-compat --wait; the catalog-compiled pins add exposes both --no-wait
@@ -291,7 +276,6 @@ func TestIntegration_Categories(t *testing.T) {
 		"unpin":    "Pinning",
 		"list":     "Pinning",
 		"status":   "Pinning",
-		"metadata": "Pinning",
 		"upload":   "Content",
 		"download": "Content",
 		"cat":      "Content",
@@ -403,16 +387,6 @@ func TestIntegration_UploadHasNoWait(t *testing.T) {
 
 	assert.Contains(t, flagNames, FlagNoWait, "upload should have --no-wait flag")
 	assert.Contains(t, flagNames, FlagMeta, "upload should have --meta flag")
-}
-
-// TestIntegration_MetadataCommandIsHidden verifies that the metadata command is hidden
-// from help output but still accessible.
-func TestIntegration_MetadataCommandIsHidden(t *testing.T) {
-	cmd := newMetadataRemovedCommand()
-
-	assert.True(t, cmd.Hidden, "metadata command should be hidden from help")
-	assert.Equal(t, "metadata", cmd.Name)
-	assert.Contains(t, cmd.Usage, "REMOVED", "metadata usage should indicate it's removed")
 }
 
 func findCommandByName(commands []*cli.Command, name string) (*cli.Command, bool) {
