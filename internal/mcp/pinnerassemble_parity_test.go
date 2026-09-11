@@ -68,7 +68,7 @@ func TestPinnerMcpAssemblePresentationParity(t *testing.T) {
 			// The module's curated set matches the CLI's curated registration
 			// set for the surface (curatedToolNamesFor now delegates to the
 			// same module seam, so this pins the composition seam end-to-end).
-			require.Equal(t, tc.wantCurated, srv.Curated)
+			require.Equal(t, tc.wantCurated, srv.DirectToolNames)
 			require.Equal(t, tc.wantCurated, curatedToolNamesFor(tc.surface))
 
 			// Every curated name is stamped DirectVisible on the compiled
@@ -127,7 +127,7 @@ func TestPinnerMcpAssemblePresentationParity(t *testing.T) {
 
 			// The assembled surface/hosted context round-trips.
 			require.Equal(t, tc.hosted, srv.Hosted())
-			require.Equal(t, bool(tc.surface.VaultOn()), srv.Surface().VaultOn())
+			require.Equal(t, bool(tc.surface.VaultOn()), srv.DomainScope().VaultOn())
 		})
 	}
 }
@@ -205,8 +205,8 @@ func TestPinnerMcpAssembleTransferWiredParity(t *testing.T) {
 	require.NoError(t, err)
 
 	srv, err := mcp.Assemble(mcp.Config{
-		Surface: assembly.Surface(FullSurface),
-		Catalog: cat,
+		DomainScope: assembly.DomainScope(FullSurface),
+		Catalog:     cat,
 		Transfer: mcp.TransferDeps{
 			UploadFile:   true,
 			DownloadFile: true,
