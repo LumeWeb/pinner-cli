@@ -25,10 +25,9 @@ func runBoolCommand(t *testing.T, argv []string) *cli.Command {
 }
 
 // TestCLIArgValueNullableBool pins the shared ArgType->CLI mapping for a
-// nullable bool. Both the compiled command path (actionFor) and every wiring
-// adapter (FlagValue) delegate to cliArgValue, so this single test covers the
-// tri-state for the whole CLI surface: absent -> nil, --flag=true -> &true,
-// --flag=false -> &false.
+// nullable bool. Every wiring adapter (FlagValue) delegates to cliArgValue, so
+// this single test covers the tri-state for the whole CLI surface:
+// absent -> nil, --flag=true -> &true, --flag=false -> &false.
 func TestCLIArgValueNullableBool(t *testing.T) {
 	arg := OperationArg{Name: "dns-hosting", Type: ArgTypeNullableBool}
 
