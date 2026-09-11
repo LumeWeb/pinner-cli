@@ -1,9 +1,6 @@
 package mcpembed
 
-import (
-	"context"
-	"net/http"
-)
+import "go.lumeweb.com/pinner/mcp/hosted"
 
 // CredentialResolver resolves the Portal API token for the authenticated
 // principal of the current request. It is the seam that lets a hosted embed
@@ -14,12 +11,12 @@ import (
 // The CLI/local MCP server reads the bearer token from the pinner config. A
 // hosted server supplies an implementation that maps the Portal-authenticated
 // user (extracted by Portal middleware) onto a Portal API JWT.
-type CredentialResolver interface {
-	// TokenForRequest returns the Portal API token for the currently
-	// authenticated request, or an error (ErrNotAuthenticated) when there is
-	// none.
-	TokenForRequest(ctx context.Context) (string, error)
-}
+//
+// It aliases the shared SDK-independent hosted-construction contract
+// (go.lumeweb.com/pinner/mcp/hosted), so the CLI's embed surface and a hosted
+// composition root bind to the same seam. TokenForRequest returns
+// assembly.ErrNotAuthenticated when there is no authenticated caller.
+type CredentialResolver = hosted.CredentialResolver
 
 // IdentifiableCredentialResolver is an optional interface a CredentialResolver
 // may implement to expose a STABLE identity for its underlying credential
@@ -34,13 +31,9 @@ type CredentialResolver interface {
 // identities DISAGREE are still a construction wiring conflict, and any
 // resolver that proves neither value-equality nor a shared identity fails
 // construction closed, exactly as before.
-type IdentifiableCredentialResolver interface {
-	// ResolverIdentity returns a stable identifier for the resolver's
-	// UNDERLYING credential source, not per invocation: two closures wrapping
-	// the same credential source must return the same string (and different
-	// sources must not). Deterministic across calls on one value.
-	ResolverIdentity() string
-}
+//
+// It aliases the shared contract from go.lumeweb.com/pinner/mcp/hosted.
+type IdentifiableCredentialResolver = hosted.IdentifiableCredentialResolver
 
 // OAuthHandler protects the embedded MCP HTTP endpoint with OAuth. It is the
 // surface-agnostic seam between the MCP implementation and an authorization
@@ -51,10 +44,6 @@ type IdentifiableCredentialResolver interface {
 //   - Hosted mode: implemented by the Portal plugin, which delegates to the
 //     Portal's OAuthProviderService (ValidateAccessToken, RFC 8414/9728) — the
 //     embedded MCP server never needs to know OAuth exists.
-type OAuthHandler interface {
-	// WrapHTTP wraps the /mcp streamable-HTTP handler with OAuth enforcement
-	// (validate Authorization: Bearer, emit 401 + WWW-Authenticate pointing at
-	// the protected-resource metadata when invalid). next is the authenticated-
-	// session downstream handler.
-	WrapHTTP(next http.Handler) http.Handler
-}
+//
+// It aliases the shared contract from go.lumeweb.com/pinner/mcp/hosted.
+type OAuthHandler = hosted.OAuthHandler

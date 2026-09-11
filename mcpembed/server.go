@@ -11,13 +11,12 @@ package mcpembed
 
 import (
 	"context"
-	"fmt"
 	"net/http"
-	"reflect"
 	"sync"
 
 	"go.lumeweb.com/pinner-cli/internal/cli"
 	"go.lumeweb.com/pinner-cli/internal/mcp"
+	"go.lumeweb.com/pinner/mcp/hosted"
 )
 
 // bundleFrom invokes the CatalogDeps factory once, tolerating a nil factory.
@@ -28,24 +27,16 @@ func bundleFrom(factory func() *mcp.CatalogDepsBundle) *mcp.CatalogDepsBundle {
 	return factory()
 }
 
-// normalizeCredentialResolvers folds the pairwise normalizeCredentialResolver
-// rule across the explicit Options resolver and EVERY sampled
-// construction-time bundle resolver, so a non-uniform CatalogDeps factory
-// (e.g. nil on the first invocation, a resolver afterwards) normalizes to the
-// non-nil resolver for BOTH the HTTP middleware and catalog dispatch instead
-// of leaving one boundary resolver-less, and two observed-but-disagreeing
-// resolvers fail construction closed (the same conflict rule the pairwise
-// check enforces).
+// normalizeCredentialResolvers folds the shared hosted-construction
+// reconciliation rule (go.lumeweb.com/pinner/mcp/hosted.NormalizeCredentialResolvers)
+// across the explicit Options resolver and EVERY sampled construction-time
+// bundle resolver, so a non-uniform CatalogDeps factory (e.g. nil on the first
+// invocation, a resolver afterwards) normalizes to the non-nil resolver for
+// BOTH the HTTP middleware and catalog dispatch instead of leaving one boundary
+// resolver-less, and two observed-but-disagreeing resolvers fail construction
+// closed (the same conflict rule the pairwise check enforces).
 func normalizeCredentialResolvers(explicit CredentialResolver, sampled []CredentialResolver) (CredentialResolver, error) {
-	effective := explicit
-	for _, r := range sampled {
-		var err error
-		effective, err = normalizeCredentialResolver(effective, r)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return effective, nil
+	return hosted.NormalizeCredentialResolvers(explicit, sampled)
 }
 
 // Options configures an embedded hosted Pinner MCP server.
@@ -96,77 +87,6 @@ type Options struct {
 	// a host that serves the handler locally or applies its own base via
 	// ServerOptions).
 	BaseURL string
-}
-
-// New assembles an embedded hosted Pinner MCP server and returns its
-// /mcp streamable-HTTP handler. It reuses the exact catalog, compiler,
-// meta-tools, Apps/resource/prompt, and agent-guide machinery the CLI uses,
-// restricted to the requested surface. The OAuthHandler (when provided) wraps
-// the /mcp endpoint; Portal middleware or the handler then serve it.
-//
-// When CatalogDeps supplies a config manager, New automatically wires the IPFS
-// upload/download transfer surface (upload_file, download_file, host_file_input)
-// resolved against that config manager at request time — never the Sia vault.
-// The returned handler then serves the MCP streamable endpoint on /mcp plus the
-// IPFS presigned PUT (/upload/) and filedrop GET (/download/) byte routes, so an
-// embedding host that routes those paths gets the full transfer surface.
-//
-// The caller wires hosting: serving the handler on a route, adding any Portal
-// auth middleware, and serving the OAuth/.well-known endpoints via its own
-// authorization server.
-// normalizeCredentialResolver resolves the ONE effective per-request
-// credential resolver for this embed, so the operation-catalog dispatch and
-// the HTTP/transfer path can never disagree about identity:
-//
-//   - nil Options.CredentialResolver defers to a resolver already supplied on
-//     the CatalogDeps bundle (the "bundle-only" hosted setup): that resolver
-//     then drives BOTH the bundle seeding and the credential middleware, so
-//     direct transfers can never fall back to config credentials.
-//   - both supplied and identical (pointer/value-equal) is accepted.
-//   - both supplied and DIFFERENT is a construction wiring conflict — two
-//     resolvers would let compiled operations and the transfer path
-//     authenticate under different identities — and New fails closed.
-//
-// Uncomparable (closure-backed) resolver implementations cannot be proven
-// value-identical by reflection, but that is NOT evidence of a conflict: a
-// closure wired the same to both places is a valid (and common) hosted setup.
-// Closures may therefore opt in to the proof with the
-// IdentifiableCredentialResolver interface (a stable ResolverIdentity for the
-// underlying credential source): equal identities are accepted as THE SAME
-// resolver. Anything that proves neither value-equality nor a shared identity
-// fails closed.
-func normalizeCredentialResolver(explicit, fromBundle CredentialResolver) (CredentialResolver, error) {
-	switch {
-	case explicit == nil:
-		return fromBundle, nil
-	case fromBundle == nil:
-		return explicit, nil
-	}
-	if sameCredentialResolver(explicit, fromBundle) {
-		return explicit, nil
-	}
-	return nil, fmt.Errorf("mcpembed: conflicting credential resolvers: Options.CredentialResolver and the CatalogDeps bundle's resolver must be the same resolver (none provided here)")
-}
-
-// sameCredentialResolver reports whether a and b provably resolve through the
-// SAME credential source: reflect value-equality when the concrete types are
-// comparable, or — for uncomparable closure-backed resolvers — equal
-// IdentifiableCredentialResolver identities. Inability to prove equality is a
-// conflict (fail closed), never an accepted-equality shortcut.
-func sameCredentialResolver(a, b CredentialResolver) bool {
-	av, bv := reflect.ValueOf(a), reflect.ValueOf(b)
-	if av.Comparable() && bv.Comparable() {
-		return av.Equal(bv)
-	}
-	ia, aok := a.(IdentifiableCredentialResolver)
-	ib, bok := b.(IdentifiableCredentialResolver)
-	if !aok || !bok {
-		// Cannot prove the two closures are the same wired resolver; a
-		// one-sided identity proves nothing.
-		return false
-	}
-	iaID, ibID := ia.ResolverIdentity(), ib.ResolverIdentity()
-	return iaID != "" && ibID != "" && iaID == ibID
 }
 
 // lateResolverBank is the ONE shared seat for a CatalogDeps resolver that is
@@ -226,6 +146,45 @@ func (l lateDiscoveryResolver) TokenForRequest(ctx context.Context) (string, err
 	return r.TokenForRequest(ctx)
 }
 
+// New assembles an embedded hosted Pinner MCP server and returns its
+// /mcp streamable-HTTP handler. It reuses the exact catalog, compiler,
+// meta-tools, Apps/resource/prompt, and agent-guide machinery the CLI uses,
+// restricted to the requested surface. The OAuthHandler (when provided) wraps
+// the /mcp endpoint; Portal middleware or the handler then serve it.
+//
+// When CatalogDeps supplies a config manager, New automatically wires the IPFS
+// upload/download transfer surface (upload_file, download_file, host_file_input)
+// resolved against that config manager at request time — never the Sia vault.
+// The returned handler then serves the MCP streamable endpoint on /mcp plus the
+// IPFS presigned PUT (/upload/) and filedrop GET (/download/) byte routes, so an
+// embedding host that routes those paths gets the full transfer surface.
+//
+// The caller wires hosting: serving the handler on a route, adding any Portal
+// auth middleware, and serving the OAuth/.well-known endpoints via its own
+// authorization server.
+//
+// New reconciles the ONE effective per-request credential resolver for this
+// embed with the shared go.lumeweb.com/pinner/mcp/hosted rule, so the
+// operation-catalog dispatch and the HTTP/transfer path can never disagree
+// about identity:
+//
+//   - nil Options.CredentialResolver defers to a resolver already supplied on
+//     the CatalogDeps bundle (the "bundle-only" hosted setup): that resolver
+//     then drives BOTH the bundle seeding and the credential middleware, so
+//     direct transfers can never fall back to config credentials.
+//   - both supplied and identical (pointer/value-equal) is accepted.
+//   - both supplied and DIFFERENT is a construction wiring conflict — two
+//     resolvers would let compiled operations and the transfer path
+//     authenticate under different identities — and New fails closed.
+//
+// Uncomparable (closure-backed) resolver implementations cannot be proven
+// value-identical by reflection, but that is NOT evidence of a conflict: a
+// closure wired the same to both places is a valid (and common) hosted setup.
+// Closures may therefore opt in to the proof with the
+// IdentifiableCredentialResolver interface (a stable ResolverIdentity for the
+// underlying credential source): equal identities are accepted as THE SAME
+// resolver. Anything that proves neither value-equality nor a shared identity
+// fails closed.
 func New(opts Options) (http.Handler, error) {
 	surface := opts.DomainScope
 	if surface.IsZero() {
