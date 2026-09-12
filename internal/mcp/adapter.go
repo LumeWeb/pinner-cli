@@ -1042,7 +1042,7 @@ func buildCatalog(root *cli.Command, seedDrop *oobpkg.SeedDrop, oobRestore *oobp
 	// carry the catalogops MCPTargets/typed schemas and dispatch through
 	// the operation catalog's Invoke gate at runtime. stampDirectTools promotes the
 	// compiled direct names to tools/list.
-	names, err := populateCatalogTools(catalog, opsCat)
+	names, err := populateCatalogToolsFor(catalog, opsCat, surface, cfg.hosted)
 	if err != nil {
 		return nil, err
 	}
