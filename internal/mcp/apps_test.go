@@ -197,8 +197,9 @@ func TestPinCreateResourceRead(t *testing.T) {
 // served document remains an inline-module-ready, self-contained bundle. The
 // behavioral correctness of the polling loop (missing-status is non-terminal,
 // .catch retries transient errors, terminal-status-before-budget ordering) is
-// covered by the packages/apps vitest suite against the real TS source; this
-// Go test only asserts the produced artifact carries the build wiring.
+// covered by the vitest suite in pinner's packages/apps against the real TS
+// source; this Go test only asserts the produced artifact carries the build
+// wiring.
 func TestPinStatusPollingResilient(t *testing.T) {
 	html := apps.RenderPinCreateAppHTML()
 	for _, want := range []string{

@@ -9,8 +9,6 @@ the CI runs.
 - **Go 1.22+**
 - **`templ`** CLI — compiles `.templ` files to Go (`templ generate`). The
   Makefile requires it on `PATH`.
-- **`pnpm`** (Node workspace) — builds the MCP app JS bundles and the Tailwind
-  CSS that Go embeds. Required by `make build` and `make test`.
 - **Portal SDK** — `go.lumeweb.com/portal-sdk`, resolved via a local `replace`
   in `go.mod`.
 - **CGO** is required (`CGO_ENABLED=1`) — there are cgo dependencies, so
@@ -18,10 +16,10 @@ the CI runs.
 - **mockery** — pre-installed in the dev environment; generate mocks via
   `mockery` with no arguments (uses `.mockery.yaml`).
 
-> **Use `make` targets.** The Makefile chains the full pipeline
-> (`templ generate` → JS/CSS assets → Go build). Raw `go build` / `go test`
-> skip asset generation and produce a binary missing the embedded app bundles
-> and CSS.
+> **Use `make` targets.** The Makefile chains `templ generate` → Go build. The
+> MCP App asset source (bundles, theme, manifest) is embedded from the pinned
+> `go.lumeweb.com/pinner/canvasassets` module, so raw `go build` / `go test`
+> are safe — templ files are the only locally-generated embeddable assets.
 
 ## Quick Start
 
@@ -41,13 +39,13 @@ Running from source: `go run ./cmd/pinner <command>`.
 | `make build` (default) | `assets` | `CGO_ENABLED=1 go build -ldflags="$(LDFLAGS)" -o pinner ./cmd/pinner` |
 | `make install` | `assets` | `CGO_ENABLED=1 go install -ldflags="$(LDFLAGS)" ./cmd/pinner` |
 | `make test` | `assets` | `go test ./...` |
-| `make assets` | `templinstall generate jsbuild cssbuild` | Regenerates every embeddable asset (templ + JS + CSS) |
+| `make assets` | `templinstall generate` | Regenerates the locally-generated `*.templ.go` files |
 | `make generate` | — | `templ generate` (recurses the repo from the root; *not* `go generate ./...`) |
 | `make templinstall` | — | `go install github.com/a-h/templ/cmd/templ@v0.3.1020` |
 | `make clean` | — | `rm -f pinner` |
 
-`assets` is declared `.PHONY` so `make` never treats the asset targets as
-up-to-date and always regenerates the embeddable templ/JS/CSS assets.
+`assets` is declared `.PHONY` so `make` never treats the asset target as
+up-to-date and always regenerates the `*.templ.go` files.
 
 The default goal is pinned to `build` so a bare `make` always produces a
 binary.
@@ -55,7 +53,7 @@ binary.
 ## Build Pipeline
 
 ```
-templinstall → generate → jsbuild → cssbuild → go build / go install
+templinstall → generate → go build / go install
 ```
 
 1. **`templinstall`** — `go install github.com/a-h/templ/cmd/templ@v0.3.1020`
@@ -65,13 +63,13 @@ templinstall → generate → jsbuild → cssbuild → go build / go install
    deliberately as `templ generate`, **not** via `go generate ./...`, because
    templ files live in multiple packages and a single root-anchored pass
    covers every `*.templ` exactly once.
-3. **`jsbuild`** — `cd packages/apps && pnpm install --frozen-lockfile && pnpm
-   build`, then copies the dist JS into `internal/mcpapp/appsassets/dist/`
-   where Go embeds it.
-4. **`cssbuild`** — `pnpm build:css` compiles the Tailwind theme
-   (`internal/mcpapp/css/input.css`) into the embedded stylesheet
-   (`internal/mcpapp/css/tailwind.css`).
-5. **Go build** — `CGO_ENABLED=1` with `-ldflags` injecting version info.
+3. **MCP App assets (from the module, not built here)** — the embedded
+   `ui://` bundles, theme and mcpcanvas manifest are owned by
+   `go.lumeweb.com/pinner/canvasassets` and served from the pinned pinner
+   module, so the CLI's Go build needs no local JS/CSS regeneration or bundle
+   production. Pinner owns the full JS asset pipeline; this repo no longer
+   builds or embeds any JS/CSS itself.
+4. **Go build** — `CGO_ENABLED=1` with `-ldflags` injecting version info.
 
 ### Version Info (ldflags)
 
@@ -101,20 +99,17 @@ go test -v ./...           # verbose
 go test ./internal/cli -run TestUpload   # a specific test
 ```
 
-Some tests depend on the embedded JS/CSS assets, which is why `make test`
-runs `jsbuild` + `cssbuild` first. For quick Go-only checks without an asset
-rebuild, `go vet ./...` / `go build ./...` are fine — but the resulting binary
-may lack embedded assets.
+Some tests depend on the MCP App assets embedded from the pinned
+`go.lumeweb.com/pinner/canvasassets` module, so `make test` regenerates the
+templ files first. For quick Go-only checks, `go vet ./...` / `go build ./...`
+are fine — the app bundles/theme/manifest are always present via the module
+dependency.
 
 ### Test Layers
 
 - **Go-level tests** — unit tests throughout `internal/...`, using service
   mocks and the `*WithService` helper pattern that lets tests exercise command
   logic without a live urfave context.
-- **`internal/mcptest`** — a Go fake standing in for the upstream Pinner.xyz
-  API at the HTTP layer (`go test ./internal/mcptest/...`).
-- **`tests/sunpeak`** — integration tests that run `pinner mcp` as a real MCP
-  stdio server against a fake backend.
 
 ### Mock Generation
 

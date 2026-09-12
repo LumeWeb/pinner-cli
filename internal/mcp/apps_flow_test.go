@@ -9,16 +9,16 @@ import (
 
 // These tests verify the served MCP App documents are wired end-to-end: the
 // HTML shell assembled by the canvas delegation (mcpapp.RenderAppDoc) with the
-// self-contained ESM bundle built by the JS toolchain (packages/apps) and
-// embedded via the mcpapp AppsAssets FS.
+// self-contained ESM bundle built by pinner's JS toolchain (packages/apps) and
+// embedded via the canvasassets module.
 //
 // The app JS behavioral logic (in-flight guard, handle-presence dead-handle
-// predicate, start guard, distinct per-app tool names) is tested by the
-// packages/apps vitest suite against the real TS source — not by re-asserting
-// rendered JS strings here. This file therefore checks the minimal Go-side
-// contract: the right bundle was embedded and inlined, and the app's tool
-// names + element ids are present in the served document (so the bundle and
-// the view body agree).
+// predicate, start guard, distinct per-app tool names) is tested by the vitest
+// suite in pinner's packages/apps against the real TS source — not by
+// re-asserting rendered JS strings here. This file therefore checks the
+// minimal Go-side contract: the right bundle was embedded and inlined, and the
+// app's tool names + element ids are present in the served document (so the
+// bundle and the view body agree).
 
 func appModuleFor(t *testing.T, uri string) string {
 	t.Helper()

@@ -52,10 +52,20 @@ jobs:
       - name: Export Go version
         run: echo "GO_VERSION=$(go version | awk '{print $3}' | sed 's/go//')" >> $GITHUB_ENV
 
+      # Stage pinner's canvasassets into the host module cache (needs the JS
+      # toolchain, so it runs on the host, not in the container); the staged
+      # embed inputs are then handed to the goreleaser-cross container below
+      # by bind-mounting the host module cache. Without this the release
+      # cross-build fails at compile time with "pattern appsassets: no matching
+      # files found".
+      - name: Stage canvasassets embed inputs
+        uses: ./.github/actions/ensure-canvasassets
+
       - name: Run GoReleaser (goreleaser-cross)
         run: |
           docker run --rm \
             -v "$PWD":/go/src/go.lumeweb.com/pinner-cli \
+            -v "$(go env GOMODCACHE)":/go/pkg/mod \
             -w /go/src/go.lumeweb.com/pinner-cli \
             -e GITHUB_TOKEN \
             -e GO_VERSION \

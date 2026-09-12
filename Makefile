@@ -1,4 +1,4 @@
-.PHONY: build install clean generate templinstall assets genappmanifest
+.PHONY: build install clean generate templinstall assets ensure-canvasassets
 
 # A bare `make` must produce a binary, not just regenerate templ output.
 # generate was added above build, which silently made it (not build) the
@@ -34,9 +34,9 @@ LDFLAGS := -X '$(PKG).Version=$(VERSION)' \
 # generated output. Requires the templ CLI on PATH.
 #
 # We invoke `templ generate` directly from the repo root (not `go generate
-# ./...`) deliberately: templ files live in two packages (internal/mcp and
-# internal/mcpapp) and each carries a //go:generate templ generate directive.
-# Because `templ generate` recurses the whole repo by default, running it via
+# ./...`) deliberately: templ files live in internal/mcp and carry a
+# //go:generate templ generate directive. Because `templ generate` recurses
+# the whole repo by default, running it via
 # `go generate ./...` executes that directive twice from two different
 # directories (go:generate runs the command with the package dir as cwd),
 # which is redundant and, depending on the templ version and tree state, can
@@ -53,42 +53,22 @@ generate:
 templinstall:
 	go install github.com/a-h/templ/cmd/templ@v0.3.1020
 
-# jsbuild builds the MCP App JS bundles (packages/apps via tsdown) into
-# self-contained ESM files and copies them to internal/mcpapp/appsassets/dist/
-# so Go embeds them, then regenerates the mcpcanvas AssetSource manifest
-# (internal/mcpapp/appsassets/manifest.json via go run ./build/genappmanifest)
-# against the freshly copied bundles. Requires pnpm on PATH. Go build/test
-# embed these bundles (and the manifest), so jsbuild must run before any go
-# build/test.
-jsbuild:
-	cd packages/apps && CI=true pnpm install --frozen-lockfile && pnpm build && cd ../.. && \
-	mkdir -p internal/mcpapp/appsassets/dist && \
-	cp packages/apps/dist/*.js internal/mcpapp/appsassets/dist/ && \
-	GOFLAGS=-mod=mod go run ./build/genappmanifest
+# ensure-canvasassets guarantees the go.lumeweb.com/pinner/canvasassets embed
+# inputs (appsassets bundles + mcpcanvas manifest + compiled Tailwind theme)
+# exist at whatever location this build resolves the pinner module from —
+# a pinned module version (cache) or a checkout. The inputs are regenerated,
+# not committed, so every consumer runs pinner's shared staging script; this
+# CLI delegates to it (single DRY implementation, identical for the hosted
+# server/plugin consumer). Requires pnpm on PATH for the JS bundle/CSS build.
+ensure-canvasassets:
+	@scripts/ensure-canvasassets-wrapper.sh
 
-# genappmanifest regenerates ONLY the mcpcanvas AssetSource manifest
-# (internal/mcpapp/appsassets/manifest.json) against the bundles already in
-# appsassets/dist/. Used by jsbuild (which is what assets/CI chain);
-# usable standalone when iterating on bundles without a full JS build.
-genappmanifest:
-	GOFLAGS=-mod=mod go run ./build/genappmanifest
-
-# cssbuild compiles the MCP Apps Tailwind theme (internal/mcpapp/css/input.css)
-# into the embedded stylesheet (internal/mcpapp/css/tailwind.css) that every
-# ui:// app inlines. Requires pnpm on PATH. Must run before any go build so the
-# go:embed picks up the freshly compiled CSS.
-cssbuild:
-	pnpm build:css
-
-# assets regenerates all embeddable assets the MCP Apps surface depends on:
-# installs the templ CLI (templinstall), regenerates the templ *_templ.go files
-# (generate), builds the MCP App JS bundles (jsbuild, which runs
-# `pnpm install --frozen-lockfile` then `pnpm build`) and compiles the Tailwind
-# stylesheet (cssbuild). It is the single target that regenerates all
-# embeddable assets. Run `go run ./build/genappmanifest` standalone to
-# regenerate only the manifest. Must run before any go build/test so the
-# go:embed directives pick up freshly built assets.
-assets: templinstall generate jsbuild cssbuild
+# assets regenerates what this CLI's own build needs: installs the templ CLI
+# (templinstall), regenerates the templ *_templ.go files (generate), and stages
+# the canvasassets embed inputs imported from the pinner module
+# (ensure-canvasassets). Go build/test needs no local JS/CSS regeneration or
+# bundle production beyond what pinner's own script performs.
+assets: ensure-canvasassets templinstall generate
 
 build: assets
 	CGO_ENABLED=1 go build -tags="$(TAGS)" -ldflags="$(LDFLAGS)" -o pinner ./cmd/pinner

@@ -11,10 +11,11 @@ and intel), see [`docs/mcp-host-audit.md`](docs/mcp-host-audit.md).
 
 ### Building
 
-**Use `make` targets.** The Makefile chains the full pipeline (`templ
-generate` → JS app bundles → Tailwind CSS → Go build), which a raw
-`go build`/`go test` skips — the latter produces a binary missing the embedded
-app assets.
+**Use `make` targets.** The Makefile chains `templ generate` → Go build. The
+MCP App asset source (bundles, compiled theme, manifest) is embedded from the
+pinned `go.lumeweb.com/pinner/canvasassets` module, so a raw `go build`/`go
+test` still produces a complete binary; the only locally-generated embeddable
+asset is the templ output.
 
 ```bash
 make build          # full pipeline, produces ./pinner with version info
@@ -94,13 +95,12 @@ internal/mcp/wizard/        MCP-side wizard FSMs (website/setup flows)
 internal/mcp/core/          MCP building blocks (sessions, model, transfer, ...)
 internal/mcp/hostenv/       Host platform capability model (features/profiles)
 internal/mcp/toolforge/     Forge: host-aware tool/schema/guide construction
-internal/mcpapp/            Embedded MCP app assets & CSS (go:embed)
+internal/mcpapp/            Thin seam over go.lumeweb.com/pinner/canvasassets (render + theme)
 internal/urlopen/           Cross-platform "open URL in browser" helper
 internal/service/           OS service integration (Windows/systemd/launchd)
 internal/car/               CAR file root reading (GetCarRoots)
 internal/io/                stdin as fs.FS (stdinfs.go)
 build/                      Build-time info (version/commit injected via ldflags)
-tests/sunpeak/              MCP integration tests (driver `pinner mcp` over stdio)
 ```
 
 ### Core Directories
@@ -172,8 +172,9 @@ tests/sunpeak/              MCP integration tests (driver `pinner mcp` over stdi
     templates.
   - `internal/mcp/wizard/` — FSM wizard flows, session-based with TTL
     (`DefaultSessionTTL = 30m`, `DefaultMaxSessions = 100`).
-  - `internal/mcpapp/` — embedded JS/CSS app bundles (server fails at startup
-    if missing; build with `pnpm` first).
+  - `internal/mcpapp/` — thin seam over `go.lumeweb.com/pinner/canvasassets`,
+    which owns the embed FS + compiled theme; the CLI passes its build version
+    into the shared render.
 
 ## Key Interfaces and Patterns
 
@@ -258,8 +259,9 @@ catalog ops produces a silent half-failure (CLI works, MCP has no tools).
   services and no live urfave context.
 - **Mock fidelity**: when extending an interface, extend **every** mock struct
   with func-type fields (`*Fn`) that return `nil, nil` when unset.
-- **Integration**: `internal/mcptest` is a Go fake of the upstream API at the
-  HTTP layer; `tests/sunpeak` drives `pinner mcp` as a real stdio server.
+- **Integration**: host-level MCP testing (sunpeak/playwright suite, fake API)
+  moved to the shared `go.lumeweb.com/pinner` module, which owns the canvasassets
+  pipeline and the `cmd/mcpharness` harness.
 
 ### Wizard Framework
 

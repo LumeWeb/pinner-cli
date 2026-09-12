@@ -23,7 +23,6 @@ require (
 	github.com/mattn/go-isatty v0.0.24
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/multiformats/go-multiaddr v0.16.1
-	github.com/oapi-codegen/runtime v1.7.0
 	github.com/openai/tunnel-client v0.0.13
 	github.com/pressly/goose/v3 v3.28.0
 	github.com/pterm/pterm v0.12.84-0.20260430213317-32e5000d4c27
@@ -44,7 +43,7 @@ require (
 	go.lumeweb.com/mcpplane v0.0.0-20260912095121-3753dd085aa8
 	go.lumeweb.com/oauth v0.1.6
 	go.lumeweb.com/opmesh v0.0.0-20260907112428-ade506e64ae9
-	go.lumeweb.com/pinner v0.0.0-20260912133257-61804d95039b
+	go.lumeweb.com/pinner v0.0.0-20260912164012-1fb1c2629a68
 	go.lumeweb.com/portal-sdk v0.1.72
 	go.lumeweb.com/queryutil v0.3.19
 	go.lumeweb.com/tunneler v0.0.0-20260907123602-56944ca7aeae
@@ -198,6 +197,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nwaples/rardecode/v2 v2.4.1 // indirect
 	github.com/oapi-codegen/oapi-codegen/v2 v2.7.2 // indirect
+	github.com/oapi-codegen/runtime v1.7.0 // indirect
 	github.com/oasdiff/yaml v0.1.1 // indirect
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
 	github.com/oschwald/geoip2-golang v1.13.0 // indirect
@@ -314,3 +314,9 @@ require (
 )
 
 tool github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
+
+// The go.lumeweb.com/pinner canvasassets embed inputs (blends, manifest, theme)
+// are regenerated, not committed. Any build must run pinner's
+// scripts/ensure-canvasassets.sh (via the Makefile `assets` target or a
+// consumer pre-build hook) so the go:embed inputs exist at the resolved module
+// location before `go build`/`go test`.

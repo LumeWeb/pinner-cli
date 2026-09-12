@@ -45,8 +45,9 @@ var AssetVersion string
 func init() {
 	css := mcpapp.McpAppThemeCSS
 	if strings.TrimSpace(css) == "" {
-		// The compiled theme is embedded; absence is a build-time error.
-		panic("mcp: embedded brand theme CSS is empty — run `pnpm build:css` before building Go")
+		// The compiled theme is embedded from the pinner canvasassets module;
+		// absence is a build-time/dependency error.
+		panic("mcp: embedded brand theme CSS is empty — pinned go.lumeweb.com/pinner/canvasassets has no compiled theme")
 	}
 	logo, errLogo := staticFS.ReadFile("static/logo.svg")
 	if errLogo != nil {
