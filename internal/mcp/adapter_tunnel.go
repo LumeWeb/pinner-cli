@@ -244,21 +244,16 @@ adapter.`,
 					buildOpts = append(buildOpts, normalized.opts()...)
 				}
 				if hostProfile != nil {
-					// Host-specific listing override. The SHARED host selector
-					// (go.lumeweb.com/pinner/mcp, composed by hostListingPolicy)
-					// re-resolves the listing strategy for the negotiated host: the
-					// web hosts that cannot follow progressive discovery (Claude
-					// Web, Grok Web, ChatGPT/OpenAI web) get FLAT tools/list with
-					// the safe discovery meta-tools retained; every other host
-					// reuses the startup strategy verbatim (MEDIUM-3 preserved for
-					// the axes the override does not touch — surface, hosted,
-					// meta-on-flat, onboarding). An explicitly flat startup
-					// deployment is never downgraded by the override.
+					// Resolve the listing policy for the negotiated host. Web
+					// clients use a flat tools/list because their cloud
+					// connectors do not support progressive discovery. Other
+					// hosts keep the startup strategy. The reassembly keeps the
+					// startup surface, hosted flag, meta-tool setting, and
+					// onboarding choices; only the host-specific strategy may
+					// change. A flat startup stays flat.
 					//
-					// The override is appended AFTER normalized.opts() so its
-					// strategy (and only its strategy) wins: the reassembled
-					// tools/list surface, meta tools, card, and instructions all
-					// materialize from the catalog's captured per-server strategy.
+					// Apply this after normalized.opts() so the selected strategy
+					// controls the catalog, card, and instructions for this host.
 					startupListing := DefaultPolicy()
 					if normalized != nil {
 						startupListing = normalized.listing

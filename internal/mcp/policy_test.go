@@ -19,15 +19,14 @@ import (
 
 // TestDefaultPolicyReproducesCurrentBehavior pins the invariant default:
 // progressive listing and no onboarding override (deferring to the builtin
-// primary-tool predicate). IncludeMetaOnFlat defaults to TRUE as the safe
-// invariant for any server that opts into flat, so gated admin/wizard/
-// interactive catalog entries stay reachable through the discovery meta-tools.
-// The deployment axes are NOT part of the policy (they come from ServerConfig).
+// primary-tool predicate). Flat mode omits discovery meta-tools unless a
+// consumer explicitly opts in. The deployment axes are NOT part of the policy
+// (they come from ServerConfig).
 func TestDefaultPolicyReproducesCurrentBehavior(t *testing.T) {
 	p := DefaultPolicy()
 
 	require.Equal(t, ListingProgressive, p.Strategy, "default listing strategy is progressive")
-	require.True(t, p.ResolveIncludeMetaOnFlat(), "default keeps meta-tools on flat (safe default: gated ops stay reachable)")
+	require.False(t, p.ResolveIncludeMetaOnFlat(), "default omits meta-tools on flat")
 	require.False(t, HasOnboardingOverride(p), "default defers onboarding to the builtin primary set")
 	require.NoError(t, p.Validate(), "default policy is valid")
 
@@ -36,27 +35,24 @@ func TestDefaultPolicyReproducesCurrentBehavior(t *testing.T) {
 	require.False(t, IsOnboarded(p, "websites_create"), "websites_create is curated but not an onboarding primary")
 }
 
-// TestZeroPolicyIsProgressiveAndKeepsMeta pins that a zero-value listing
-// policy (all fields unset) behaves as progressive with the safe meta-on-flat
-// default: an omitted IncludeMetaOnFlat must never silently hide the gated ops
-// (MEDIUM-1).
-func TestZeroPolicyIsProgressiveAndKeepsMeta(t *testing.T) {
+// TestZeroPolicyIsProgressiveAndOmitsFlatMeta pins that a zero-value listing
+// policy remains progressive and flat mode omits discovery meta-tools unless
+// a consumer explicitly opts in.
+func TestZeroPolicyIsProgressiveAndOmitsFlatMeta(t *testing.T) {
 	p := ListingPolicy{} // all zero
 	require.Equal(t, ListingProgressive, p.Strategy, "zero strategy is progressive")
-	require.True(t, p.ResolveIncludeMetaOnFlat(), "unset IncludeMetaOnFlat must resolve to the safe default true")
+	require.False(t, p.ResolveIncludeMetaOnFlat(), "unset IncludeMetaOnFlat must omit flat meta-tools")
 	require.NoError(t, p.Validate())
 
-	// The flat strategy with an OMITTED IncludeMetaOnFlat keeps meta tools too
-	// (the MEDIUM-1 bug: it used to behave as false and hide them).
+	// An omitted IncludeMetaOnFlat omits meta-tools in flat mode.
 	pFlat := ListingPolicy{Strategy: ListingFlat}
-	require.True(t, pFlat.ResolveIncludeMetaOnFlat(), "flat policy with omitted IncludeMetaOnFlat must keep meta tools")
+	require.False(t, pFlat.ResolveIncludeMetaOnFlat(), "flat policy with omitted IncludeMetaOnFlat must omit meta-tools")
 
-	// Single-source regression: buildCatalogConfig must delegate the nil (and
-	// explicit) resolution to the SAME policy method instead of keeping a second
-	// copy of the safe default that could drift.
+	// Single-source regression: buildCatalogConfig delegates resolution to the
+	// same policy method instead of keeping a second default.
 	cfg := &buildCatalogConfig{}
-	require.True(t, cfg.resolveIncludeMetaOnFlat(),
-		"unset config includeMetaOnFlat must resolve through the policy default (true)")
+	require.False(t, cfg.resolveIncludeMetaOnFlat(),
+		"unset config includeMetaOnFlat must omit flat meta-tools")
 	cfg.includeMetaOnFlat = boolPtr(false)
 	require.False(t, cfg.resolveIncludeMetaOnFlat(),
 		"explicit false must round-trip through the single resolution")

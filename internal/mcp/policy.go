@@ -66,15 +66,11 @@ func DefaultPolicy() ListingPolicy {
 // ---
 
 // hostListingPolicy resolves the listing policy a negotiated per-host server
-// is built with: the SHARED host selector re-resolves the strategy for the
-// detected host (flat for Claude Web / Grok Web / ChatGPT web, the shared
-// selector keeps every other host progressive), while the startup policy's
-// listing axes survive the override — an explicitly flat startup deployment is
-// never downgraded for a host, and the meta-on-flat switch is left unset so
-// withPolicy keeps the startup's resolved value (nil never overwrites —
-// the safe default stays in force on every flat surface). Onboarding is
-// carried through verbatim: the recommendation set is a deployment decision,
-// not a host capability.
+// is built with: the shared selector chooses flat for Claude Web, Grok Web,
+// and ChatGPT web, while other hosts keep the startup strategy. The startup
+// surface, hosted flag, meta-tool setting, and onboarding choices carry over;
+// an explicitly flat startup is never downgraded. Onboarding is a deployment
+// choice, not a host capability.
 //
 // This is the one seam where the shared host selector enters per-host
 // reassembly, so a negotiated server's strategy can never drift from the
@@ -92,11 +88,9 @@ func hostListingPolicy(startup ListingPolicy, profile hostenv.PlatformProfile) L
 		strategy = pinnermcp.ListingFlat
 	}
 	return ListingPolicy{
-		Strategy: strategy,
-		// IncludeMetaOnFlat deliberately unset: withPolicy only writes it when
-		// explicitly set, so the startup's resolved meta-on-flat survives the
-		// host override (nil can never silently hide the discovery meta-tools).
-		Onboarding: append([]string(nil), startup.Onboarding...),
+		Strategy:          strategy,
+		IncludeMetaOnFlat: startup.IncludeMetaOnFlat,
+		Onboarding:        append([]string(nil), startup.Onboarding...),
 	}
 }
 

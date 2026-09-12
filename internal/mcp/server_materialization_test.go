@@ -154,7 +154,7 @@ func TestInstructionsCountCoversIndexedExtensions(t *testing.T) {
 // pass must register each tool exactly once — never rely on SDK map
 // replacement.
 func TestFinalSurfaceNoDuplicateProjectionForFlat(t *testing.T) {
-	flatMeta := ListingPolicy{Strategy: ListingFlat} // safe default: meta kept
+	flatMeta := ListingPolicy{Strategy: ListingFlat, IncludeMetaOnFlat: boolPtr(true)}
 	inv := buildInventoryServer(t, &flatMeta, nil)
 
 	// sessionToolNames already asserts global wire uniqueness; the wire slice
@@ -212,7 +212,7 @@ func TestServerCardMatchesFinalSurface(t *testing.T) {
 	}
 
 	// --- Flat (meta kept, full local) ---
-	flatMeta := ListingPolicy{Strategy: ListingFlat}
+	flatMeta := ListingPolicy{Strategy: ListingFlat, IncludeMetaOnFlat: boolPtr(true)}
 	flat := buildInventoryServer(t, &flatMeta, nil)
 	flatCard := serverCardNames(flat.card.Tools())
 	final := flat.catalog.FinalizedTooling()

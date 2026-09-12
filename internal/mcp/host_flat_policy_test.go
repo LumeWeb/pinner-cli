@@ -112,6 +112,7 @@ func findEntryByCategory(t *testing.T, cat *ToolCatalog, category model.ToolCate
 // discovery meta-tools.
 func TestWebHostReassemblyMaterializesFlatWithMeta(t *testing.T) {
 	startup := DefaultPolicy()
+	startup.IncludeMetaOnFlat = boolPtr(true)
 	startup.Onboarding = []string{"auth_status", "websites_create"}
 	startupCat, normalized := startupCatalogWithPolicy(t, startup)
 	require.Equal(t, ListingProgressive, normalized.listing.Strategy,
@@ -216,8 +217,8 @@ func TestHostListingPolicyResolvesThroughSharedSelector(t *testing.T) {
 		HostType: hostenv.HostClaude, Transport: hostenv.TransportHTTP,
 	})
 	require.Equal(t, ListingFlat, claude.Strategy)
-	require.Nil(t, claude.IncludeMetaOnFlat,
-		"the override must not carry a meta switch: withPolicy keeps the startup's resolved value")
+	require.Equal(t, startup.IncludeMetaOnFlat, claude.IncludeMetaOnFlat,
+		"the override must preserve the startup meta-tool setting")
 	require.Equal(t, startup.Onboarding, claude.Onboarding,
 		"onboarding is a deployment axis and survives the host override")
 

@@ -559,7 +559,7 @@ func TestCustomRegistrationInventoryHostedProductionAssembly(t *testing.T) {
 // prove the globals cannot change construction outcomes at all.
 func TestListingPolicyIsolationUnderInterleavedConstruction(t *testing.T) {
 	flatNoMeta := ListingPolicy{Strategy: ListingFlat, IncludeMetaOnFlat: boolPtr(false)}
-	flatMeta := ListingPolicy{Strategy: ListingFlat} // safe default: meta kept
+	flatMeta := ListingPolicy{Strategy: ListingFlat, IncludeMetaOnFlat: boolPtr(true)}
 
 	// Interleaved construction order (the realistic multi-server pattern).
 	prog1 := buildInventoryServer(t, nil, nil)
@@ -707,7 +707,7 @@ func TestListingPolicyIsolationUnderInterleavedConstruction(t *testing.T) {
 	require.Equal(t, ListingProgressive, afterProg.catalog.Strategy,
 		"the hostile flat strategy global must not leak into a no-policy build")
 
-	flatAfter := ListingPolicy{Strategy: ListingFlat} // safe default: meta kept
+	flatAfter := ListingPolicy{Strategy: ListingFlat, IncludeMetaOnFlat: boolPtr(true)}
 	afterFlat := buildInventoryServer(t, &flatAfter, nil)
 	require.Truef(t, afterFlat.wireNames["pins_add"], "flat build after hostile global writes still materializes per its OWN policy")
 	for _, n := range metaToolNames {
