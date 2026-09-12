@@ -22,7 +22,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -79,13 +78,31 @@ func SetDevTools(enabled bool) {
 // be overridden in tests.
 var defaultDetectorRegistry = hostenv.NewRegistry()
 
+// requestCaps delegates to the mcpplane SDK's shared per-request caps builder
+// (sdk.NewRequestCapsBuilder), which owns the full pipeline this server used
+// to duplicate: wire-signal extraction from req.GetExtra() (with sensitive
+// header/token-claim redaction), canimcp host detection, the MCP-apps feature
+// overlay, the hosted/remote transport stamping, and the dev_* wire snapshot.
+// The launch-state knobs (transport flags, hosted deployment mode, dev-tools
+// opt-in) are read from the same package globals SetTransportFlags/SetDevTools/
+// SetHosted record at construction; the shared registry from defaultDetectorRegistry
+// is passed through so the shim and the SDK builder resolve hosts with one
+// detector set.
+func requestCaps(req *sdk.CallToolRequest) *model.RequestCaps {
+	return sdk.NewRequestCapsBuilder(sdk.RequestCapsOptions{
+		Registry:     defaultDetectorRegistry.Core(),
+		CoLocated:    transportFlagsVar.coLocated,
+		TunnelOpenAI: transportFlagsVar.tunnelOpenAI,
+		Hosted:       activeHosted(),
+		DevSnapshot:  devToolsEnabled,
+	})(req)
+}
+
 // sdkHandlerDeps is the hub's implementation of the behaviors the sdk handler
 // adapter needs: per-request capabilities, request-state echo key, operation
 // logging, and companion-app annotation on needs_human results.
 var sdkHandlerDeps = sdk.HandlerDeps{
-	RequestCaps: func(req *sdk.CallToolRequest) *model.RequestCaps {
-		return requestCaps(req, transportFlagsVar)
-	},
+	RequestCaps: requestCaps,
 	ReservedRequestStateKey: opmesh.ReservedRequestStateKey,
 	LogStart:                func(name string, args map[string]any) { logToolCallStart(log, name, args) },
 	LogEnd: func(name string, startedAt time.Time, result model.ToolResult, err error) {
@@ -128,127 +145,6 @@ func OfficialMCPServer(root *cli.Command, stdioMode bool, seedDrop *oob.SeedDrop
 		return nil, nil, err
 	}
 	return srv, catalog, nil
-}
-
-// requestCaps builds the SDK-neutral per-request capability view of the
-// calling client from an official SDK call-tool request. MCP is stateless: the
-// capabilities arrive in the request _meta (with a legacy initialize-handshake
-// fallback), so this is re-derived for every invocation rather than stored on
-// a session.
-//
-// In addition to the legacy fields (ProtocolVersion, ClientName, UI), this now
-// also reads req.GetExtra() to extract HTTP headers (User-Agent) and OAuth
-// TokenInfo — signals the go-sdk carries but Pinner previously ignored. These
-// feed the hostenv DetectorRegistry to produce a PlatformProfile.
-//
-// transportFlags carries the server launch configuration (co-located stdio
-// vs OpenAI tunnel vs HTTP), which the detector needs to resolve the correct
-// platform profile. It is threaded from the handler deps rather than captured
-// in a closure to keep requestCaps a pure function of its inputs.
-func requestCaps(req *sdk.CallToolRequest, transportFlags transportFlags) *model.RequestCaps {
-	rc := &model.RequestCaps{ProtocolVersion: req.ProtocolVersion()}
-	if ci := req.ClientInfo(); ci != nil {
-		rc.ClientName = ci.Name
-		rc.ClientVersion = ci.Version
-	}
-	if cc := req.ClientCapabilities(); cc != nil {
-		rc.UI = apps.GetClientUICapability(cc.Extensions)
-	}
-
-	// Extract wire signals from req.GetExtra() — the go-sdk carries HTTP
-	// headers and OAuth TokenInfo here, but only over HTTP transports.
-	// On stdio, Extra is nil.
-	var headers http.Header
-	var tokenInfo *hostenv.TokenInfo
-	if extra := req.GetExtra(); extra != nil {
-		headers = extra.Header
-		if extra.TokenInfo != nil {
-			tokenInfo = &hostenv.TokenInfo{
-				Scopes:     extra.TokenInfo.Scopes,
-				Expiration: extra.TokenInfo.Expiration,
-				UserID:     extra.TokenInfo.UserID,
-				Extra:      extra.TokenInfo.Extra,
-			}
-		}
-	}
-
-	// Build the DetectRequest from all available wire signals and resolve
-	// a PlatformProfile. The profile carries host type, transport, features,
-	// and raw signals — tools read it via request.Caps.Profile.
-	var ci *hostenv.ClientInfo
-	if req.ClientInfo() != nil {
-		wireCI := req.ClientInfo()
-		ci = &hostenv.ClientInfo{
-			Name:        wireCI.Name,
-			Version:     wireCI.Version,
-			Title:       wireCI.Title,
-			Description: wireCI.Description,
-		}
-	}
-
-	var userAgent string
-	if headers != nil {
-		userAgent = headers.Get("User-Agent")
-	}
-
-	profile := defaultDetectorRegistry.Detect(hostenv.DetectRequest{
-		ClientInfo:      ci,
-		ProtocolVersion: req.ProtocolVersion(),
-		UserAgent:       userAgent,
-		Headers:         headers,
-		TokenInfo:       tokenInfo,
-		CoLocated:       transportFlags.coLocated,
-		TunnelOpenAI:    transportFlags.tunnelOpenAI,
-	})
-
-	// Safety net: if the client advertises MCP Apps support on the wire
-	// (io.modelcontextprotocol/ui extension with text/html;profile=mcp-app)
-	// but the resolved static profile doesn't declare FeatMCPApps, overlay
-	// it so tools can branch at call time. This covers future hosts that
-	// advertise the capability but have no static profile entry yet.
-	if rc.UI != nil && rc.UI.SupportsApps() && !profile.Features[hostenv.FeatMCPApps] {
-		profile = profile.CloneFeatures()
-		profile.Features[hostenv.FeatMCPApps] = true
-	}
-
-	// When dev tools are enabled, capture the raw wire snapshot the dev_*
-	// tools introspect. The go-sdk types are converted to SDK-neutral JSON
-	// data so the model layer stays free of the protocol SDK. This is the
-	// only signal that reliably describes a remote host across HTTP/OAuth
-	// transports (the server's own process environment is unrelated).
-	if devToolsEnabled {
-		if cc := req.ClientCapabilities(); cc != nil {
-			rc.Capabilities = toJSONMap(cc)
-		}
-		if s := req.Session; s != nil {
-			if ip := s.InitializeParams(); ip != nil {
-				rc.InitializeParams = toJSONMap(ip)
-			}
-		}
-	}
-
-	// The request capability view carries the SDK-neutral profile; adapt the
-	// CLI-detected profile (features/host/wire signals are shared verbatim).
-	shared := profile.Shared()
-	rc.Profile = &shared
-
-	return rc
-}
-
-// toJSONMap converts a go-sdk-typed value into a plain JSON map so the
-// SDK-neutral model layer can carry it without importing the protocol SDK. It
-// returns nil when the value cannot be marshaled (defensive; the SDK structs
-// used here always serialize).
-func toJSONMap(v any) map[string]any {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return nil
-	}
-	out := map[string]any{}
-	if err := json.Unmarshal(b, &out); err != nil {
-		return nil
-	}
-	return out
 }
 
 // annotateAppOnHandoff appends companion-app context to a needs_human tool

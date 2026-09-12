@@ -386,6 +386,17 @@ func NewRegistry() *DetectorRegistry {
 	return &DetectorRegistry{core: canimcp.NewRegistry()}
 }
 
+// Core exposes the underlying canimcp registry. The mcpplane SDK's shared
+// caps builder (sdk.RequestCapsOptions.Registry) accepts the core registry
+// directly, so composition roots share one detector set between the shim's
+// per-request Detect path and the SDK's RequestCaps pipeline.
+func (r *DetectorRegistry) Core() *canimcp.DetectorRegistry {
+	if r == nil {
+		return nil
+	}
+	return r.core
+}
+
 // Detect resolves a DetectRequest to a PlatformProfile.
 func (r *DetectorRegistry) Detect(req DetectRequest) PlatformProfile {
 	return shimFromCore(r.core.Detect(convertEvidence(req)))
