@@ -45,11 +45,18 @@ func hostedAppProfile(
 			// Hosted assemblies do not pin against a local pinning
 			// provider today; a hosting that wires one flips this.
 			return pinsWired
-		default:
+		case appswire.LauncherPinList, appswire.LauncherAccount:
 			// Dependency-free rows on the hosted surface: the pin list and
 			// account screens attach to tools the hosted scope always
 			// registers.
 			return true
+		default:
+			// Unlisted rows include the OOB-gated sign-in/password/email
+			// screens and the vault surface: a hosted assembly wired by
+			// this profile registers none of them, so they are never
+			// claimed selectable. New dependency-free rows must be added
+			// here to count.
+			return false
 		}
 	}
 	// A hosted assembly wires no OOB coordinators and its default scope has
