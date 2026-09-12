@@ -13,7 +13,6 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
-	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 	corevault "go.lumeweb.com/pinner/core/vault"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -154,7 +153,7 @@ func TestBuildHostedServerViewDomainScopedToAssembly(t *testing.T) {
 	require.NoError(t, err)
 	var uploadView *mcp.Resource
 	for _, r := range res.Resources {
-		if r.URI == upload.IPFSUploadAppURI {
+		if r.URI == apps.UploadManagerAppURI() {
 			uploadView = r
 			break
 		}

@@ -51,6 +51,8 @@ import (
 	oobpkg "go.lumeweb.com/pinner-cli/internal/mcp/oob"
 	uploadpkg "go.lumeweb.com/pinner-cli/internal/mcp/upload"
 	vaultpkg "go.lumeweb.com/pinner-cli/internal/mcp/vault"
+
+	"go.lumeweb.com/pinner/mcp/appswire"
 )
 
 // stubUploadExec is a minimal-but-real UploadHandler (the shared shape behind
@@ -280,7 +282,7 @@ func openLauncherToolNames(t *testing.T) []string {
 	return []string{
 		apps.OpenPinCreatorToolName,
 		downloadpkg.OpenPinListToolName,
-		uploadpkg.OpenUploadManagerToolName,
+		appswire.LauncherUploadManager,
 		uploadpkg.OpenVaultManagerToolName,
 		auth.OpenSSOSigninToolName,
 		auth.OpenAccountToolName,

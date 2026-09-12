@@ -15,6 +15,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
+
+	"go.lumeweb.com/pinner/mcp/appswire"
 )
 
 // requireMCPTargets asserts a tool descriptor declares a per-profile MCP target
@@ -41,8 +43,10 @@ func TestToolRegistrationsCarryMCPTargets(t *testing.T) {
 	requireMCPTargets(t, vault.NewVaultGetFileDescriptor(nil, nil, "", 0, false))
 	requireMCPTargets(t, upload.RelayURLUploadDescriptor(nil, nil, 0))
 
-	// Upload-manager launchers.
-	requireMCPTargets(t, upload.NewOpenUploadManagerDescriptor(nil))
+	// Upload-manager launchers (module- and CLI-owned).
+	sumDesc, err := appswire.UploadManagerDescriptor(nil)
+	require.NoError(t, err)
+	requireMCPTargets(t, sumDesc)
 	requireMCPTargets(t, upload.NewOpenVaultManagerDescriptor(nil))
 
 	// UI launchers (the apps.NewOpenLauncherDescriptor path covers every

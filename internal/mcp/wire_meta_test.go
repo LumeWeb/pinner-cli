@@ -12,6 +12,8 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
+
+	"go.lumeweb.com/pinner/mcp/appswire"
 )
 
 // TestWireMetaHeadlessPrimitives asserts that the headless operational tools
@@ -67,7 +69,10 @@ func TestWireMetaHeadlessPrimitives(t *testing.T) {
 func TestWireMetaLaunchers(t *testing.T) {
 	hp := mcptransfer.NewHTTPUpload(mcptransfer.NewUploadTaskManager(nil, 0), 0)
 
-	launcher := upload.NewOpenUploadManagerDescriptor(hp)
+	launcher, err := appswire.UploadManagerDescriptor(hp)
+	if err != nil {
+		t.Fatalf("UploadManagerDescriptor: %v", err)
+	}
 	tool := sdk.Tool(launcher)
 	if tool.Meta == nil {
 		t.Fatal("open_upload_manager Meta is nil")

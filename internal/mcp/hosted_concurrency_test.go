@@ -12,7 +12,6 @@ import (
 	"go.lumeweb.com/mcpplane/sdk"
 	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
-	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 )
 
 // TestBuildHostedServerConcurrentViewDomainAssemblies is the concurrency
@@ -68,7 +67,7 @@ func TestBuildHostedServerConcurrentViewDomainAssemblies(t *testing.T) {
 		require.NoErrorf(t, err, "assembly %d list resources", i)
 		var uploadView *mcp.Resource
 		for _, r := range res.Resources {
-			if r.URI == upload.IPFSUploadAppURI {
+			if r.URI == apps.UploadManagerAppURI() {
 				uploadView = r
 				break
 			}
@@ -128,7 +127,7 @@ func TestBuildHostedServerEmptyOriginSerializedAgainstResolver(t *testing.T) {
 		res, err := cs.ListResources(context.Background(), nil)
 		require.NoErrorf(t, err, "assembly %d list resources (%s)", i, what)
 		for _, r := range res.Resources {
-			if r.URI == upload.IPFSUploadAppURI {
+			if r.URI == apps.UploadManagerAppURI() {
 				ui, ok := r.Meta["ui"].(map[string]any)
 				require.Truef(t, ok, "assembly %d upload view carries _meta.ui (%s)", i, what)
 				return ui

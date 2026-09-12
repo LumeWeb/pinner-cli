@@ -10,7 +10,6 @@ import (
 	"go.lumeweb.com/mcpplane/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
-	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 )
 
 // httpsOriginOf returns the exact HTTPS origin (scheme://host[:port], no
@@ -228,7 +227,7 @@ func buildHostedServer(cfg HostedServerConfig) (*sdk.Server, *ToolCatalog, *Host
 	// coordinator's origin to that resource's connectDomains (the resource URI is
 	// otherwise mounted as a static default that most hosts use for their CSP).
 	if hostedTransfer != nil && hostedTransfer.Upload != nil {
-		if err := sdk.SetAppResourceConnectDomains(srv, upload.IPFSUploadAppURI, hostedTransfer.Upload.ConnectOrigins()); err != nil {
+		if err := sdk.SetAppResourceConnectDomains(srv, apps.UploadManagerAppURI(), hostedTransfer.Upload.ConnectOrigins()); err != nil {
 			return nil, nil, nil, err
 		}
 	}

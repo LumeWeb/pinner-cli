@@ -298,8 +298,11 @@ func TestToolDetailAlwaysEmitsBoolHints(t *testing.T) {
 }
 
 // TestIPFSAppHelpersWireContract pins the directory requirements on the
-// app-only upload helpers: boolean annotations, openai/toolInvocation labels,
-// and non-empty descriptions on every params property.
+// app-only upload helpers: boolean annotations and non-empty descriptions on
+// every params property. The helper DESCRIPTORS are module-owned
+// (go.lumeweb.com/pinner/mcp/appswire.UploadManagerHelpers), so the
+// openai/toolInvocation invocation labels the CLI-local copies used to carry
+// are not part of this contract anymore.
 func TestIPFSAppHelpersWireContract(t *testing.T) {
 	srv, _ := buildIPFSUploadAppServer(t)
 	cs := connectOfficialClient(t, srv)
@@ -316,10 +319,6 @@ func TestIPFSAppHelpersWireContract(t *testing.T) {
 		tool, ok := byName[name]
 		require.True(t, ok, "%s registered on the wire", name)
 		requireBoolHints(t, tool)
-		invocation, ok := tool.Meta["openai/toolInvocation"].(map[string]any)
-		require.True(t, ok, "%s: openai/toolInvocation metadata present", name)
-		require.NotEmpty(t, invocation["invoking"], "%s: present-tense invoking label", name)
-		require.NotEmpty(t, invocation["invoked"], "%s: past-tense invoked label", name)
 	}
 
 	// Every property of both helpers' input schemas carries a description.
