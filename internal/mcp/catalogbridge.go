@@ -250,7 +250,7 @@ func outputSchemaForCompiled(safety opmesh.Safety, interaction opmesh.Interactio
 // rest) stays coherent. Tools are discoverable via search_tools/describe_tool;
 // tools/list prominence is decided by stampDirectTools.
 func populateCatalogTools(tc *ToolCatalog, cat opmesh.Catalog) (map[string]bool, error) {
-	return populateCatalogToolsFor(tc, cat, FullDomainScope, false)
+	return populateCatalogToolsFor(tc, cat, activeDomainScope(), activeHosted())
 }
 
 // populateCatalogToolsFor compiles catalog operations against the explicitly
