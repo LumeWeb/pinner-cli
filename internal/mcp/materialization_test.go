@@ -530,18 +530,19 @@ func TestServerConfigPartialPolicyPreservesDeploymentAxes(t *testing.T) {
 		"partial listing policy must NOT erase ServerConfig.Hosted")
 	require.Equal(t, ListingFlat, catalog.Strategy,
 		"the policy's strategy must still apply")
-	// Flat mode omits discovery meta-tools unless explicitly enabled.
-	require.False(t, catalog.IncludeMetaOnFlat,
-		"partial flat policy must omit meta-tools by default")
+	// The safe meta default still holds for the partially-specified flat policy.
+	require.True(t, catalog.IncludeMetaOnFlat,
+		"partial flat policy must keep the safe meta-on-flat default")
 }
 
-// TestPartialFlatPolicyOmitsMetaByDefault is the BuildServer construction
-// regression for flat policies that omit IncludeMetaOnFlat: discovery
-// meta-tools stay off the wire unless a consumer explicitly enables them.
-func TestPartialFlatPolicyOmitsMetaByDefault(t *testing.T) {
+// TestPartialFlatPolicyKeepsMetaAndExplicitDisableHides is the MEDIUM-1
+// regression at the BuildServer construction seam: a flat policy that OMITS
+// IncludeMetaOnFlat keeps the discovery meta-tools (safe default), while an
+// EXPLICIT false still hides them (the intentional disable stays testable).
+func TestPartialFlatPolicyKeepsMetaAndExplicitDisableHides(t *testing.T) {
 	restoreConstructionGuards(t)
 
-	// Omitted IncludeMetaOnFlat omits meta tools from the wire.
+	// Omitted IncludeMetaOnFlat -> safe default keeps meta tools on the wire.
 	keepCfg := ServerConfig{
 		CatalogDeps: func() *CatalogDepsBundle { return fullTestBundle() },
 		Policy:      &ListingPolicy{Strategy: ListingFlat},
@@ -554,10 +555,10 @@ func TestPartialFlatPolicyOmitsMetaByDefault(t *testing.T) {
 	require.NoError(t, err)
 	keepNames, _ := materializedNames(t, keepSrv)
 	for _, n := range metaToolNames {
-		require.Falsef(t, keepNames[n], "partial flat policy (meta omitted) must omit meta tool %q from the wire", n)
+		require.Truef(t, keepNames[n], "partial flat policy (meta omitted) must keep meta tool %q on the wire", n)
 	}
 
-	// Explicit false produces the same flat surface.
+	// Explicit disable -> meta tools dropped (intentional override preserved).
 	disable := ListingPolicy{Strategy: ListingFlat, IncludeMetaOnFlat: boolPtr(false)}
 	hideCfg := ServerConfig{
 		CatalogDeps: func() *CatalogDepsBundle { return fullTestBundle() },
@@ -596,8 +597,8 @@ func TestLegacyListingGlobalsCannotAlterServerConstruction(t *testing.T) {
 		return RegisterOfficialDirectTools(srv, catalog)
 	}
 
-	// 1. A no-policy build keeps the progressive strategy and progressive
-	// wire surface. The flat-only meta setting remains disabled.
+	// 1. A NO-policy build keeps the safe defaults: progressive strategy,
+	// meta-on-flat true, progressive instructions and wire surface.
 	noPolicyCfg := ServerConfig{
 		CatalogDeps:    func() *CatalogDepsBundle { return fullTestBundle() },
 		RegisterCustom: registerDirect,
@@ -606,8 +607,8 @@ func TestLegacyListingGlobalsCannotAlterServerConstruction(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ListingProgressive, catalog.Strategy,
 		"legacy flat strategy global must not leak into a no-policy build")
-	require.False(t, catalog.IncludeMetaOnFlat,
-		"no-policy build must keep the disabled flat meta default")
+	require.True(t, catalog.IncludeMetaOnFlat,
+		"no-policy build must keep the safe meta-on-flat default, not the hostile global false")
 	require.Contains(t, catalog.Instructions(), "intentionally two-tier",
 		"a no-policy build's instructions must describe the progressive two-tier surface")
 	names, _ := materializedNames(t, srv)
