@@ -211,6 +211,12 @@ func buildHostedServer(cfg HostedServerConfig) (*sdk.Server, *ToolCatalog, *Host
 				downloadDrop:    dl,
 				coLocated:       false,
 				tunnelOpenAI:    false,
+				// The hosted assembly resolves feature-gated registration
+				// against an explicit profile (see hostedAppProfile): the
+				// fallback would be the bare HTTP transport profile, which
+				// carries no MCP Apps capability even when this assembly's
+				// app views are about to register.
+				hostProfile: hostedAppProfile(surface, curlUpload != nil || opts.ipfsDownload != nil, opts.pinnerPins != nil),
 			})
 		},
 	})

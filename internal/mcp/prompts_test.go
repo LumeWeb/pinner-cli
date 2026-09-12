@@ -22,7 +22,7 @@ import (
 // surface-gated prompt descriptor set the CLI registers.
 func promptHandlerByName(t *testing.T, name string) func(context.Context, model.PromptRequest) (model.PromptResult, error) {
 	t.Helper()
-	for _, p := range PromptDescriptorsForScope(FullDomainScope) {
+	for _, p := range PromptDescriptorsForScope(FullDomainScope, false) {
 		if p.Name == name {
 			require.NotNil(t, p.Handler, "prompt %q must carry a handler", name)
 			return p.Handler

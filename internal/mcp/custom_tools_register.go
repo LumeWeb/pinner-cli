@@ -7,6 +7,7 @@ import (
 	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/mcpplane/sdk"
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
+	"go.lumeweb.com/pinner/mcp/appswire"
 )
 
 // serverExtensionRole names one explicit registration role a server extension
@@ -490,6 +491,26 @@ func (r *serverExtensionRegistry) run() error {
 // fails to render — so it fails the assembly hard instead of being swallowed.
 func (r *serverExtensionRegistry) addLauncher(spec apps.OpenLauncherSpec, app func(srv *sdk.Server, catalog apps.AppCatalog) error) error {
 	desc, err := apps.NewOpenLauncherDescriptor(spec)
+	if err != nil {
+		return err
+	}
+	r.add(appLauncherSpec(desc, app))
+	return nil
+}
+
+// addLauncherFor registers the shared-table launcher for a launcher constant
+// (go.lumeweb.com/pinner/mcp/appswire): the OpenLauncherSpec is built from the
+// ONE declarative table both the CLI local assembly and the hosted assembly
+// gate on, so a launcher's wire identity (name, title, description skeleton,
+// category, ui:// URI) can never drift between the two composition roots —
+// only the dependency-bound installer differs. An unknown constant is a
+// compile-time-constant-vs-table divergence and fails the assembly hard.
+func (r *serverExtensionRegistry) addLauncherFor(launcher string, app func(srv *sdk.Server, catalog apps.AppCatalog) error) error {
+	v, ok := appswire.SpecForLauncher(launcher)
+	if !ok {
+		return fmt.Errorf("addLauncherFor: %q is not a declared app-view launcher in the shared table", launcher)
+	}
+	desc, err := v.NewLauncherDescriptorFor()
 	if err != nil {
 		return err
 	}

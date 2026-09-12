@@ -21,6 +21,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
+	"go.lumeweb.com/pinner/mcp/appswire"
 )
 
 // customToolDeps bundles everything the custom/direct-tool registration needs.
@@ -247,13 +248,7 @@ func collectServerExtensions(deps customToolDeps) (*MaterializationPlan, error) 
 		if err != nil {
 			return nil, fmt.Errorf("failed to build pinning provider: %w", err)
 		}
-		if err := reg.addLauncher(apps.OpenLauncherSpec{
-			Name:        apps.OpenPinCreatorToolName,
-			Title:       "Create a Pin",
-			Description: apps.OpenLauncherDescription("Create a Pin app", "enter a CID and pin it", "pins_add for autonomous pin creation without a rendered form"),
-			Category:    model.CategoryCore,
-			ResourceURI: apps.PinCreateAppURI,
-		}, func(srv *sdk.Server, catalog apps.AppCatalog) error {
+		if err := reg.addLauncherFor(appswire.LauncherPinCreator, func(srv *sdk.Server, catalog apps.AppCatalog) error {
 			return apps.RegisterPinApp(srv, catalog, pins)
 		}); err != nil {
 			return nil, err
@@ -284,13 +279,7 @@ func collectServerExtensions(deps customToolDeps) (*MaterializationPlan, error) 
 
 		// auth_sso stays headless (it returns a needs_human URL+handle handoff);
 		// open_sso_signin is the ONLY tool that opens the Sign In app view.
-		if err := reg.addLauncher(apps.OpenLauncherSpec{
-			Name:        auth.OpenSSOSigninToolName,
-			Title:       "Sign In (App)",
-			Description: apps.OpenLauncherDescription("Sign In app", "complete SSO approval", "auth_sso, which returns the approval URL + resume handle without rendering a card"),
-			Category:    model.CategoryAccount,
-			ResourceURI: auth.AuthSSOAppURI,
-		}, func(srv *sdk.Server, catalog apps.AppCatalog) error {
+		if err := reg.addLauncherFor(appswire.LauncherSSOSignin, func(srv *sdk.Server, catalog apps.AppCatalog) error {
 			return auth.RegisterAuthSSOApp(srv, catalog, deps.handoffReg, deps.authHandles)
 		}); err != nil {
 			return nil, err
@@ -311,22 +300,10 @@ func collectServerExtensions(deps customToolDeps) (*MaterializationPlan, error) 
 		// account_password_update / account_email_change stay headless (they return
 		// a needs_human URL handoff); open_account_password / open_account_email
 		// are the ONLY tools that open their one-shot deep-link app views.
-		if err := reg.addLauncher(apps.OpenLauncherSpec{
-			Name:        auth.OpenAccountPasswordToolName,
-			Title:       "Change Password (App)",
-			Description: apps.OpenLauncherDescription("Change Password app", "change their password", "account_password_update"),
-			Category:    model.CategoryAccount,
-			ResourceURI: auth.AccountPasswordAppURI,
-		}, auth.RegisterAccountPasswordApp); err != nil {
+		if err := reg.addLauncherFor(appswire.LauncherAccountPassword, auth.RegisterAccountPasswordApp); err != nil {
 			return nil, err
 		}
-		if err := reg.addLauncher(apps.OpenLauncherSpec{
-			Name:        auth.OpenAccountEmailToolName,
-			Title:       "Change Email (App)",
-			Description: apps.OpenLauncherDescription("Change Email app", "change their email", "account_email_change"),
-			Category:    model.CategoryAccount,
-			ResourceURI: auth.AccountEmailAppURI,
-		}, auth.RegisterAccountEmailApp); err != nil {
+		if err := reg.addLauncherFor(appswire.LauncherAccountEmail, auth.RegisterAccountEmailApp); err != nil {
 			return nil, err
 		}
 	} // end of CLI OOB / account-credential tool gating
@@ -350,24 +327,12 @@ func collectServerExtensions(deps customToolDeps) (*MaterializationPlan, error) 
 		reg.add(searchableOnly(vaultCreateResume))
 		reg.add(searchableOnly(vaultRestoreResume))
 
-		if err := reg.addLauncher(apps.OpenLauncherSpec{
-			Name:        vault.OpenVaultCreateToolName,
-			Title:       "Create Vault (App)",
-			Description: apps.OpenLauncherDescription("Create Vault app", "create a vault (Sia approval + recovery seed)", "vault_create, which returns the create URL + resume handle without rendering a card"),
-			Category:    model.CategoryStorage,
-			ResourceURI: vault.VaultCreateAppURI,
-		}, func(srv *sdk.Server, catalog apps.AppCatalog) error {
+		if err := reg.addLauncherFor(appswire.LauncherVaultCreate, func(srv *sdk.Server, catalog apps.AppCatalog) error {
 			return vault.RegisterVaultCreateApp(srv, catalog, deps.handoffReg, deps.authHandles)
 		}); err != nil {
 			return nil, err
 		}
-		if err := reg.addLauncher(apps.OpenLauncherSpec{
-			Name:        vault.OpenVaultRestoreToolName,
-			Title:       "Restore Vault (App)",
-			Description: apps.OpenLauncherDescription("Restore Vault app", "restore a vault from its recovery seed", "vault_restore, which returns the restore URL + resume handle without rendering a card"),
-			Category:    model.CategoryStorage,
-			ResourceURI: vault.VaultRestoreAppURI,
-		}, func(srv *sdk.Server, catalog apps.AppCatalog) error {
+		if err := reg.addLauncherFor(appswire.LauncherVaultRestore, func(srv *sdk.Server, catalog apps.AppCatalog) error {
 			return vault.RegisterVaultRestoreApp(srv, catalog, deps.handoffReg, deps.authHandles)
 		}); err != nil {
 			return nil, err
@@ -375,39 +340,21 @@ func collectServerExtensions(deps customToolDeps) (*MaterializationPlan, error) 
 
 		// vault_status stays headless (returns raw JSON); open_vault_browser
 		// is the ONLY tool that opens the Vault browser app view.
-		if err := reg.addLauncher(apps.OpenLauncherSpec{
-			Name:        vault.OpenVaultBrowserToolName,
-			Title:       "Vault Browser (App)",
-			Description: apps.OpenLauncherDescription("Vault browser app", "browse the vault", "vault_status / vault_ls for autonomous access"),
-			Category:    model.CategoryStorage,
-			ResourceURI: vault.VaultBrowserAppURI,
-		}, vault.RegisterVaultBrowserApp); err != nil {
+		if err := reg.addLauncherFor(appswire.LauncherVaultBrowser, vault.RegisterVaultBrowserApp); err != nil {
 			return nil, err
 		}
 	}
 
 	// pins_list stays headless (returns raw JSON); open_pin_list is the ONLY
 	// tool that opens the Pin list app view.
-	if err := reg.addLauncher(apps.OpenLauncherSpec{
-		Name:        download.OpenPinListToolName,
-		Title:       "Pin List (App)",
-		Description: apps.OpenLauncherDescription("Pin list app", "browse pins", "pins_list for autonomous access"),
-		Category:    model.CategoryCore,
-		ResourceURI: download.PinListAppURI,
-	}, download.RegisterPinListApp); err != nil {
+	if err := reg.addLauncherFor(appswire.LauncherPinList, download.RegisterPinListApp); err != nil {
 		return nil, err
 	}
 
 	// auth_status stays headless (returns raw JSON); open_account is the ONLY
 	// tool that opens the Account app view. Gated on the account surface.
 	if accountOn {
-		if err := reg.addLauncher(apps.OpenLauncherSpec{
-			Name:        auth.OpenAccountToolName,
-			Title:       "Account (App)",
-			Description: apps.OpenLauncherDescription("Account app", "view authentication status", "auth_status for autonomous access"),
-			Category:    model.CategoryAccount,
-			ResourceURI: auth.AuthStatusAppURI,
-		}, auth.RegisterAuthStatusApp); err != nil {
+		if err := reg.addLauncherFor(appswire.LauncherAccount, auth.RegisterAuthStatusApp); err != nil {
 			return nil, err
 		}
 	}
@@ -550,13 +497,7 @@ func collectServerExtensions(deps customToolDeps) (*MaterializationPlan, error) 
 		dlDesc := transfer.NewDownloadFileDescriptor(opts.ipfsDownload, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
 		// download_file is headless; the app's view attaches to the explicit
 		// open_download_manager launcher.
-		if err := reg.addLauncher(apps.OpenLauncherSpec{
-			Name:        download.OpenDownloadManagerToolName,
-			Title:       "Download from IPFS",
-			Description: apps.OpenLauncherDescription("Download from IPFS app", "initiate a download", "download_file for autonomous downloads without a rendered form"),
-			Category:    model.CategoryCore,
-			ResourceURI: download.IPFSDownloadAppURI,
-		}, download.RegisterIPFSDownloadApp); err != nil {
+		if err := reg.addLauncherFor(appswire.LauncherDownloadManager, download.RegisterIPFSDownloadApp); err != nil {
 			return nil, err
 		}
 		reg.add(directSearchable(dlDesc))
@@ -569,13 +510,7 @@ func collectServerExtensions(deps customToolDeps) (*MaterializationPlan, error) 
 		dlDesc := vault.NewVaultGetFileDescriptor(opts.vaultGet, deps.downloadDrop, downloadRoot, ieo.EffectiveRelayMaxBytes(opts.maxRelayBytes), deps.tunnelOpenAI)
 		// vault_get_file is headless; the app's view attaches to the explicit
 		// open_vault_download_manager launcher.
-		if err := reg.addLauncher(apps.OpenLauncherSpec{
-			Name:        download.OpenVaultDownloadManagerToolName,
-			Title:       "Download from Vault",
-			Description: apps.OpenLauncherDescription("Download from Vault app", "initiate a vault download", "vault_get_file for autonomous vault downloads without a rendered form"),
-			Category:    model.CategoryStorage,
-			ResourceURI: download.VaultDownloadAppURI,
-		}, download.RegisterVaultDownloadApp); err != nil {
+		if err := reg.addLauncherFor(appswire.LauncherVaultDownloadMgr, download.RegisterVaultDownloadApp); err != nil {
 			return nil, err
 		}
 		reg.add(directSearchable(dlDesc))
@@ -725,7 +660,7 @@ func collectServerExtensions(deps customToolDeps) (*MaterializationPlan, error) 
 	// carries the wizard tools.
 	if opts.prompts {
 		reg.afterSurface(func() error {
-			prompts := dropWizardPromptsWithoutWizardTools(deps.catalog, PromptDescriptorsForScope(surface))
+			prompts := dropWizardPromptsWithoutWizardTools(deps.catalog, PromptDescriptorsForScope(surface, deps.catalog.Hosted))
 			if len(prompts) == 0 {
 				return nil
 			}
