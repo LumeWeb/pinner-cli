@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.lumeweb.com/pinner/mcp/appswire"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
 	"go.lumeweb.com/mcpplane/model"
@@ -63,12 +65,9 @@ func pinStatusDescriptor(pins PinningProvider) model.ToolDescriptor {
 		// OpenAI tool invocation labels shown by UI-capable hosts while the
 		// tool runs and after it finishes. Required alongside the openai
 		// outputTemplate this app helper carries.
-		Meta: map[string]any{
-			"openai/toolInvocation": map[string]any{
-				"invoking": "Checking pin status…",
-				"invoked":  "Pin status checked",
-			},
-		},
+		Meta: mustToolInvocationMeta(appswire.ToolInvocationMeta(PinCreateAppURI,
+			[]model.ToolVisibility{model.ToolVisibilityApp},
+			"Checking pin status…", "Pin status checked")),
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			cid, _ := req.Arguments["cid"].(string)
 			if cid == "" {
@@ -84,6 +83,17 @@ func pinStatusDescriptor(pins PinningProvider) model.ToolDescriptor {
 			}, nil
 		},
 	}
+}
+
+// mustToolInvocationMeta unwraps appswire.ToolInvocationMeta's result for app
+// helpers whose URI and labels are constant and non-empty — the only way the
+// meta build can fail. A failure is a compile-time-wiring divergence (an empty
+// constant), so it fails loudly instead of being swallowed.
+func mustToolInvocationMeta(meta mcp.Meta, err error) mcp.Meta {
+	if err != nil {
+		panic(err)
+	}
+	return meta
 }
 
 // RegisterPinApp wires the complete "Create a Pin" MCP App: attaches the

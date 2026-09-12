@@ -42,7 +42,7 @@ func RenderVaultRestoreAppHTML() string {
 // only the Restore Vault view can poll it; the model never sees it. It carries
 // no secrets (the seed is entered on the human-only page, never here).
 func VaultRestoreStatusDescriptor(reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
-	return handoff.NewResumeTool(handoff.ResumeToolSpec{
+	return handoff.MustResumeTool(handoff.NewResumeTool(handoff.ResumeToolSpec{
 		Name:                "vault_restore_status",
 		Title:               "Vault Restore Status",
 		Description:         "Poll a pending vault restore hand-off by handle. App-only helper for the Restore Vault view.",
@@ -51,7 +51,9 @@ func VaultRestoreStatusDescriptor(reg *handoff.HandoffRegistry, handles *session
 		ExpiredHandleDetail: "the vault restore hand-off expired before the human completed it; start a fresh vault restore with vault_restore",
 		DeadHandleReason:    model.ReasonCredentialEntry,
 		Category:            model.CategoryStorage,
-	}, reg, handles)
+		ResourceURI:         VaultRestoreAppURI,
+		Visibility:          []model.ToolVisibility{model.ToolVisibilityApp},
+	}, reg, handles))
 }
 
 // RegisterVaultRestoreApp wires the complete "Restore Vault" MCP App onto the

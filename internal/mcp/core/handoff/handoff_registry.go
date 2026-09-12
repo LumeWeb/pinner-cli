@@ -11,6 +11,7 @@ import (
 	"go.lumeweb.com/mcpplane/model"
 
 	"go.lumeweb.com/mcpplane/toolargs"
+	"go.lumeweb.com/pinner/mcp/appswire"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 )
 
@@ -226,6 +227,15 @@ type ResumeToolSpec struct {
 	// mcpplane/model.ToolCategory's documented "vault" -> CategoryStorage
 	// entry. Clients that filter a tools/list by category must use "storage".
 	Category model.ToolCategory
+	// ResourceURI is the ui:// view URI the resume tool's view attachment
+	// points at. It feeds appswire.ToolInvocationMeta's ui.resourceUri and must
+	// be non-empty (a wiring bug when missing).
+	ResourceURI string
+	// Visibility is the wrapped tool's visibility (app-only *_status helpers
+	// use []model.ToolVisibility{model.ToolVisibilityApp}; model-facing
+	// *_resume tools use [Model, App]). It feeds appswire.ToolInvocationMeta's
+	// ui.visibility.
+	Visibility []model.ToolVisibility
 }
 
 // CategoryOrDefault returns the resume tool's category, defaulting to
@@ -267,7 +277,12 @@ func (s ResumeToolSpec) deadHandleReason() model.HandoffReason {
 // A domain supplies its tool spec (name, description, restart steering, and
 // dead-handle guidance text). Example: SSO calls
 // NewResumeTool(ResumeToolSpec{Name: "auth_resume", ...}, reg, handles).
-func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
+func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *session.AsyncHandleStore) (model.ToolDescriptor, error) {
+	meta, err := appswire.ToolInvocationMeta(spec.ResourceURI, spec.Visibility,
+		"Checking hand-off status…", "Hand-off status checked")
+	if err != nil {
+		return model.ToolDescriptor{}, err
+	}
 	return model.ToolDescriptor{
 		Name:        spec.Name,
 		Title:       spec.title(),
@@ -275,15 +290,7 @@ func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *session.A
 		Category:    spec.CategoryOrDefault(),
 		MCPTargets:  toolforge.MCPTargets(toolforge.Fallback(spec.Description)),
 		InputSchema: toolargs.ToolSchemaFor[resumeArgs](),
-		// OpenAI tool invocation labels shown by UI-capable hosts while the
-		// tool runs and after it finishes. Required alongside the openai
-		// outputTemplate the app-helper status variants carry.
-		Meta: map[string]any{
-			"openai/toolInvocation": map[string]any{
-				"invoking": "Checking hand-off status…",
-				"invoked":  "Hand-off status checked",
-			},
-		},
+		Meta:        meta,
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			if reg == nil || handles == nil {
 				return model.NeedsHumanResult(model.NeedsHuman{
@@ -338,7 +345,19 @@ func NewResumeTool(spec ResumeToolSpec, reg *HandoffRegistry, handles *session.A
 			}
 			return result, nil
 		},
+	}, nil
+}
+
+// MustResumeTool unwraps NewResumeTool's (descriptor, error) result for callers
+// whose spec carries constant, non-empty ResourceURI/labels — the only way the
+// meta build can fail. A failure is therefore a compile-time-wiring divergence
+// (an empty constant spec), so it fails loudly instead of being swallowed; the
+// domain descriptor wrappers keep their single-value ergonomics.
+func MustResumeTool(desc model.ToolDescriptor, err error) model.ToolDescriptor {
+	if err != nil {
+		panic(err)
 	}
+	return desc
 }
 
 // isTerminalResume reports whether a resume result is terminal (done) rather

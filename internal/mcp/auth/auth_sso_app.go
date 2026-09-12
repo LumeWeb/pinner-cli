@@ -40,7 +40,7 @@ func RenderAuthSSOAppHTML() string {
 // auth_resume, but is registered with model.ToolVisibilityApp so only the Sign In
 // view can poll it; the model never sees it. It carries no secrets.
 func authSSOStatusDescriptor(reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
-	return handoff.NewResumeTool(handoff.ResumeToolSpec{
+	return handoff.MustResumeTool(handoff.NewResumeTool(handoff.ResumeToolSpec{
 		Name:                "auth_sso_status",
 		Title:               "Auth Sign-In Status",
 		Description:         "Poll a pending out-of-band sign-in by handle. App-only helper for the Sign In view.",
@@ -49,7 +49,9 @@ func authSSOStatusDescriptor(reg *handoff.HandoffRegistry, handles *session.Asyn
 		ExpiredHandleDetail: "the sign-in handle expired before approval; start a fresh login with auth_sso",
 		DeadHandleReason:    model.ReasonSSOApproval,
 		Category:            model.CategoryAccount,
-	}, reg, handles)
+		ResourceURI:         AuthSSOAppURI,
+		Visibility:          []model.ToolVisibility{model.ToolVisibilityApp},
+	}, reg, handles))
 }
 
 // RegisterAuthSSOApp wires the complete "Sign In" MCP App onto the shared
