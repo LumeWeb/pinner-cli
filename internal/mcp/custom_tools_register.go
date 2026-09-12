@@ -233,7 +233,7 @@ func (r *serverExtensionRegistry) add(s serverExtensionSpec) *serverExtensionReg
 }
 
 // beforeDirectTools provisions catalog entries that must exist before the pipeline
-// stamps the direct surface (wizard.RegisterWizardTools, registerDevTools).
+// stamps the direct surface (wizard.RegisterWizardTools).
 func (r *serverExtensionRegistry) beforeDirectTools(fn func(*ToolCatalog) error) *serverExtensionRegistry {
 	r.directProvisions = append(r.directProvisions, fn)
 	return r

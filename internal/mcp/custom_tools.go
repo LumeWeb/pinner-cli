@@ -89,11 +89,11 @@ type customToolDeps struct {
 	// are never registered over a remote transport, where a network client
 	// could use them to read/exfiltrate server-side files.
 	coLocated bool
-	// devTools reports whether the MCP server was launched with --dev-tools. When
-	// enabled, the dev_* introspection tools are registered onto the catalog (as
-	// DirectVisible entries) and the per-request raw wire snapshot is captured so
-	// they can introspect the connected host. When disabled they are absent from
-	// the surface entirely.
+	// devTools reports whether the MCP server was launched with --dev-tools.
+	// When enabled, the module-owned dev_* introspection tools are provisioned
+	// onto the catalog (see registerDevTools) and the per-request raw wire
+	// snapshot is captured so they can introspect the connected host. When
+	// disabled they are absent from the surface entirely.
 	devTools bool
 	// tunnelOpenAI reports whether the server is running through the embedded
 	// OpenAI Secure MCP Tunnel, which exposes no reachable HTTP mux (all RPC
@@ -174,7 +174,7 @@ func computeTransferAvailability(deps customToolDeps, opts *mcpServerOptions, su
 // (catalog-searchable membership, the direct SDK projection, app launchers,
 // app-only helpers) instead of a boolean role matrix, and the collection phase
 // validates the declared roles, provisions the direct catalog additions
-// (wizard/dev tools), and indexes every searchable extension — in that order —
+// (wizard tools), and indexes every searchable extension — in that order —
 // so the final indexed membership exists before any projection is derived.
 // The extension families it covers: wizard tools (sessions + step handlers),
 // the agent-facing out-of-band sign-in tools, direct/stamped catalog
@@ -224,11 +224,11 @@ func collectServerExtensions(deps customToolDeps) (*MaterializationPlan, error) 
 		roles: serverExtensionRoles{roleCatalogSearch},
 	})
 
-	// Direct-phase provisions: wizard tools and dev-introspection tools
-	// append catalog entries whose direct visibility rides the DirectVisible
-	// DirectVisible projection (the wizard's own toolAdder, dev tools as
-	// DirectVisible entries). The provisions run first so the direct stamp
-	// sees them exactly as the former pre-run registration did.
+	// Direct-phase provisions: wizard tools and (under --dev-tools) the
+	// module-owned dev_* introspection tools append catalog entries whose
+	// direct visibility rides the DirectVisible projection. The provisions run
+	// first so the direct stamp sees them exactly as the former pre-run
+	// registration did.
 	if deps.hasWizard {
 		reg.beforeDirectTools(func(cat *ToolCatalog) error {
 			return wizard.RegisterWizardTools(cat, deps.store, deps.wizardW, deps.wizardS, deps.wizardD)
@@ -236,8 +236,7 @@ func collectServerExtensions(deps customToolDeps) (*MaterializationPlan, error) 
 	}
 	if deps.devTools {
 		reg.beforeDirectTools(func(cat *ToolCatalog) error {
-			registerDevTools(cat)
-			return nil
+			return registerDevTools(cat)
 		})
 	}
 

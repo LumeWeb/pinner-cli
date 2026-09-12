@@ -44,7 +44,7 @@ require (
 	go.lumeweb.com/mcpplane v0.0.0-20260912095121-3753dd085aa8
 	go.lumeweb.com/oauth v0.1.6
 	go.lumeweb.com/opmesh v0.0.0-20260907112428-ade506e64ae9
-	go.lumeweb.com/pinner v0.0.0-20260912083910-e9078eb61424
+	go.lumeweb.com/pinner v0.0.0-20260912092134-abd7bad550c0
 	go.lumeweb.com/portal-sdk v0.1.72
 	go.lumeweb.com/queryutil v0.3.19
 	go.lumeweb.com/tunneler v0.0.0-20260907123602-56944ca7aeae
