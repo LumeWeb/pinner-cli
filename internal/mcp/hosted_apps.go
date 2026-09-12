@@ -45,11 +45,14 @@ func hostedAppProfile(
 			// Hosted assemblies do not pin against a local pinning
 			// provider today; a hosting that wires one flips this.
 			return pinsWired
-		case appswire.LauncherPinList, appswire.LauncherAccount:
-			// Dependency-free rows on the hosted surface: the pin list and
-			// account screens attach to tools the hosted scope always
-			// registers.
+		case appswire.LauncherPinList:
+			// The pin list screen attaches to a tool the hosted scope
+			// always registers.
 			return true
+		case appswire.LauncherAccount:
+			// The Account app view is registered only when the account
+			// surface is on (custom_tools.go accountOn gate).
+			return surface.AccountOn()
 		default:
 			// Unlisted rows include the OOB-gated sign-in/password/email
 			// screens and the vault surface: a hosted assembly wired by
