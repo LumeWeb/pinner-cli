@@ -89,6 +89,12 @@ type customToolDeps struct {
 	// are never registered over a remote transport, where a network client
 	// could use them to read/exfiltrate server-side files.
 	coLocated bool
+	// devTools reports whether the MCP server was launched with --dev-tools.
+	// When enabled, the module-owned dev_* introspection tools are provisioned
+	// onto the catalog (see registerDevTools) and the per-request raw wire
+	// snapshot is captured so they can introspect the connected host. When
+	// disabled they are absent from the surface entirely.
+	devTools bool
 	// tunnelOpenAI reports whether the server is running through the embedded
 	// OpenAI Secure MCP Tunnel, which exposes no reachable HTTP mux (all RPC
 	// flows through the tunnel protocol). It distinguishes the OpenAI tunnel
@@ -218,13 +224,19 @@ func collectServerExtensions(deps customToolDeps) (*MaterializationPlan, error) 
 		roles: serverExtensionRoles{roleCatalogSearch},
 	})
 
-	// Direct-phase provisions: wizard tools append catalog entries whose
-	// direct visibility rides the DirectVisible projection (the wizard's own
-	// toolAdder). The provisions run first so the direct stamp sees them
-	// exactly as the former pre-run registration did.
+	// Direct-phase provisions: wizard tools and (under --dev-tools) the
+	// module-owned dev_* introspection tools append catalog entries whose
+	// direct visibility rides the DirectVisible projection. The provisions run
+	// first so the direct stamp sees them exactly as the former pre-run
+	// registration did.
 	if deps.hasWizard {
 		reg.beforeDirectTools(func(cat *ToolCatalog) error {
 			return wizard.RegisterWizardTools(cat, deps.store, deps.wizardW, deps.wizardS, deps.wizardD)
+		})
+	}
+	if deps.devTools {
+		reg.beforeDirectTools(func(cat *ToolCatalog) error {
+			return registerDevTools(cat)
 		})
 	}
 

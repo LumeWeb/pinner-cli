@@ -298,6 +298,10 @@ adapter.`,
 					// protocol — so the remote upload_file branch must not be
 					// advertised there.
 					tunnelOpenAI: cmd.String("tunnel") == "openai",
+					// Register the module-owned dev_* introspection tools only
+					// when the server was launched with --dev-tools (the raw
+					// wire snapshot they read is armed by SetDevTools above).
+					devTools:    cmd.Bool("dev-tools"),
 					hasWizard:   hasWizard,
 					wizardW:     wizardW,
 					wizardS:     wizardS,
