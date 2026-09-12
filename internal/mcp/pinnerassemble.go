@@ -40,7 +40,7 @@ func AssemblePresentation(deps *CatalogDepsBundle, surface DomainScope, hosted b
 		// FeatureCarrier bridge the catalog compiler uses (see
 		// compileProfileFor): ProfileFromHas probes every feature the module's
 		// description DSL gates on, so no gated segment can be dropped.
-		Profile: compileProfileFor(startupProfile()),
+		Profile: compileProfileFor(startupProfile(surface, hosted)),
 		Catalog: cat,
 	})
 }

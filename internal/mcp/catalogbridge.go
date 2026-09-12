@@ -19,14 +19,13 @@ import (
 // (no per-request profile is available there). The startup transport is
 // derived from the same flags that SetTransportFlags records (co-located stdio,
 // OpenAI tunnel, or plain HTTP).
-func startupProfile() hostenv.PlatformProfile {
+func startupProfile(surface DomainScope, hosted bool) hostenv.PlatformProfile {
 	p := hostenv.ProfileForTransport(transfer.UploadFileTransport(transportFlagsVar.coLocated, transportFlagsVar.tunnelOpenAI))
-	// The server surface and deployment mode are construction-time properties
-	// recorded by buildCatalog; carry them on the startup profile so
-	// profile-aware tool description/schema resolution (which reads the
-	// profile's surface) agrees with what was actually registered.
-	p.DomainScope = activeDomainScope()
-	p.Hosted = activeHosted()
+	// The server surface and deployment mode are construction-time properties;
+	// carry the caller's captured values so profile-aware description/schema
+	// resolution agrees with what was actually registered.
+	p.DomainScope = surface
+	p.Hosted = hosted
 	return p
 }
 
@@ -251,6 +250,13 @@ func outputSchemaForCompiled(safety opmesh.Safety, interaction opmesh.Interactio
 // rest) stays coherent. Tools are discoverable via search_tools/describe_tool;
 // tools/list prominence is decided by stampDirectTools.
 func populateCatalogTools(tc *ToolCatalog, cat opmesh.Catalog) (map[string]bool, error) {
+	return populateCatalogToolsFor(tc, cat, activeDomainScope(), activeHosted())
+}
+
+// populateCatalogToolsFor compiles catalog operations against the explicitly
+// captured server deployment state. Production callers must use this seam so
+// concurrent server construction cannot cross-contaminate compiler profiles.
+func populateCatalogToolsFor(tc *ToolCatalog, cat opmesh.Catalog, surface DomainScope, hosted bool) (map[string]bool, error) {
 	if tc == nil {
 		return nil, fmt.Errorf("populateCatalogTools: nil tool catalog")
 	}
@@ -263,7 +269,7 @@ func populateCatalogTools(tc *ToolCatalog, cat opmesh.Catalog) (map[string]bool,
 	// profile) so the static/non-profile surface does not collapse to the
 	// short base description instead. Per-request describe_tool/search_tools
 	// still re-resolves against the live profile.
-	descs, err := catalogmcp.NewCompilerForProfile(compileProfileFor(startupProfile())).Compile(cat)
+	descs, err := catalogmcp.NewCompilerForProfile(compileProfileFor(startupProfile(surface, hosted))).Compile(cat)
 	if err != nil {
 		return nil, fmt.Errorf("populateCatalogTools: compile operation catalog: %w", err)
 	}
