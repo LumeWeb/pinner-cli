@@ -514,11 +514,23 @@ func TestCustomRegistrationInventoryHostedProductionAssembly(t *testing.T) {
 		_, inCat := catalog.Get(n)
 		require.Falsef(t, inCat, "hosted catalog must not index %q", n)
 	}
-	// open_app and the async upload-management tools stay search-only on the
-	// hosted server too: catalog-indexed (discoverable) but never directly
-	// listed on the generic agent-only hosted transport.
-	for _, n := range []string{"open_app", "upload_status", "upload_cancel", "upload_list"} {
+	// open_app is DIRECTLY listed on the hosted server: this assembly installs
+	// hosted-admissible app views (pin list, account, and — with transfer
+	// executors wired — the upload/download managers), and the shared app
+	// table's hosted gating makes the capability feature follow the installed
+	// inventory, so the consolidated launcher is real here. The async
+	// upload-management tools stay search-only: catalog-indexed (discoverable)
+	// but never directly listed.
+	require.Truef(t, wire["open_app"], "hosted assembly with installed app views must directly list open_app")
+	for _, n := range []string{"upload_status", "upload_cancel", "upload_list"} {
 		require.Falsef(t, wire[n], "hosted server must not directly list %q", n)
+		_, inCat := catalog.Get(n)
+		require.Truef(t, inCat, "hosted catalog must keep %q discoverable", n)
+	}
+	// The per-app open_* launchers stay search-only too — open_app is the
+	// single direct launcher on every surface.
+	for _, n := range []string{"open_pin_list", "open_account", "open_upload_manager", "open_download_manager"} {
+		require.Falsef(t, wire[n], "hosted per-app launcher %q must stay search-only", n)
 		_, inCat := catalog.Get(n)
 		require.Truef(t, inCat, "hosted catalog must keep %q discoverable", n)
 	}

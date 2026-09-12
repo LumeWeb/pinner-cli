@@ -71,6 +71,6 @@ func dropWizardPromptsWithoutWizardTools(catalog *ToolCatalog, prompts []model.P
 // ENS surface. A restricted scope (e.g. hosted) omits the prompts whose
 // underlying tools are not registered. The conversion is lossless: DomainScope
 // and assembly.DomainScope share the same underlying construction-time shape.
-func PromptDescriptorsForScope(scope DomainScope) []model.PromptDescriptor {
-	return mcp.PromptDescriptorsForScope(assembly.DomainScope(scope))
+func PromptDescriptorsForScope(scope DomainScope, hosted bool) []model.PromptDescriptor {
+	return mcp.PromptDescriptorsForScope(assembly.DomainScope(scope), hosted)
 }
