@@ -243,6 +243,23 @@ adapter.`,
 					// listing axes to the startup server.
 					buildOpts = append(buildOpts, normalized.opts()...)
 				}
+				if hostProfile != nil {
+					// Resolve the listing policy for the negotiated host. Web
+					// clients use a flat tools/list because their cloud
+					// connectors do not support progressive discovery. Other
+					// hosts keep the startup strategy. The reassembly keeps the
+					// startup surface, hosted flag, meta-tool setting, and
+					// onboarding choices; only the host-specific strategy may
+					// change. A flat startup stays flat.
+					//
+					// Apply this after normalized.opts() so the selected strategy
+					// controls the catalog, card, and instructions for this host.
+					startupListing := DefaultPolicy()
+					if normalized != nil {
+						startupListing = normalized.listing
+					}
+					buildOpts = append(buildOpts, withPolicy(hostListingPolicy(startupListing, *hostProfile)))
+				}
 				// One-pass materialization: collect every extension BEFORE the
 				// official server exists, so the constructed server's initialize
 				// instructions and the per-server card derive from the completed
@@ -332,7 +349,22 @@ adapter.`,
 			// profile-resolved descriptors.
 			httpTransport := transfer.UploadFileTransport(stdioMode, cmd.String("tunnel") == "openai")
 			hostServerFactory := func(profile hostenv.PlatformProfile) *sdk.Server {
-				if uploadVaultMatchesTransport(profile, httpTransport) {
+				// The startup server already serves a host when BOTH its upload/
+				// vault presentation matches the host's transport AND its listing
+				// policy matches the shared host selector's decision for that host.
+				// A flat-listing web host (Claude Web, Grok Web, ChatGPT/OpenAI web)
+				// NEVER matches the progressive startup server, so it gets a
+				// dedicated per-host reassembly whose tools/list — and card and
+				// instructions — materialize flat (with the safe discovery
+				// meta-tools retained). Generic/Grok-Shell/unknown hosts resolve
+				// progressive under the same selector and keep the startup server.
+				startupListing := DefaultPolicy()
+				if normalized != nil {
+					startupListing = normalized.listing
+				}
+				desired := hostListingPolicy(startupListing, profile)
+				if uploadVaultMatchesTransport(profile, httpTransport) &&
+					desired.Strategy == startupListing.Strategy {
 					return srv
 				}
 				srvH, _, err := assemble(&profile)

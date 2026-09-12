@@ -43,7 +43,7 @@ import (
 // meta-tools), with no advertised tool that is absent and no omitted tool that
 // is present.
 func TestFlatCardMatchesWire(t *testing.T) {
-	require.True(t, DefaultPolicy().ResolveIncludeMetaOnFlat(), "flat default keeps meta tools (safe invariant)")
+	require.False(t, DefaultPolicy().ResolveIncludeMetaOnFlat(), "flat default omits meta tools")
 	srv := buildStrategyServer(t, FullDomainScope, false, ListingFlat, true)
 	wire, _ := materializedNames(t, srv)
 	card := serverCardNames(deriveServerCardTools(FullDomainScope))
@@ -129,7 +129,7 @@ func TestFlatInstructionsDoNotPromiseProgressive(t *testing.T) {
 // gated ops), and a gated op is never surfaced directly in either case.
 func TestFlatDefaultKeepsMetaAndOverrideHides(t *testing.T) {
 	// Invariant default is explicit.
-	require.True(t, DefaultPolicy().ResolveIncludeMetaOnFlat(), "the safe invariant default keeps meta on flat")
+	require.False(t, DefaultPolicy().ResolveIncludeMetaOnFlat(), "the default omits meta on flat")
 	// The policy default is what a catalog captures (see ToolCatalog.metaOnFlat);
 	// it is no longer mirrored in any global for production to read.
 

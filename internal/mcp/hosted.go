@@ -52,6 +52,18 @@ type HostedServerConfig struct {
 	// (e.g. WithPrompts, IPFS upload/download providers).
 	Options []MCPServerOption
 
+	// Policy, when set, is the explicit tool-listing policy for this hosted
+	// assembly — the SHARED go.lumeweb.com/pinner/mcp ListingPolicy, threaded
+	// into BuildServer so the hosted tools/list materialization (direct vs
+	// progressive, and the meta-on-flat decision) resolves through the one
+	// shared policy/selector seam the self-hosted CLI assembly uses. A hosted
+	// composition root resolves it via the shared host selector
+	// (pinner/mcp.PolicyForHost) when its audience is a detected host — the
+	// web hosts that bypass progressive discovery (Claude Web, Grok Web,
+	// ChatGPT/OpenAI web) select flat with the safe discovery meta-tools
+	// retained — or leaves it nil for the progressive default.
+	Policy *ListingPolicy
+
 	// BaseURL is the externally reachable origin of this hosted server (e.g.
 	// https://pinner.xyz). It is applied to the IPFS byte-route coordinators
 	// BEFORE their ConnectOrigins are computed for the upload app resource's
@@ -129,7 +141,11 @@ func buildHostedServer(cfg HostedServerConfig) (*sdk.Server, *ToolCatalog, *Host
 		Hosted:      true, // hosted mode is declared here, at the one construction seam
 		DomainScope: surface,
 		CatalogDeps: cfg.CatalogDeps,
-		StdioMode:   false,
+		// The shared listing policy (nil → BuildServer's progressive default).
+		// Hosted and self-hosted listing resolve through the same seam; see
+		// HostedServerConfig.Policy and internal/mcp/policy.go.
+		Policy:    cfg.Policy,
+		StdioMode: false,
 		// CollectExtensions runs the one-pass collection BEFORE the official
 		// server exists, so the constructed server's initialize instructions
 		// and the per-server card derive from the completed hosted catalog.

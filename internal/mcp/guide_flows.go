@@ -9,7 +9,7 @@ package mcp
 //     wire, because the restricted-surface filter drops every flow it cannot
 //     verify against this table;
 //   - the onboarding "start here" membership: the flows flagged onboarding
-//     supply isPrimaryTool, Onboarding() and ListingPolicy.IsOnboarded
+//     supply isPrimaryTool, Onboarding() and IsOnboarded(policy, ...)
 //     through the shared onboardingPredicate (the four primary flows; the
 //     auth flow's deliberate repeated auth_status step is de-duplicated by the
 //     derivation);
@@ -173,7 +173,7 @@ func guideFlowGate(name string, s DomainScope) (on bool, ok bool) {
 // helper: an explicit override (the policy's Onboarding set, threaded through
 // withPolicy → buildCatalog → catalog.OnboardingOverride) replaces the builtin
 // primary-tool predicate; an empty override defers to isPrimaryTool. Both
-// ListingPolicy.IsOnboarded and ToolCatalog.Onboarding consult this
+// IsOnboarded(policy, ...) and ToolCatalog.Onboarding consult this
 // single helper, so there is exactly one override semantics — a second copy in
 // either call site could silently disagree with the other.
 func onboardingPredicate(override []string) func(string) bool {
