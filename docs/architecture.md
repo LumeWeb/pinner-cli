@@ -44,14 +44,12 @@ internal/mcp/wizard/        MCP-side wizard FSMs (website/setup flows)
 internal/mcp/core/          MCP internal building blocks (sessions, model, transfer)
 internal/mcp/hostenv/       Host platform capability model (features/profiles)
 internal/mcp/toolforge/     Forge: host-aware tool/schema/guide construction
-internal/mcpapp/            Embedded MCP app assets & CSS (go:embed)
+internal/mcpapp/            Thin seam over go.lumeweb.com/pinner/canvasassets (render + theme)
 internal/urlopen/           Cross-platform "open URL in browser" helper
 internal/service/           OS service integration (Windows/systemd/launchd)
 internal/car/               CAR file root reading
 internal/io/                stdin as fs.FS
 internal/dnsutil/           DNS helpers
-internal/mcptest/           Go fake upstream server used by integration tests
-tests/sunpeak/              MCP integration tests (drives `pinner mcp` over stdio)
 build/                      Build-time info (version/commit injected via ldflags)
 ```
 
@@ -200,9 +198,8 @@ the frontends.
 - `internal/mcp/wizard/` — FSM-based wizard flows (e.g. website creation),
   session-based with a TTL (`DefaultSessionTTL = 30m`,
   `DefaultMaxSessions = 100`).
-- `internal/mcpapp/` — embedded JS/CSS asset bundles for MCP-hosted UIs
-  (built by `pnpm`, embedded with `go:embed`; the server fails at startup if
-  the bundles are missing).
+- `internal/mcpapp/` — thin seam over `go.lumeweb.com/pinner/canvasassets`; the
+  embedded bundles + compiled theme are owned by the pinner module.
 
 ## Service Layer Pattern
 

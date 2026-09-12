@@ -17,7 +17,7 @@ coverage.*
 *.coverprofile
 profile.cov
 
-# Dependency directories (remove the comment below to include it)
+# Dependency directories
 vendor/
 
 # Go workspace file
@@ -43,13 +43,6 @@ pkg/account/client/
 pinner
 completions/
 .sisyphus/
-# The Sunpeak MCP e2e fixture HOME contains a pinner config.yaml; re-include
-# that config dir so the suite's sealed config (pointing at cmd/mcp-test-server)
-# ships with the repo. The bare `pinner` rule above would otherwise swallow
-# this path as an ignored directory.
-!tests/sunpeak/fixtures/pinner-home/.config/pinner/
-# fake API boot log emitted by the globalSetup harness
-tests/sunpeak/.mcp-e2e-fake.log
 
 # Git worktrees
 .worktrees/
@@ -62,25 +55,16 @@ node_modules/
 .pnpm-store/
 **/dist/
 
-# Compiled MCP Apps Tailwind theme (produced by `make cssbuild`; Go embeds it)
-internal/mcpapp/css/tailwind.css
-
-# Generated mcpcanvas AssetSource manifest for the embedded MCP App bundles
-# (produced by `go run ./build/genappmanifest`, wired into the jsbuild target;
-# Go embeds it, so it must exist at build time but is not committed)
-internal/mcpapp/appsassets/manifest.json
-
-# Sunpeak / Playwright MCP test artifacts
+# Sunpeak test artifacts (host-level MCP e2e)
 playwright-report/
 test-results/
 blob-report/
 .playwright/
+
 tests/evals/.env
 .auth/
 bin/
 
-
 # MCP Apps JS build / local tooling artifacts
-# (no trailing slash: also ignore the worktree symlinks to shared caches)
 node_modules
 .venv

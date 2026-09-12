@@ -58,5 +58,5 @@ re-export bridge the parent used during the sub-package extraction was removed.
 - `go build ./...` and `go vet ./internal/mcp/...` must stay clean.
 - `go test ./internal/mcp/tunnel/...` exercises the tunnel runtime in isolation.
 - `go test -race ./internal/mcp ./internal/mcp/tunnel` covers the provider lifecycles.
-- Run `make jsbuild cssbuild` (or `make build`) before Go build/test — the parent
-  `internal/mcp` embeds generated MCP-app assets this package's tests transitively need.
+- MCP-app assets (bundles, theme, manifest) are embedded from the pinned
+  `go.lumeweb.com/pinner/canvasassets` module — no local JS/CSS build step.

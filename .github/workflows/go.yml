@@ -47,9 +47,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Build JS bundles
-        uses: ./.github/actions/js-bundle
-
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -67,17 +64,8 @@ jobs:
       - name: Generate templ code
         run: templ generate
 
-      - name: Generate app asset manifest
-        # The js-bundle action stages the app bundles under
-        # internal/mcpapp/appsassets/dist, but the mcpcanvas AssetSource
-        # manifest next to them is generated at build time (gitignored).
-        # Without it every binary panics at init: "mcpcanvas: invalid asset
-        # manifest: ... open manifest.json: file does not exist". Must run on
-        # the host platform before the cross-compiling Build step. Same as the
-        # `jsbuild` step chained into `make assets`/`make test`.
-        env:
-          GOFLAGS: -mod=mod
-        run: go run ./build/genappmanifest
+      - name: Stage canvasassets embed inputs
+        uses: ./.github/actions/ensure-canvasassets
 
       - name: Build
         env:
@@ -90,113 +78,11 @@ jobs:
       - name: Test
         run: go test -v -count=1 ${{ matrix.race && '-race' || '' }} -tags "sqlite_fts5" ./...
 
-  js:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v5
-        with:
-          run_install: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
-      - name: Install JS deps
-        run: pnpm install --frozen-lockfile
-      - name: Type-check
-        run: pnpm exec tsc --noEmit
-        working-directory: packages/apps
-      - name: Test (vitest)
-        run: pnpm test
-        working-directory: packages/apps
-      - name: Build bundles
-        run: pnpm build
-
-  mcp-test:
-    # Host-level integration tests for the MCP server via Sunpeak (see
-    # tests/sunpeak/). Builds the real pinner binary, then runs the stdio
-    # protocol + inspector render suite and the raw-HTTP bearer/OAuth suites.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Build JS bundles
-        uses: ./.github/actions/js-bundle
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.27'
-
-      - name: Download dependencies
-        run: go mod download
-
-      - name: Install templ
-        run: go install github.com/a-h/templ/cmd/templ@v0.3.1020
-
-      - name: Generate templ code
-        run: templ generate
-
-      - name: Generate app asset manifest
-        # The js-bundle action stages the app bundles under
-        # internal/mcpapp/appsassets/dist, but the mcpcanvas AssetSource
-        # manifest next to them is generated at build time (gitignored).
-        # Without it the pinner binary panics at server assembly ("invalid
-        # asset manifest: ... open manifest.json: file does not exist").
-        # Same as the `jsbuild` step chained into `make assets`/`make test`.
-        env:
-          GOFLAGS: -mod=mod
-        run: go run ./build/genappmanifest
-
-      - name: Build pinner binary
-        # sqlite_fts5 so the sunpeak e2e binary (exercised via `pinner mcp`)
-        # can run the vault FTS5 migration like the shipped binary.
-        run: go build -tags "sqlite_fts5" -o bin/pinner ./cmd/pinner
-
-      - name: Install test deps
-        working-directory: tests/sunpeak
-        run: pnpm install --frozen-lockfile
-
-      - name: Install Playwright chromium
-        working-directory: tests/sunpeak
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: sunpeak stdio suite (protocol + app rendering)
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
-        working-directory: tests/sunpeak
-        run: pnpm test
-
-      - name: Build fake API binary (mcp-test-server)
-        run: go build -o bin/mcp-test-server ./cmd/mcp-test-server
-
-      - name: Sunpeak fake-API e2e suite (real tool calls via swagger-gen fake)
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
-        working-directory: tests/sunpeak
-        run: pnpm test:mcp-e2e
-
-      - name: HTTP static-bearer suite
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
-        working-directory: tests/sunpeak
-        run: pnpm test:http-bearer
-
-      - name: OAuth suite
-        env:
-          PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
-        working-directory: tests/sunpeak
-        run: pnpm test:oauth
-
   snapshot:
     runs-on: ubuntu-latest
     needs: [build]
     steps:
       - uses: actions/checkout@v6
-
-      - name: Build JS bundles
-        uses: ./.github/actions/js-bundle
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -212,14 +98,12 @@ jobs:
       - name: Generate templ code
         run: templ generate
 
-      - name: Generate app asset manifest
-        # The goreleaser build below embeds the app bundles + manifest; this
-        # time-generated (gitignored) manifest must exist before it or the
-        # snapshot binaries panic at init ("invalid asset manifest"). Same as
-        # the `jsbuild` step chained into `make assets`/`make test`.
-        env:
-          GOFLAGS: -mod=mod
-        run: go run ./build/genappmanifest
+      # Stage pinner's canvasassets into the host module cache. This must run
+      # on the host (not the container) because pinner's `make assets` needs
+      # the JS toolchain; the staged embed inputs are then handed to the
+      # goreleaser-cross container below by bind-mounting the host module cache.
+      - name: Stage canvasassets embed inputs
+        uses: ./.github/actions/ensure-canvasassets
 
       - name: Build snapshot artifacts (goreleaser-cross)
         run: |
@@ -228,8 +112,14 @@ jobs:
           # wipes at start).
           mkdir -p ci-logs
           set -o pipefail
+          # Bind-mount the host module cache into the container (its default
+          # GOMODCACHE is /go/pkg/mod) so the staged canvasassets embed inputs
+          # the host produced above are visible to the cross-build, which
+          # otherwise resolves go.lumeweb.com/pinner from a fresh cache without
+          # them.
           docker run --rm \
             -v "$PWD":/go/src/go.lumeweb.com/pinner-cli \
+            -v "$(go env GOMODCACHE)":/go/pkg/mod \
             -w /go/src/go.lumeweb.com/pinner-cli \
             -e GO_VERSION \
             ghcr.io/goreleaser/goreleaser-cross:v1.27 \
@@ -302,9 +192,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Build JS bundles
-        uses: ./.github/actions/js-bundle
-
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -316,17 +203,8 @@ jobs:
       - name: Generate templ code
         run: templ generate
 
-      - name: Generate app asset manifest
-        # The js-bundle action stages the app bundles under
-        # internal/mcpapp/appsassets/dist, but the mcpcanvas AssetSource
-        # manifest next to them is generated at build time (gitignored).
-        # Without it the managed pinner MCP server panics at assembly
-        # ("invalid asset manifest: ... open manifest.json: file does not
-        # exist") and never serves OAuth discovery. Same as the `jsbuild`
-        # step chained into `make assets`/`make test`.
-        env:
-          GOFLAGS: -mod=mod
-        run: go run ./build/genappmanifest
+      - name: Stage canvasassets embed inputs
+        uses: ./.github/actions/ensure-canvasassets
 
       - name: Build pinner binary + integration test binary
         run: |
@@ -353,9 +231,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Build JS bundles
-        uses: ./.github/actions/js-bundle
-
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
@@ -381,6 +256,9 @@ jobs:
       - name: Validate GoReleaser config
         run: goreleaser check
 
+      - name: Stage canvasassets embed inputs
+        uses: ./.github/actions/ensure-canvasassets
+
       - name: Vet
         run: go vet ./...
 
@@ -388,9 +266,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
-      - name: Build JS bundles
-        uses: ./.github/actions/js-bundle
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -406,16 +281,8 @@ jobs:
       - name: Generate templ code
         run: templ generate
 
-      - name: Generate app asset manifest
-        # The js-bundle action stages the app bundles under
-        # internal/mcpapp/appsassets/dist, but the mcpcanvas AssetSource
-        # manifest next to them is generated at build time (gitignored).
-        # Without it the internal/mcpapp tests panic at init ("invalid asset
-        # manifest: ... open manifest.json: file does not exist"). Same as the
-        # `jsbuild` step chained into `make assets`/`make test`.
-        env:
-          GOFLAGS: -mod=mod
-        run: go run ./build/genappmanifest
+      - name: Stage canvasassets embed inputs
+        uses: ./.github/actions/ensure-canvasassets
 
       - name: Test with coverage
         run: go test -v -race -tags "sqlite_fts5" -coverprofile=coverage.out -covermode=atomic ./...
