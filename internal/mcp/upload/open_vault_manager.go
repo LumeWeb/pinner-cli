@@ -12,6 +12,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/mintcontract"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 	corevault "go.lumeweb.com/pinner/core/vault"
+	pinnertransfer "go.lumeweb.com/pinner/transfer"
 )
 
 // OpenVaultManagerURI is the ui:// resource URI served by the Upload to Vault
@@ -114,10 +115,11 @@ func NewOpenVaultManagerDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescr
 			if gr, failed := vaultProfileGuard(in.Profile); failed {
 				return gr, nil
 			}
-			// ONE shared presign-TTL parser (core/transfer.ParsePresignTTL) —
-			// the launcher must accept exactly the TTL format the upload_file
-			// mint path and the app helpers accept.
-			ttl, terr := transfer.ParsePresignTTL(in.TTL)
+			// ONE canonical presign-TTL parser
+			// (go.lumeweb.com/pinner/transfer.ParsePresignTTL) — the launcher
+			// must accept exactly the TTL format the upload_file mint path
+			// and the app helpers accept.
+			ttl, terr := pinnertransfer.ParsePresignTTL(in.TTL)
 			if terr != nil {
 				return model.ToolResult{}, terr
 			}

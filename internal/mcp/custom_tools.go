@@ -21,6 +21,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
+	pinnermcp "go.lumeweb.com/pinner/mcp"
 	"go.lumeweb.com/pinner/mcp/appswire"
 )
 
@@ -583,8 +584,17 @@ func collectServerExtensions(deps customToolDeps) (*MaterializationPlan, error) 
 			uploadFileSpec.roles = append(uploadFileSpec.roles, roleCatalogSearch)
 		}
 		if transfer.SinkDropReachable(deps.curlUpload != nil, deps.tunnelOpenAI) {
-			reg.add(appLauncherSpec(upload.NewOpenUploadManagerDescriptor(deps.curlUpload), func(srv *sdk.Server, catalog apps.AppCatalog) error {
-				return upload.RegisterIPFSUploadApp(srv, catalog, deps.curlUpload)
+			// Shared seam (go.lumeweb.com/pinner/mcp/appswire): the launcher
+			// descriptor and the dependency-bound installer are module-owned;
+			// the CLI supplies the render func and the process-global app
+			// registry. A descriptor build error is a wiring bug at this seam
+			// (same policy as addLauncher) and fails the assembly hard.
+			desc, err := appswire.UploadManagerDescriptor(deps.curlUpload)
+			if err != nil {
+				return nil, err
+			}
+			reg.add(appLauncherSpec(desc, func(srv *sdk.Server, catalog apps.AppCatalog) error {
+				return apps.InstallUploadManagerApp(srv, catalog, deps.curlUpload)
 			}))
 		}
 		reg.add(uploadFileSpec)
@@ -593,8 +603,14 @@ func collectServerExtensions(deps customToolDeps) (*MaterializationPlan, error) 
 	// --- Async upload management tools (upload_status / upload_cancel / upload_list) ---
 	// These are search-only: the agent_guide upload flow names upload_status
 	// as a step, so an agent following the guide discovers it via search_tools.
+	// The descriptors are module-owned (go.lumeweb.com/pinner/mcp), so this
+	// surface cannot drift from the hosted assembly's. Descriptors without
+	// MCPTargets get the universal Fallback wrap in ToolCatalog.Add.
+	// upload_list is registered unconditionally here: this CLI server is a
+	// single-user, same-process manager — the per-principal-manager case the
+	// module's AsyncUploadList opt-in reserves the enumerator for.
 	if uploadOn && opts.uploadTasks != nil {
-		for _, desc := range upload.NewAsyncUploadTools(opts.uploadTasks) {
+		for _, desc := range pinnermcp.NewAsyncUploadTools(opts.uploadTasks) {
 			reg.add(searchableOnly(desc))
 		}
 	}

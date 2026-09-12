@@ -9,6 +9,8 @@ import (
 
 	"github.com/invopop/jsonschema"
 
+	pinnertransfer "go.lumeweb.com/pinner/transfer"
+
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
 	"go.lumeweb.com/pinner-cli/internal/mcp/mintcontract"
 	"go.lumeweb.com/pinner-cli/internal/mcp/schematext"
@@ -257,12 +259,12 @@ func newUploadFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpenA
 				if name == "" {
 					name = DefaultUploadName
 				}
-				// The ONE shared presign-TTL parser (ParsePresignTTL below in
-				// this package): empty → default, non-positive → default,
-				// unparseable → the stable `invalid ttl "..."` wording. The
-				// coordinator-side clamp inside Prepare remains as defense in
-				// depth only.
-				ttl, terr := ParsePresignTTL(in.TTL)
+				// The ONE canonical presign-TTL parser
+				// (go.lumeweb.com/pinner/transfer.ParsePresignTTL): empty →
+				// default, non-positive → default, unparseable → the stable
+				// `invalid ttl "..."` wording. The coordinator-side clamp
+				// inside Prepare remains as defense in depth only.
+				ttl, terr := pinnertransfer.ParsePresignTTL(in.TTL)
 				if terr != nil {
 					return model.ToolResult{}, terr
 				}

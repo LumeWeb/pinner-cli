@@ -16,8 +16,10 @@ import (
 	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/mcpplane/sdk"
 	mcptransfer "go.lumeweb.com/mcpplane/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
-	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
+	pinnermcp "go.lumeweb.com/pinner/mcp"
+	"go.lumeweb.com/pinner/mcp/appswire"
 )
 
 // buildIPFSUploadAppServer constructs the catalog + server the way the adapter
@@ -52,9 +54,9 @@ func buildIPFSUploadAppServer(t *testing.T) (*mcp.Server, *mcptransfer.Upload) {
 	// Seed the launcher via the TEST-ONLY registerOpenLauncher helper
 	// (production routes launchers through the appLauncherSpec registry path);
 	// the app's AttachTo now points at open_upload_manager, not upload_file.
-	seedLauncherForTest(t, srv, catalog, upload.OpenUploadManagerToolName, upload.OpenUploadManagerURI, model.CategoryCore)
-	if err := upload.RegisterIPFSUploadApp(srv, catalog, cu); err != nil {
-		t.Fatalf("upload.RegisterIPFSUploadApp: %v", err)
+	seedLauncherForTest(t, srv, catalog, appswire.LauncherUploadManager, apps.UploadManagerAppURI(), model.CategoryCore)
+	if err := apps.InstallUploadManagerApp(srv, catalog, cu); err != nil {
+		t.Fatalf("apps.InstallUploadManagerApp: %v", err)
 	}
 	if err := RegisterOfficialDescriptor(srv, uploadFileDesc); err != nil {
 		t.Fatalf("RegisterOfficialDescriptor: %v", err)
@@ -76,7 +78,7 @@ func TestRegisterIPFSUploadAppWire(t *testing.T) {
 	}
 	var foundRes bool
 	for _, r := range res.Resources {
-		if r.URI == upload.IPFSUploadAppURI {
+		if r.URI == apps.UploadManagerAppURI() {
 			foundRes = true
 		}
 	}
@@ -119,8 +121,8 @@ func TestRegisterIPFSUploadAppWire(t *testing.T) {
 	if !ok {
 		t.Fatalf("_meta.ui missing on open_upload_manager: %T", launcherTool.Meta["ui"])
 	}
-	if got := lui["resourceUri"]; got != upload.IPFSUploadAppURI {
-		t.Fatalf("open_upload_manager _meta.ui.resourceUri = %#v, want %q", got, upload.IPFSUploadAppURI)
+	if got := lui["resourceUri"]; got != apps.UploadManagerAppURI() {
+		t.Fatalf("open_upload_manager _meta.ui.resourceUri = %#v, want %q", got, apps.UploadManagerAppURI())
 	}
 	vis, _ := lui["visibility"].([]any)
 	if len(vis) != 2 {
@@ -263,8 +265,8 @@ func TestIPFSUploadPollHelper(t *testing.T) {
 func TestRegisterIPFSUploadAppNilCoordinator(t *testing.T) {
 	srv := sdk.NewServer(nil)
 	catalog := NewToolCatalog()
-	if err := upload.RegisterIPFSUploadApp(srv, catalog, nil); err == nil {
-		t.Fatalf("upload.RegisterIPFSUploadApp with nil coordinator must fail")
+	if err := apps.InstallUploadManagerApp(srv, catalog, nil); err == nil {
+		t.Fatalf("apps.InstallUploadManagerApp with nil coordinator must fail")
 	}
 }
 
@@ -477,9 +479,9 @@ func buildIPFSUploadSharedServer(t *testing.T) (*mcp.Server, *mcptransfer.Upload
 	uploadFileDesc := transfer.NewUploadFileDescriptor(transportFeatures(false, false), false, false, nil, cu, nil, nil, 0)
 	catalog.Add(model.ToolEntryFromDescriptor(uploadFileDesc))
 	// Seed the launcher; the app's AttachTo now points at open_upload_manager.
-	seedLauncherForTest(t, srv, catalog, upload.OpenUploadManagerToolName, upload.OpenUploadManagerURI, model.CategoryCore)
-	if err := upload.RegisterIPFSUploadApp(srv, catalog, cu); err != nil {
-		t.Fatalf("upload.RegisterIPFSUploadApp: %v", err)
+	seedLauncherForTest(t, srv, catalog, appswire.LauncherUploadManager, apps.UploadManagerAppURI(), model.CategoryCore)
+	if err := apps.InstallUploadManagerApp(srv, catalog, cu); err != nil {
+		t.Fatalf("apps.InstallUploadManagerApp: %v", err)
 	}
 	if err := RegisterOfficialDescriptor(srv, uploadFileDesc); err != nil {
 		t.Fatalf("RegisterOfficialDescriptor(upload_file): %v", err)
@@ -487,7 +489,7 @@ func buildIPFSUploadSharedServer(t *testing.T) (*mcp.Server, *mcptransfer.Upload
 	// The model-facing upload_status/cancel/list tools (mirrors
 	// custom_tools.go's NewAsyncUploadTools registration) share the same
 	// manager.
-	for _, desc := range upload.NewAsyncUploadTools(mgr) {
+	for _, desc := range pinnermcp.NewAsyncUploadTools(mgr) {
 		if err := RegisterOfficialDescriptor(srv, desc); err != nil {
 			t.Fatalf("RegisterOfficialDescriptor(%s): %v", desc.Name, err)
 		}
@@ -814,7 +816,7 @@ func TestIPFSUploadResourceAdvertisesConnectDomains(t *testing.T) {
 
 	readConnectDomains := func(t *testing.T) []any {
 		t.Helper()
-		res, err := cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: upload.IPFSUploadAppURI})
+		res, err := cs.ReadResource(context.Background(), &mcp.ReadResourceParams{URI: apps.UploadManagerAppURI()})
 		if err != nil {
 			t.Fatalf("ReadResource: %v", err)
 		}
@@ -869,7 +871,10 @@ func TestOpenUploadManagerStaleHandleFallsBack(t *testing.T) {
 	cu := mcptransfer.NewHTTPUpload(mgr, 1<<20)
 	t.Cleanup(func() { cu.Stop(context.Background()) })
 
-	desc := upload.NewOpenUploadManagerDescriptor(cu)
+	desc, err := appswire.UploadManagerDescriptor(cu)
+	if err != nil {
+		t.Fatalf("UploadManagerDescriptor: %v", err)
+	}
 	srv := sdk.NewServer(nil)
 	if err := RegisterOfficialDescriptor(srv, desc); err != nil {
 		t.Fatalf("RegisterOfficialDescriptor(open_upload_manager): %v", err)

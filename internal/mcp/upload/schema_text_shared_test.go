@@ -24,12 +24,12 @@ func jsonschemaTagOf[T any](t *testing.T, field string) string {
 // TestSchemaTextFragmentsPinned pins every struct-tag TTL/profile description
 // in this package to its shared schematext fragment: the literals are the ONLY
 // non-composed copies, and this test makes their drift a build failure.
-// The raw-JSON schemas (ipfs_upload_submit, vault_upload_submit) compose the
-// schematext constants directly and need no pinning here.
+// The IPFS upload surfaces (open_upload_manager launcher, ipfs_upload_submit
+// helper) are module-owned (go.lumeweb.com/pinner/mcp/appswire) and pin their
+// own schemas there — nothing left to pin in this package. The remaining
+// raw-JSON schema (vault_upload_submit) composes the schematext constants
+// directly and needs no pinning either.
 func TestSchemaTextFragmentsPinned(t *testing.T) {
-	// open_upload_manager: TTL applies only to fresh mints.
-	require.Contains(t, jsonschemaTagOf[OpenUploadManagerInput](t, "TTL"), schematext.TTLLauncherFresh)
-
 	// open_vault_manager launcher: optional TTL + full write-profile contract.
 	require.Contains(t, jsonschemaTagOf[OpenVaultManagerInput](t, "TTL"), schematext.TTLOptional)
 	require.Contains(t, jsonschemaTagOf[OpenVaultManagerInput](t, "Profile"), schematext.ProfileWriteExtended)
@@ -37,9 +37,6 @@ func TestSchemaTextFragmentsPinned(t *testing.T) {
 	// vault_upload_submit app helper: same launcher contract.
 	require.Contains(t, jsonschemaTagOf[VaultUploadSubmitInput](t, "TTL"), schematext.TTLOptional)
 	require.Contains(t, jsonschemaTagOf[VaultUploadSubmitInput](t, "Profile"), schematext.ProfileWriteExtended)
-
-	// ipfs_upload_submit app helper: TTL shape.
-	require.Contains(t, jsonschemaTagOf[IPFSUploadSubmitInput](t, "TTL"), schematext.TTLLifetime)
 
 	// The TTL fragments' derived default pins live ONCE in the schematext
 	// package (TestTTLFragmentDefaultsPinned); this package pins only the

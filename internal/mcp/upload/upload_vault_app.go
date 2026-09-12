@@ -15,6 +15,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/schematext"
 	"go.lumeweb.com/pinner/canvas"
+	pinnertransfer "go.lumeweb.com/pinner/transfer"
 )
 
 // This file wires the "Upload to Vault" MCP App onto the shared AppView lib
@@ -97,12 +98,12 @@ func vaultUploadSubmitDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescrip
 			if gr, failed := vaultProfileGuard(in.Profile); failed {
 				return gr, nil
 			}
-			// ONE shared presign-TTL parser (core/transfer.ParsePresignTTL):
-			// the previously divergent copy here accepted no-ttl without the
-			// default lifetime and used a different error wording. This
-			// matches the open_vault_manager launcher and vault_put_file mint
-			// path exactly (empty/non-positive → default lifetime).
-			ttl, terr := transfer.ParsePresignTTL(in.TTL)
+			// ONE canonical presign-TTL parser
+			// (go.lumeweb.com/pinner/transfer.ParsePresignTTL): empty/non-
+			// positive → the default lifetime, unparseable → the stable
+			// `invalid ttl "..."` error — the same parser the
+			// open_vault_manager launcher and vault_put_file mint path use.
+			ttl, terr := pinnertransfer.ParsePresignTTL(in.TTL)
 			if terr != nil {
 				return model.ToolResult{}, terr
 			}

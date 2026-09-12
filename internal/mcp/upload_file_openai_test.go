@@ -12,9 +12,10 @@ import (
 	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/mcpplane/sdk"
 	mcptransfer "go.lumeweb.com/mcpplane/transfer"
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/transfer"
 	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
-	"go.lumeweb.com/pinner-cli/internal/mcp/upload"
+	"go.lumeweb.com/pinner/mcp/appswire"
 )
 
 // stdioFileDesc builds a co-located upload_file descriptor with a path handler
@@ -109,8 +110,8 @@ func TestUploadFileOpenAIMetaCoexistsWithAppUI(t *testing.T) {
 	desc := transfer.NewUploadFileDescriptor(hostenv.ProfileOpenAITunnel.Features, false, false, nil, cu, nil, nil, 0)
 	catalog.Add(model.ToolEntryFromDescriptor(desc))
 	// Seed the launcher; the app's AttachTo now points at open_upload_manager.
-	seedLauncherForTest(t, srv, catalog, upload.OpenUploadManagerToolName, upload.OpenUploadManagerURI, model.CategoryCore)
-	require.NoError(t, upload.RegisterIPFSUploadApp(srv, catalog, cu))
+	seedLauncherForTest(t, srv, catalog, appswire.LauncherUploadManager, apps.UploadManagerAppURI(), model.CategoryCore)
+	require.NoError(t, apps.InstallUploadManagerApp(srv, catalog, cu))
 	require.NoError(t, RegisterOfficialDescriptor(srv, desc))
 	require.NoError(t, RegisterOfficialDirectTools(srv, catalog))
 
@@ -142,7 +143,7 @@ func TestUploadFileOpenAIMetaCoexistsWithAppUI(t *testing.T) {
 	require.NotNil(t, launchTool, "open_upload_manager must be in tools/list")
 	lui, ok := launchTool.Meta["ui"].(map[string]any)
 	require.True(t, ok, "_meta.ui must survive registration on the launcher")
-	require.Equal(t, upload.IPFSUploadAppURI, lui["resourceUri"])
+	require.Equal(t, apps.UploadManagerAppURI(), lui["resourceUri"])
 }
 
 // TestUploadFileOpenAIValidation is a table covering the deterministic

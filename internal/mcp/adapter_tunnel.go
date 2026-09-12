@@ -21,6 +21,7 @@ import (
 	"go.lumeweb.com/mcpplane/session"
 	mcptransfer "go.lumeweb.com/mcpplane/transfer"
 	oauthlib "go.lumeweb.com/oauth"
+	"go.lumeweb.com/pinner-cli/internal/mcp/apps"
 	"go.lumeweb.com/pinner-cli/internal/mcp/auth"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/handoff"
 	"go.lumeweb.com/pinner-cli/internal/mcp/core/ieo"
@@ -503,7 +504,7 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, card *ServerCard, cmd *cli.
 	// already live; this covers the listing-level static default that most hosts
 	// actually use to build the iframe CSP.
 	if curlUpload != nil {
-		if err := sdk.SetAppResourceConnectDomains(srv, upload.IPFSUploadAppURI, curlUpload.ConnectOrigins()); err != nil {
+		if err := sdk.SetAppResourceConnectDomains(srv, apps.UploadManagerAppURI(), curlUpload.ConnectOrigins()); err != nil {
 			return err
 		}
 	}
@@ -734,7 +735,7 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, card *ServerCard, cmd *cli.
 		// and captured HTML can be collected when this server is discarded,
 		// rather than accumulating for the process lifetime.
 		if curlUpload != nil {
-			_ = sdk.UnregisterAppResource(srv, upload.IPFSUploadAppURI)
+			_ = sdk.UnregisterAppResource(srv, apps.UploadManagerAppURI())
 		}
 		if vaultUpload != nil {
 			_ = sdk.UnregisterAppResource(srv, upload.VaultUploadAppURI)
@@ -802,7 +803,7 @@ func serveHTTP(ctx context.Context, srv *sdk.Server, card *ServerCard, cmd *cli.
 		// public origin, so re-bake the list-level connectDomains (last write
 		// wins over the base block above) to that tunnel origin.
 		if curlUpload != nil {
-			if err := sdk.SetAppResourceConnectDomains(srv, upload.IPFSUploadAppURI, curlUpload.ConnectOrigins()); err != nil {
+			if err := sdk.SetAppResourceConnectDomains(srv, apps.UploadManagerAppURI(), curlUpload.ConnectOrigins()); err != nil {
 				shutdown(context.Background())
 				return err
 			}

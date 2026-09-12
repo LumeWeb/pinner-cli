@@ -13,6 +13,7 @@ import (
 
 	"go.lumeweb.com/mcpplane/model"
 	"go.lumeweb.com/mcpplane/transfer"
+	pinnermcp "go.lumeweb.com/pinner/mcp"
 )
 
 func TestUploadTaskManagerLifecycle(t *testing.T) {
@@ -129,7 +130,7 @@ func TestAsyncUploadToolsRegistered(t *testing.T) {
 	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		return map[string]any{"cid": "QmB"}, nil
 	}, 0)
-	descs := NewAsyncUploadTools(mgr)
+	descs := pinnermcp.NewAsyncUploadTools(mgr)
 	require.Len(t, descs, 3)
 
 	names := map[string]bool{}
@@ -145,7 +146,7 @@ func TestAsyncUploadStatusToolMissingHandle(t *testing.T) {
 	mgr := transfer.NewUploadTaskManager(func(ctx context.Context, reader io.Reader, size int64, name string, wait bool, _ string, _ bool) (any, error) {
 		return nil, nil
 	}, 0)
-	descs := NewAsyncUploadTools(mgr)
+	descs := pinnermcp.NewAsyncUploadTools(mgr)
 	var status *model.ToolDescriptor
 	for i := range descs {
 		if descs[i].Name == "upload_status" {
@@ -170,7 +171,7 @@ func TestAsyncUploadToolsTextCarriesData(t *testing.T) {
 			return map[string]any{"cid": "QmText"}, nil
 		}
 	}, 0)
-	descs := NewAsyncUploadTools(mgr)
+	descs := pinnermcp.NewAsyncUploadTools(mgr)
 	byName := map[string]model.ToolDescriptor{}
 	for _, d := range descs {
 		byName[d.Name] = d

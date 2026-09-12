@@ -18,6 +18,7 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/schematext"
 	"go.lumeweb.com/pinner-cli/internal/mcp/toolforge"
 	corevault "go.lumeweb.com/pinner/core/vault"
+	pinnertransfer "go.lumeweb.com/pinner/transfer"
 
 	"go.lumeweb.com/mcpplane/model"
 
@@ -268,11 +269,12 @@ func newVaultPutFileDescriptor(features hostenv.FeatureSet, coLocated, tunnelOpe
 				if vu == nil {
 					return model.ToolResult{}, errors.New("presigned vault-upload endpoint is not configured for remote mode")
 				}
-				// ONE shared presign-TTL parser (core/transfer.ParsePresignTTL):
-				// empty → default, non-positive → default, unparseable → the
-				// stable `invalid ttl "..."` wording. The coordinator-side
-				// clamp inside Mint remains as defense in depth only.
-				ttl, terr := transfer.ParsePresignTTL(in.TTL)
+				// ONE shared presign-TTL parser
+				// (go.lumeweb.com/pinner/transfer.ParsePresignTTL): empty →
+				// default, non-positive → default, unparseable → the stable
+				// `invalid ttl "..."` wording. The coordinator-side clamp
+				// inside Mint remains as defense in depth only.
+				ttl, terr := pinnertransfer.ParsePresignTTL(in.TTL)
 				if terr != nil {
 					return model.ToolResult{}, terr
 				}
