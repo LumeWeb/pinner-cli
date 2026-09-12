@@ -55,8 +55,13 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Verify dependencies
-        run: go mod verify
+      # No `go mod verify`: the ensure-canvasassets step below regenerates
+      # pinner's gitignored embed inputs inside the module cache, leaving a
+      # pnpm node_modules/ tree in the cached pinner module. `go mod verify`
+      # requires a pristine cache and fails on that unexpected directory, and
+      # setup-go persists that dirty cache across jobs. Module integrity is
+      # still enforced by go.sum verification during download/build, so the
+      # redundant verify step is intentionally omitted.
 
       - name: Install templ
         run: go install github.com/a-h/templ/cmd/templ@v0.3.1020
