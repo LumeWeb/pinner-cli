@@ -759,6 +759,8 @@ go.lumeweb.com/pinner v0.0.0-20260911172243-2053d2678044 h1:yltdoLDZAT5cuor9yVHb
 go.lumeweb.com/pinner v0.0.0-20260911172243-2053d2678044/go.mod h1:S7Rl+iBA23pgSus31t9apjlQTd1NRA/q6SjazuCU82U=
 go.lumeweb.com/pinner v0.0.0-20260911212911-a45ea03d4504 h1:lU6q55DwHBGpC8QoRt7WAZPVK0V6C7uN5tcFSbWKxoo=
 go.lumeweb.com/pinner v0.0.0-20260911212911-a45ea03d4504/go.mod h1:S7Rl+iBA23pgSus31t9apjlQTd1NRA/q6SjazuCU82U=
+go.lumeweb.com/pinner v0.0.0-20260912000505-6d056c064e03 h1:VxyWxeUuL53w2SDMeGJhuENSlNmxS3KDw3fSFaJmtZ0=
+go.lumeweb.com/pinner v0.0.0-20260912000505-6d056c064e03/go.mod h1:S7Rl+iBA23pgSus31t9apjlQTd1NRA/q6SjazuCU82U=
 go.lumeweb.com/portal v0.5.1 h1:l28uCNFmT+VewwRGhFwlmonYEwLxQfRh06hm7n0SQr8=
 go.lumeweb.com/portal v0.5.1/go.mod h1:JXy/eHHlUdXMsPbXSbRyX2ZM7s/OGNfSNsXH7XRYWCk=
 go.lumeweb.com/portal-middleware v0.3.7 h1:kq4SZq4T/uhauqHehw2JaTbNJpPpE8/EQAC3R737H7c=

@@ -28,12 +28,12 @@ func TestDefaultPolicyReproducesCurrentBehavior(t *testing.T) {
 
 	require.Equal(t, ListingProgressive, p.Strategy, "default listing strategy is progressive")
 	require.True(t, p.ResolveIncludeMetaOnFlat(), "default keeps meta-tools on flat (safe default: gated ops stay reachable)")
-	require.False(t, p.HasOnboardingOverride(), "default defers onboarding to the builtin primary set")
+	require.False(t, HasOnboardingOverride(p), "default defers onboarding to the builtin primary set")
 	require.NoError(t, p.Validate(), "default policy is valid")
 
 	// Onboarding defers to the builtin predicate (no duplicated name list).
-	require.True(t, p.IsOnboarded("auth_status"))
-	require.False(t, p.IsOnboarded("websites_create"), "websites_create is curated but not an onboarding primary")
+	require.True(t, IsOnboarded(p, "auth_status"))
+	require.False(t, IsOnboarded(p, "websites_create"), "websites_create is curated but not an onboarding primary")
 }
 
 // TestZeroPolicyIsProgressiveAndKeepsMeta pins that a zero-value listing
@@ -95,9 +95,9 @@ func TestOnboardingOverrideIndependentOfDirect(t *testing.T) {
 	p := DefaultPolicy()
 	p.Onboarding = []string{"pins_add", "auth_status"} // override "start here"
 
-	require.True(t, p.HasOnboardingOverride())
-	require.True(t, p.IsOnboarded("pins_add"))
-	require.True(t, p.IsOnboarded("auth_status"))
-	require.False(t, p.IsOnboarded("agent_guide"), "override drops the builtin agent_guide from onboarding")
-	require.False(t, p.IsOnboarded("pins_rm"), "override drops a builtin primary not in the override set")
+	require.True(t, HasOnboardingOverride(p))
+	require.True(t, IsOnboarded(p, "pins_add"))
+	require.True(t, IsOnboarded(p, "auth_status"))
+	require.False(t, IsOnboarded(p, "agent_guide"), "override drops the builtin agent_guide from onboarding")
+	require.False(t, IsOnboarded(p, "pins_rm"), "override drops a builtin primary not in the override set")
 }

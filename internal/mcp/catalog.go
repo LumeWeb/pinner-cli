@@ -273,7 +273,7 @@ func (c *ToolCatalog) Onboarding() OnboardingResult {
 	// used, so the names are never duplicated in policy. The override semantics
 	// (non-empty membership set replaces isPrimaryTool, else defer) are evaluated
 	// by the ONE shared helper onboardingPredicate — the same one
-	// ListingPolicy.IsOnboarded consults — so the two entry points cannot
+	// IsOnboarded(policy, ...) consults — so the two entry points cannot
 	// drift apart.
 	onboarded := onboardingPredicate(c.OnboardingOverride)
 	var tools []ToolSummary

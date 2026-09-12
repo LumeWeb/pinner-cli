@@ -243,6 +243,28 @@ adapter.`,
 					// listing axes to the startup server.
 					buildOpts = append(buildOpts, normalized.opts()...)
 				}
+				if hostProfile != nil {
+					// Host-specific listing override. The SHARED host selector
+					// (go.lumeweb.com/pinner/mcp, composed by hostListingPolicy)
+					// re-resolves the listing strategy for the negotiated host: the
+					// web hosts that cannot follow progressive discovery (Claude
+					// Web, Grok Web, ChatGPT/OpenAI web) get FLAT tools/list with
+					// the safe discovery meta-tools retained; every other host
+					// reuses the startup strategy verbatim (MEDIUM-3 preserved for
+					// the axes the override does not touch — surface, hosted,
+					// meta-on-flat, onboarding). An explicitly flat startup
+					// deployment is never downgraded by the override.
+					//
+					// The override is appended AFTER normalized.opts() so its
+					// strategy (and only its strategy) wins: the reassembled
+					// tools/list surface, meta tools, card, and instructions all
+					// materialize from the catalog's captured per-server strategy.
+					startupListing := DefaultPolicy()
+					if normalized != nil {
+						startupListing = normalized.listing
+					}
+					buildOpts = append(buildOpts, withPolicy(hostListingPolicy(startupListing, *hostProfile)))
+				}
 				// One-pass materialization: collect every extension BEFORE the
 				// official server exists, so the constructed server's initialize
 				// instructions and the per-server card derive from the completed
@@ -332,7 +354,22 @@ adapter.`,
 			// profile-resolved descriptors.
 			httpTransport := transfer.UploadFileTransport(stdioMode, cmd.String("tunnel") == "openai")
 			hostServerFactory := func(profile hostenv.PlatformProfile) *sdk.Server {
-				if uploadVaultMatchesTransport(profile, httpTransport) {
+				// The startup server already serves a host when BOTH its upload/
+				// vault presentation matches the host's transport AND its listing
+				// policy matches the shared host selector's decision for that host.
+				// A flat-listing web host (Claude Web, Grok Web, ChatGPT/OpenAI web)
+				// NEVER matches the progressive startup server, so it gets a
+				// dedicated per-host reassembly whose tools/list — and card and
+				// instructions — materialize flat (with the safe discovery
+				// meta-tools retained). Generic/Grok-Shell/unknown hosts resolve
+				// progressive under the same selector and keep the startup server.
+				startupListing := DefaultPolicy()
+				if normalized != nil {
+					startupListing = normalized.listing
+				}
+				desired := hostListingPolicy(startupListing, profile)
+				if uploadVaultMatchesTransport(profile, httpTransport) &&
+					desired.Strategy == startupListing.Strategy {
 					return srv
 				}
 				srvH, _, err := assemble(&profile)

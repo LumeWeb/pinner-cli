@@ -1,154 +1,136 @@
 package mcp
 
-// This file owns the Pinner product/assembly listing policy. It separates the
-// three orthogonal axes — deployment/entitlement surface, listing
-// strategy, and the direct + onboarding selection — into one
-// construction-time value.
+// This file wraps the SHARED tool-listing policy. The listing types and the
+// host-specific flat selector moved into the shared go.lumeweb.com/pinner/mcp
+// assembly (pinnermcp), so both MCP consumers — this CLI's self-hosted
+// assembly (stdio / HTTP / embedded OpenAI tunnel) and a hosted
+// (Portal-embedded) assembly — resolve one policy value and one host→strategy
+// decision instead of two drifting copies. This file re-exports those types
+// under the in-repo vocabulary (aliases/consts keep every caller compiling
+// unchanged) and keeps the Pinner-consumer-only pieces:
 //
-// Ownership boundary (Step 2 exit criteria): these types are Pinner
-// product/assembly-owned and live in the Pinner consumer (this module), NOT in
-// canimcp, mcpplane, or mcpforge. canimcp still answers only "what can the
-// connected client do"; it carries no Hosted/DomainScope/strategy/curation concept.
+//   - the onboarding recommendation evaluation (isPrimaryTool vocabulary is
+//     consumer-owned, so it never moved);
+//   - the host-listing composition helper (hostListingPolicy), which layers
+//     the shared host selector onto the startup policy the per-host
+//     reassembly must preserve (MEDIUM-3);
+//   - the deprecated construction-time compatibility globals (kept ONLY so
+//     legacy regression tests can prove their inertness).
 //
-// Because the pinned `go.lumeweb.com/pinner` module is a frozen dependency
-// (no go.mod/go.sum change wanted for this step), the strategy/curation
-// policy is wrapped here in the consumer rather than upstream. The only
-// place we read the module is mcp.DirectToolNames (the authoritative
-// direct name list), so there is no second direct copy in this repo
-// and no dependency bump. Re-homing these types into go.lumeweb.com/pinner/assembly
-// is deferred: it would require a pseudo-version bump + peer-repo change, which
-// this step deliberately avoids.
+// Ownership boundary unchanged: the policy is Pinner product-owned. canimcp
+// still answers only "what can the connected client do" and carries no
+// strategy/disclosure concept — the shared selector names the canimcp host
+// vocabulary but owns the decision.
 
-import "fmt"
+import (
+	"go.lumeweb.com/canimcp"
+	"go.lumeweb.com/pinner-cli/internal/mcp/hostenv"
+	pinnermcp "go.lumeweb.com/pinner/mcp"
+)
 
-// ToolListingStrategy names the tools/list materialization policy. It is a
-// Pinner product choice, encoded nowhere in canimcp; the zero value is
-// progressive (the current behavior for every profile/surface).
-type ToolListingStrategy uint8
+// ToolListingStrategy aliases the shared strategy; String/Valid resolve in
+// the shared package.
+type ToolListingStrategy = pinnermcp.ToolListingStrategy
 
 const (
 	// ListingProgressive materializes only the direct set plus the
 	// progressive-disclosure meta-tools on tools/list; the full catalog stays
-	// reachable via search_tools → describe_tool → invoke_*. This is the
-	// default and the current behavior for both full and hosted surfaces.
-	ListingProgressive ToolListingStrategy = iota
-	// ListingFlat materializes every enabled op as a direct tool on tools/list
-	// (optional meta-tools gated by IncludeMetaOnFlat). Under flat
-	// the ordering metadata/selection metadata only, not a gate.
-	// Materialization of flat is Step 3; this step only defines the value and
-	// preserves current progressive behavior.
-	ListingFlat
+	// reachable via search_tools → describe_tool → invoke_*. The default for
+	// every host that is not a flat-listing web host.
+	ListingProgressive = pinnermcp.ListingProgressive
+	// ListingFlat materializes every agent-safe enabled op as a direct tool on
+	// tools/list (meta-tools retained under the safe IncludeMetaOnFlat
+	// default). Selected by the shared host selector for the web hosts that
+	// bypass progressive discovery (Claude Web, Grok Web, ChatGPT/OpenAI web).
+	ListingFlat = pinnermcp.ListingFlat
 )
 
-// String returns a human-readable name for the strategy. Unknown values fall
-// back to a generic "<strategy N>" so formatting never panics.
-func (s ToolListingStrategy) String() string {
-	switch s {
-	case ListingProgressive:
-		return "progressive"
-	case ListingFlat:
-		return "flat"
-	}
-	return fmt.Sprintf("<strategy %d>", uint8(s))
-}
+// ListingPolicy aliases the shared listing policy: the tools/list
+// materialization strategy, the meta-on-flat switch, and the onboarding
+// (direct) selection. It carries NO deployment axes (DomainScope/Hosted):
+// those live on ServerConfig as the single deployment seam, so a partial
+// listing policy can never overwrite a deployment surface or hosted flag
+// (see withPolicy — the listing policy and the deployment axes are separate,
+// non-overlapping construction inputs).
+type ListingPolicy = pinnermcp.ListingPolicy
 
-// Valid reports whether s is a supported listing strategy. It is the
-// single gate for rejecting unsupported/unknown policy values at construction.
-func (s ToolListingStrategy) Valid() bool {
-	switch s {
-	case ListingProgressive, ListingFlat:
-		return true
-	}
-	return false
-}
-
-// ListingPolicy is the server-construction input that selects listing
-// behavior (the listing policy for a server). It carries ONLY the listing
-// axes: the tools/list materialization strategy, the meta-on-flat switch, and
-// the onboarding (direct) selection. It deliberately does NOT carry
-// the deployment axes (DomainScope/Hosted): those live on ServerConfig as the
-// single deployment seam, so a partial listing policy can never overwrite a
-// deployment surface or hosted flag (see the withPolicy doc — the listing
-// policy and the deployment axes are separate, non-overlapping construction
-// inputs).
-type ListingPolicy struct {
-	// Strategy is the tools/list materialization strategy. The zero value
-	// (ListingProgressive) is the default and current behavior.
-	Strategy ToolListingStrategy
-	// IncludeMetaOnFlat, when Strategy == ListingFlat, keeps the
-	// progressive-disclosure meta-tools on tools/list alongside the direct set.
-	// It is inert under ListingProgressive.
-	//
-	// It is a *bool so "unset" is representable separately from "explicitly
-	// false": a nil pointer (the zero value / omitted field) means the SAFE
-	// default — flat keeps the discovery meta-tools so the gated entries
-	// (admin/wizard/interactive) that flat deliberately excludes from direct
-	// registration stay reachable via search_tools/describe_tool/invoke_* (see
-	// ResolveIncludeMetaOnFlat and DefaultPolicy). A non-nil pointer to true
-	// keeps them; a non-nil pointer to false is the explicit opt-in that hides
-	// those gated operations behind the direct surface entirely.
-	IncludeMetaOnFlat *bool
-	// Onboarding is an optional "start here" recommendation override. When
-	// empty, IsOnboarded defers to the builtin primary-tool predicate
-	// (isPrimaryTool) so the onboarding names are never duplicated in policy.
-	// When non-empty it is a membership set independent of direct
-	// status (onboarding guidance is orthogonal to listing).
-	Onboarding []string
-}
-
-// DefaultPolicy returns the listing policy that reproduces current behavior:
-// progressive listing and no onboarding override (defer to isPrimaryTool).
-// It is a LISTING policy only — the deployment surface/hosted are separate
-// inputs on ServerConfig, so this value carries no surface/hosted.
-//
-// IncludeMetaOnFlat defaults to TRUE as the safe invariant for any server that
-// opts into ListingFlat: flat keeps the discovery meta-tools on tools/list by
-// default so the gated catalog entries flat excludes from direct registration
-// (admin, wizard-category, interactive) remain searchable and hand-off-capable
-// through the invoke dispatchers. Excluding them (IncludeMetaOnFlat=false) is a
-// deliberate override that intentionally hides gated operations from the MCP
-// channel. The safest default also holds for a nil IncludeMetaOnFlat (see
-// ResolveIncludeMetaOnFlat), so even a partially-specified policy keeps the
-// meta tools.
+// DefaultPolicy returns the default listing policy: progressive listing and
+// the safe meta-on-flat default. It is a LISTING policy only — the deployment
+// surface/hosted are separate inputs on ServerConfig.
 func DefaultPolicy() ListingPolicy {
-	keepMeta := true // safe default: flat keeps the discovery meta-tools
+	return pinnermcp.DefaultPolicy()
+}
+
+// ---
+// Host-specific listing: the shared selector layered onto consumer policy.
+// ---
+
+// hostListingPolicy resolves the listing policy a negotiated per-host server
+// is built with: the SHARED host selector re-resolves the strategy for the
+// detected host (flat for Claude Web / Grok Web / ChatGPT web, the shared
+// selector keeps every other host progressive), while the startup policy's
+// listing axes survive the override — an explicitly flat startup deployment is
+// never downgraded for a host, and the meta-on-flat switch is left unset so
+// withPolicy keeps the startup's resolved value (nil never overwrites —
+// the safe default stays in force on every flat surface). Onboarding is
+// carried through verbatim: the recommendation set is a deployment decision,
+// not a host capability.
+//
+// This is the one seam where the shared host selector enters per-host
+// reassembly, so a negotiated server's strategy can never drift from the
+// shared decision.
+func hostListingPolicy(startup ListingPolicy, profile hostenv.PlatformProfile) ListingPolicy {
+	strategy := pinnermcp.StrategyForHost(
+		canimcpHostType(profile.HostType),
+		canimcpTransportKind(profile.Transport),
+	)
+	// Policy floor: a startup deployment that already opted into flat (its
+	// ServerConfig.Policy) keeps flat for every host, including progressive
+	// hosts. Progressive is only ever relaxed upward to flat by the host
+	// selector, never the other way.
+	if startup.Strategy == pinnermcp.ListingFlat {
+		strategy = pinnermcp.ListingFlat
+	}
 	return ListingPolicy{
-		Strategy:          ListingProgressive, // every profile today
-		IncludeMetaOnFlat: &keepMeta,
+		Strategy: strategy,
+		// IncludeMetaOnFlat deliberately unset: withPolicy only writes it when
+		// explicitly set, so the startup's resolved meta-on-flat survives the
+		// host override (nil can never silently hide the discovery meta-tools).
+		Onboarding: append([]string(nil), startup.Onboarding...),
 	}
 }
 
-// ResolveIncludeMetaOnFlat returns the effective meta-on-flat setting for the
-// policy: TRUE when IncludeMetaOnFlat is nil (unset) — the safe invariant that
-// a flat server keeps the discovery meta-tools on tools/list by default, so
-// the gated entries flat excludes from direct registration stay reachable —
-// and the explicit value otherwise. A nil/unset value therefore can never
-// silently hide the gated operations; only an explicit false opt-in does.
-// This method is the SINGLE resolution of the meta-on-flat default:
-// buildCatalogConfig.resolveIncludeMetaOnFlat (catalogdeps.go) delegates here
-// so the catalog-capture path cannot drift from the policy value.
-func (p ListingPolicy) ResolveIncludeMetaOnFlat() bool {
-	if p.IncludeMetaOnFlat == nil {
-		return true
-	}
-	return *p.IncludeMetaOnFlat
+// isFlatListingHost maps a detected host profile onto the shared selector
+// (convenience for callers already holding a hostenv profile).
+func isFlatListingHost(profile hostenv.PlatformProfile) bool {
+	return pinnermcp.IsFlatListingHost(
+		canimcpHostType(profile.HostType),
+		canimcpTransportKind(profile.Transport),
+	)
 }
+
+// canimcpHostType converts the alias-vocabulary host onto the shared package's
+// canimcp type; the wire strings are identical (typed constant conversion).
+func canimcpHostType(h hostenv.HostType) canimcp.HostType {
+	return canimcp.HostType(h)
+}
+
+// canimcpTransportKind converts the alias-vocabulary transport onto the shared
+// package's canimcp type; the wire strings are identical.
+func canimcpTransportKind(t hostenv.TransportKind) canimcp.TransportKind {
+	return canimcp.TransportKind(t)
+}
+
+// ResolveIncludeMetaOnFlat / Validate on the policy, and String / Valid on
+// the strategy, are the SHARED package's methods — resolved through the alias
+// in exactly one definition, so the catalog-capture path
+// (buildCatalogConfig.resolveIncludeMetaOnFlat in catalogdeps.go) and the
+// construction gate can never drift from the host-selected policy value.
 
 // boolPtr is a test/construction convenience for building an explicit
 // *bool IncludeMetaOnFlat value.
 func boolPtr(b bool) *bool {
 	return &b
-}
-
-// Validate reports whether the policy holds supported values. Currently this
-// rejects an unknown/unsupported listing strategy. It is the construction-time
-// gate so an unsupported policy value fails loudly instead of silently falling
-// back.
-func (p ListingPolicy) Validate() error {
-	if !p.Strategy.Valid() {
-		return fmt.Errorf("mcp: unsupported listing strategy %v", p.Strategy)
-	}
-	return nil
 }
 
 // IsOnboarded reports whether name belongs to the onboarding recommendation
@@ -159,13 +141,17 @@ func (p ListingPolicy) Validate() error {
 // (isPrimaryTool) so the 13-name set is never copied into policy; an override
 // replaces it. Onboarding is independent of DirectVisible: a recommended tool
 // may be direct, searchable, or both, but never hidden.
-func (p ListingPolicy) IsOnboarded(name string) bool {
+//
+// (A package-level function because ListingPolicy is now an alias of the
+// shared go.lumeweb.com/pinner/mcp type — the onboarding vocabulary is
+// consumer-owned, so its evaluation never moved upstream.)
+func IsOnboarded(p ListingPolicy, name string) bool {
 	return onboardingPredicate(p.Onboarding)(name)
 }
 
 // HasOnboardingOverride reports whether the policy supplies an explicit
 // "start here" set rather than deferring to the builtin primary-tool predicate.
-func (p ListingPolicy) HasOnboardingOverride() bool {
+func HasOnboardingOverride(p ListingPolicy) bool {
 	return len(p.Onboarding) > 0
 }
 
