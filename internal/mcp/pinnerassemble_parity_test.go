@@ -61,7 +61,7 @@ func TestPinnerMcpAssemblePresentationParity(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			srv, err := AssemblePresentation(&CatalogDepsBundle{Pins: catalogops.PinsDeps{}}, tc.surface, tc.hosted)
+			srv, err := AssemblePresentation(&CatalogDepsBundle{Pins: catalogops.PinsDeps{}}, tc.surface, tc.hosted, false)
 			require.NoError(t, err)
 			require.NotNil(t, srv)
 
@@ -135,9 +135,36 @@ func TestPinnerMcpAssemblePresentationParity(t *testing.T) {
 // TestAssemblePresentationRejectsNilDeps pins that a nil deps bundle is a
 // wiring bug at the CLI seam, mirroring AssembleCatalogOps' contract.
 func TestAssemblePresentationRejectsNilDeps(t *testing.T) {
-	_, err := AssemblePresentation(nil, FullDomainScope, false)
+	_, err := AssemblePresentation(nil, FullDomainScope, false, false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "nil catalog deps bundle")
+}
+
+// TestAssemblePresentationDevToolsParity pins the module-owned dev-tools
+// surface: the CLI owns no local dev_* registration — a DevTools assembly
+// appends the three introspection tools to the module's Direct list (after the
+// always-registered guide/capabilities), while a default assembly carries
+// none. The composition root's only dev-tools contract is the boolean on the
+// Config seam plus the per-request raw wire snapshot (SetDevTools).
+func TestAssemblePresentationDevToolsParity(t *testing.T) {
+	deps := &CatalogDepsBundle{Pins: catalogops.PinsDeps{}}
+
+	off, err := AssemblePresentation(deps, FullDomainScope, false, false)
+	require.NoError(t, err)
+	for _, d := range off.Direct {
+		require.NotContains(t, d.Name, []string{"dev_host_env", "dev_profile", "dev_request"},
+			"dev_* tools must be absent from a default (non-dev-tools) assembly")
+	}
+
+	on, err := AssemblePresentation(deps, FullDomainScope, false, true)
+	require.NoError(t, err)
+	names := make([]string, 0, len(on.Direct))
+	for _, d := range on.Direct {
+		names = append(names, d.Name)
+	}
+	require.ElementsMatch(t, []string{"agent_guide", "capabilities", "dev_host_env", "dev_profile", "dev_request"}, names,
+		"DevTools assembly must append exactly the module's dev_* introspection tools to Direct")
+	require.True(t, on.DevEnabled(), "DevEnabled must report the assembly's DevTools setting")
 }
 
 // TestAssemblePresentationCompiledSurfaceUsesModuleCompiler pins that the
@@ -155,7 +182,7 @@ func TestAssemblePresentationRejectsNilDeps(t *testing.T) {
 //     never compiles) is caught too. moduleOnlyAllowlist below is the explicit
 //     set of deliberate module-only descriptors (empty today).
 func TestAssemblePresentationCompiledSurfaceUsesModuleCompiler(t *testing.T) {
-	srv, err := AssemblePresentation(&CatalogDepsBundle{Pins: catalogops.PinsDeps{}}, FullDomainScope, false)
+	srv, err := AssemblePresentation(&CatalogDepsBundle{Pins: catalogops.PinsDeps{}}, FullDomainScope, false, false)
 	require.NoError(t, err)
 
 	moduleNames := make(map[string]bool, len(srv.Tools))

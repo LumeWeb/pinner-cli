@@ -26,9 +26,15 @@ import (
 // consume, and so the assembled artifacts are pinned against the CLI's
 // registered surface by TestPinnerMcpAssemblePresentationParity.
 //
+// devTools sets Config.DevTools on the module assembly: the module owns the
+// dev_* introspection surface (dev_host_env, dev_profile, dev_request), so a
+// --dev-tools launch is declared here rather than registered locally. The
+// composition root still populates the per-request raw wire snapshot
+// (SetDevTools) the module's dev tools introspect.
+//
 // deps is converted exactly as AssembleCatalogOps does (the module's
 // assembly bundle); a nil bundle is rejected there.
-func AssemblePresentation(deps *CatalogDepsBundle, surface DomainScope, hosted bool) (*mcp.Server, error) {
+func AssemblePresentation(deps *CatalogDepsBundle, surface DomainScope, hosted, devTools bool) (*mcp.Server, error) {
 	cat, err := AssembleCatalogOps(deps, surface, hosted)
 	if err != nil {
 		return nil, err
@@ -36,6 +42,7 @@ func AssemblePresentation(deps *CatalogDepsBundle, surface DomainScope, hosted b
 	return mcp.Assemble(mcp.Config{
 		DomainScope: assembly.DomainScope(surface),
 		Hosted:      hosted,
+		DevTools:    devTools,
 		// The startup profile is adapted through the same lossless
 		// FeatureCarrier bridge the catalog compiler uses (see
 		// compileProfileFor): ProfileFromHas probes every feature the module's
