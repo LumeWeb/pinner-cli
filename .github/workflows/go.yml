@@ -69,7 +69,7 @@ jobs:
 
       - name: Generate app asset manifest
         # The js-bundle action stages the app bundles under
-        # internal/mcpapp/appsassets/dist, but the mcpcanvas AssetSource
+        # mcpapp/appsassets/dist, but the mcpcanvas AssetSource
         # manifest next to them is generated at build time (gitignored).
         # Without it every binary panics at init: "mcpcanvas: invalid asset
         # manifest: ... open manifest.json: file does not exist". Must run on
@@ -140,7 +140,7 @@ jobs:
 
       - name: Generate app asset manifest
         # The js-bundle action stages the app bundles under
-        # internal/mcpapp/appsassets/dist, but the mcpcanvas AssetSource
+        # mcpapp/appsassets/dist, but the mcpcanvas AssetSource
         # manifest next to them is generated at build time (gitignored).
         # Without it the pinner binary panics at server assembly ("invalid
         # asset manifest: ... open manifest.json: file does not exist").
@@ -318,7 +318,7 @@ jobs:
 
       - name: Generate app asset manifest
         # The js-bundle action stages the app bundles under
-        # internal/mcpapp/appsassets/dist, but the mcpcanvas AssetSource
+        # mcpapp/appsassets/dist, but the mcpcanvas AssetSource
         # manifest next to them is generated at build time (gitignored).
         # Without it the managed pinner MCP server panics at assembly
         # ("invalid asset manifest: ... open manifest.json: file does not
@@ -408,9 +408,9 @@ jobs:
 
       - name: Generate app asset manifest
         # The js-bundle action stages the app bundles under
-        # internal/mcpapp/appsassets/dist, but the mcpcanvas AssetSource
+        # mcpapp/appsassets/dist, but the mcpcanvas AssetSource
         # manifest next to them is generated at build time (gitignored).
-        # Without it the internal/mcpapp tests panic at init ("invalid asset
+        # Without it the mcpapp tests panic at init ("invalid asset
         # manifest: ... open manifest.json: file does not exist"). Same as the
         # `jsbuild` step chained into `make assets`/`make test`.
         env:

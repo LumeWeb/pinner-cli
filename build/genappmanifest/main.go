@@ -1,6 +1,6 @@
-// Command genappmanifest generates internal/mcpapp/appsassets/manifest.json
+// Command genappmanifest generates mcpapp/appsassets/manifest.json
 // — the mcpcanvas.AssetSource manifest (mcpcanvas.ManifestFile) describing the
-// embedded MCP App bundles under internal/mcpapp/appsassets/dist/.
+// embedded MCP App bundles under mcpapp/appsassets/dist/.
 //
 // The manifest follows mcpcanvas's exact schema (mcpcanvas.Manifest /
 // mcpcanvas.ManifestSchemaVersion / mcpcanvas.NewEmbedSource): a manifest.json
@@ -10,8 +10,8 @@
 // self-check, so an output the embed seam would reject can never be produced.
 //
 // The generator is deterministic: bundle order is the fixed view list below
-// (matching the kind in internal/mcpapp/apps_embed.go's bundleNames; the
-// permanent test internal/mcpapp/appsmanifest_test.go pins that the two stay
+// (matching the kind in mcpapp/apps_embed.go's bundleNames; the
+// permanent test mcpapp/appsmanifest_test.go pins that the two stay
 // in sync), JSON is emitted with stable key order and two-space indent.
 //
 // The output is gitignored but must exist for `go:embed appsassets` to build;
@@ -38,7 +38,7 @@ import (
 )
 
 // appViews are the exact view names the MCP App surface serves — they must
-// match the keys of internal/mcpapp/apps_embed.go's bundleNames one-for-one.
+// match the keys of mcpapp/apps_embed.go's bundleNames one-for-one.
 // Each maps to its self-contained ESM bundle at dist/<view>.js under the
 // appsassets root. handshake.js (in the same dist dir) is deliberately not a
 // view: it is not registered in bundleNames and not listed in the manifest.
@@ -121,15 +121,15 @@ func run() error {
 	return nil
 }
 
-// appsAssetsRoot resolves internal/mcpapp/appsassets relative to this file's
-// location so the generator works from any working directory (the Makefile
-// runs it from the repo root; `go run ./build/genappmanifest` is dir-agnostic
-// because of this).
+// appsAssetsRoot resolves mcpapp/appsassets relative to this file's location so
+// the generator works from any working directory (the Makefile runs it from
+// the repo root; `go run ./build/genappmanifest` is dir-agnostic because of
+// this).
 func appsAssetsRoot() (string, error) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
 		return "", errors.New("genappmanifest: cannot resolve source file location")
 	}
-	// thisFile: <repo>/build/genappmanifest/main.go -> <repo>/internal/mcpapp/appsassets
-	return filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(thisFile))), "internal", "mcpapp", "appsassets"), nil
+	// thisFile: <repo>/build/genappmanifest/main.go -> <repo>/mcpapp/appsassets
+	return filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(thisFile))), "mcpapp", "appsassets"), nil
 }

@@ -1,5 +1,5 @@
 # js-bundle: build the MCP App JS bundles (packages/apps) and copy them into
-# internal/mcpapp/appsassets/dist/ so Go's //go:embed picks them up. Every Go
+# mcpapp/appsassets/dist/ so Go's //go:embed picks them up. Every Go
 # build/test step embeds these bundles and the Go build fails if they
 # are absent, so this action must run before any `go build`/`go test`.
 name: Build JS bundles
@@ -32,12 +32,12 @@ runs:
 
     - name: Stage bundles for Go embedding
       run: |
-        mkdir -p internal/mcpapp/appsassets/dist
-        cp packages/apps/dist/*.js internal/mcpapp/appsassets/dist/
+        mkdir -p mcpapp/appsassets/dist
+        cp packages/apps/dist/*.js mcpapp/appsassets/dist/
       shell: bash
 
     - name: Build MCP Apps Tailwind theme
-      # Compile internal/mcpapp/css/input.css -> internal/mcpapp/css/tailwind.css
+      # Compile mcpapp/css/input.css -> mcpapp/css/tailwind.css
       # (embedded by Go via go:embed). Same rationale as the bundles: must exist
       # before any go build/test.
       run: pnpm build:css

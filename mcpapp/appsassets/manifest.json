@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "compatibility": "pinner-cli-mcpapp-v1",
+  "bundles": [
+    {
+      "view": "account-email",
+      "file": "dist/account-email.js",
+      "hash": "6fac75be685eba0dfca1011cc9422884e782988d34d3ad77b33a4dad6a1637e5"
+    },
+    {
+      "view": "account-password",
+      "file": "dist/account-password.js",
+      "hash": "be64dae67d5e2683a4ed04c1837a1fca4447cf56776d188675ba2e8177f39337"
+    },
+    {
+      "view": "auth-sso",
+      "file": "dist/auth-sso.js",
+      "hash": "d148fd916506938c11f541fdced509ab3e3890d021bd4d118b87323d37508f62"
+    },
+    {
+      "view": "auth-status",
+      "file": "dist/auth-status.js",
+      "hash": "1f3bc7f4dc56967a4ca6fe07e5effb2dbd7e0ad2310ccc533f7ff85f682bce4c"
+    },
+    {
+      "view": "ipfs-download",
+      "file": "dist/ipfs-download.js",
+      "hash": "6fa27a0bb00c2fd6f6b1869cd1e4f2090b3f90a5dac74d659f634cfad24bf53b"
+    },
+    {
+      "view": "ipfs-upload",
+      "file": "dist/ipfs-upload.js",
+      "hash": "4a269ab7208bdeff33b564005f7ecc7891a4b7b61750eefd66cc7e168b2fcd58"
+    },
+    {
+      "view": "pin",
+      "file": "dist/pin.js",
+      "hash": "7a67f8b7a1ab8a5fa442ef70a81cd29d653479e34599384676eac0813e8f4a2e"
+    },
+    {
+      "view": "pin-list",
+      "file": "dist/pin-list.js",
+      "hash": "4d318b53c0b027c013cd65efa0f64f6bfb58e99b48675d5e6f197aedfe30035b"
+    },
+    {
+      "view": "vault-browser",
+      "file": "dist/vault-browser.js",
+      "hash": "4e942d736992c49a1baf58fde8bbfd92055d175adb6c6f22575b8afc3e78a0c1"
+    },
+    {
+      "view": "vault-create",
+      "file": "dist/vault-create.js",
+      "hash": "a5520de5c3dcd35a2840c9d02521c3271d14102854d84c4d5551fdc0ec54183c"
+    },
+    {
+      "view": "vault-download",
+      "file": "dist/vault-download.js",
+      "hash": "7bf7d41d639ec4a303fb34caceb199114d4d7f025faebc9832cd615b06abaa92"
+    },
+    {
+      "view": "vault-restore",
+      "file": "dist/vault-restore.js",
+      "hash": "782b42a338cc2f7bc390ea18a1671cceb6b02b5d5dfb97c6ee8b23f2a4720a33"
+    },
+    {
+      "view": "vault-upload",
+      "file": "dist/vault-upload.js",
+      "hash": "49a65a0ecea174c91c28c3e4b3bd36c919b3db3ae2d70c8506b6a82e5c24bda3"
+    }
+  ]
+}

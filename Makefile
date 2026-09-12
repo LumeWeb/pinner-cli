@@ -35,7 +35,7 @@ LDFLAGS := -X '$(PKG).Version=$(VERSION)' \
 #
 # We invoke `templ generate` directly from the repo root (not `go generate
 # ./...`) deliberately: templ files live in two packages (internal/mcp and
-# internal/mcpapp) and each carries a //go:generate templ generate directive.
+# mcpapp) and each carries a //go:generate templ generate directive.
 # Because `templ generate` recurses the whole repo by default, running it via
 # `go generate ./...` executes that directive twice from two different
 # directories (go:generate runs the command with the package dir as cwd),
@@ -54,27 +54,27 @@ templinstall:
 	go install github.com/a-h/templ/cmd/templ@v0.3.1020
 
 # jsbuild builds the MCP App JS bundles (packages/apps via tsdown) into
-# self-contained ESM files and copies them to internal/mcpapp/appsassets/dist/
+# self-contained ESM files and copies them to mcpapp/appsassets/dist/
 # so Go embeds them, then regenerates the mcpcanvas AssetSource manifest
-# (internal/mcpapp/appsassets/manifest.json via go run ./build/genappmanifest)
+# (mcpapp/appsassets/manifest.json via go run ./build/genappmanifest)
 # against the freshly copied bundles. Requires pnpm on PATH. Go build/test
 # embed these bundles (and the manifest), so jsbuild must run before any go
 # build/test.
 jsbuild:
 	cd packages/apps && CI=true pnpm install --frozen-lockfile && pnpm build && cd ../.. && \
-	mkdir -p internal/mcpapp/appsassets/dist && \
-	cp packages/apps/dist/*.js internal/mcpapp/appsassets/dist/ && \
+	mkdir -p mcpapp/appsassets/dist && \
+	cp packages/apps/dist/*.js mcpapp/appsassets/dist/ && \
 	GOFLAGS=-mod=mod go run ./build/genappmanifest
 
 # genappmanifest regenerates ONLY the mcpcanvas AssetSource manifest
-# (internal/mcpapp/appsassets/manifest.json) against the bundles already in
+# (mcpapp/appsassets/manifest.json) against the bundles already in
 # appsassets/dist/. Used by jsbuild (which is what assets/CI chain);
 # usable standalone when iterating on bundles without a full JS build.
 genappmanifest:
 	GOFLAGS=-mod=mod go run ./build/genappmanifest
 
-# cssbuild compiles the MCP Apps Tailwind theme (internal/mcpapp/css/input.css)
-# into the embedded stylesheet (internal/mcpapp/css/tailwind.css) that every
+# cssbuild compiles the MCP Apps Tailwind theme (mcpapp/css/input.css)
+# into the embedded stylesheet (mcpapp/css/tailwind.css) that every
 # ui:// app inlines. Requires pnpm on PATH. Must run before any go build so the
 # go:embed picks up the freshly compiled CSS.
 cssbuild:

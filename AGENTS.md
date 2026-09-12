@@ -94,7 +94,7 @@ internal/mcp/wizard/        MCP-side wizard FSMs (website/setup flows)
 internal/mcp/core/          MCP building blocks (sessions, model, transfer, ...)
 internal/mcp/hostenv/       Host platform capability model (features/profiles)
 internal/mcp/toolforge/     Forge: host-aware tool/schema/guide construction
-internal/mcpapp/            Embedded MCP app assets & CSS (go:embed)
+mcpapp/                   Importable MCP App asset & render seam (go:embed; published artifact)
 internal/urlopen/           Cross-platform "open URL in browser" helper
 internal/service/           OS service integration (Windows/systemd/launchd)
 internal/car/               CAR file root reading (GetCarRoots)
@@ -172,8 +172,10 @@ tests/sunpeak/              MCP integration tests (driver `pinner mcp` over stdi
     templates.
   - `internal/mcp/wizard/` — FSM wizard flows, session-based with TTL
     (`DefaultSessionTTL = 30m`, `DefaultMaxSessions = 100`).
-  - `internal/mcpapp/` — embedded JS/CSS app bundles (server fails at startup
-    if missing; build with `pnpm` first).
+  - `mcpapp/` — importable MCP App asset & render seam: embedded JS/CSS app
+    bundles, a canvas.Renderer delegate and RenderAppDoc (server fails at
+    startup if missing; regenerate with `make assets`). `internal/mcpapp/` is a
+    thin re-export alias kept so internal call sites are unchanged.
 
 ## Key Interfaces and Patterns
 

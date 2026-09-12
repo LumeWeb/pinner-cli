@@ -66,11 +66,11 @@ templinstall → generate → jsbuild → cssbuild → go build / go install
    templ files live in multiple packages and a single root-anchored pass
    covers every `*.templ` exactly once.
 3. **`jsbuild`** — `cd packages/apps && pnpm install --frozen-lockfile && pnpm
-   build`, then copies the dist JS into `internal/mcpapp/appsassets/dist/`
+   build`, then copies the dist JS into `mcpapp/appsassets/dist/`
    where Go embeds it.
 4. **`cssbuild`** — `pnpm build:css` compiles the Tailwind theme
-   (`internal/mcpapp/css/input.css`) into the embedded stylesheet
-   (`internal/mcpapp/css/tailwind.css`).
+   (`mcpapp/css/input.css`) into the embedded stylesheet
+   (`mcpapp/css/tailwind.css`).
 5. **Go build** — `CGO_ENABLED=1` with `-ldflags` injecting version info.
 
 ### Version Info (ldflags)
