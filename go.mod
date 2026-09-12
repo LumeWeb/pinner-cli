@@ -41,7 +41,7 @@ require (
 	go.lumeweb.com/ipfs-sdk/dnsname v0.1.64
 	go.lumeweb.com/mcpcanvas v0.0.0-20260907112052-7adbd4d8dcac
 	go.lumeweb.com/mcpforge v0.0.0-20260907155938-f64f92060f4e
-	go.lumeweb.com/mcpplane v0.0.0-20260908010148-2f0b05c8e8a9
+	go.lumeweb.com/mcpplane v0.0.0-20260912095121-3753dd085aa8
 	go.lumeweb.com/oauth v0.1.6
 	go.lumeweb.com/opmesh v0.0.0-20260907112428-ade506e64ae9
 	go.lumeweb.com/pinner v0.0.0-20260912083910-e9078eb61424

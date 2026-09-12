@@ -749,6 +749,8 @@ go.lumeweb.com/mcpforge v0.0.0-20260907155938-f64f92060f4e h1:WhMvV/09YjOymmN0+c
 go.lumeweb.com/mcpforge v0.0.0-20260907155938-f64f92060f4e/go.mod h1:qgdO7w6I7jB6BWpjA6uTp3Lv8Bgtd8VxuSZ+ZJJVCqM=
 go.lumeweb.com/mcpplane v0.0.0-20260908010148-2f0b05c8e8a9 h1:ORMDkksTgQGpH3h8foPDEPN2ULlBuaY/2Dy2w22bD2Y=
 go.lumeweb.com/mcpplane v0.0.0-20260908010148-2f0b05c8e8a9/go.mod h1:asmt9NodxeLJ8xvn1FkfqHZcD1Fe01yFXgoSE9s2pQU=
+go.lumeweb.com/mcpplane v0.0.0-20260912095121-3753dd085aa8 h1:8WKTKI2BngpZYncISCi0Z2DQb8Rr3SWHkkZASctJmhA=
+go.lumeweb.com/mcpplane v0.0.0-20260912095121-3753dd085aa8/go.mod h1:asmt9NodxeLJ8xvn1FkfqHZcD1Fe01yFXgoSE9s2pQU=
 go.lumeweb.com/oauth v0.1.6 h1:6c6LrXxMwx5klbq3OshzXjkGwvYVjAQhjX2FxCAgqqg=
 go.lumeweb.com/oauth v0.1.6/go.mod h1:Bfdxi1gkv+Ypj9yj9uOSmKnbZX8C7q7Pyn1OdPyuCbM=
 go.lumeweb.com/opmesh v0.0.0-20260907112428-ade506e64ae9 h1:kb2adBZ8Ed11yuXoQw2I8LfmbPjpPkc0NPwyShKJ5KE=
