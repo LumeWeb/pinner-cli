@@ -42,7 +42,7 @@ func RenderVaultCreateAppHTML() string {
 // only the Create Vault view can poll it; the model never sees it. It carries
 // no secrets (the seed never crosses this channel).
 func VaultCreateStatusDescriptor(reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
-	return handoff.NewResumeTool(handoff.ResumeToolSpec{
+	return handoff.MustResumeTool(handoff.NewResumeTool(handoff.ResumeToolSpec{
 		Name:                "vault_create_status",
 		Title:               "Vault Create Status",
 		Description:         "Poll a pending vault create hand-off by handle. App-only helper for the Create Vault view.",
@@ -51,7 +51,9 @@ func VaultCreateStatusDescriptor(reg *handoff.HandoffRegistry, handles *session.
 		ExpiredHandleDetail: "the vault create hand-off expired before the vault was created and the seed retrieved; start a fresh vault create with vault_create",
 		DeadHandleReason:    model.ReasonCredentialEntry,
 		Category:            model.CategoryStorage,
-	}, reg, handles)
+		ResourceURI:         VaultCreateAppURI,
+		Visibility:          []model.ToolVisibility{model.ToolVisibilityApp},
+	}, reg, handles))
 }
 
 // RegisterVaultCreateApp wires the complete "Create Vault" MCP App onto the

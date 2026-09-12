@@ -18,6 +18,18 @@ import (
 	"go.lumeweb.com/pinner-cli/internal/mcp/vault"
 )
 
+// assertFlatToolInvocation asserts the toolInvocation labels sit at their flat
+// slash-delimited _meta keys with the given values.
+func assertFlatToolInvocation(t *testing.T, meta map[string]any, invoking, invoked string) {
+	t.Helper()
+	if got, ok := meta["openai/toolInvocation/invoking"].(string); !ok || got != invoking {
+		t.Fatalf("openai/toolInvocation/invoking = %#v, want %q", meta["openai/toolInvocation/invoking"], invoking)
+	}
+	if got, ok := meta["openai/toolInvocation/invoked"].(string); !ok || got != invoked {
+		t.Fatalf("openai/toolInvocation/invoked = %#v, want %q", meta["openai/toolInvocation/invoked"], invoked)
+	}
+}
+
 // fakePins is a controllable PinningProvider for app tests.
 type fakePins struct {
 	status string
@@ -155,6 +167,35 @@ func TestPinStatusHelperInvoke(t *testing.T) {
 	}
 	if !strings.Contains(string(sc), `"status":"pinning"`) {
 		t.Fatalf("structuredContent missing status: %s", sc)
+	}
+}
+
+// TestPinStatusHelperToolInvocationMetaFlat pins the toolInvocation labels at
+// the flat slash-delimited _meta keys the reference contract reads
+// (openai/toolInvocation/invoking + /invoked), matching the shared
+// appswire.ToolInvocationMeta helper — never a nested object.
+func TestPinStatusHelperToolInvocationMetaFlat(t *testing.T) {
+	pins := &fakePins{status: "pinning"}
+	srv := buildPinAppServer(t, pins)
+	cs := connectOfficialClient(t, srv)
+	tres, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	var meta map[string]any
+	for _, x := range tres.Tools {
+		if x.Name == "pin_status" {
+			meta = x.Meta
+			break
+		}
+	}
+	if meta == nil {
+		t.Fatalf("pin_status not listed")
+	}
+	assertFlatToolInvocation(t, meta, "Checking pin status…", "Pin status checked")
+	// The deprecated nested-object shape must be gone.
+	if _, nested := meta["openai/toolInvocation"]; nested {
+		t.Fatalf("pin_status must not carry the nested openai/toolInvocation object: %#v", meta["openai/toolInvocation"])
 	}
 }
 

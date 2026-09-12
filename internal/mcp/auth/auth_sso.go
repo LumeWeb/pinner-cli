@@ -227,7 +227,7 @@ func NewAuthSSORevokeDescriptor(oob *OutOfBandLogin, handles *session.AsyncHandl
 // dead-handle guidance are SSO-specific; the dispatch logic (handle validation,
 // expiry, continuation lookup) is shared via handoff.NewResumeTool.
 func NewAuthResumeDescriptor(reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
-	return handoff.NewResumeTool(handoff.ResumeToolSpec{
+	return handoff.MustResumeTool(handoff.NewResumeTool(handoff.ResumeToolSpec{
 		Name:                "auth_resume",
 		Title:               "Auth Sign-In Resume",
 		Description:         "Poll a pending out-of-band (OOB) sign in to check whether the human has completed the SSO approval (sign-in). Returns pending (needs_human) until approval is done, then reports done. Pass the handle returned by auth_sso.",
@@ -236,5 +236,7 @@ func NewAuthResumeDescriptor(reg *handoff.HandoffRegistry, handles *session.Asyn
 		ExpiredHandleDetail: "the sign-in handle expired before the human completed approval; start a fresh login with auth_sso and have the user approve promptly",
 		DeadHandleReason:    model.ReasonSSOApproval,
 		Category:            model.CategoryAccount,
-	}, reg, handles)
+		ResourceURI:         AuthSSOAppURI,
+		Visibility:          []model.ToolVisibility{model.ToolVisibilityModel, model.ToolVisibilityApp},
+	}, reg, handles))
 }

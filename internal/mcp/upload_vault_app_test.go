@@ -445,3 +445,25 @@ func TestVaultUploadResourceAdvertisesConnectDomains(t *testing.T) {
 	cd2 := ui2["csp"].(map[string]any)["connectDomains"].([]any)
 	require.Equal(t, "https://tunnel.example.com", cd2[0], "tunnel connectDomains[0]")
 }
+
+// TestVaultUploadSubmitHelperToolInvocationMetaFlat pins the vault_upload_submit
+// helper's toolInvocation labels at the flat slash-delimited _meta keys, matching
+// the shared appswire.ToolInvocationMeta helper.
+func TestVaultUploadSubmitHelperToolInvocationMetaFlat(t *testing.T) {
+	srv := buildVaultUploadAppServer(t, nil)
+	cs := connectOfficialClient(t, srv)
+	tres, err := cs.ListTools(context.Background(), nil)
+	require.NoError(t, err)
+	var meta map[string]any
+	for _, x := range tres.Tools {
+		if x.Name == "vault_upload_submit" {
+			meta = x.Meta
+			break
+		}
+	}
+	require.NotNil(t, meta, "vault_upload_submit not listed")
+	assertFlatToolInvocation(t, meta, "Preparing vault upload endpoint…", "Vault upload endpoint ready")
+	if _, nested := meta["openai/toolInvocation"]; nested {
+		t.Fatalf("vault_upload_submit must not carry the nested openai/toolInvocation object: %#v", meta["openai/toolInvocation"])
+	}
+}

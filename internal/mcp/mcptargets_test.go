@@ -59,7 +59,10 @@ func TestToolRegistrationsCarryMCPTargets(t *testing.T) {
 	// so exercising it once covers auth_resume / vault_create_resume /
 	// vault_restore_resume.
 	requireMCPTargets(t, auth.NewAuthSSODescriptor(nil, nil, nil))
-	requireMCPTargets(t, handoff.NewResumeTool(handoff.ResumeToolSpec{Name: "resume_tool", Description: "x"}, nil, nil))
+	requireMCPTargets(t, handoff.MustResumeTool(handoff.NewResumeTool(handoff.ResumeToolSpec{
+		Name: "resume_tool", Description: "x", ResourceURI: "ui://test/flow.html",
+		Visibility: []model.ToolVisibility{model.ToolVisibilityApp},
+	}, nil, nil)))
 	requireMCPTargets(t, auth.NewAccountPasswordUpdateDescriptor(nil, nil, nil, nil))
 	requireMCPTargets(t, auth.NewAccountPasswordResetDescriptor(nil, ""))
 	requireMCPTargets(t, auth.NewAccountEmailChangeDescriptor(nil, nil))

@@ -227,14 +227,16 @@ func TestResumeTemplateDispatchesContinuation(t *testing.T) {
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
 	// A generic handoff flow: start tool style, then the shared resume template.
-	resume := NewResumeTool(ResumeToolSpec{
+	resume := MustResumeTool(NewResumeTool(ResumeToolSpec{
 		Name:                "test_flow_resume",
 		Description:         "Resume the test flow",
 		RestartTool:         "test_flow_start",
 		UnknownHandleDetail: "unknown; start afresh",
 		ExpiredHandleDetail: "expired; start afresh",
 		DeadHandleReason:    model.ReasonConfirmation,
-	}, reg, handles)
+		ResourceURI:         "ui://test/flow.html",
+		Visibility:          []model.ToolVisibility{model.ToolVisibilityApp},
+	}, reg, handles))
 
 	// Pending continuation (needs_human) first, then terminal done.
 	kind := "pending"
@@ -277,6 +279,33 @@ func TestResumeTemplateDispatchesContinuation(t *testing.T) {
 	assert.False(t, after, "terminal resume must drop the continuation")
 }
 
+// TestResumeToolInvocationMetaFlat pins the resume template's toolInvocation
+// labels at the flat slash-delimited _meta keys (never a nested object), the
+// contract established by appswire.ToolInvocationMeta.
+func TestResumeToolInvocationMetaFlat(t *testing.T) {
+	reg := NewHandoffRegistry()
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
+	desc := MustResumeTool(NewResumeTool(ResumeToolSpec{
+		Name:        "test_flow_resume",
+		ResourceURI: "ui://test/flow.html",
+		Visibility:  []model.ToolVisibility{model.ToolVisibilityApp},
+	}, reg, handles))
+	require.Equal(t, "Checking hand-off status…", desc.Meta["openai/toolInvocation/invoking"])
+	require.Equal(t, "Hand-off status checked", desc.Meta["openai/toolInvocation/invoked"])
+	_, nested := desc.Meta["openai/toolInvocation"]
+	require.False(t, nested, "resume meta must not carry the nested openai/toolInvocation object")
+}
+
+// TestResumeToolInvocationMetaRequiresURI verifies the resume template refuses
+// a spec that omits its ui:// resource URI (a wiring bug), matching the
+// appswire.ToolInvocationMeta error contract instead of silently dropping meta.
+func TestResumeToolInvocationMetaRequiresURI(t *testing.T) {
+	reg := NewHandoffRegistry()
+	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
+	_, err := NewResumeTool(ResumeToolSpec{Name: "test_flow_resume"}, reg, handles)
+	require.Error(t, err)
+}
+
 // TestResumeTemplateDeadHandleSteersRestart verifies that a handle with no
 // registered continuation (never started or already completed) steers the agent
 // to the restart tool rather than leaving it polling.
@@ -284,13 +313,15 @@ func TestResumeTemplateDeadHandleSteersRestart(t *testing.T) {
 	reg := NewHandoffRegistry()
 	handles := session.NewAsyncHandleStore(session.DefaultSessionTTL, session.DefaultMaxSessions)
 
-	resume := NewResumeTool(ResumeToolSpec{
+	resume := MustResumeTool(NewResumeTool(ResumeToolSpec{
 		Name:                "test_flow_resume",
 		RestartTool:         "test_flow_start",
 		UnknownHandleDetail: "unknown handle; start a new flow",
 		ExpiredHandleDetail: "expired; start a fresh flow",
 		DeadHandleReason:    model.ReasonConfirmation,
-	}, reg, handles)
+		ResourceURI:         "ui://test/flow.html",
+		Visibility:          []model.ToolVisibility{model.ToolVisibilityApp},
+	}, reg, handles))
 
 	// A handle that exists in the store but has NO continuation registered.
 	orphan := handles.Create("pending", map[string]any{"flow": "x"})

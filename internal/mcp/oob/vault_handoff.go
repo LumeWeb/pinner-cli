@@ -305,7 +305,7 @@ func vaultExpiredResult(handles *session.AsyncHandleStore, reg *handoff.HandoffR
 // built from the shared resume template. Name/description and restart steering
 // are create-flavored: a dead handle steers back to vault_create.
 func NewVaultCreateResumeDescriptor(reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
-	return handoff.NewResumeTool(handoff.ResumeToolSpec{
+	return handoff.MustResumeTool(handoff.NewResumeTool(handoff.ResumeToolSpec{
 		Name:                VaultCreateResumeToolName,
 		Title:               "Vault Create Resume",
 		Description:         "Poll a pending vault create hand-off to check whether the human has approved the Sia device connection on the one-time create_url and retrieved the recovery seed. Returns pending (needs_human) until the vault is active and the seed has been retrieved, then reports done. Pass the handle returned by vault_create.",
@@ -314,14 +314,16 @@ func NewVaultCreateResumeDescriptor(reg *handoff.HandoffRegistry, handles *sessi
 		ExpiredHandleDetail: "the vault create hand-off expired before the vault was created and the seed retrieved; start a fresh vault create with vault_create so a new create_url is minted",
 		DeadHandleReason:    model.ReasonCredentialEntry,
 		Category:            model.CategoryStorage,
-	}, reg, handles)
+		ResourceURI:         vault.VaultCreateAppURI,
+		Visibility:          []model.ToolVisibility{model.ToolVisibilityModel, model.ToolVisibilityApp},
+	}, reg, handles))
 }
 
 // NewVaultRestoreResumeDescriptor returns the vault_restore_resume tool,
 // built from the shared resume template. Name/description and restart steering
 // are restore-flavored: a dead handle steers back to vault_restore.
 func NewVaultRestoreResumeDescriptor(reg *handoff.HandoffRegistry, handles *session.AsyncHandleStore) model.ToolDescriptor {
-	return handoff.NewResumeTool(handoff.ResumeToolSpec{
+	return handoff.MustResumeTool(handoff.NewResumeTool(handoff.ResumeToolSpec{
 		Name:                VaultRestoreResumeToolName,
 		Title:               "Vault Restore Resume",
 		Description:         "Poll a pending vault restore hand-off to check whether the human has completed the out-of-band restore on the one-time restore_url. Returns pending (needs_human) until the restore is done, then reports done. Pass the handle returned by vault_restore.",
@@ -330,5 +332,7 @@ func NewVaultRestoreResumeDescriptor(reg *handoff.HandoffRegistry, handles *sess
 		ExpiredHandleDetail: "the vault restore hand-off expired before the human completed it; start a fresh vault restore with vault_restore so a new restore_url is minted",
 		DeadHandleReason:    model.ReasonCredentialEntry,
 		Category:            model.CategoryStorage,
-	}, reg, handles)
+		ResourceURI:         vault.VaultRestoreAppURI,
+		Visibility:          []model.ToolVisibility{model.ToolVisibilityModel, model.ToolVisibilityApp},
+	}, reg, handles))
 }

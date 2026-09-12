@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.lumeweb.com/pinner/mcp/appswire"
 	"go.lumeweb.com/pinner-cli/internal/mcpapp"
 
 	"go.lumeweb.com/mcpplane/model"
@@ -78,12 +80,9 @@ func vaultUploadSubmitDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescrip
 		// OpenAI tool invocation labels shown by UI-capable hosts while the
 		// tool runs and after it finishes. Required alongside the openai
 		// outputTemplate this app helper carries.
-		Meta: map[string]any{
-			"openai/toolInvocation": map[string]any{
-				"invoking": "Preparing vault upload endpoint…",
-				"invoked":  "Vault upload endpoint ready",
-			},
-		},
+		Meta: mustToolMeta(appswire.ToolInvocationMeta(VaultUploadAppURI,
+			[]model.ToolVisibility{model.ToolVisibilityApp},
+			"Preparing vault upload endpoint…", "Vault upload endpoint ready")),
 		Handler: func(ctx context.Context, req model.ToolRequest) (model.ToolResult, error) {
 			in, err := toolargs.DecodeToolArgs[VaultUploadSubmitInput](req)
 			if err != nil {
@@ -123,6 +122,17 @@ func vaultUploadSubmitDescriptor(vu *transfer.VaultHTTPUpload) model.ToolDescrip
 			return model.ToolResult{StructuredContent: map[string]any{"url": url, "vault_path": in.VaultPath}, Text: "Upload endpoint prepared."}, nil
 		},
 	}
+}
+
+// mustToolMeta unwraps appswire.ToolInvocationMeta's result for app helpers
+// whose URI and labels are constant and non-empty — the only way the meta build
+// can fail. A failure is a compile-time-wiring divergence (an empty constant),
+// so it fails loudly instead of being swallowed.
+func mustToolMeta(meta mcp.Meta, err error) mcp.Meta {
+	if err != nil {
+		panic(err)
+	}
+	return meta
 }
 
 // RegisterVaultUploadApp wires the complete "Upload to Vault" MCP App: attaches
