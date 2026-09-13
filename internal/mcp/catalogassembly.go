@@ -48,6 +48,7 @@ func AssembleCatalogOps(deps *CatalogDepsBundle, surface DomainScope, hosted boo
 		VaultSetup:         catalogops.VaultDeps(deps.VaultSetup),
 		Pins:               catalogops.PinsDeps(deps.Pins),
 		Websites:           catalogops.WebsitesDeps(deps.Websites),
+		Workspaces:         catalogops.WorkspacesDeps(deps.Workspaces),
 		DNS:                catalogops.DNSDeps(deps.DNS),
 		IPNS:               catalogops.IPNSDeps(deps.IPNS),
 		ENS:                catalogops.ENSDeps(deps.ENS),

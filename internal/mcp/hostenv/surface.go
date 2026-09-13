@@ -25,6 +25,8 @@ type DomainScope struct {
 	Pins bool
 	// Websites enables IPFS website publishing operations.
 	Websites bool
+	// Workspaces enables the isolated workspace/runtime operations.
+	Workspaces bool
 	// DNS enables the DNS zone/record operations.
 	DNS bool
 	// IPNS enables the IPNS key/publish operations.
@@ -45,6 +47,7 @@ var FullDomainScope = DomainScope{
 	Vault:      true,
 	Pins:       true,
 	Websites:   true,
+	Workspaces: true,
 	DNS:        true,
 	IPNS:       true,
 	ENS:        true,
@@ -61,6 +64,7 @@ var HostedDomainScope = DomainScope{
 	Account:    true,
 	Pins:       true,
 	Websites:   true,
+	Workspaces: true,
 	DNS:        true,
 	IPNS:       true,
 	ENS:        true,
@@ -95,6 +99,9 @@ func (s DomainScope) PinsOn() bool { return s.flagOn(s.Pins) }
 
 // WebsitesOn reports whether the website-publishing surface is enabled.
 func (s DomainScope) WebsitesOn() bool { return s.flagOn(s.Websites) }
+
+// WorkspacesOn reports whether the workspace surface is enabled.
+func (s DomainScope) WorkspacesOn() bool { return s.flagOn(s.Workspaces) }
 
 // DNSOn reports whether the DNS surface is enabled.
 func (s DomainScope) DNSOn() bool { return s.flagOn(s.DNS) }

@@ -307,13 +307,18 @@ func TestFlatStrategyIndependentOfHosted(t *testing.T) {
 		require.Falsef(t, hostedPresent[n], "hosted surface must not materialize vault op %q", n)
 	}
 
-	// Flat hosted: exactly the hosted catalog is direct; no vault, no meta
-	// (default).
+	// Flat hosted: exactly the agent-safe hosted catalog is direct; no vault,
+	// no meta (default). The sensitive-credential workspaces_access op is
+	// HumanOnly, so it stays gated (behind the needs_human meta gate) exactly
+	// as on the full surface; the remaining agent-safe hosted ops materialize
+	// directly.
+	hostedFlatCapable := flatCapableNames(t, HostedDomainScope, true)
 	hostedFlat, _ := materializedNames(t, buildStrategyServer(t, HostedDomainScope, true, ListingFlat, false))
-	require.Equal(t, len(hostedPresent), len(hostedFlat), "flat hosted must equal the hosted catalog exactly")
-	for n := range hostedPresent {
+	require.Equal(t, len(hostedFlatCapable), len(hostedFlat), "flat hosted must equal the agent-safe hosted catalog exactly")
+	for n := range hostedFlatCapable {
 		require.Truef(t, hostedFlat[n], "flat hosted must materialize %q", n)
 	}
+	require.False(t, hostedFlat["workspaces_access"], "flat hosted must keep HumanOnly workspaces_access gated (needs_human), not direct")
 	require.False(t, hostedFlat["vault_status"], "flat hosted must not surface a vault op (surface-disabled)")
 
 	// Full flat materializes the vault domain the hosted catalog excludes,
