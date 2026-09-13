@@ -77,6 +77,12 @@ func catalogAdminDeps() catalogops.AdminDeps {
 			}
 			return coreadmin.DefaultSocialProviderAdminServiceFactory(cfgMgr), nil
 		},
+		UserAdminService: func(cfgMgr config.Manager) (coreadmin.UserAdminService, error) {
+			if cfgMgr == nil {
+				return nil, fmt.Errorf("no config manager available")
+			}
+			return coreadmin.DefaultUserAdminServiceFactory(cfgMgr), nil
+		},
 	}
 }
 
@@ -366,6 +372,33 @@ func renderAdminResult(_ context.Context, c *cli.Command, op opmesh.Operation, r
 			return output.PrintJSON(map[string]any{"deleted": r.Deleted, "id": r.ID})
 		}
 		output.Printfln("Social provider %s deleted", r.ID)
+		return nil
+
+	case *catalogops.UsersDeleteResult:
+		if output.IsJSON() {
+			return output.PrintJSON(map[string]any{"deleted": r.Deleted, "id": r.ID})
+		}
+		output.Printfln("User %d deleted", r.ID)
+		return nil
+
+	case *admin.User:
+		// create/get/update return the user object; password and verification
+		// tokens are never present on the response.
+		if output.IsJSON() {
+			return output.PrintJSON(r)
+		}
+		name := strings.TrimSpace(r.FirstName + " " + r.LastName)
+		if name == "" {
+			name = r.Email
+		}
+		output.PrintFields(FieldGroup{Title: "User", Fields: []Field{
+			{"ID", fmt.Sprintf("%d", r.Id)},
+			{"Email", r.Email},
+			{"Name", name},
+			{"Role", r.Role},
+			{"Verified", yesNo(r.Verified)},
+			{"Created", r.CreatedAt.Format("2006-01-02 15:04:05")},
+		}})
 		return nil
 
 	case *admin.SocialProvider:

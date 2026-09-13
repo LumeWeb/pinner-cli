@@ -59,6 +59,13 @@ var AdminShapes = ShapeRegistry{
 	"admin_social_providers_enable":  {Path: []string{"admin", "social-providers", "enable"}},
 	"admin_social_providers_disable": {Path: []string{"admin", "social-providers", "disable"}},
 
+	// --- admin users (flat section leaves) ---
+	"admin_users_list":   {Path: []string{"admin", "users", "list"}},
+	"admin_users_get":    {Path: []string{"admin", "users", "get"}},
+	"admin_users_create": {Path: []string{"admin", "users", "create"}},
+	"admin_users_update": {Path: []string{"admin", "users", "update"}},
+	"admin_users_delete": {Path: []string{"admin", "users", "delete"}},
+
 	// --- admin quota: plans group ---
 	"admin_quota_plans_list": {
 		Path:     []string{"admin", "quota", "plans", "list"},
@@ -367,5 +374,6 @@ Examples:
 		{Name: "websites", Category: "Admin", Usage: "Manage IPFS websites (admin)"},
 		{Name: "platform-domains", Category: "Admin", Usage: "Manage platform (free-subdomain) root domains"},
 		{Name: "social-providers", Category: "Admin", Usage: "Manage social login providers"},
+		{Name: "users", Category: "Admin", Usage: "Manage users (admin)"},
 	},
 }

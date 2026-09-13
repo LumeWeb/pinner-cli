@@ -31,7 +31,7 @@ func TestAdminSocialProvidersMountedUnderAdmin(t *testing.T) {
 	for _, sub := range admin.Commands {
 		names[sub.Name] = true
 	}
-	for _, want := range []string{"quota", "billing", "websites", "pprof", "platform-domains", "social-providers"} {
+	for _, want := range []string{"quota", "billing", "websites", "pprof", "platform-domains", "social-providers", "users"} {
 		if !names[want] {
 			t.Fatalf("admin parent missing expected section %q", want)
 		}
