@@ -755,6 +755,14 @@ go.lumeweb.com/opmesh v0.0.0-20260907112428-ade506e64ae9 h1:kb2adBZ8Ed11yuXoQw2I
 go.lumeweb.com/opmesh v0.0.0-20260907112428-ade506e64ae9/go.mod h1:DbO27Lr6pBSzC+HogQMNNVEZMvkAHYwckL7i79aTETM=
 go.lumeweb.com/pinner v0.0.0-20260913155112-17000af806af h1:oi/hQ2cYZaKpl3SHGbPbVSj7waf0CcNKNIzPboaAvzY=
 go.lumeweb.com/pinner v0.0.0-20260913155112-17000af806af/go.mod h1:doOkNprjTTIZdim9LiOpEnjmxxWsTAb9pTRYkyswXpw=
+go.lumeweb.com/pinner v0.0.0-20260913165141-91bcd5ac166f h1:oM/B5k2iWw+rPwYO6d1Cw6PbCJ5eBLWnXib4zOLDTYg=
+go.lumeweb.com/pinner v0.0.0-20260913165141-91bcd5ac166f/go.mod h1:doOkNprjTTIZdim9LiOpEnjmxxWsTAb9pTRYkyswXpw=
+go.lumeweb.com/pinner v0.0.0-20260913165231-607910a86128 h1:FHM7hyCcAfkLsAEMtNWFL+adNrTxS+4rRIV4EonNdiw=
+go.lumeweb.com/pinner v0.0.0-20260913165231-607910a86128/go.mod h1:doOkNprjTTIZdim9LiOpEnjmxxWsTAb9pTRYkyswXpw=
+go.lumeweb.com/pinner v0.0.0-20260913165519-0cd854ac5743 h1:R3GNQ7ENa2IGbaHJWvB5iWS0QkI/f4s6+zLzsD+aXts=
+go.lumeweb.com/pinner v0.0.0-20260913165519-0cd854ac5743/go.mod h1:doOkNprjTTIZdim9LiOpEnjmxxWsTAb9pTRYkyswXpw=
+go.lumeweb.com/pinner v0.0.0-20260913174043-31c1b6e65acb h1:Cw0gjgj5auBFpEhnLj0YWRhNOoHCLiTQFMrqur74Wlw=
+go.lumeweb.com/pinner v0.0.0-20260913174043-31c1b6e65acb/go.mod h1:doOkNprjTTIZdim9LiOpEnjmxxWsTAb9pTRYkyswXpw=
 go.lumeweb.com/portal v0.5.1 h1:l28uCNFmT+VewwRGhFwlmonYEwLxQfRh06hm7n0SQr8=
 go.lumeweb.com/portal v0.5.1/go.mod h1:JXy/eHHlUdXMsPbXSbRyX2ZM7s/OGNfSNsXH7XRYWCk=
 go.lumeweb.com/portal-middleware v0.3.7 h1:kq4SZq4T/uhauqHehw2JaTbNJpPpE8/EQAC3R737H7c=

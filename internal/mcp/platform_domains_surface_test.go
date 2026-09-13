@@ -62,6 +62,7 @@ func TestAdminUsersOpsRegisteredInMCPSurface(t *testing.T) {
 		"admin_users_create",
 		"admin_users_update",
 		"admin_users_delete",
+		"admin_users_verify",
 	} {
 		require.True(t, names[want], "MCP surface should expose %s", want)
 	}
