@@ -795,6 +795,7 @@ var adminOpsOrder = []string{
 	"admin_platform_domains_list", "admin_platform_domains_register", "admin_platform_domains_update", "admin_platform_domains_delete", "admin_platform_domains_bind",
 	"admin_websites_block", "admin_websites_unblock",
 	"admin_social_providers_list", "admin_social_providers_get", "admin_social_providers_create", "admin_social_providers_update", "admin_social_providers_delete", "admin_social_providers_enable", "admin_social_providers_disable",
+	"admin_users_list", "admin_users_get", "admin_users_create", "admin_users_update", "admin_users_delete",
 	"admin_quota_plans_list", "admin_quota_plans_get", "admin_quota_plans_create", "admin_quota_plans_update", "admin_quota_plans_delete", "admin_quota_plans_set_default",
 	"admin_quota_allowances_list", "admin_quota_allowances_create", "admin_quota_allowances_update", "admin_quota_allowances_delete",
 	"admin_quota_user_configs_list", "admin_quota_user_configs_update", "admin_quota_user_configs_reset",
@@ -893,7 +894,7 @@ func TestCompileTree_AdminShapeRendersSections(t *testing.T) {
 	}
 
 	// The five sections are the root's direct children, in declaration order.
-	wantSections := []string{"quota", "billing", "websites", "platform-domains", "social-providers"}
+	wantSections := []string{"quota", "billing", "websites", "platform-domains", "social-providers", "users"}
 	gotSections := childNamesOf(&testNode{children: nodes})
 	if !reflect.DeepEqual(gotSections, wantSections) {
 		t.Fatalf("admin sections = %v, want %v", gotSections, wantSections)
@@ -949,6 +950,9 @@ func TestCompileTree_AdminShapeRendersSections(t *testing.T) {
 	}
 	if !reflect.DeepEqual(childNamesOf(findTestNode(nodes, "social-providers")), []string{"list", "get", "create", "update", "delete", "enable", "disable"}) {
 		t.Fatalf("social-providers children wrong")
+	}
+	if !reflect.DeepEqual(childNamesOf(findTestNode(nodes, "users")), []string{"list", "get", "create", "update", "delete"}) {
+		t.Fatalf("users children wrong")
 	}
 
 	// Every leaf inherits the Admin category.

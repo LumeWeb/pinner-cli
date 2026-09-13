@@ -36,15 +36,15 @@ require (
 	go.lumeweb.com/canimcp v0.0.0-20260912112527-1c27fd5becdd
 	go.lumeweb.com/fieldcraft v0.0.0-20260907095025-2a7bfdd040cb
 	go.lumeweb.com/ipfs-content v0.1.18
-	go.lumeweb.com/ipfs-sdk v0.1.97
+	go.lumeweb.com/ipfs-sdk v0.1.98
 	go.lumeweb.com/ipfs-sdk/dnsname v0.1.64
 	go.lumeweb.com/mcpcanvas v0.0.0-20260907112052-7adbd4d8dcac
 	go.lumeweb.com/mcpforge v0.0.0-20260907155938-f64f92060f4e
 	go.lumeweb.com/mcpplane v0.0.0-20260912095121-3753dd085aa8
 	go.lumeweb.com/oauth v0.1.6
 	go.lumeweb.com/opmesh v0.0.0-20260907112428-ade506e64ae9
-	go.lumeweb.com/pinner v0.0.0-20260912202155-e995b1990984
-	go.lumeweb.com/portal-sdk v0.1.72
+	go.lumeweb.com/pinner v0.0.0-20260913153654-28994179071e
+	go.lumeweb.com/portal-sdk v0.1.73
 	go.lumeweb.com/queryutil v0.3.19
 	go.lumeweb.com/tunneler v0.0.0-20260907123602-56944ca7aeae
 	go.lumeweb.com/tunneler/cloudflare v0.0.0-20260907123602-56944ca7aeae
