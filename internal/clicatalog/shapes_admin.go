@@ -62,6 +62,7 @@ var AdminShapes = ShapeRegistry{
 	// --- admin users (flat section leaves) ---
 	"admin_users_list":   {Path: []string{"admin", "users", "list"}},
 	"admin_users_get":    {Path: []string{"admin", "users", "get"}},
+	"admin_users_verify": {Path: []string{"admin", "users", "verify"}},
 	"admin_users_create": {Path: []string{"admin", "users", "create"}},
 	"admin_users_update": {Path: []string{"admin", "users", "update"}},
 	"admin_users_delete": {Path: []string{"admin", "users", "delete"}},
