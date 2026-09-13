@@ -31,6 +31,11 @@ type flagGetterWithDuration interface {
 	Duration(name string) time.Duration
 }
 
+type flagGetterWithTimestamp interface {
+	flagGetterWithIsSet
+	Timestamp(name string) time.Time
+}
+
 // commandGetter is the broadest interface satisfied by cliCommandWrapper.
 // It encompasses all flag, arg, and CID access methods used across handlers.
 type commandGetter interface {
@@ -40,6 +45,7 @@ type commandGetter interface {
 	stringSliceGetter
 	Uint(name string) uint
 	Duration(name string) time.Duration
+	Timestamp(name string) time.Time
 }
 
 type argsGetter interface {

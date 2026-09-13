@@ -56,18 +56,19 @@ func newMockCommand() *mockCommand {
 // mockCommand is a map-backed test double for commandGetter interfaces.
 // It replaces hand-written mock command structs across test files.
 type mockCommand struct {
-	stringFields   map[string]string
-	intFields      map[string]int
-	int64Fields    map[string]int64
-	uint64Fields   map[string]uint64
-	uintFields     map[string]uint
-	durationFields map[string]time.Duration
-	floatFields    map[string]float64
-	boolFields     map[string]bool
-	stringSlices   map[string][]string
-	isSetFields    map[string]bool
-	args           cli.Args
-	cid            string
+	stringFields    map[string]string
+	intFields       map[string]int
+	int64Fields     map[string]int64
+	uint64Fields    map[string]uint64
+	uintFields      map[string]uint
+	durationFields  map[string]time.Duration
+	timestampFields map[string]time.Time
+	floatFields     map[string]float64
+	boolFields      map[string]bool
+	stringSlices    map[string][]string
+	isSetFields     map[string]bool
+	args            cli.Args
+	cid             string
 }
 
 func (m *mockCommand) withString(name, value string) *mockCommand {
@@ -115,6 +116,14 @@ func (m *mockCommand) withDuration(name string, value time.Duration) *mockComman
 		m.durationFields = make(map[string]time.Duration)
 	}
 	m.durationFields[name] = value
+	return m
+}
+
+func (m *mockCommand) withTimestamp(name string, value time.Time) *mockCommand {
+	if m.timestampFields == nil {
+		m.timestampFields = make(map[string]time.Time)
+	}
+	m.timestampFields[name] = value
 	return m
 }
 
@@ -259,6 +268,15 @@ func (m *mockCommand) Args() cli.Args {
 
 func (m *mockCommand) GetCID() string {
 	return m.cid
+}
+
+func (m *mockCommand) Timestamp(name string) time.Time {
+	if m.timestampFields != nil {
+		if v, ok := m.timestampFields[name]; ok {
+			return v
+		}
+	}
+	return time.Time{}
 }
 
 // Compile-time interface satisfaction checks

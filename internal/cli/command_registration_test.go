@@ -132,6 +132,7 @@ func TestCommandRegistration_RootSubcommands(t *testing.T) {
 		"admin",
 		"generate-docs",
 		"vault",
+		"git",
 		"mcp",
 	}
 
@@ -207,6 +208,26 @@ func TestCommandRegistration_PinsSubcommands(t *testing.T) {
 	assert.Len(t, pins.Commands, len(expectedPinsSubs),
 		"pins should have exactly %d subcommands, got %d: %v",
 		len(expectedPinsSubs), len(pins.Commands), names)
+}
+
+func TestCommandRegistration_GitSubcommands(t *testing.T) {
+	root := NewRootCommand()
+	git := findCommand(root.Commands, "git")
+	require.NotNil(t, git, "git command should exist")
+
+	expectedGitSubs := []string{"watch", "status", "ls", "show", "share", "unwatch", "doctor"}
+	names := commandNames(git.Commands)
+	nameSet := make(map[string]bool, len(names))
+	for _, n := range names {
+		nameSet[n] = true
+	}
+
+	for _, expected := range expectedGitSubs {
+		assert.True(t, nameSet[expected], "git should have subcommand %q", expected)
+	}
+	assert.Len(t, git.Commands, len(expectedGitSubs),
+		"git should have exactly %d subcommands, got %d: %v",
+		len(expectedGitSubs), len(git.Commands), names)
 }
 
 func TestCommandRegistration_AuthSubcommands(t *testing.T) {

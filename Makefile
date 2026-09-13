@@ -75,6 +75,12 @@ build: assets
 
 install: assets
 	CGO_ENABLED=1 go install -tags="$(TAGS)" -ldflags="$(LDFLAGS)" ./cmd/pinner
+	# Install the git-remote-pinner helper as a symlink to the same pinner
+	# binary (argv-0 identity dispatch — no second executable).
+	GOBIN_DIR="$$(go env GOBIN 2>/dev/null || printf '%s' "$$(go env GOPATH)/bin")"; \
+	[ -n "$$GOBIN_DIR" ] || GOBIN_DIR="$$(go env GOPATH)/bin"; \
+	ln -sf pinner "$$GOBIN_DIR/git-remote-pinner"; \
+	echo "installed $$GOBIN_DIR/pinner and $$GOBIN_DIR/git-remote-pinner -> pinner"
 
 test: assets
 	go test -tags "$(TAGS)" ./...
