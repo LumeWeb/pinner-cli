@@ -90,6 +90,7 @@ func buildCatalogOpsDeps(factory ...ConfigManagerFactory) *mcpadapter.CatalogDep
 		VaultSetup: catalogops.VaultDeps(vaultSetupDeps),
 		Pins:       catalogops.PinsDeps(catalogPinningDeps(cfgFactory)),
 		Websites:   catalogops.WebsitesDeps(catalogWebsitesDeps(cfgFactory)),
+		Workspaces: catalogops.WorkspacesDeps(catalogWorkspacesDeps(cfgFactory)),
 		DNS:        catalogops.DNSDeps(catalogDNSDeps(cfgFactory)),
 		IPNS:       catalogops.IPNSDeps(catalogIPNSDeps(cfgFactory)),
 		ENS:        catalogops.ENSDeps(catalogENSDeps(cfgFactory)),

@@ -89,6 +89,46 @@ func TestProductionCatalogOpsBundleExposesAdminDomain(t *testing.T) {
 	}
 }
 
+// TestProductionCatalogOpsBundleExposesWorkspacesDomain pins that the
+// workspaces domain is wired into the production MCP surface assembled from
+// buildCatalogOpsDeps (the bundle handed to the server via WithCatalogOps).
+// Regression for a Kody finding: buildCatalogOpsDeps threaded everything except
+// Workspaces, so the workspaces_* ops were advertised on the surface but ran
+// against a zero WorkspacesDeps{} (all-nil service functions) and failed with
+// "service unavailable" at invocation.
+func TestProductionCatalogOpsBundleExposesWorkspacesDomain(t *testing.T) {
+	cfgMgr := configmocks.NewMockManager(t)
+	prev := configManagerFactory
+	configManagerFactory = func() (config.Manager, error) { return cfgMgr, nil }
+	defer func() { configManagerFactory = prev }()
+
+	bundle := buildCatalogOpsDeps()
+	oc, err := mcpadapter.AssembleCatalogOps(bundle, mcpadapter.FullDomainScope, false)
+	require.NoError(t, err, "production deps must assemble a catalog")
+
+	descs, err := catalogmcp.NewCompiler().Compile(oc)
+	require.NoError(t, err)
+
+	names := map[string]bool{}
+	for _, d := range descs {
+		names[d.Name] = true
+	}
+	for _, want := range []string{
+		"workspaces_list",
+		"workspaces_create",
+		"workspaces_get",
+		"workspaces_attach",
+		"workspaces_suspend",
+		"workspaces_resume",
+		"workspaces_access",
+		"workspaces_delete",
+	} {
+		if !names[want] {
+			t.Fatalf("production surface missing workspaces tool %q", want)
+		}
+	}
+}
+
 // domainPrefix returns the leading domain token of a dotted operation name.
 func domainPrefix(name string) string {
 	for i := 0; i < len(name); i++ {
