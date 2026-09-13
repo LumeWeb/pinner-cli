@@ -117,16 +117,21 @@ jobs:
           # wipes at start).
           mkdir -p ci-logs
           set -o pipefail
-          # Bind-mount the host module cache into the container (its default
-          # GOMODCACHE is /go/pkg/mod) so the staged canvasassets embed inputs
-          # the host produced above are visible to the cross-build, which
-          # otherwise resolves go.lumeweb.com/pinner from a fresh cache without
-          # them.
+          # Bind-mount the host module cache into the container so the staged
+          # canvasassets embed inputs the host produced above are visible to
+          # the cross-build, which otherwise resolves go.lumeweb.com/pinner
+          # from a fresh cache without them. The goreleaser-cross image
+          # defaults to GOPATH=$HOME/go -> GOMODCACHE=/root/go/pkg/mod, NOT
+          # /go/pkg/mod, so the mount target must be pinned by explicitly set
+          # GOMODCACHE (without this the container silently re-downloads every
+          # module fresh and the `//go:embed appsassets` inputs are absent,
+          # failing with "pattern appsassets: no matching files found").
           docker run --rm \
             -v "$PWD":/go/src/go.lumeweb.com/pinner-cli \
             -v "$(go env GOMODCACHE)":/go/pkg/mod \
             -w /go/src/go.lumeweb.com/pinner-cli \
             -e GO_VERSION \
+            -e GOMODCACHE=/go/pkg/mod \
             ghcr.io/goreleaser/goreleaser-cross:v1.27 \
             release --snapshot --clean --skip=docker 2>&1 | tee ci-logs/goreleaser.log
 
@@ -179,6 +184,19 @@ jobs:
           name: pinner-cli
           include-snapshot: 'true'
           retention-days: 90
+
+      - name: Upload ci logs
+        # Attach ci-logs/ even on failure so a broken goreleaser or .mcpb run
+        # keeps its own diagnostics (the tee'd logs live outside dist/, which
+        # goreleaser --clean wipes, but the non-upload steps are skipped on
+        # failure).
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs
+          path: ci-logs/
+          retention-days: 7
+          if-no-files-found: ignore
 
   # Runs the managed pinner-mcp service install/start against a REAL systemd
   # user manager. This is the regression protection for the http-install service
