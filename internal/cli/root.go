@@ -110,6 +110,7 @@ For more help on any command: pinner <command> --help`,
 			newAdminCommand(),
 			newDocsCommand(),
 			newVaultCommand(),
+			newGitCommand(),
 		},
 		Flags: GlobalFlags(),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
