@@ -9,11 +9,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	opmesh "go.lumeweb.com/opmesh"
 )
 
 type mockDNSServiceForCLI struct {
 	requireAuthenticatedErr error
 	listZonesFunc           func(ctx context.Context) ([]ipfs.ZoneListResponse, error)
+	listZonesPageFunc       func(ctx context.Context, opts opmesh.ListOptions[struct{}]) ([]ipfs.ZoneListResponse, int, error)
+	listRecordsPageFunc     func(ctx context.Context, id string, opts opmesh.ListOptions[struct{}]) ([]ipfs.RecordResponse, int, error)
 	createZoneFunc          func(ctx context.Context, domain string, nameservers []string) (*ipfs.ZoneResponse, error)
 	getZoneFunc             func(ctx context.Context, id string) (*ipfs.ZoneResponse, error)
 	deleteZoneFunc          func(ctx context.Context, id string) error
@@ -36,6 +39,17 @@ func (m *mockDNSServiceForCLI) ListZones(ctx context.Context) ([]ipfs.ZoneListRe
 		return m.listZonesFunc(ctx)
 	}
 	return nil, nil
+}
+
+func (m *mockDNSServiceForCLI) ListZonesPage(ctx context.Context, opts opmesh.ListOptions[struct{}]) ([]ipfs.ZoneListResponse, int, error) {
+	if m.listZonesPageFunc != nil {
+		return m.listZonesPageFunc(ctx, opts)
+	}
+	if m.listZonesFunc != nil {
+		zones, err := m.listZonesFunc(ctx)
+		return zones, len(zones), err
+	}
+	return nil, 0, nil
 }
 
 func (m *mockDNSServiceForCLI) CreateZone(ctx context.Context, domain string, nameservers []string) (*ipfs.ZoneResponse, error) {
@@ -78,6 +92,17 @@ func (m *mockDNSServiceForCLI) ListRecords(ctx context.Context, id string) ([]ip
 		return m.listRecordsFunc(ctx, id)
 	}
 	return nil, nil
+}
+
+func (m *mockDNSServiceForCLI) ListRecordsPage(ctx context.Context, id string, opts opmesh.ListOptions[struct{}]) ([]ipfs.RecordResponse, int, error) {
+	if m.listRecordsPageFunc != nil {
+		return m.listRecordsPageFunc(ctx, id, opts)
+	}
+	if m.listRecordsFunc != nil {
+		records, err := m.listRecordsFunc(ctx, id)
+		return records, len(records), err
+	}
+	return nil, 0, nil
 }
 
 func (m *mockDNSServiceForCLI) GetRecord(ctx context.Context, id string, name string, recordType string) (*ipfs.RecordResponse, error) {

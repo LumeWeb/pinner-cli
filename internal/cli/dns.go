@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	ipfs "go.lumeweb.com/ipfs-sdk"
+	opmesh "go.lumeweb.com/opmesh"
 	"go.lumeweb.com/pinner/dnsutil"
 )
 
@@ -47,15 +48,28 @@ func resolveZoneID(ctx context.Context, dnsService DNSService, arg string) (stri
 		return arg, nil
 	}
 
-	zones, err := dnsService.ListZones(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to look up zone by domain: %w", err)
-	}
-
-	for _, z := range zones {
-		if z.Domain == arg {
-			return fmt.Sprintf("%d", z.Id), nil
+	// The backend applies a default 10-row window to ListZonesPage, so resolve a
+	// domain by paging through every window rather than relying on the first page
+	// alone. ListZones is a thin wrapper over ListZonesPage with an empty window
+	// (only the first page), which would miss any zone past the first 10.
+	const pageSize = 100
+	start := 0
+	for {
+		zones, total, err := dnsService.ListZonesPage(ctx, opmesh.ListOptions[struct{}]{Start: start, Limit: pageSize})
+		if err != nil {
+			return "", fmt.Errorf("failed to look up zone by domain: %w", err)
 		}
+
+		for _, z := range zones {
+			if z.Domain == arg {
+				return fmt.Sprintf("%d", z.Id), nil
+			}
+		}
+
+		if len(zones) == 0 || len(zones) < pageSize || start+len(zones) >= total {
+			break
+		}
+		start += len(zones)
 	}
 
 	return "", fmt.Errorf("zone not found for domain %q", arg)

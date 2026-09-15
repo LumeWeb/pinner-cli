@@ -214,8 +214,8 @@ func (_c *MockAPIKeyService_GetCurrentAPIKeyUUID_Call) RunAndReturn(run func() s
 }
 
 // ListAPIKeys provides a mock function for the type MockAPIKeyService
-func (_mock *MockAPIKeyService) ListAPIKeys(ctx context.Context, search string) ([]*account.APIKey, int, error) {
-	ret := _mock.Called(ctx, search)
+func (_mock *MockAPIKeyService) ListAPIKeys(ctx context.Context, search string, start int, limit int) ([]*account.APIKey, int, error) {
+	ret := _mock.Called(ctx, search, start, limit)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListAPIKeys")
@@ -224,23 +224,23 @@ func (_mock *MockAPIKeyService) ListAPIKeys(ctx context.Context, search string) 
 	var r0 []*account.APIKey
 	var r1 int
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) ([]*account.APIKey, int, error)); ok {
-		return returnFunc(ctx, search)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, int) ([]*account.APIKey, int, error)); ok {
+		return returnFunc(ctx, search, start, limit)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) []*account.APIKey); ok {
-		r0 = returnFunc(ctx, search)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int, int) []*account.APIKey); ok {
+		r0 = returnFunc(ctx, search, start, limit)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]*account.APIKey)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string) int); ok {
-		r1 = returnFunc(ctx, search)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, int, int) int); ok {
+		r1 = returnFunc(ctx, search, start, limit)
 	} else {
 		r1 = ret.Get(1).(int)
 	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, string) error); ok {
-		r2 = returnFunc(ctx, search)
+	if returnFunc, ok := ret.Get(2).(func(context.Context, string, int, int) error); ok {
+		r2 = returnFunc(ctx, search, start, limit)
 	} else {
 		r2 = ret.Error(2)
 	}
@@ -255,11 +255,13 @@ type MockAPIKeyService_ListAPIKeys_Call struct {
 // ListAPIKeys is a helper method to define mock.On call
 //   - ctx context.Context
 //   - search string
-func (_e *MockAPIKeyService_Expecter) ListAPIKeys(ctx interface{}, search interface{}) *MockAPIKeyService_ListAPIKeys_Call {
-	return &MockAPIKeyService_ListAPIKeys_Call{Call: _e.mock.On("ListAPIKeys", ctx, search)}
+//   - start int
+//   - limit int
+func (_e *MockAPIKeyService_Expecter) ListAPIKeys(ctx interface{}, search interface{}, start interface{}, limit interface{}) *MockAPIKeyService_ListAPIKeys_Call {
+	return &MockAPIKeyService_ListAPIKeys_Call{Call: _e.mock.On("ListAPIKeys", ctx, search, start, limit)}
 }
 
-func (_c *MockAPIKeyService_ListAPIKeys_Call) Run(run func(ctx context.Context, search string)) *MockAPIKeyService_ListAPIKeys_Call {
+func (_c *MockAPIKeyService_ListAPIKeys_Call) Run(run func(ctx context.Context, search string, start int, limit int)) *MockAPIKeyService_ListAPIKeys_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -269,9 +271,19 @@ func (_c *MockAPIKeyService_ListAPIKeys_Call) Run(run func(ctx context.Context, 
 		if args[1] != nil {
 			arg1 = args[1].(string)
 		}
+		var arg2 int
+		if args[2] != nil {
+			arg2 = args[2].(int)
+		}
+		var arg3 int
+		if args[3] != nil {
+			arg3 = args[3].(int)
+		}
 		run(
 			arg0,
 			arg1,
+			arg2,
+			arg3,
 		)
 	})
 	return _c
@@ -282,7 +294,7 @@ func (_c *MockAPIKeyService_ListAPIKeys_Call) Return(aPIKeys []*account.APIKey, 
 	return _c
 }
 
-func (_c *MockAPIKeyService_ListAPIKeys_Call) RunAndReturn(run func(ctx context.Context, search string) ([]*account.APIKey, int, error)) *MockAPIKeyService_ListAPIKeys_Call {
+func (_c *MockAPIKeyService_ListAPIKeys_Call) RunAndReturn(run func(ctx context.Context, search string, start int, limit int) ([]*account.APIKey, int, error)) *MockAPIKeyService_ListAPIKeys_Call {
 	_c.Call.Return(run)
 	return _c
 }

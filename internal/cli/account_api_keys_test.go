@@ -87,7 +87,7 @@ func TestAPIKeyService_ListAPIKeys(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := setupAPIKeyServiceWithAuth(t, "test-token", tt.setupAcc)
 
-			keys, total, err := svc.ListAPIKeys(context.Background(), tt.search)
+			keys, total, err := svc.ListAPIKeys(context.Background(), tt.search, 0, 0)
 			if tt.wantErr {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tt.errContains)
@@ -332,16 +332,16 @@ func TestNewAccountAPIKeysCommand(t *testing.T) {
 }
 
 type mockAPIKeyServiceForCLI struct {
-	listFunc        func(ctx context.Context, search string) ([]*portalsdk.APIKey, int, error)
+	listFunc        func(ctx context.Context, search string, start, limit int) ([]*portalsdk.APIKey, int, error)
 	createFunc      func(ctx context.Context, name string) (*portalsdk.APIKey, error)
 	deleteFunc      func(ctx context.Context, idOrName string, force bool) error
 	currentUUIDFunc func() string
 	requireAuthErr  error
 }
 
-func (m *mockAPIKeyServiceForCLI) ListAPIKeys(ctx context.Context, search string) ([]*portalsdk.APIKey, int, error) {
+func (m *mockAPIKeyServiceForCLI) ListAPIKeys(ctx context.Context, search string, start, limit int) ([]*portalsdk.APIKey, int, error) {
 	if m.listFunc != nil {
-		return m.listFunc(ctx, search)
+		return m.listFunc(ctx, search, start, limit)
 	}
 	return nil, 0, nil
 }
@@ -380,7 +380,7 @@ func setupAPIKeyHandlerTest(t *testing.T) (*mockAPIKeyServiceForCLI, config.Mana
 
 func TestAccountAPIKeysList_Success(t *testing.T) {
 	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
-	mockSvc.listFunc = func(ctx context.Context, search string) ([]*portalsdk.APIKey, int, error) {
+	mockSvc.listFunc = func(ctx context.Context, search string, _ int, _ int) ([]*portalsdk.APIKey, int, error) {
 		return []*portalsdk.APIKey{
 			newTestAPIKey("my-key", "00000000-0000-0000-0000-000000000001"),
 		}, 1, nil
@@ -401,7 +401,7 @@ func TestAccountAPIKeysList_Success(t *testing.T) {
 
 func TestAccountAPIKeysList_Empty(t *testing.T) {
 	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
-	mockSvc.listFunc = func(ctx context.Context, search string) ([]*portalsdk.APIKey, int, error) {
+	mockSvc.listFunc = func(ctx context.Context, search string, _ int, _ int) ([]*portalsdk.APIKey, int, error) {
 		return []*portalsdk.APIKey{}, 0, nil
 	}
 
@@ -420,7 +420,7 @@ func TestAccountAPIKeysList_Empty(t *testing.T) {
 
 func TestAccountAPIKeysList_WithSearch(t *testing.T) {
 	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
-	mockSvc.listFunc = func(ctx context.Context, search string) ([]*portalsdk.APIKey, int, error) {
+	mockSvc.listFunc = func(ctx context.Context, search string, _ int, _ int) ([]*portalsdk.APIKey, int, error) {
 		require.Equal(t, "my-key", search)
 		return []*portalsdk.APIKey{}, 0, nil
 	}
@@ -440,7 +440,7 @@ func TestAccountAPIKeysList_WithSearch(t *testing.T) {
 
 func TestAccountAPIKeysList_ServiceError(t *testing.T) {
 	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
-	mockSvc.listFunc = func(ctx context.Context, search string) ([]*portalsdk.APIKey, int, error) {
+	mockSvc.listFunc = func(ctx context.Context, search string, _ int, _ int) ([]*portalsdk.APIKey, int, error) {
 		return nil, 0, fmt.Errorf("server error")
 	}
 

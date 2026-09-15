@@ -20,7 +20,7 @@ func accountAPIKeysList(ctx context.Context, cmd flagGetter, output Output, cfgM
 	svc := svcFactory(authService, authToken)
 
 	search := cmd.String(FlagSearch)
-	keys, total, err := svc.ListAPIKeys(ctx, search)
+	keys, total, err := svc.ListAPIKeys(ctx, search, 0, 0)
 	if err != nil {
 		return fmt.Errorf("failed to list API keys: %w", err)
 	}
@@ -108,7 +108,7 @@ func accountAPIKeysDelete(ctx context.Context, cmd argsFlagGetterWithBool, outpu
 	currentUUID := svc.GetCurrentAPIKeyUUID()
 	resolvedID := idOrName
 	if currentUUID != "" && !isUUIDString(idOrName) {
-		keys, _, listErr := svc.ListAPIKeys(ctx, idOrName)
+		keys, _, listErr := svc.ListAPIKeys(ctx, idOrName, 0, 0)
 		if listErr == nil {
 			for _, key := range keys {
 				if key.Name == idOrName {
