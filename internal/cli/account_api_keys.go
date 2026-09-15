@@ -130,9 +130,13 @@ func accountAPIKeysDelete(ctx context.Context, cmd argsFlagGetterWithBool, outpu
 	currentUUID := svc.GetCurrentAPIKeyUUID()
 	resolvedID := idOrName
 	if !isUUIDString(idOrName) {
-		// Resolve a name to its UUID via a full scan so keys past the backend's
-		// first page are found, then delete by the resolved UUID directly.
-		keys, listErr := allAPIKeys(ctx, svc, "")
+		// Resolve a name to its UUID using the name as the backend search
+		// filter, while still paging through the (filtered) results so keys
+		// past the backend's default first page are found. Passing the name as
+		// the filter keeps the backend from returning every key on the account;
+		// the paginated scan in allAPIKeys guarantees a match deeper than the
+		// first page still resolves before we delete by the resolved UUID.
+		keys, listErr := allAPIKeys(ctx, svc, idOrName)
 		if listErr == nil {
 			for _, key := range keys {
 				if key.Name == idOrName {

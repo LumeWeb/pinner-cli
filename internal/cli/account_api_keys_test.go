@@ -684,9 +684,30 @@ func TestAccountAPIKeysList_PagesAllKeys(t *testing.T) {
 }
 
 func TestAccountAPIKeysDelete_ResolvesNameBeyondFirstPage(t *testing.T) {
-	keys := newTestAPIKeyBatch(125)
+	// Names share the "key-110" prefix so the backend search (name substring)
+	// returns far more than one pageSize of filtered rows. The exact-name
+	// target is placed past the first page of filtered results to prove that
+	// filtered paging still reaches it — and that the backend is asked to
+	// narrow by name rather than handed a full-scan search.
+	const total = 205
+	keys := make([]*portalsdk.APIKey, 0, total)
+	for i := 0; i < total; i++ {
+		if i == 150 {
+			keys = append(keys, newTestAPIKey("key-110", "00000000-0000-0000-0000-000000000110"))
+			continue
+		}
+		keys = append(keys, newTestAPIKey(
+			fmt.Sprintf("key-110-%03d", i),
+			fmt.Sprintf("00000000-0000-0000-0000-%012d", i+1),
+		))
+	}
+
 	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
-	mockSvc.listFunc = pagedAPIKeyList(keys)
+	var searches []string
+	mockSvc.listFunc = func(ctx context.Context, search string, start, limit int) ([]*portalsdk.APIKey, int, error) {
+		searches = append(searches, search)
+		return pagedAPIKeyList(keys)(ctx, search, start, limit)
+	}
 	mockSvc.currentUUIDFunc = func() string {
 		return "00000000-0000-0000-0000-999999999999"
 	}
@@ -697,8 +718,8 @@ func TestAccountAPIKeysDelete_ResolvesNameBeyondFirstPage(t *testing.T) {
 		return nil
 	}
 
-	// key-110 sits well past the backend's first 10-row page; the full scan must
-	// resolve it to its UUID so the delete targets it directly.
+	// key-110 sits well past the backend's first page; the name-filtered paged
+	// scan must resolve it to its UUID so the delete targets it directly.
 	output := newTestOutput()
 	cmd := newMockCommand().withArgs("key-110")
 	err := accountAPIKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token",
@@ -711,6 +732,15 @@ func TestAccountAPIKeysDelete_ResolvesNameBeyondFirstPage(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, "00000000-0000-0000-0000-000000000110", deletedID)
+
+	// Prove the optimization: every paged request carried the name as the
+	// backend search filter (not a full-scan ""), yet paging still spanned
+	// multiple filtered pages to reach the key past the first page.
+	require.NotEmpty(t, searches)
+	require.Greater(t, len(searches), 1)
+	for _, s := range searches {
+		require.Equal(t, "key-110", s)
+	}
 }
 
 // makeAPIKeyJWT creates a minimal JWT string with the given subject and audience.
