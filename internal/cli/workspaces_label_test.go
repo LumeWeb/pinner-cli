@@ -108,24 +108,29 @@ func TestLabelResolvingWorkspaces_NumericIDPassesThrough(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"42"}, fake.getIDs)
-	assert.GreaterOrEqual(t, fake.lists, 1, "labels are matched first, even for numeric ids")
+	assert.Zero(t, fake.lists, "numeric ids resolve without a list scan")
 }
 
-// A purely numeric label slug must not be shadowed by the numeric id
-// interpretation: the label resolves to its workspace before the numeric
-// passthrough is considered.
-func TestLabelResolvingWorkspaces_NumericLabelSlugTakesPrecedence(t *testing.T) {
+// A numeric id takes precedence over a workspace whose label slug happens to
+// be purely numeric: the numeric form is the unambiguous row id, while a
+// numeric label is vanishingly rare (8 chars drawn from a 36-char alphabet).
+func TestLabelResolvingWorkspaces_NumericIdWinsOverNumericLabel(t *testing.T) {
 	fake := &fakeWorkspacesService{
 		listFn: func(ctx context.Context, opts workspaces.ListOptions) ([]ipfs.WorkspaceResponse, error) {
 			return []ipfs.WorkspaceResponse{{Id: 7, Label: "12345678"}}, nil
 		},
+		getFn: func(ctx context.Context, id string) (*ipfs.WorkspaceResponse, error) {
+			return &ipfs.WorkspaceResponse{Id: 12345678}, nil
+		},
 	}
 	svc := wrapLabelResolvingWorkspaces(fake)
 
-	_, err := svc.Get(context.Background(), "12345678")
+	ws, err := svc.Get(context.Background(), "12345678")
 	require.NoError(t, err)
+	require.NotNil(t, ws)
+	assert.Equal(t, 12345678, ws.Id)
 
-	assert.Equal(t, []string{"7"}, fake.getIDs)
+	assert.Empty(t, fake.lists, "the numeric form never triggers a label scan")
 }
 
 func TestLabelResolvingWorkspaces_ResolvesSlugAcrossPages(t *testing.T) {

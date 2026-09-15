@@ -48,11 +48,11 @@ const workspaceScanPageSize = 100
 // single-workspace operations (get/attach/suspend/resume/access/delete)
 // accept the workspace's label slug (or its full legacy "ws-<slug>" label) as
 // the `id` argument, resolving it to the numeric ID by scanning the paged
-// list. Label matching runs first for every input — including numeric-looking
-// ones — so a purely numeric label slug is never shadowed by the numeric
-// interpretation; an unmatched numeric id falls back to the numeric form the
-// backend expects. Resolve failure says so explicitly rather than letting the
-// backend 404 an unresolvable input.
+// list. A numeric id is treated as the numeric row id without a scan — that
+// keeps the numeric path scan-free and gives a deterministic winner when the
+// id is ambiguous between a row id and a purely numeric label slug (the
+// numeric interpretation takes precedence). Non-numeric slugs that match
+// nothing fail explicitly rather than letting the backend 404 them.
 //
 // Both CLI and MCP surfaces build their workspaces catalog deps through this
 // wrapper, so label-based control is consistent across frontends.
@@ -134,12 +134,14 @@ func (s *labelResolvingWorkspaces) Suspend(ctx context.Context, id string) (*ipf
 }
 
 // resolveID maps a workspace id argument to the numeric ID the backend
-// expects. It matches the workspace's label slug (tolerating the legacy
-// "ws-<slug>" form and the full label) by scanning the user's paged list —
-// labels are matched before the numeric interpretation so a purely numeric
-// label slug is reachable — and passes an unmatched numeric id through.
+// expects. Numeric ids are the numeric row id, taken as-is; non-numeric ids
+// match the workspace's label slug (tolerating the legacy "ws-<slug>" form
+// and the full label) by scanning the user's paged list.
 func (s *labelResolvingWorkspaces) resolveID(ctx context.Context, id string) (string, error) {
 	if id == "" {
+		return id, nil
+	}
+	if _, err := strconv.Atoi(id); err == nil {
 		return id, nil
 	}
 	matchesLabel := func(w ipfs.WorkspaceResponse) (bool, error) {
@@ -149,11 +151,8 @@ func (s *labelResolvingWorkspaces) resolveID(ctx context.Context, id string) (st
 	if err != nil {
 		return "", err
 	}
-	if found {
-		return strconv.Itoa(ws.Id), nil
+	if !found {
+		return "", fmt.Errorf("workspace %q not found", id)
 	}
-	if _, err := strconv.Atoi(id); err == nil {
-		return id, nil
-	}
-	return "", fmt.Errorf("workspace %q not found", id)
+	return strconv.Itoa(ws.Id), nil
 }
