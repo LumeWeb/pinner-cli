@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/urfave/cli/v3"
 	ipfs "go.lumeweb.com/ipfs-sdk"
@@ -47,9 +48,17 @@ func catalogWorkspacesDeps(factory ...ConfigManagerFactory) catalogops.Workspace
 			}
 			return GetSecureSetting(nil, cfgMgr)
 		},
-		ServiceFactory: workspaces.DefaultFactory,
+		// Services are wrapped so single-workspace operations accept the
+		// workspace's label slug as the id (see workspaces_label.go).
+		ServiceFactory: func(cfgMgr config.Manager, secure bool, opts ...workspaces.Option) workspaces.Service {
+			return wrapLabelResolvingWorkspaces(workspaces.DefaultFactory(cfgMgr, secure, opts...))
+		},
 		NewAuthenticated: func(cfgMgr config.Manager, secure bool, token string) (workspaces.Service, error) {
-			return workspaces.NewAuthenticated(cfgMgr, token, secure)
+			svc, err := workspaces.NewAuthenticated(cfgMgr, token, secure)
+			if err != nil {
+				return nil, err
+			}
+			return wrapLabelResolvingWorkspaces(svc), nil
 		},
 		GetAuthToken: func() string {
 			cfgMgr, err := cfgFactory()
@@ -146,7 +155,7 @@ func renderWorkspacesResult(_ context.Context, c *cli.Command, op opmesh.Operati
 
 	switch r := result.(type) {
 	case catalogops.ListResult:
-		return renderListResult(output, r)
+		return renderWorkspacesListResult(output, r)
 
 	case *ipfs.WorkspaceResponse:
 		// workspaces get/create/attach/suspend/resume all return a workspace.
@@ -182,15 +191,51 @@ func renderWorkspacesResult(_ context.Context, c *cli.Command, op opmesh.Operati
 	}
 }
 
+// renderWorkspacesListResult renders a workspaces list page. The human table
+// is rebuilt here (rather than using the catalogops rows) so the workspace's
+// user-facing ID is its label slug and the LABEL column stays out of the
+// table — the slug IS the label, so the column would repeat the ID.
+func renderWorkspacesListResult(output Output, r catalogops.ListResult) error {
+	if ws, ok := r.ListItems().([]ipfs.WorkspaceResponse); ok {
+		rows := make([][]string, 0, len(ws))
+		for i := range ws {
+			rows = append(rows, workspaceListRow(&ws[i]))
+		}
+		r = catalogops.NewListResult(ws, catalogops.ListResultMeta{
+			Noun:    "workspace(s)",
+			Headers: []string{"ID", "DOMAIN", "STATUS", "WEBSITE ID", "CREATED"},
+			Rows:    rows,
+			Total:   r.ListTotal(),
+		})
+	}
+	return renderListResult(output, r)
+}
+
+// workspaceListRow is one row of the workspaces list table, keyed by the
+// label-slug ID.
+func workspaceListRow(w *ipfs.WorkspaceResponse) []string {
+	websiteID := "-"
+	if w.WebsiteId != nil {
+		websiteID = strconv.Itoa(*w.WebsiteId)
+	}
+	return []string{
+		workspaceSlugID(w),
+		w.Domain,
+		w.Status,
+		websiteID,
+		w.Created.Format("2006-01-02 15:04:05"),
+	}
+}
+
 // renderWorkspaceHuman renders the fields of a single workspace (used by get,
-// create, attach, suspend, resume).
+// create, attach, suspend, resume). The ID is the label slug; the label itself
+// is not shown separately (it would only repeat the ID).
 func renderWorkspaceHuman(output Output, w *ipfs.WorkspaceResponse) {
 	output.Printfln("Workspace Details")
 
 	fields := []Field{
-		{"ID", fmt.Sprintf("%d", w.Id)},
+		{"ID", workspaceSlugID(w)},
 		{"Domain", w.Domain},
-		{"Label", w.Label},
 		{"Status", w.Status},
 	}
 	if w.WebsiteId != nil {
