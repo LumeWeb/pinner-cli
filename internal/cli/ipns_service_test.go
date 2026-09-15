@@ -87,6 +87,7 @@ func TestIPNSService_ListKeys(t *testing.T) {
 type mockIPNSServiceForCLI struct {
 	requireAuthenticatedErr error
 	listKeysFunc            func(ctx context.Context, opts ...ipfs.ListKeyOption) ([]ipfs.IPNSKeyResponse, error)
+	listKeysPageFunc        func(ctx context.Context, opts ...ipfs.IPNSKeyPagingOption) (*ipfs.IPNSKeyPage, error)
 	createKeyFunc           func(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error)
 	getKeyFunc              func(ctx context.Context, id string) (*ipfs.IPNSKeyResponse, error)
 	deleteKeyFunc           func(ctx context.Context, id string) error
@@ -110,6 +111,13 @@ func (m *mockIPNSServiceForCLI) ListKeys(ctx context.Context, opts ...ipfs.ListK
 			Created:  time.Now(),
 		},
 	}, nil
+}
+
+func (m *mockIPNSServiceForCLI) ListKeysPage(ctx context.Context, opts ...ipfs.IPNSKeyPagingOption) (*ipfs.IPNSKeyPage, error) {
+	if m.listKeysPageFunc != nil {
+		return m.listKeysPageFunc(ctx, opts...)
+	}
+	return nil, nil
 }
 
 func (m *mockIPNSServiceForCLI) CreateKey(ctx context.Context, name string, key *string) (*ipfs.IPNSKeyResponse, error) {

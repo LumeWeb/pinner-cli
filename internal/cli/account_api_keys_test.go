@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	mock "github.com/stretchr/testify/mock"
@@ -87,7 +89,7 @@ func TestAPIKeyService_ListAPIKeys(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := setupAPIKeyServiceWithAuth(t, "test-token", tt.setupAcc)
 
-			keys, total, err := svc.ListAPIKeys(context.Background(), tt.search)
+			keys, total, err := svc.ListAPIKeys(context.Background(), tt.search, 0, 0)
 			if tt.wantErr {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tt.errContains)
@@ -332,16 +334,16 @@ func TestNewAccountAPIKeysCommand(t *testing.T) {
 }
 
 type mockAPIKeyServiceForCLI struct {
-	listFunc        func(ctx context.Context, search string) ([]*portalsdk.APIKey, int, error)
+	listFunc        func(ctx context.Context, search string, start, limit int) ([]*portalsdk.APIKey, int, error)
 	createFunc      func(ctx context.Context, name string) (*portalsdk.APIKey, error)
 	deleteFunc      func(ctx context.Context, idOrName string, force bool) error
 	currentUUIDFunc func() string
 	requireAuthErr  error
 }
 
-func (m *mockAPIKeyServiceForCLI) ListAPIKeys(ctx context.Context, search string) ([]*portalsdk.APIKey, int, error) {
+func (m *mockAPIKeyServiceForCLI) ListAPIKeys(ctx context.Context, search string, start, limit int) ([]*portalsdk.APIKey, int, error) {
 	if m.listFunc != nil {
-		return m.listFunc(ctx, search)
+		return m.listFunc(ctx, search, start, limit)
 	}
 	return nil, 0, nil
 }
@@ -380,7 +382,7 @@ func setupAPIKeyHandlerTest(t *testing.T) (*mockAPIKeyServiceForCLI, config.Mana
 
 func TestAccountAPIKeysList_Success(t *testing.T) {
 	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
-	mockSvc.listFunc = func(ctx context.Context, search string) ([]*portalsdk.APIKey, int, error) {
+	mockSvc.listFunc = func(ctx context.Context, search string, _ int, _ int) ([]*portalsdk.APIKey, int, error) {
 		return []*portalsdk.APIKey{
 			newTestAPIKey("my-key", "00000000-0000-0000-0000-000000000001"),
 		}, 1, nil
@@ -401,7 +403,7 @@ func TestAccountAPIKeysList_Success(t *testing.T) {
 
 func TestAccountAPIKeysList_Empty(t *testing.T) {
 	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
-	mockSvc.listFunc = func(ctx context.Context, search string) ([]*portalsdk.APIKey, int, error) {
+	mockSvc.listFunc = func(ctx context.Context, search string, _ int, _ int) ([]*portalsdk.APIKey, int, error) {
 		return []*portalsdk.APIKey{}, 0, nil
 	}
 
@@ -420,7 +422,7 @@ func TestAccountAPIKeysList_Empty(t *testing.T) {
 
 func TestAccountAPIKeysList_WithSearch(t *testing.T) {
 	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
-	mockSvc.listFunc = func(ctx context.Context, search string) ([]*portalsdk.APIKey, int, error) {
+	mockSvc.listFunc = func(ctx context.Context, search string, _ int, _ int) ([]*portalsdk.APIKey, int, error) {
 		require.Equal(t, "my-key", search)
 		return []*portalsdk.APIKey{}, 0, nil
 	}
@@ -440,7 +442,7 @@ func TestAccountAPIKeysList_WithSearch(t *testing.T) {
 
 func TestAccountAPIKeysList_ServiceError(t *testing.T) {
 	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
-	mockSvc.listFunc = func(ctx context.Context, search string) ([]*portalsdk.APIKey, int, error) {
+	mockSvc.listFunc = func(ctx context.Context, search string, _ int, _ int) ([]*portalsdk.APIKey, int, error) {
 		return nil, 0, fmt.Errorf("server error")
 	}
 
@@ -591,6 +593,154 @@ func TestAccountAPIKeysDelete_WithForce(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
+}
+
+func newTestAPIKeyBatch(n int) []*portalsdk.APIKey {
+	keys := make([]*portalsdk.APIKey, 0, n)
+	for i := 0; i < n; i++ {
+		keys = append(keys, newTestAPIKey(
+			fmt.Sprintf("key-%03d", i+1),
+			fmt.Sprintf("00000000-0000-0000-0000-%012d", i+1),
+		))
+	}
+	return keys
+}
+
+// pagedAPIKeyList emulates the portal admin API-key list endpoint. With no
+// explicit _start/_end window (limit == 0) the backend applies a default 10-row
+// window; with an explicit window it returns the requested slice. search
+// narrows by name substring, matching the backend's q filter.
+func pagedAPIKeyList(keys []*portalsdk.APIKey) func(ctx context.Context, search string, start, limit int) ([]*portalsdk.APIKey, int, error) {
+	return func(ctx context.Context, search string, start, limit int) ([]*portalsdk.APIKey, int, error) {
+		matched := keys
+		if search != "" {
+			matched = nil
+			for _, k := range keys {
+				if strings.Contains(k.Name, search) {
+					matched = append(matched, k)
+				}
+			}
+		}
+		end := len(matched)
+		if limit > 0 {
+			end = min(start+limit, len(matched))
+		} else {
+			end = min(10, len(matched))
+		}
+		if start >= len(matched) {
+			return []*portalsdk.APIKey{}, len(matched), nil
+		}
+		if end < start {
+			end = start
+		}
+		return matched[start:end], len(matched), nil
+	}
+}
+
+func TestAllAPIKeys_FullScanReturnsEveryPage(t *testing.T) {
+	keys := newTestAPIKeyBatch(125)
+	mockSvc := &mockAPIKeyServiceForCLI{}
+	mockSvc.listFunc = pagedAPIKeyList(keys)
+
+	// The naive single call with no explicit window only surfaces the first 10
+	// rows while reporting the full total — the truncation this guards against.
+	naiveKeys, naiveTotal, err := mockSvc.ListAPIKeys(context.Background(), "", 0, 0)
+	require.NoError(t, err)
+	require.Equal(t, len(keys), naiveTotal)
+	require.Len(t, naiveKeys, 10)
+
+	all, err := allAPIKeys(context.Background(), mockSvc, "")
+	require.NoError(t, err)
+	require.Len(t, all, len(keys))
+}
+
+func TestAccountAPIKeysList_PagesAllKeys(t *testing.T) {
+	keys := newTestAPIKeyBatch(125)
+	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
+	mockSvc.listFunc = pagedAPIKeyList(keys)
+
+	var buf bytes.Buffer
+	output := NewOutputFormatter(true, false, false, false)
+	output.SetWriter(&buf)
+
+	cmd := newMockCommand()
+	err := accountAPIKeysList(context.Background(), cmd, output, cfgMgr, "test-token",
+		func(cm config.Manager, apiEndpoint string) AuthService {
+			return NewMockAuthService(t)
+		},
+		func(authService AuthService, authToken string) APIKeyService {
+			return mockSvc
+		},
+	)
+	require.NoError(t, err)
+
+	var result struct {
+		Count int                 `json:"count"`
+		Keys  []*portalsdk.APIKey `json:"keys"`
+	}
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
+	require.Equal(t, len(keys), result.Count)
+	require.Len(t, result.Keys, len(keys))
+}
+
+func TestAccountAPIKeysDelete_ResolvesNameBeyondFirstPage(t *testing.T) {
+	// Names share the "key-110" prefix so the backend search (name substring)
+	// returns far more than one pageSize of filtered rows. The exact-name
+	// target is placed past the first page of filtered results to prove that
+	// filtered paging still reaches it — and that the backend is asked to
+	// narrow by name rather than handed a full-scan search.
+	const total = 205
+	keys := make([]*portalsdk.APIKey, 0, total)
+	for i := 0; i < total; i++ {
+		if i == 150 {
+			keys = append(keys, newTestAPIKey("key-110", "00000000-0000-0000-0000-000000000110"))
+			continue
+		}
+		keys = append(keys, newTestAPIKey(
+			fmt.Sprintf("key-110-%03d", i),
+			fmt.Sprintf("00000000-0000-0000-0000-%012d", i+1),
+		))
+	}
+
+	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
+	var searches []string
+	mockSvc.listFunc = func(ctx context.Context, search string, start, limit int) ([]*portalsdk.APIKey, int, error) {
+		searches = append(searches, search)
+		return pagedAPIKeyList(keys)(ctx, search, start, limit)
+	}
+	mockSvc.currentUUIDFunc = func() string {
+		return "00000000-0000-0000-0000-999999999999"
+	}
+
+	var deletedID string
+	mockSvc.deleteFunc = func(ctx context.Context, idOrName string, force bool) error {
+		deletedID = idOrName
+		return nil
+	}
+
+	// key-110 sits well past the backend's first page; the name-filtered paged
+	// scan must resolve it to its UUID so the delete targets it directly.
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("key-110")
+	err := accountAPIKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token",
+		func(cm config.Manager, apiEndpoint string) AuthService {
+			return NewMockAuthService(t)
+		},
+		func(authService AuthService, authToken string) APIKeyService {
+			return mockSvc
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "00000000-0000-0000-0000-000000000110", deletedID)
+
+	// Prove the optimization: every paged request carried the name as the
+	// backend search filter (not a full-scan ""), yet paging still spanned
+	// multiple filtered pages to reach the key past the first page.
+	require.NotEmpty(t, searches)
+	require.Greater(t, len(searches), 1)
+	for _, s := range searches {
+		require.Equal(t, "key-110", s)
+	}
 }
 
 // makeAPIKeyJWT creates a minimal JWT string with the given subject and audience.

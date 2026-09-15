@@ -278,7 +278,7 @@ func resolvePlatformDomainID(ctx context.Context, deps catalogops.AdminDeps, idO
 	if err := svc.RequireAuthenticated(); err != nil {
 		return "", err
 	}
-	domains, _, err := svc.ListPlatformDomains(ctx)
+	domains, err := allPlatformDomains(ctx, svc)
 	if err != nil {
 		return "", fmt.Errorf("failed to look up platform domain by name: %w", err)
 	}
@@ -309,7 +309,7 @@ func resolveSocialProviderID(ctx context.Context, deps catalogops.AdminDeps, idO
 	if err := svc.RequireAuthenticated(); err != nil {
 		return "", err
 	}
-	providers, _, err := svc.ListSocialProviders(ctx)
+	providers, err := allSocialProviders(ctx, svc)
 	if err != nil {
 		return "", fmt.Errorf("failed to look up social provider by key: %w", err)
 	}
@@ -319,6 +319,52 @@ func resolveSocialProviderID(ctx context.Context, deps catalogops.AdminDeps, idO
 		}
 	}
 	return "", fmt.Errorf("social provider %q not found; run 'pinner admin social-providers list' to see configured providers", idOrKey)
+}
+
+// allPlatformDomains pages through every registered platform domain. The admin
+// API only returns a default 10-item window per request, so a name/id that
+// lives past the first page must be found by scanning repeated _start/_end
+// windows until the backend-reported total is reached.
+func allPlatformDomains(ctx context.Context, svc coreadmin.PlatformDomainAdminService) ([]*admin.PlatformDomain, error) {
+	const pageSize = 100
+	var all []*admin.PlatformDomain
+	for start := 0; ; start += pageSize {
+		pageStart, pageEnd := start, start+pageSize
+		page, total, err := svc.ListPlatformDomains(ctx, &admin.GetApiIpfsPlatformDomainsParams{
+			UnderscoreStart: &pageStart,
+			UnderscoreEnd:   &pageEnd,
+		})
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if len(page) == 0 || len(page) < pageSize || (total > 0 && len(all) >= total) {
+			break
+		}
+	}
+	return all, nil
+}
+
+// allSocialProviders pages through every configured social login provider,
+// mirroring allPlatformDomains for the provider key -> ID resolution path.
+func allSocialProviders(ctx context.Context, svc coreadmin.SocialProviderAdminService) ([]*admin.SocialProvider, error) {
+	const pageSize = 100
+	var all []*admin.SocialProvider
+	for start := 0; ; start += pageSize {
+		pageStart, pageEnd := start, start+pageSize
+		page, total, err := svc.ListSocialProviders(ctx, &admin.GetApiSocialProvidersParams{
+			UnderscoreStart: &pageStart,
+			UnderscoreEnd:   &pageEnd,
+		})
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if len(page) == 0 || len(page) < pageSize || (total > 0 && len(all) >= total) {
+			break
+		}
+	}
+	return all, nil
 }
 
 // renderAdminResult renders an admin handler's typed result through the CLI

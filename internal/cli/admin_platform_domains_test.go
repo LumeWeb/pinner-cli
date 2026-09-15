@@ -138,13 +138,13 @@ func TestAdminActionAdapterForwardsPositionalAndFlags(t *testing.T) {
 // driven by function fields, used to exercise resolvePlatformDomainID without a
 // real service or network.
 type fakePlatformDomainService struct {
-	listFn func(ctx context.Context) ([]*admin.PlatformDomain, int, error)
+	listFn func(ctx context.Context, params *admin.GetApiIpfsPlatformDomainsParams) ([]*admin.PlatformDomain, int, error)
 }
 
 func (f *fakePlatformDomainService) RequireAuthenticated() error { return nil }
-func (f *fakePlatformDomainService) ListPlatformDomains(ctx context.Context) ([]*admin.PlatformDomain, int, error) {
+func (f *fakePlatformDomainService) ListPlatformDomains(ctx context.Context, params *admin.GetApiIpfsPlatformDomainsParams) ([]*admin.PlatformDomain, int, error) {
 	if f.listFn != nil {
-		return f.listFn(ctx)
+		return f.listFn(ctx, params)
 	}
 	return nil, 0, nil
 }
@@ -166,7 +166,7 @@ func (f *fakePlatformDomainService) BindWebsiteToPlatformDomain(ctx context.Cont
 // ListPlatformDomains.
 func TestResolvePlatformDomainID(t *testing.T) {
 	svc := &fakePlatformDomainService{
-		listFn: func(ctx context.Context) ([]*admin.PlatformDomain, int, error) {
+		listFn: func(ctx context.Context, _ *admin.GetApiIpfsPlatformDomainsParams) ([]*admin.PlatformDomain, int, error) {
 			d1 := &admin.PlatformDomain{}
 			d1.Id, d1.Domain = 7, "pinned.site"
 			d2 := &admin.PlatformDomain{}
