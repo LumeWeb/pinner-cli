@@ -763,6 +763,8 @@ go.lumeweb.com/pinner v0.0.0-20260913165519-0cd854ac5743 h1:R3GNQ7ENa2IGbaHJWvB5
 go.lumeweb.com/pinner v0.0.0-20260913165519-0cd854ac5743/go.mod h1:doOkNprjTTIZdim9LiOpEnjmxxWsTAb9pTRYkyswXpw=
 go.lumeweb.com/pinner v0.0.0-20260913174043-31c1b6e65acb h1:Cw0gjgj5auBFpEhnLj0YWRhNOoHCLiTQFMrqur74Wlw=
 go.lumeweb.com/pinner v0.0.0-20260913174043-31c1b6e65acb/go.mod h1:doOkNprjTTIZdim9LiOpEnjmxxWsTAb9pTRYkyswXpw=
+go.lumeweb.com/pinner v0.0.0-20260915081600-895fc1fa83b0 h1:QsMQcXyrRXZoO0E5PPbFaDLMJMpfh6B5K30f35hxZ9M=
+go.lumeweb.com/pinner v0.0.0-20260915081600-895fc1fa83b0/go.mod h1:doOkNprjTTIZdim9LiOpEnjmxxWsTAb9pTRYkyswXpw=
 go.lumeweb.com/portal v0.5.1 h1:l28uCNFmT+VewwRGhFwlmonYEwLxQfRh06hm7n0SQr8=
 go.lumeweb.com/portal v0.5.1/go.mod h1:JXy/eHHlUdXMsPbXSbRyX2ZM7s/OGNfSNsXH7XRYWCk=
 go.lumeweb.com/portal-middleware v0.3.7 h1:kq4SZq4T/uhauqHehw2JaTbNJpPpE8/EQAC3R737H7c=
