@@ -20,10 +20,11 @@ func accountAPIKeysList(ctx context.Context, cmd flagGetter, output Output, cfgM
 	svc := svcFactory(authService, authToken)
 
 	search := cmd.String(FlagSearch)
-	keys, total, err := svc.ListAPIKeys(ctx, search, 0, 0)
+	keys, err := allAPIKeys(ctx, svc, search)
 	if err != nil {
 		return fmt.Errorf("failed to list API keys: %w", err)
 	}
+	total := len(keys)
 
 	if len(keys) == 0 {
 		if output.IsJSON() {
@@ -56,6 +57,27 @@ func accountAPIKeysList(ctx context.Context, cmd flagGetter, output Output, cfgM
 	output.PrintTable(headers, rows)
 
 	return nil
+}
+
+// allAPIKeys pages through every API key for the authenticated account. The
+// backend applies a default 10-row window to ListAPIKeys unless an explicit
+// _start/_end window is supplied, so a key that lives past the first page would
+// otherwise be missed. This mirrors the allPlatformDomains/allSocialProviders
+// full-scan helpers used for the admin name/id resolution paths.
+func allAPIKeys(ctx context.Context, svc APIKeyService, search string) ([]*portalsdk.APIKey, error) {
+	const pageSize = 100
+	var all []*portalsdk.APIKey
+	for start := 0; ; start += pageSize {
+		keys, total, err := svc.ListAPIKeys(ctx, search, start, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, keys...)
+		if len(keys) == 0 || len(keys) < pageSize || (total > 0 && len(all) >= total) {
+			break
+		}
+	}
+	return all, nil
 }
 
 func accountAPIKeysCreate(ctx context.Context, cmd argsFlagGetter, output Output, cfgMgr config.Manager, authToken string, authServiceFactory AuthServiceFactory, svcFactory APIKeyServiceFactory) error {
@@ -107,8 +129,10 @@ func accountAPIKeysDelete(ctx context.Context, cmd argsFlagGetterWithBool, outpu
 
 	currentUUID := svc.GetCurrentAPIKeyUUID()
 	resolvedID := idOrName
-	if currentUUID != "" && !isUUIDString(idOrName) {
-		keys, _, listErr := svc.ListAPIKeys(ctx, idOrName, 0, 0)
+	if !isUUIDString(idOrName) {
+		// Resolve a name to its UUID via a full scan so keys past the backend's
+		// first page are found, then delete by the resolved UUID directly.
+		keys, listErr := allAPIKeys(ctx, svc, "")
 		if listErr == nil {
 			for _, key := range keys {
 				if key.Name == idOrName {
@@ -120,7 +144,7 @@ func accountAPIKeysDelete(ctx context.Context, cmd argsFlagGetterWithBool, outpu
 	}
 	isCurrentKey := currentUUID != "" && currentUUID == resolvedID
 
-	if err := svc.DeleteAPIKey(ctx, idOrName, force); err != nil {
+	if err := svc.DeleteAPIKey(ctx, resolvedID, force); err != nil {
 		return err
 	}
 

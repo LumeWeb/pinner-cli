@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	mock "github.com/stretchr/testify/mock"
@@ -591,6 +593,124 @@ func TestAccountAPIKeysDelete_WithForce(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
+}
+
+func newTestAPIKeyBatch(n int) []*portalsdk.APIKey {
+	keys := make([]*portalsdk.APIKey, 0, n)
+	for i := 0; i < n; i++ {
+		keys = append(keys, newTestAPIKey(
+			fmt.Sprintf("key-%03d", i+1),
+			fmt.Sprintf("00000000-0000-0000-0000-%012d", i+1),
+		))
+	}
+	return keys
+}
+
+// pagedAPIKeyList emulates the portal admin API-key list endpoint. With no
+// explicit _start/_end window (limit == 0) the backend applies a default 10-row
+// window; with an explicit window it returns the requested slice. search
+// narrows by name substring, matching the backend's q filter.
+func pagedAPIKeyList(keys []*portalsdk.APIKey) func(ctx context.Context, search string, start, limit int) ([]*portalsdk.APIKey, int, error) {
+	return func(ctx context.Context, search string, start, limit int) ([]*portalsdk.APIKey, int, error) {
+		matched := keys
+		if search != "" {
+			matched = nil
+			for _, k := range keys {
+				if strings.Contains(k.Name, search) {
+					matched = append(matched, k)
+				}
+			}
+		}
+		end := len(matched)
+		if limit > 0 {
+			end = min(start+limit, len(matched))
+		} else {
+			end = min(10, len(matched))
+		}
+		if start >= len(matched) {
+			return []*portalsdk.APIKey{}, len(matched), nil
+		}
+		if end < start {
+			end = start
+		}
+		return matched[start:end], len(matched), nil
+	}
+}
+
+func TestAllAPIKeys_FullScanReturnsEveryPage(t *testing.T) {
+	keys := newTestAPIKeyBatch(125)
+	mockSvc := &mockAPIKeyServiceForCLI{}
+	mockSvc.listFunc = pagedAPIKeyList(keys)
+
+	// The naive single call with no explicit window only surfaces the first 10
+	// rows while reporting the full total — the truncation this guards against.
+	naiveKeys, naiveTotal, err := mockSvc.ListAPIKeys(context.Background(), "", 0, 0)
+	require.NoError(t, err)
+	require.Equal(t, len(keys), naiveTotal)
+	require.Len(t, naiveKeys, 10)
+
+	all, err := allAPIKeys(context.Background(), mockSvc, "")
+	require.NoError(t, err)
+	require.Len(t, all, len(keys))
+}
+
+func TestAccountAPIKeysList_PagesAllKeys(t *testing.T) {
+	keys := newTestAPIKeyBatch(125)
+	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
+	mockSvc.listFunc = pagedAPIKeyList(keys)
+
+	var buf bytes.Buffer
+	output := NewOutputFormatter(true, false, false, false)
+	output.SetWriter(&buf)
+
+	cmd := newMockCommand()
+	err := accountAPIKeysList(context.Background(), cmd, output, cfgMgr, "test-token",
+		func(cm config.Manager, apiEndpoint string) AuthService {
+			return NewMockAuthService(t)
+		},
+		func(authService AuthService, authToken string) APIKeyService {
+			return mockSvc
+		},
+	)
+	require.NoError(t, err)
+
+	var result struct {
+		Count int                 `json:"count"`
+		Keys  []*portalsdk.APIKey `json:"keys"`
+	}
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
+	require.Equal(t, len(keys), result.Count)
+	require.Len(t, result.Keys, len(keys))
+}
+
+func TestAccountAPIKeysDelete_ResolvesNameBeyondFirstPage(t *testing.T) {
+	keys := newTestAPIKeyBatch(125)
+	mockSvc, cfgMgr := setupAPIKeyHandlerTest(t)
+	mockSvc.listFunc = pagedAPIKeyList(keys)
+	mockSvc.currentUUIDFunc = func() string {
+		return "00000000-0000-0000-0000-999999999999"
+	}
+
+	var deletedID string
+	mockSvc.deleteFunc = func(ctx context.Context, idOrName string, force bool) error {
+		deletedID = idOrName
+		return nil
+	}
+
+	// key-110 sits well past the backend's first 10-row page; the full scan must
+	// resolve it to its UUID so the delete targets it directly.
+	output := newTestOutput()
+	cmd := newMockCommand().withArgs("key-110")
+	err := accountAPIKeysDelete(context.Background(), cmd, output, cfgMgr, "test-token",
+		func(cm config.Manager, apiEndpoint string) AuthService {
+			return NewMockAuthService(t)
+		},
+		func(authService AuthService, authToken string) APIKeyService {
+			return mockSvc
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "00000000-0000-0000-0000-000000000110", deletedID)
 }
 
 // makeAPIKeyJWT creates a minimal JWT string with the given subject and audience.
